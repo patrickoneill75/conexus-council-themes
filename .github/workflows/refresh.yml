@@ -1,0 +1,49 @@
+name: Refresh themes
+
+# Triggered from the control panel (workflow_dispatch via the GitHub API), or by hand
+# from the Actions tab. No schedule: council meetings happen on a known calendar, and an
+# unattended run would only ever republish the same documents.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: themes-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Read Box and rebuild themes.json
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: python scripts/run_refresh.py
+
+      - name: Commit site
+        run: |
+          git config user.name  "themes-bot"
+          git config user.email "actions@github.com"
+          git add public/
+          if git diff --staged --quiet; then
+            echo "Nothing changed — the documents match what is already published."
+          else
+            git commit -m "Refresh council themes from Box"
+            git push
+          fi
+          # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
+          # but Cloudflare redeploys the Worker from this push through its own Git
+          # integration.
