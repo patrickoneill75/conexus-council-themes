@@ -35,4 +35,4 @@ FILENAME_PATTERN = r"^(\d{4})[-_.\s]*(Q[1-4])[-_.\s]*(.*)$"
 # How a meeting is labelled on the page. Kept here rather than in the page so the
 # wording is decided once, in the same place the filename is interpreted.
 def meeting_title(year: str, quarter: str, council: str) -> str:
-    return f"{council} Council — {quarter} {year}"
+    return f"{year} {quarter} {council} Council Meeting"

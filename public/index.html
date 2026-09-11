@@ -119,6 +119,8 @@ const CONFIG = {
             color:var(--accent); margin:0 0 10px; padding-bottom:7px;
             border-bottom:1px solid var(--border); }
   .doc p { margin:0 0 11px; }
+  .doc p.subhead { font-weight:700; margin:22px 0 8px; }
+  .doc p.subhead:first-child { margin-top:0; }
   .doc ul { list-style:none; margin:0; padding:0; }
   .doc li { position:relative; padding-left:18px; margin-bottom:8px; }
   .doc li::before { content:""; position:absolute; left:3px; top:.62em; width:5px; height:5px;
@@ -321,7 +323,7 @@ const CONFIG = {
       '<div class="pickers">' +
         '<div class="field"><label for="f-year">Year</label><select id="f-year"></select></div>' +
         '<div class="field"><label for="f-qtr">Quarter</label><select id="f-qtr"></select></div>' +
-        '<div class="field"><label for="f-reg">Council</label><select id="f-reg"></select></div>' +
+        '<div class="field"><label for="f-reg">Region</label><select id="f-reg"></select></div>' +
         '<div class="stamp" id="stamp"></div>' +
       '</div><div class="doc" id="doc"></div>';
     loadThemes(wrap);
@@ -402,7 +404,7 @@ const CONFIG = {
     }
     var h = document.createElement("p");
     h.className = "meeting";
-    h.textContent = hit.title || (hit.region + " Council — " + hit.quarter + " " + hit.year);
+    h.textContent = hit.title || (hit.year + " " + hit.quarter + " " + hit.region + " Council Meeting");
     doc.appendChild(h);
 
     var sub = document.createElement("p");
@@ -429,6 +431,10 @@ const CONFIG = {
         } else {
           list = null;
           var p = document.createElement("p");
+          var label = b.text.trim().toLowerCase().replace(/:$/, "");
+          if (label === "what went well" || label === "areas to improve") {
+            p.className = "subhead";
+          }
           p.textContent = b.text;
           section.appendChild(p);
         }
