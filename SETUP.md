@@ -102,10 +102,15 @@ looking for `"configured": true`.
 
 ```
 2026-Q2-Central.docx   ->   Q2 2026 Central Council meeting
+2026 Q2 Central.docx   ->   Q2 2026 Central Council meeting
+2026Q2Central.docx     ->   Q2 2026 Central Council meeting
+2026-Q2.docx            ->   Q2 2026 All Council meeting
 ```
 
-Year, hyphen, quarter, hyphen, council. The council name is whatever comes after the
-second hyphen, so adding a council needs no code change. Anything that does not match is
+Year, then quarter, then council. Between them you can use a hyphen, a space, an
+underscore, a dot, or nothing at all — however it ends up typed in Box. The council name
+is whatever's left after the quarter, so adding a council needs no code change; leaving
+it off entirely is read as `All`. Anything that does not match is
 listed as **Skipped** in the panel with the reason, so drafts can live in the same folder.
 
 Documents are read from the chosen folder only — subfolders are not walked, which keeps
