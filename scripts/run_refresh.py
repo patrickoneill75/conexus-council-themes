@@ -54,7 +54,8 @@ def main() -> int:
                             "reason": "name is not Year-Quarter-Council, e.g. 2026-Q2-Central"})
             continue
 
-        year, quarter, council = match.group(1), match.group(2).upper(), match.group(3).strip()
+        year, quarter = match.group(1), match.group(2).upper()
+        council = match.group(3).strip() or "All"
 
         try:
             sections = extract.sections(box_store.download(entry["id"]))

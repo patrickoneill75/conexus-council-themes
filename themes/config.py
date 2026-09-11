@@ -25,9 +25,12 @@ THEMES_JSON = PUBLIC_DIR / "themes.json"
 BOX_RELAY_URL = os.environ.get("BOX_RELAY_URL", "").strip()
 BOX_RELAY_SECRET = os.environ.get("BOX_RELAY_SECRET", "").strip()
 
-# 2026-Q2-Central.docx -> the Q2 2026 Central Council meeting. The council name is
-# whatever sits after the second hyphen, so adding a council needs no code change.
-FILENAME_PATTERN = r"^(\d{4})-(Q[1-4])-(.+)$"
+# 2026-Q2-Central.docx -> the Q2 2026 Central Council meeting. Year and quarter can be
+# joined by a hyphen, space, underscore, dot, or nothing at all (2026-Q2-Central,
+# 2026 Q2 Central, 2026Q2Central all match) since that's how these get typed by hand in
+# Box over time. The council name is whatever's left after the quarter, trimmed of
+# separators; a file with no council at all (just "2026-Q2") is treated as "All".
+FILENAME_PATTERN = r"^(\d{4})[-_.\s]*(Q[1-4])[-_.\s]*(.*)$"
 
 # How a meeting is labelled on the page. Kept here rather than in the page so the
 # wording is decided once, in the same place the filename is interpreted.
