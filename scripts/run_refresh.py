@@ -7,7 +7,6 @@ The workflow commits the result; the Worker serves it as a static asset.
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -48,7 +47,10 @@ def main() -> int:
             skipped.append({"name": name, "reason": "not a .docx file"})
             continue
 
-        match = NAME_RE.match(os.path.splitext(name)[0].strip())
+        # Some files in Box carry a doubled extension (e.g. "...-Central.docx.docx"),
+        # so strip every trailing .docx rather than just the last one.
+        base = re.sub(r"(?:\.docx)+$", "", name, flags=re.IGNORECASE).strip()
+        match = NAME_RE.match(base)
         if not match:
             skipped.append({"name": name,
                             "reason": "name is not Year-Quarter-Council, e.g. 2026-Q2-Central"})
