@@ -1,0 +1,7 @@
+{
+  "name": "conexus-council-themes",
+  "private": true,
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

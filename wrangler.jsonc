@@ -1,0 +1,37 @@
+{
+  // Worker with static assets: public/ is served by Cloudflare's asset layer, and
+  // src/worker.js handles /api/* — which is what makes runtime secrets possible.
+  // An assets-ONLY Worker (no "main") cannot have variables or secrets attached.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "conexus-council-themes",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-03",
+  "assets": {
+    "directory": "./public/",
+    "binding": "ASSETS",
+    // Guarantee /api/* reaches the Worker even if a same-named file ever lands in public/.
+    // (Must live here, nested under "assets" — a top-level run_worker_first is silently
+    // ignored by current Wrangler versions.)
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Plain settings — NOT secrets. Edit these here in the repo; no dashboard needed.
+  // GITHUB_REPO must match your repository exactly, in owner/name form.
+  "vars": {
+    "GITHUB_REPO": "patrickoneill75/conexus-council-themes",
+    "WORKER_NAME": "conexus-council-themes"
+  },
+  // Holds the Box connection: the access/refresh token pair (the refresh token rotates
+  // every time it's used, so it cannot live in a static secret) and the source folder
+  // the admin picked in the control panel. Create this namespace once in the Cloudflare
+  // dashboard and paste its ID below — see SETUP.md.
+  "kv_namespaces": [
+    {
+      "binding": "BOX_KV",
+      "id": "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

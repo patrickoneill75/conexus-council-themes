@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control Panel — Council Themes</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b; --ready:#006300;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b; --ready:#0ca30c;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
+  h1 { font-size:21px; font-weight:650; margin:0 0 4px; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:0 0 22px; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  label { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+          color:var(--text-muted); font-weight:600; margin-bottom:6px; }
+  input[type=password] { width:100%; font:inherit; padding:9px 11px; border-radius:8px;
+                         border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .banner { border-radius:10px; padding:11px 14px; font-size:13.5px; display:flex; gap:9px;
+            align-items:flex-start; margin-bottom:14px; }
+  .banner .dot { width:9px; height:9px; border-radius:50%; background:currentColor; flex:0 0 auto; margin-top:5px; }
+  .ok { background:rgba(12,163,12,.09); color:var(--ready); border:1px solid rgba(12,163,12,.28); }
+  .due { background:rgba(250,178,25,.12); color:#93370d; border:1px solid rgba(250,178,25,.4); }
+  .err { background:rgba(208,59,59,.10); color:var(--bad); border:1px solid rgba(208,59,59,.3); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:8px 10px; }
+  th { font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:var(--text-muted);
+       font-weight:600; border-bottom:1px solid var(--border); }
+  td { border-bottom:1px solid var(--grid); font-variant-numeric:tabular-nums; }
+  td.num, th.num { text-align:right; }
+  .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
+          border-radius:999px; border:1px solid transparent; white-space:nowrap; }
+  .pill.done { background:rgba(12,163,12,.12); color:var(--ready); border-color:rgba(12,163,12,.3); }
+  .pill.pending { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
+  .pill.nodata { background:var(--wash); color:var(--text-muted); border-color:var(--border); }
+  .muted { color:var(--text-muted); }
+  .small { font-size:12.5px; }
+  .job { border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .jobs { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
+  .job h3 { margin:0 0 4px; font-size:14px; }
+  .job p { margin:0 0 12px; font-size:12.5px; color:var(--text-secondary); }
+  .spin { display:inline-block; width:11px; height:11px; border:2px solid currentColor;
+          border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite;
+          vertical-align:-1px; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  a { color:var(--accent); }
+  .folder-row { display:flex; align-items:center; justify-content:space-between;
+                padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .folder-row:hover { background:var(--wash); }
+  .folder-row .enter { font-size:12px; color:var(--accent); }
+  .crumb { cursor:pointer; color:var(--accent); }
+  .crumb:hover { text-decoration:underline; }
+  .crumb-sep { color:var(--text-muted); margin:0 4px; }
+  code { background:var(--wash); border-radius:5px; padding:2px 6px; font-size:12.5px; }
+  @media(max-width:760px){ .jobs{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Control Panel</h1>
+  <p class="sub">Council Themes — read the meeting documents from Box and publish them.</p>
+
+  <div class="card" id="loginCard">
+    <label for="pw">Password</label>
+    <div class="row">
+      <input type="password" id="pw" autocomplete="current-password" style="flex:1 1 240px">
+      <button class="primary" id="loginBtn" type="button">Sign in</button>
+    </div>
+    <p class="small muted" id="loginMsg" style="margin:10px 0 0"></p>
+  </div>
+
+  <div id="panel" hidden>
+    <div id="banners"></div>
+
+    <div class="card" id="boxCard">
+      <h3 style="margin:0 0 4px;font-size:14px">Box connection</h3>
+      <p class="small muted" style="margin:0 0 12px">Which folder the council meeting
+        documents are read from. Set up once, per <code>SETUP.md</code> in the repository.</p>
+      <div id="boxLoading" class="small muted">Checking…</div>
+      <div id="boxDisconnected" hidden>
+        <button class="primary" id="boxConnectBtn" type="button">Log in with Box</button>
+      </div>
+      <div id="boxConnected" hidden>
+        <p class="small" style="margin:0 0 10px">Connected. Reading from <b id="boxFolderName">—</b>.</p>
+        <div class="row">
+          <button id="boxChooseBtn" type="button">Choose folder…</button>
+          <button id="boxDisconnectBtn" type="button">Disconnect</button>
+        </div>
+      </div>
+      <p class="small" id="boxNotice" style="margin:10px 0 0"></p>
+      <div id="boxPicker" hidden style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:12px">
+        <div class="small" id="boxBreadcrumb" style="margin-bottom:8px"></div>
+        <div id="boxFolderList" style="max-height:240px;overflow-y:auto"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="primary" id="boxUseFolderBtn" type="button">Use this folder</button>
+          <button id="boxCancelPickBtn" type="button">Cancel</button>
+          <span class="small muted" id="boxDocCount"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="jobs">
+        <div class="job">
+          <h3>Refresh and publish</h3>
+          <p>Reads every correctly named Word document in the selected Box folder, pulls out
+             the headings and bullets, and publishes them to the dashboard. If nothing in Box
+             has changed, nothing is committed. No AI cost.</p>
+          <button class="primary" id="refreshBtn" type="button">Refresh and publish</button>
+          <p class="small muted" id="refreshState" style="margin:10px 0 0"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 4px;font-size:14px">Published meetings</h3>
+      <p class="small muted" style="margin:0 0 12px">
+        One row per document, read from its filename: <code>2026-Q2-Central.docx</code> is the
+        Q2 2026 Central Council meeting. A document marked
+        <span class="pill pending">No headings</span> still publishes — its bullets just
+        appear as one ungrouped list.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Meeting</th><th>Source file</th>
+            <th class="num">Sections</th><th class="num">Bullets</th><th>Structure</th>
+          </tr></thead>
+          <tbody id="meetings"></tbody>
+        </table>
+      </div>
+      <p class="small muted" id="totals" style="margin:12px 0 0"></p>
+      <div id="skipped"></div>
+    </div>
+
+    <p class="small muted">
+      <a href="/index.html">Open the dashboard →</a>
+    </p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var token = null, statusTimer = null;
+  var el = function (id) { return document.getElementById(id); };
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function num(n) { return Number(n || 0).toLocaleString("en-US"); }
+
+  /* Box's OAuth callback redirects the whole page back here with ?box=connected or
+     ?box=error&msg=... -- captured once at load, shown once refreshBox() has somewhere
+     to put it, then scrubbed from the URL so a manual reload doesn't repeat it. */
+  var pendingBoxNotice = null;
+  (function captureBoxRedirect() {
+    var params = new URLSearchParams(window.location.search);
+    var boxParam = params.get("box");
+    if (boxParam === "connected") pendingBoxNotice = "Box connected.";
+    else if (boxParam === "error") pendingBoxNotice = "Box login failed: " + (params.get("msg") || "unknown error");
+    if (boxParam) {
+      params.delete("box"); params.delete("msg");
+      var qs = params.toString();
+      history.replaceState(null, "", window.location.pathname + (qs ? "?" + qs : ""));
+    }
+  })();
+
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign({ "content-type": "application/json" },
+      options.headers || {}, token ? { authorization: "Bearer " + token } : {});
+    return fetch("/api/" + path, options).then(function (r) {
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+        return body;
+      });
+    });
+  }
+
+  /* ---------- sign in ---------- */
+  function login() {
+    var password = el("pw").value;
+    if (!password) return;
+    el("loginBtn").disabled = true;
+    el("loginMsg").textContent = "Checking…";
+    api("login", { method: "POST", body: JSON.stringify({ password: password }) })
+      .then(function (body) {
+        token = body.token;
+        try { sessionStorage.setItem("themes-token", token); } catch (e) {}
+        el("loginCard").hidden = true;
+        el("panel").hidden = false;
+        refresh();
+        refreshBox();
+        statusTimer = setInterval(refresh, 15000);
+      })
+      .catch(function (e) {
+        el("loginBtn").disabled = false;
+        // "not configured" means the Worker can't see its variables. Ask it which ones,
+        // so the fix is obvious instead of a guessing game across several names.
+        if (/not configured/i.test(e.message)) {
+          fetch("/api/config-check").then(function (r) { return r.json(); })
+            .then(function (c) {
+              el("loginMsg").innerHTML =
+                "<b>The password hasn't been set on this Worker yet.</b>" +
+                "<br><br>Run the <b>Set Cloudflare secrets</b> workflow from your repository's " +
+                "Actions tab, then reload this page." +
+                "<br><br><span class=\"muted\">This page is served by the Worker named <b>" +
+                esc(c.worker || "?") + "</b> at <b>" + esc(c.hostname || "?") + "</b>. " +
+                "If you have been editing a different Worker in the dashboard, that is the " +
+                "reason nothing is taking effect.</span>";
+            })
+            .catch(function () { el("loginMsg").textContent = e.message; });
+          return;
+        }
+        el("loginMsg").textContent = e.message;
+      });
+  }
+  el("loginBtn").addEventListener("click", login);
+  el("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
+
+  /* ---------- Box connection ---------- */
+  var boxPickerFolderId = null;
+
+  function refreshBox() {
+    return api("box/status").then(function (body) {
+      el("boxLoading").hidden = true;
+      el("boxDisconnected").hidden = Boolean(body.connected);
+      el("boxConnected").hidden = !body.connected;
+      if (body.connected) {
+        el("boxFolderName").textContent = body.folder ? (body.folder.name || body.folder.id)
+                                                       : "(no folder chosen yet)";
+      }
+      if (pendingBoxNotice) {
+        el("boxNotice").textContent = pendingBoxNotice;
+        pendingBoxNotice = null;
+      }
+      if (body.connected && !body.folder) openBoxPicker("0");
+    }).catch(function (e) {
+      el("boxLoading").hidden = true;
+      el("boxDisconnected").hidden = false;
+      el("boxNotice").textContent = e.message;
+    });
+  }
+
+  function connectBox() {
+    el("boxNotice").textContent = "Redirecting to Box…";
+    api("box/authorize-url").then(function (body) { window.location.href = body.url; })
+      .catch(function (e) { el("boxNotice").textContent = e.message; });
+  }
+  el("boxConnectBtn").addEventListener("click", connectBox);
+
+  el("boxDisconnectBtn").addEventListener("click", function () {
+    if (!window.confirm("Disconnect Box? The next refresh won't be able to read anything " +
+                         "until you log in again. Already-published themes stay up.")) return;
+    api("box/disconnect", { method: "POST" }).then(refreshBox);
+  });
+
+  el("boxChooseBtn").addEventListener("click", function () { openBoxPicker("0"); });
+  el("boxCancelPickBtn").addEventListener("click", function () { el("boxPicker").hidden = true; });
+
+  function openBoxPicker(folderId) {
+    el("boxPicker").hidden = false;
+    el("boxDocCount").textContent = "";
+    el("boxFolderList").innerHTML = '<p class="small muted">Loading…</p>';
+    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
+      boxPickerFolderId = data.id;
+      el("boxBreadcrumb").innerHTML = data.breadcrumb.map(function (c, i) {
+        var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
+        return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' +
+          esc(c.name || "All Files") + "</span>";
+      }).join("");
+      Array.prototype.forEach.call(el("boxBreadcrumb").querySelectorAll(".crumb"), function (node) {
+        node.addEventListener("click", function () { openBoxPicker(node.dataset.id); });
+      });
+      el("boxFolderList").innerHTML = data.folders.length
+        ? data.folders.map(function (f) {
+            return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>' + esc(f.name) +
+              '</span><span class="enter">Open →</span></div>';
+          }).join("")
+        : '<p class="small muted">No subfolders here — "Use this folder" reads directly from it.</p>';
+      Array.prototype.forEach.call(el("boxFolderList").querySelectorAll(".folder-row"), function (row) {
+        row.addEventListener("click", function () { openBoxPicker(row.dataset.id); });
+      });
+      // Saying what is actually in here beats making you remember which folder was right.
+      var n = data.doc_count || 0;
+      el("boxDocCount").textContent = n
+        ? n + " Word document" + (n === 1 ? "" : "s") + " in this folder"
+        : "No Word documents directly in this folder";
+    }).catch(function (e) {
+      el("boxFolderList").innerHTML = '<p class="small muted">' + esc(e.message) + "</p>";
+    });
+  }
+
+  el("boxUseFolderBtn").addEventListener("click", function () {
+    if (!boxPickerFolderId) return;
+    var crumbs = el("boxBreadcrumb").querySelectorAll(".crumb");
+    var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : boxPickerFolderId;
+    api("box/select-folder", { method: "POST",
+      body: JSON.stringify({ folder_id: boxPickerFolderId, folder_name: name }) })
+      .then(function () { el("boxPicker").hidden = true; refreshBox(); })
+      .catch(function (e) { window.alert(e.message); });
+  });
+
+  /* ---------- status ---------- */
+  function runLabel(workflow) {
+    var runs = (workflow && workflow.runs) || [];
+    if (!runs.length) return { text: "Never run", busy: false };
+    var r = runs[0];
+    if (r.status !== "completed") {
+      return { text: '<span class="spin"></span>Running since ' +
+        new Date(r.started_at).toLocaleTimeString("en-US"), busy: true, url: r.url };
+    }
+    var when = new Date(r.updated_at).toLocaleString("en-US",
+      { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    var word = r.conclusion === "success" ? "Succeeded"
+      : (r.conclusion === "cancelled" ? "Cancelled" : "Failed");
+    return { text: word + " " + when, busy: false, url: r.url, failed: r.conclusion !== "success" };
+  }
+
+  function refresh() {
+    return api("status").then(function (body) {
+      var themes = body.themes;
+      var r = runLabel(body.workflows.refresh);
+      el("refreshState").innerHTML = r.text +
+        (r.url ? ' · <a href="' + r.url + '" target="_blank" rel="noopener">log</a>' : "");
+      el("refreshBtn").disabled = r.busy;
+
+      var banners = "";
+      if (!themes || !(themes.documents || []).length) {
+        banners = '<div class="banner err"><span class="dot"></span><div>Nothing published yet. ' +
+          'Log in with Box, choose the folder, then run <b>Refresh and publish</b>.</div></div>';
+        el("banners").innerHTML = banners;
+        el("meetings").innerHTML = "";
+        el("totals").textContent = "";
+        el("skipped").innerHTML = "";
+        return;
+      }
+
+      var skipped = themes.skipped || [];
+      var when = themes.generated
+        ? new Date(themes.generated).toLocaleString("en-US",
+            { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+        : "an unknown time";
+      banners += '<div class="banner ok"><span class="dot"></span><div><b>' +
+        num(themes.documents.length) + ' meeting' + (themes.documents.length === 1 ? "" : "s") +
+        ' published,</b> last refreshed ' + esc(when) + '.</div></div>';
+      if (skipped.length) {
+        banners += '<div class="banner due"><span class="dot"></span><div><b>' + num(skipped.length) +
+          ' file' + (skipped.length === 1 ? " was" : "s were") + ' skipped on that run.</b> ' +
+          'Listed below — usually a filename that is not Year-Quarter-Council.</div></div>';
+      }
+      var noStructure = themes.documents.filter(function (d) {
+        return !(d.sections || []).some(function (s) { return s.title; });
+      });
+      if (noStructure.length) {
+        banners += '<div class="banner due"><span class="dot"></span><div><b>' +
+          num(noStructure.length) + ' document' + (noStructure.length === 1 ? " has" : "s have") +
+          ' no headings.</b> Their bullets publish as one ungrouped list. Word\'s real ' +
+          'Heading styles are what create the sections — bold text is not enough.</div></div>';
+      }
+      el("banners").innerHTML = banners;
+
+      el("meetings").innerHTML = themes.documents.map(function (d) {
+        var sections = (d.sections || []);
+        var titled = sections.filter(function (s) { return s.title; }).length;
+        var bullets = sections.reduce(function (sum, s) {
+          return sum + (s.blocks || []).filter(function (b) { return b.type === "bullet"; }).length;
+        }, 0);
+        var structurePill = titled
+          ? '<span class="pill done">' + num(titled) + ' heading' + (titled === 1 ? "" : "s") + '</span>'
+          : '<span class="pill pending">No headings</span>';
+        var modified = d.modified
+          ? new Date(d.modified).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+          : "";
+        return "<tr><td><b>" + esc(d.title || (d.region + " · " + d.quarter + " " + d.year)) + "</b>" +
+          (modified ? '<div class="muted small">Edited ' + esc(modified) + "</div>" : "") + "</td>" +
+          "<td>" + esc(d.sourceFile || "") + "</td>" +
+          '<td class="num">' + num(titled) + "</td>" +
+          '<td class="num">' + num(bullets) + "</td>" +
+          "<td>" + structurePill + "</td></tr>";
+      }).join("");
+
+      var totalBullets = themes.documents.reduce(function (sum, d) {
+        return sum + (d.sections || []).reduce(function (s2, s) {
+          return s2 + (s.blocks || []).filter(function (b) { return b.type === "bullet"; }).length;
+        }, 0);
+      }, 0);
+      var councils = {};
+      themes.documents.forEach(function (d) { councils[d.region] = 1; });
+      el("totals").textContent = num(themes.documents.length) + " meetings · " +
+        num(Object.keys(councils).length) + " councils · " + num(totalBullets) +
+        " bullets. Folder " + ((themes.source && themes.source.folderName)
+          || (themes.source && themes.source.folderId) || "—") + ".";
+
+      el("skipped").innerHTML = skipped.length
+        ? '<p class="small muted" style="margin:12px 0 6px"><b>Skipped</b></p>' +
+          '<table><tbody>' + skipped.map(function (s) {
+            return "<tr><td>" + esc(s.name) + '</td><td class="muted">' + esc(s.reason) + "</td></tr>";
+          }).join("") + "</tbody></table>"
+        : "";
+    }).catch(function (e) {
+      el("banners").innerHTML = '<div class="banner err"><span class="dot"></span><div>' +
+        esc(e.message) + "</div></div>";
+    });
+  }
+
+  /* ---------- trigger jobs ---------- */
+  function run(job, button) {
+    button.disabled = true;
+    var stateEl = el(job + "State");
+    stateEl.innerHTML = '<span class="spin"></span>Starting…';
+    api("run", { method: "POST", body: JSON.stringify({ job: job }) })
+      .then(function () {
+        stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
+        // GitHub takes a moment to register the run before the API reports it.
+        setTimeout(refresh, 4000);
+      })
+      .catch(function (e) {
+        stateEl.textContent = "Could not start: " + e.message;
+        button.disabled = false;
+      });
+  }
+  el("refreshBtn").addEventListener("click", function () { run("refresh", this); });
+
+  /* resume an existing session on reload */
+  try {
+    var saved = sessionStorage.getItem("themes-token");
+    if (saved) {
+      token = saved;
+      api("status").then(function () {
+        el("loginCard").hidden = true;
+        el("panel").hidden = false;
+        refresh();
+        refreshBox();
+        statusTimer = setInterval(refresh, 15000);
+      }).catch(function () { token = null; });
+    }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

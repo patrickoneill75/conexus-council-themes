@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Council Themes &amp; Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+
+<!-- =====================================================================
+     CONFIG — the only part you edit by hand. Box and the themes content
+     are all handled in the control panel at /admin.html.
+     ===================================================================== -->
+<script>
+const CONFIG = {
+  title:    "Manufacturing Dashboard",
+  subtitle: "Conexus Indiana",
+
+  // The "Publish to web" link, exactly as Power BI gave it to you.
+  //
+  // Use the ?r=... one. Do NOT use the reportEmbed?reportId=...&autoAuth=true link —
+  // that is "Embed for your organization", which makes every viewer sign in to Power BI
+  // with a Conexus account. Anyone outside Conexus just hits a login wall.
+  reportUrl: "https://app.powerbi.com/view?r=eyJrIjoiNmQ1ODgxMDctMThjZi00YTU3LWI1MTktMjhhMTJhZWFkMmYxIiwidCI6ImRmZTUzZWJhLWE1ZjEtNGUxMi1hMTg2LWIyNTE1NzhiMzY0MyIsImMiOjN9",
+
+  // One entry per Power BI page, in the order you want the buttons to appear.
+  // pageId is the ReportSection id from the address bar when you open that page in
+  // app.powerbi.com — see the note each tab shows until you fill it in.
+  pages: [
+    { label: "Benchmarking",    pageId: "PASTE_PAGE_ID_1",
+      blurb: "How Indiana compares" },
+    { label: "Attendance",      pageId: "PASTE_PAGE_ID_2",
+      blurb: "Council meeting attendance, full history" },
+    { label: "Attendance 2026+", pageId: "PASTE_PAGE_ID_3",
+      blurb: "Council meeting attendance, 2026 onward" }
+  ],
+
+  themes: {
+    enabled: true,
+    label: "Council Themes",
+    blurb: "Themes raised at quarterly council meetings",
+    dataUrl: "/themes.json"
+  }
+};
+</script>
+
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#006300; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
+  } }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+         display:flex; flex-direction:column; }
+
+  header { padding:18px 20px 0; flex:none; }
+  .head-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; }
+  .head-tools { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:7px 13px; background:var(--surface-1); color:var(--text-primary); font-size:12.5px; }
+  button:hover { background:var(--wash); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* Page navigation — the whole point of this wrapper. One segmented control, so the
+     pages read as a set of choices rather than a menu you have to go looking for. */
+  .cutswitch { display:inline-flex; border:1px solid var(--border); border-radius:9px;
+               overflow:hidden; background:var(--surface-1); flex-wrap:wrap; }
+  .cutswitch button { font:inherit; font-size:13.5px; font-weight:550; padding:9px 18px;
+                      border:0; border-radius:0; background:transparent; color:var(--text-secondary); }
+  .cutswitch button + button { border-left:1px solid var(--border); }
+  .cutswitch button:hover { background:var(--wash); color:var(--text-primary); }
+  .cutswitch button[aria-pressed="true"] { background:var(--accent); color:#fff; font-weight:600; }
+  .cutswitch button[aria-pressed="true"]:hover { background:var(--accent); }
+
+  main { flex:1; min-height:0; display:flex; flex-direction:column; padding:14px 20px 20px; }
+  .blurb { color:var(--text-secondary); font-size:12.5px; margin:0 0 10px; min-height:18px; }
+  .stage { flex:1; min-height:0; position:relative; background:var(--surface-1);
+           border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .panel { position:absolute; inset:0; display:none; }
+  .panel.active { display:block; }
+  .panel iframe { width:100%; height:100%; border:0; display:block; }
+  .loading { position:absolute; inset:0; display:grid; place-items:center;
+             color:var(--text-muted); font-size:13px; pointer-events:none; }
+
+  /* themes */
+  .pickers { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+             padding:16px 20px; border-bottom:1px solid var(--border); flex:none; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+                 color:var(--text-muted); font-weight:600; }
+  .field select { font:inherit; font-size:13.5px; padding:7px 10px; min-width:140px;
+                  border:1px solid var(--border); border-radius:8px;
+                  background:var(--page); color:var(--text-primary); }
+  .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .stamp { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center; }
+
+  .doc { padding:26px 30px 60px; overflow-y:auto; flex:1; max-width:820px; }
+  .meeting { font-size:19px; font-weight:650; margin:0 0 3px; letter-spacing:-0.015em; }
+  .meeting-sub { color:var(--text-muted); font-size:12.5px; margin:0 0 26px; }
+  .doc section { margin:0 0 26px; }
+  .doc h3 { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+            color:var(--accent); margin:0 0 10px; padding-bottom:7px;
+            border-bottom:1px solid var(--border); }
+  .doc p { margin:0 0 11px; }
+  .doc ul { list-style:none; margin:0; padding:0; }
+  .doc li { position:relative; padding-left:18px; margin-bottom:8px; }
+  .doc li::before { content:""; position:absolute; left:3px; top:.62em; width:5px; height:5px;
+                    border-radius:50%; background:var(--accent); }
+  .doc li.d1 { margin-left:22px; } .doc li.d2 { margin-left:44px; } .doc li.d3 { margin-left:66px; }
+  .doc li.d1::before, .doc li.d2::before, .doc li.d3::before {
+    background:transparent; border:1.5px solid var(--text-muted); }
+
+  .notice { margin:24px 30px; padding:18px 20px; max-width:700px; border:1px solid var(--border);
+            border-left:3px solid var(--accent); border-radius:10px; background:var(--wash);
+            font-size:13.5px; }
+  .notice h3 { margin:0 0 8px; font-size:14px; border:0; padding:0;
+               text-transform:none; letter-spacing:0; color:var(--text-primary); }
+  .notice ol { margin:8px 0 0; padding-left:20px; }
+  .notice li { margin-bottom:7px; padding-left:0; }
+  .notice li::before { display:none; }
+  code { background:var(--wash); border:1px solid var(--border); border-radius:5px;
+         padding:1px 5px; font-size:12.5px; }
+  a { color:var(--accent); }
+
+  @media (max-width:640px) {
+    header { padding:14px 12px 0; } main { padding:12px; }
+    .cutswitch { width:100%; } .cutswitch button { flex:1 1 auto; padding:9px 12px; }
+    .doc { padding:20px; } .pickers { padding:12px; }
+    .field { flex:1 1 130px; } .field select { width:100%; min-width:0; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-row">
+    <h1 id="title"></h1>
+    <span class="sub" id="subtitle"></span>
+    <div class="head-tools">
+      <button id="linkBtn" type="button" title="Copy a link that opens on this page">Copy link</button>
+      <button id="fullBtn" type="button">Full screen</button>
+      <button id="themeBtn" type="button">Dark mode</button>
+    </div>
+  </div>
+  <div class="cutswitch" id="nav" role="group" aria-label="Dashboard pages"></div>
+</header>
+
+<main>
+  <p class="blurb" id="blurb"></p>
+  <div class="stage" id="stage"></div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var nav = el("nav"), stage = el("stage"), blurb = el("blurb");
+
+  el("title").textContent = CONFIG.title || "Dashboard";
+  el("subtitle").textContent = CONFIG.subtitle || "";
+
+  /* ---------- theme ---------- */
+  (function theme() {
+    var saved = null;
+    try { saved = localStorage.getItem("themes-theme"); } catch (e) {}
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+    function isDark() {
+      var set = document.documentElement.getAttribute("data-theme");
+      if (set) return set === "dark";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    function label() { el("themeBtn").textContent = isDark() ? "Light mode" : "Dark mode"; }
+    label();
+    el("themeBtn").addEventListener("click", function () {
+      var next = isDark() ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("themes-theme", next); } catch (e) {}
+      label();
+    });
+  })();
+
+  /* ---------- tabs ---------- */
+  var tabs = CONFIG.pages.map(function (p, i) {
+    return { key: "p" + i, kind: "report", label: p.label, blurb: p.blurb || "",
+             pageId: p.pageId, slot: i + 1 };
+  });
+  if (CONFIG.themes && CONFIG.themes.enabled) {
+    tabs.push({ key: "themes", kind: "themes",
+                label: CONFIG.themes.label || "Themes", blurb: CONFIG.themes.blurb || "" });
+  }
+  tabs.forEach(function (t) {
+    t.slug = String(t.label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = t.label;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", function () { show(t.key, true); });
+    t.button = b;
+    nav.appendChild(b);
+  });
+
+  function reportSrc(pageId) {
+    var base = CONFIG.reportUrl.trim();
+    var join = base.indexOf("?") === -1 ? "?" : "&";
+    return base + join + "pageName=" + encodeURIComponent(pageId) +
+      "&navContentPaneEnabled=false&filterPaneEnabled=false";
+  }
+
+  /* Each report page gets its own frame, created the first time you open that tab and
+     then kept alive — so the first click loads and every click after is instant. */
+  function mount(t) {
+    if (t.panel) return t.panel;
+    var panel = document.createElement("div");
+    panel.className = "panel";
+    if (t.kind === "report") {
+      if (!t.pageId || /^PASTE_PAGE_ID/.test(t.pageId)) {
+        panel.innerHTML = setupNotice(t);
+      } else {
+        var load = document.createElement("div");
+        load.className = "loading";
+        load.textContent = "Loading " + t.label + "…";
+        var f = document.createElement("iframe");
+        f.src = reportSrc(t.pageId); f.title = t.label; f.allowFullscreen = true;
+        f.addEventListener("load", function () { load.remove(); });
+        panel.appendChild(load); panel.appendChild(f);
+      }
+    } else {
+      panel.appendChild(buildThemes());
+    }
+    stage.appendChild(panel);
+    t.panel = panel;
+    return panel;
+  }
+
+  /* Shown in place of the report until its page id is filled in. It names the exact
+     placeholder to replace, because with several pages "paste the id" is ambiguous and
+     pasting the right id into the wrong slot looks like the report is broken. */
+  function setupNotice(t) {
+    return '<div class="notice"><h3>' + t.label + " isn't wired up yet</h3>" +
+      "<p>Open <code>public/index.html</code> in GitHub's web editor and replace " +
+      "<code>PASTE_PAGE_ID_" + t.slot + "</code> — the one on the <b>" + t.label +
+      "</b> line — with this page's id.</p><ol>" +
+      "<li>Open the report in <b>app.powerbi.com</b>, not the shared view link.</li>" +
+      "<li>Click <b>" + t.label + "</b> in Power BI's own page list.</li>" +
+      "<li>The address bar reads <code>.../reports/&lt;report id&gt;/<b>ReportSection…</b>" +
+      "?experience=power-bi</code>. Copy the <code>ReportSection…</code> piece — everything " +
+      "after the last slash and before the <code>?</code>.</li>" +
+      "<li>Paste it in, commit, and this tab loads.</li></ol></div>";
+  }
+
+  var current = null;
+  function show(key, pushHash) {
+    var t = null;
+    tabs.forEach(function (x) { if (x.key === key) t = x; });
+    if (!t) t = tabs[0];
+    if (!t) return;
+    mount(t);
+    tabs.forEach(function (x) {
+      var on = x === t;
+      x.button.setAttribute("aria-pressed", on ? "true" : "false");
+      if (x.panel) x.panel.classList.toggle("active", on);
+    });
+    blurb.textContent = t.blurb || "";
+    current = t;
+    if (pushHash) history.replaceState(null, "", "#" + t.slug);
+  }
+
+  nav.addEventListener("keydown", function (e) {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    var i = tabs.indexOf(current);
+    if (i < 0) return;
+    e.preventDefault();
+    var n = (i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    show(tabs[n].key, true);
+    tabs[n].button.focus();
+  });
+
+  el("linkBtn").addEventListener("click", function () {
+    var btn = this;
+    var url = location.href.split("#")[0] + "#" + (current ? current.slug : "");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(function () { btn.textContent = "Copied"; })
+        .catch(function () { btn.textContent = "Copy failed"; });
+    }
+    setTimeout(function () { btn.textContent = "Copy link"; }, 1600);
+  });
+
+  el("fullBtn").addEventListener("click", function () {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (stage.requestFullscreen) stage.requestFullscreen();
+  });
+  document.addEventListener("fullscreenchange", function () {
+    el("fullBtn").textContent = document.fullscreenElement ? "Exit full screen" : "Full screen";
+  });
+
+  /* =================== council themes =================== */
+  var themeDocs = [];
+
+  function buildThemes() {
+    var wrap = document.createElement("div");
+    wrap.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column";
+    wrap.innerHTML =
+      '<div class="pickers">' +
+        '<div class="field"><label for="f-year">Year</label><select id="f-year"></select></div>' +
+        '<div class="field"><label for="f-qtr">Quarter</label><select id="f-qtr"></select></div>' +
+        '<div class="field"><label for="f-reg">Council</label><select id="f-reg"></select></div>' +
+        '<div class="stamp" id="stamp"></div>' +
+      '</div><div class="doc" id="doc"></div>';
+    loadThemes(wrap);
+    return wrap;
+  }
+
+  function loadThemes(wrap) {
+    var doc = wrap.querySelector("#doc");
+    doc.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+    fetch(CONFIG.themes.dataUrl + "?t=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (data) {
+        if (!data || !data.documents || !data.documents.length) {
+          wrap.querySelector(".pickers").style.display = "none";
+          doc.innerHTML = '<div class="notice" style="margin:0"><h3>Nothing published yet</h3>' +
+            '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
+            "folder holding the meeting documents, and run <b>Refresh and publish</b>.</p></div>";
+          return;
+        }
+        wrap.querySelector(".pickers").style.display = "";
+        themeDocs = data.documents.filter(function (d) { return d && d.year && d.quarter && d.region; });
+        if (data.generated) {
+          var d = new Date(data.generated);
+          wrap.querySelector("#stamp").textContent = isNaN(d) ? "" :
+            "Refreshed " + d.toLocaleDateString("en-US",
+              { year: "numeric", month: "short", day: "numeric" });
+        }
+        wirePickers(wrap);
+      });
+  }
+
+  function wirePickers(wrap) {
+    var yEl = wrap.querySelector("#f-year"), qEl = wrap.querySelector("#f-qtr"),
+        rEl = wrap.querySelector("#f-reg");
+    function uniq(a) { var seen = {}, out = []; a.forEach(function (v) {
+      if (!seen[v]) { seen[v] = 1; out.push(v); } }); return out; }
+    function fill(sel, vals, keep) {
+      sel.innerHTML = "";
+      vals.forEach(function (v) {
+        var o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o);
+      });
+      if (keep && vals.indexOf(keep) >= 0) sel.value = keep;
+    }
+    var years = uniq(themeDocs.map(function (d) { return d.year; })).sort().reverse();
+    function refreshQ() {
+      fill(qEl, uniq(themeDocs.filter(function (d) { return d.year === yEl.value; })
+        .map(function (d) { return d.quarter; })).sort().reverse(), qEl.value);
+    }
+    function refreshR() {
+      fill(rEl, uniq(themeDocs.filter(function (d) {
+        return d.year === yEl.value && d.quarter === qEl.value;
+      }).map(function (d) { return d.region; })).sort(), rEl.value);
+    }
+    function render() {
+      var hit = null;
+      themeDocs.forEach(function (d) {
+        if (d.year === yEl.value && d.quarter === qEl.value && d.region === rEl.value) hit = d;
+      });
+      renderMeeting(wrap.querySelector("#doc"), hit);
+    }
+    fill(yEl, years); refreshQ(); refreshR(); render();
+    yEl.addEventListener("change", function () { refreshQ(); refreshR(); render(); });
+    qEl.addEventListener("change", function () { refreshR(); render(); });
+    rEl.addEventListener("change", render);
+  }
+
+  /* Builds DOM nodes and sets textContent, so nothing anyone types into a meeting
+     document is ever interpreted as markup. */
+  function renderMeeting(doc, hit) {
+    doc.textContent = "";
+    if (!hit) {
+      var none = document.createElement("p");
+      none.style.color = "var(--text-muted)";
+      none.textContent = "No notes published for that meeting yet.";
+      doc.appendChild(none);
+      return;
+    }
+    var h = document.createElement("p");
+    h.className = "meeting";
+    h.textContent = hit.title || (hit.region + " Council — " + hit.quarter + " " + hit.year);
+    doc.appendChild(h);
+
+    var sub = document.createElement("p");
+    sub.className = "meeting-sub";
+    sub.textContent = "Themes raised at the " + hit.quarter + " " + hit.year + " meeting" +
+      (hit.sourceFile ? " · " + hit.sourceFile : "");
+    doc.appendChild(sub);
+
+    (hit.sections || []).forEach(function (sec) {
+      var section = document.createElement("section");
+      if (sec.title) {
+        var t = document.createElement("h3");
+        t.textContent = sec.title;
+        section.appendChild(t);
+      }
+      var list = null;
+      (sec.blocks || []).forEach(function (b) {
+        if (b.type === "bullet") {
+          if (!list) { list = document.createElement("ul"); section.appendChild(list); }
+          var li = document.createElement("li");
+          if (b.depth) li.className = "d" + Math.min(b.depth, 3);
+          li.textContent = b.text;
+          list.appendChild(li);
+        } else {
+          list = null;
+          var p = document.createElement("p");
+          p.textContent = b.text;
+          section.appendChild(p);
+        }
+      });
+      doc.appendChild(section);
+    });
+    doc.scrollTop = 0;
+  }
+
+  /* ---------- boot ---------- */
+  var fromHash = null;
+  tabs.forEach(function (t) { if (t.slug === location.hash.replace(/^#/, "")) fromHash = t; });
+  show(fromHash ? fromHash.key : tabs[0].key, false);
+  window.addEventListener("hashchange", function () {
+    tabs.forEach(function (t) {
+      if (t.slug === location.hash.replace(/^#/, "") && t !== current) show(t.key, false);
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+/themes.json
+  Cache-Control: no-store
+/index.html
+  Cache-Control: public, max-age=300

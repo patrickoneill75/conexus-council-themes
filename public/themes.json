@@ -1,0 +1,104 @@
+{
+  "generated": "2026-09-11T14:20:49+00:00",
+  "source": {
+    "folderId": "284729183746",
+    "documentCount": 3
+  },
+  "documents": [
+    {
+      "year": "2026",
+      "quarter": "Q2",
+      "region": "South",
+      "title": "South Council — Q2 2026",
+      "sourceFile": "2026-Q2-South.docx",
+      "modified": "2026-07-08T15:22:00-07:00",
+      "sections": [
+        {
+          "title": "Workforce",
+          "level": 1,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "Members reported difficulty filling production roles."
+            }
+          ]
+        },
+        {
+          "title": "Detail",
+          "level": 2,
+          "blocks": [
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Interview no-shows"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Early quits"
+            },
+            {
+              "type": "p",
+              "text": "Overtime used to cover gaps."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2026",
+      "quarter": "Q2",
+      "region": "Central",
+      "title": "Central Council — Q2 2026",
+      "sourceFile": "2026-Q2-Central.docx",
+      "modified": "2026-07-08T15:22:00-07:00",
+      "sections": [
+        {
+          "title": "Supply chain",
+          "level": 1,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "Lead times improved modestly."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Tariff uncertainty persists"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2026",
+      "quarter": "Q1",
+      "region": "South",
+      "title": "South Council — Q1 2026",
+      "sourceFile": "2026-Q1-South.docx",
+      "modified": "2026-07-08T15:22:00-07:00",
+      "sections": [
+        {
+          "title": "Capital spending",
+          "level": 1,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "Several firms deferred equipment purchases."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "name": "notes for later.docx",
+      "reason": "name is not Year-Quarter-Council, e.g. 2026-Q2-Central"
+    },
+    {
+      "name": "2026-Q2-North.pdf",
+      "reason": "not a .docx file"
+    }
+  ]
+}
