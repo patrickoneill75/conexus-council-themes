@@ -33,9 +33,9 @@ Everything below is done in a browser. There are no terminal steps.
 
 1. In the Cloudflare dashboard, **Workers & Pages → Create → Import a repository**, and
    point it at this repo. It reads `wrangler.jsonc` and deploys on every push.
-2. **Storage & Databases → KV → Create a namespace**, name it `THEMES_BOX`. Copy its ID
-   into `wrangler.jsonc` under `kv_namespaces`, replacing
-   `PASTE_YOUR_KV_NAMESPACE_ID_HERE`, and commit.
+2. **Storage & Databases → KV → Create a namespace**, name it `BOX_KV` to match the
+   binding in `wrangler.jsonc`. Copy its ID into `wrangler.jsonc` under `kv_namespaces`,
+   replacing `PASTE_YOUR_KV_NAMESPACE_ID_HERE`, and commit.
 
    This is where the Box connection lives: the token pair (the refresh token rotates on
    every use, so it cannot be a static secret) and the folder you pick in the panel.
