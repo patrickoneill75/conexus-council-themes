@@ -1,45 +1,151 @@
 {
-  "generated": "2026-09-11T14:20:49+00:00",
+  "generated": "2026-09-11T16:01:24+00:00",
   "source": {
-    "folderId": "284729183746",
-    "documentCount": 3
+    "folderId": "417272937226",
+    "documentCount": 13
   },
   "documents": [
     {
       "year": "2026",
-      "quarter": "Q2",
-      "region": "South",
-      "title": "South Council — Q2 2026",
-      "sourceFile": "2026-Q2-South.docx",
-      "modified": "2026-07-08T15:22:00-07:00",
+      "quarter": "Q3",
+      "region": "Southern.docx",
+      "title": "Southern.docx Council — Q3 2026",
+      "sourceFile": "2026-Q3 Southern.docx.docx",
+      "modified": "2026-09-11T08:56:49-07:00",
       "sections": [
         {
-          "title": "Workforce",
-          "level": 1,
+          "title": null,
           "blocks": [
             {
               "type": "p",
-              "text": "Members reported difficulty filling production roles."
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Ratings were strong overall, with several attendees calling the presentations and format excellent."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Both panel topics (digital equipment investment and tech ROI) scored well for value."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Strong interest in follow-up programs like the AI Conductor and Industry Exchange."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees appreciated the networking opportunities at the event."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several attendees are already interested in developing or expanding training programs."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Give panels more time and trim lengthy panelist introductions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Post wifi access info, and consider moving the survey to a digital format."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Focus more panel content specifically on small and midsized manufacturers."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Have tour host companies highlight new technologies rather than a general facility walkthrough."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Prep panelists in advance with clearer expectations to reduce predictable, generic answers."
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "year": "2026",
+      "quarter": "Q3",
+      "region": "Central.docx",
+      "title": "Central.docx Council — Q3 2026",
+      "sourceFile": "2026-Q3 Central.docx.docx",
+      "modified": "2026-09-11T08:56:53-07:00",
+      "sections": [
         {
-          "title": "Detail",
-          "level": 2,
+          "title": null,
           "blocks": [
             {
-              "type": "bullet",
-              "depth": 0,
-              "text": "Interview no-shows"
+              "type": "p",
+              "text": "What went well"
             },
             {
               "type": "bullet",
               "depth": 0,
-              "text": "Early quits"
+              "text": "Attendees valued the mix of company sizes and appreciated the small-business representation."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several called out the panel content itself as a strong part of the meeting."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees expressed strong interest in learning more about AI Conductor and real-world use cases."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The variety of industries represented was noted as a highlight for networking."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Multiple attendees want to keep going deeper on AI topics, showing high engagement with the content."
             },
             {
               "type": "p",
-              "text": "Overtime used to cover gaps."
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Keep speakers and panelists on their allotted time slots."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Improve audio and increase slide text size so everyone can hear and read clearly."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add a way to exchange business cards or attendee info at the start of the meeting."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Stay on schedule so the full agenda doesn't get cut short."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Set aside dedicated time after lunch for panel Q&A and networking."
             }
           ]
         }
@@ -48,23 +154,144 @@
     {
       "year": "2026",
       "quarter": "Q2",
-      "region": "Central",
-      "title": "Central Council — Q2 2026",
-      "sourceFile": "2026-Q2-Central.docx",
-      "modified": "2026-07-08T15:22:00-07:00",
+      "region": "Southern.docx",
+      "title": "Southern.docx Council — Q2 2026",
+      "sourceFile": "2026-Q2-Southern.docx.docx",
+      "modified": "2026-09-11T08:57:46-07:00",
       "sections": [
         {
-          "title": "Supply chain",
-          "level": 1,
+          "title": null,
           "blocks": [
             {
               "type": "p",
-              "text": "Lead times improved modestly."
+              "text": "What went well"
             },
             {
               "type": "bullet",
               "depth": 0,
-              "text": "Tariff uncertainty persists"
+              "text": "Attendees gave strong marks across meeting value and both content sessions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The site tour and Q&A drew enthusiastic praise from multiple attendees."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several called out the strong presentation pacing and content quality."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees appreciated a full room and high engagement at the event."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Multiple organizations expressed interest in learning more about Conexus programs."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Send more pre-meeting details ahead of site tours."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Have keynote speakers elaborate more on their own programs."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add a session featuring current or former students sharing their experience."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Cover soft-skills development for high school-aged workforce topics."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Continue building employer understanding of their role in workforce development."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2026",
+      "quarter": "Q2",
+      "region": "Central.docx",
+      "title": "Central.docx Council — Q2 2026",
+      "sourceFile": "2026-Q2-Central.docx.docx",
+      "modified": "2026-09-11T08:57:40-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Ratings were consistently positive across logistics, meeting value, and both content sessions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees showed strong interest in follow-up programs like the AML ITA and AI Use Case Catalog."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Multiple organizations offered leads for council membership, showing good engagement."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "One university offered to host a future meeting, signaling a strong relationship."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "A speaker offered to present on economic outlook for a future session."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Reduce the morning tour to one stop instead of two to ease the schedule."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Provide presentation materials to attendees afterward."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add a key or legend to data slides for clarity."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Cover tariff, foreign trade, and economic development topics in future sessions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Ratings dipped slightly on the workforce and employer panel sessions compared to overall meeting value."
             }
           ]
         }
@@ -73,32 +300,660 @@
     {
       "year": "2026",
       "quarter": "Q1",
-      "region": "South",
-      "title": "South Council — Q1 2026",
-      "sourceFile": "2026-Q1-South.docx",
-      "modified": "2026-07-08T15:22:00-07:00",
+      "region": "All.docx",
+      "title": "All.docx Council — Q1 2026",
+      "sourceFile": "2026-Q1-All.docx.docx",
+      "modified": "2026-09-11T08:55:12-07:00",
       "sections": [
         {
-          "title": "Capital spending",
-          "level": 1,
+          "title": null,
           "blocks": [
             {
               "type": "p",
-              "text": "Several firms deferred equipment purchases."
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees called it the best CIAIC meeting yet, and several praised the opening remarks and sense of connection."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The event drew strong satisfaction scores across logistics, meeting value, and both presentations."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The economic outlook and AI panel sessions were consistently rated highly by attendees."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several attendees said the meeting sparked real interest in networking and partner connections."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Multiple organizations expressed enthusiasm about future participation, including one offering to host."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add a way for attendees to share company info or connect with peers they want to meet."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Provide microphones for audience Q&A."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "One attendee felt the AI panel leaned too heavily into a vendor sales pitch."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add a resource highlighting relevant trade shows for Indiana manufacturers."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Include more real-world case studies of successful tech implementations."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2025",
+      "quarter": "Q4",
+      "region": "All.docx",
+      "title": "All.docx Council — Q4 2025",
+      "sourceFile": "2025-Q4-All.docx.docx",
+      "modified": "2026-09-11T08:54:00-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees loved the economic and tariff discussion, calling it informative and well done."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The AI applications breakout session was praised for strong use cases and Q&A."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Printed materials, pens, and a well-chosen meeting venue drew specific praise."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "One attendee called it their favorite meeting yet, highlighting both main presentations."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Interest in real-world case studies and industry speakers came through as a strong draw."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Send the agenda and presentations a week in advance so attendees can prepare and take notes."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Include attendee names and companies in the handouts for easier networking."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Give tours more time so all areas can be adequately covered."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Make the AI presentation more dynamic, since some speakers struggled to hold attention."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add clearer takeaways or a roadmap after discussion-heavy sessions, not just open conversation."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2025",
+      "quarter": "Q3",
+      "region": "All.docx",
+      "title": "All.docx Council — Q3 2025",
+      "sourceFile": "2025-Q3-All.docx.docx",
+      "modified": "2026-09-11T08:54:12-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The infrastructure expert panel and freight bottleneck discussion drew the most praise."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The Beck site tour impressed attendees, especially the visible Industry 4.0 technology."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Rep. Shreve's legislative perspective was singled out as the most insightful content."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Roundtable and group discussion time created real peer-to-peer business connections."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Advance materials scored highest of any question — logistics and prep were clear."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several attendees found the topics only partly relevant to their own role or sector."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Not all questions submitted through the QR code got answered."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees want short pre-reads or articles to prepare for discussion topics."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The Federal Overview and Q&A scored lowest of the two sessions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "One member asked for a clearer channel to get industry freight plans in front of INDOT"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2025",
+      "quarter": "Q2",
+      "region": "All.docx",
+      "title": "All.docx Council — Q2 2025",
+      "sourceFile": "2025-Q2-All.docx.docx",
+      "modified": "2026-09-11T08:54:08-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The workshop format landed well, with multiple attendees calling for at least two per year."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Workforce development and State of the Workforce content were repeatedly called out as most impactful."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Networking was highlighted as a standout, alongside strong overall organization and communication."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The employer site tour and employment data were noted as insightful."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several attendees simply praised the event as consistently well-run and enjoyable."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Send workshop materials in advance so attendees can prepare thoughts beforehand."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Start afternoon tours earlier to close the gap between the meeting ending and the tour starting."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Build in more biobreaks during the agenda."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Have member companies present their own case studies as part of the program."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Address how attendees can better tap into and use the council network itself."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2025",
+      "quarter": "Q1",
+      "region": "All.docx",
+      "title": "All.docx Council — Q1 2025",
+      "sourceFile": "2025-Q1-All.docx.docx",
+      "modified": "2026-09-11T08:54:16-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The AI presentation and MRG Impact Report were repeatedly cited as the most valuable content."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees called the facility tours and site visits a highlight, sparking new ideas to bring home."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several called this one of the best meetings they've attended, praising the networking."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The company review sessions (e.g., Arcamed) resonated strongly with attendees."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Guest speakers were seen as a standout, with one described as a \"game changer.\""
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add an attendee list and clearer ways to connect, such as company info cards or a networking area."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Give more real-world, practical examples alongside the presentations."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Provide handouts like QR codes or electronic copies of reports for attendees to keep."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Moderate Q&A time better and offer an after-session chat for detailed follow-up questions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Make name badges easier to read (larger company names)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2024",
+      "quarter": "Q4",
+      "region": "All.docx",
+      "title": "All.docx Council — Q4 2024",
+      "sourceFile": "2024-Q4-All.docx.docx",
+      "modified": "2026-09-11T08:53:34-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Dr. Jenner's presentation was a standout, with multiple attendees praising her clarity and passion."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The High School Redesign and youth apprenticeship content resonated strongly with attendees."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees valued the meetings' focus on real problems, real solutions, and collaboration."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The diploma and apprenticeship explanations were called out as especially helpful."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The broader tie between education and community/business development landed well."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add more Q&A time for attendees to dig into topics."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Share concrete examples of companies successfully implementing work-based learning."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Help new or less-connected attendees know who to network with at lunch."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Provide more detail on success stories behind the high school redesign and apprenticeships."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Address extracurricular/STEM pathway credit (e.g., robotics, alternative-fuel programs) toward employment recognition."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2024",
+      "quarter": "Q3",
+      "region": "All.docx",
+      "title": "All.docx Council — Q3 2024",
+      "sourceFile": "2024-Q3-All.docx.docx",
+      "modified": "2026-09-11T08:53:38-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Lippert University's workforce training content was one of the most praised topics across attendees."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Splitting the meeting into regional sites made attendance easier, especially for southern-region members."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The AV Freight Readiness and electrification content felt timely and relevant to attendees' businesses."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Speaker energy and delivery drew specific praise, keeping the room engaged."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees valued hearing directly from researchers and peer companies about real progress versus hype."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Improve projection and slide visibility, since some presentations were hard to see."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Clarify meeting location instructions in advance to avoid confusion."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Provide more takeaway materials beyond the slides for detailed topics."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Some content felt too far out to act on; attendees prefer more near-term, actionable topics."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Fix pre-meeting communication delivery so materials reliably reach all attendees."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2024",
+      "quarter": "Q2",
+      "region": "All.docx",
+      "title": "All.docx Council — Q2 2024",
+      "sourceFile": "2024-Q2-All.docx.docx",
+      "modified": "2026-09-11T08:53:45-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Several attendees called it the best meeting to date, praising strong organization and content."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Speakers like Elisabeth Reynolds and Katie Culp were repeatedly singled out for expertise and insight."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees valued the facility tour and seeing real-world automation in action."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Content on grants, tax incentives, and energy solutions gave attendees actionable next steps."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Networking and connecting with new contacts continued to stand out as a highlight."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Improve audio quality, especially for tours held on noisy warehouse floors."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Break sessions into smaller chunks to help hold attention throughout the day."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Share more background on host companies in advance of facility tours."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add a facilitated roundtable discussion format to complement presentations."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Provide more specifics on how smaller and mid-sized manufacturers can access opportunities."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "year": "2024",
+      "quarter": "Q1",
+      "region": "All.docx",
+      "title": "All.docx Council — Q1 2024",
+      "sourceFile": "2024-Q1-All.docx.docx",
+      "modified": "2026-09-11T08:53:49-07:00",
+      "sections": [
+        {
+          "title": null,
+          "blocks": [
+            {
+              "type": "p",
+              "text": "What went well"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Subaru's real-world Industry 4.0 and IIOT implementation story was repeatedly cited as the most impactful content."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Chico Marks' practical, video-based presentation was called one of the best the group has seen."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "The TEConomy research and state comparison data landed well and sparked good questions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "New members praised the communication and coordination leading up to the meeting."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Attendees valued networking and meeting new peers as much as the content itself."
+            },
+            {
+              "type": "p",
+              "text": "Areas to improve"
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add more Q&A time and have speakers repeat or hold the mic for questions so the room can hear."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Share an attendee list to make networking easier."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Send pre-read data (like the TEConomy report) further ahead so attendees can prepare questions."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Clarify how Industry 4.0 content applies to smaller companies and suppliers, not just large ones."
+            },
+            {
+              "type": "bullet",
+              "depth": 0,
+              "text": "Add small-group discussion time to break up the large-format presentations."
             }
           ]
         }
       ]
     }
   ],
-  "skipped": [
-    {
-      "name": "notes for later.docx",
-      "reason": "name is not Year-Quarter-Council, e.g. 2026-Q2-Central"
-    },
-    {
-      "name": "2026-Q2-North.pdf",
-      "reason": "not a .docx file"
-    }
-  ]
+  "skipped": []
 }
