@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-11T16:01:24+00:00",
+  "generated": "2026-09-11T16:36:22+00:00",
   "source": {
     "folderId": "417272937226",
     "documentCount": 13
@@ -8,10 +8,10 @@
     {
       "year": "2026",
       "quarter": "Q3",
-      "region": "Southern.docx",
-      "title": "Southern.docx Council — Q3 2026",
-      "sourceFile": "2026-Q3 Southern.docx.docx",
-      "modified": "2026-09-11T08:56:49-07:00",
+      "region": "Southern",
+      "title": "2026 Q3 Southern Council Meeting",
+      "sourceFile": "2026-Q3-Southern.docx.docx",
+      "modified": "2026-09-11T09:01:40-07:00",
       "sections": [
         {
           "title": null,
@@ -81,8 +81,8 @@
     {
       "year": "2026",
       "quarter": "Q3",
-      "region": "Central.docx",
-      "title": "Central.docx Council — Q3 2026",
+      "region": "Central",
+      "title": "2026 Q3 Central Council Meeting",
       "sourceFile": "2026-Q3 Central.docx.docx",
       "modified": "2026-09-11T08:56:53-07:00",
       "sections": [
@@ -154,8 +154,8 @@
     {
       "year": "2026",
       "quarter": "Q2",
-      "region": "Southern.docx",
-      "title": "Southern.docx Council — Q2 2026",
+      "region": "Southern",
+      "title": "2026 Q2 Southern Council Meeting",
       "sourceFile": "2026-Q2-Southern.docx.docx",
       "modified": "2026-09-11T08:57:46-07:00",
       "sections": [
@@ -227,8 +227,8 @@
     {
       "year": "2026",
       "quarter": "Q2",
-      "region": "Central.docx",
-      "title": "Central.docx Council — Q2 2026",
+      "region": "Central",
+      "title": "2026 Q2 Central Council Meeting",
       "sourceFile": "2026-Q2-Central.docx.docx",
       "modified": "2026-09-11T08:57:40-07:00",
       "sections": [
@@ -300,8 +300,8 @@
     {
       "year": "2026",
       "quarter": "Q1",
-      "region": "All.docx",
-      "title": "All.docx Council — Q1 2026",
+      "region": "All",
+      "title": "2026 Q1 All Council Meeting",
       "sourceFile": "2026-Q1-All.docx.docx",
       "modified": "2026-09-11T08:55:12-07:00",
       "sections": [
@@ -373,8 +373,8 @@
     {
       "year": "2025",
       "quarter": "Q4",
-      "region": "All.docx",
-      "title": "All.docx Council — Q4 2025",
+      "region": "All",
+      "title": "2025 Q4 All Council Meeting",
       "sourceFile": "2025-Q4-All.docx.docx",
       "modified": "2026-09-11T08:54:00-07:00",
       "sections": [
@@ -446,8 +446,8 @@
     {
       "year": "2025",
       "quarter": "Q3",
-      "region": "All.docx",
-      "title": "All.docx Council — Q3 2025",
+      "region": "All",
+      "title": "2025 Q3 All Council Meeting",
       "sourceFile": "2025-Q3-All.docx.docx",
       "modified": "2026-09-11T08:54:12-07:00",
       "sections": [
@@ -519,8 +519,8 @@
     {
       "year": "2025",
       "quarter": "Q2",
-      "region": "All.docx",
-      "title": "All.docx Council — Q2 2025",
+      "region": "All",
+      "title": "2025 Q2 All Council Meeting",
       "sourceFile": "2025-Q2-All.docx.docx",
       "modified": "2026-09-11T08:54:08-07:00",
       "sections": [
@@ -592,8 +592,8 @@
     {
       "year": "2025",
       "quarter": "Q1",
-      "region": "All.docx",
-      "title": "All.docx Council — Q1 2025",
+      "region": "All",
+      "title": "2025 Q1 All Council Meeting",
       "sourceFile": "2025-Q1-All.docx.docx",
       "modified": "2026-09-11T08:54:16-07:00",
       "sections": [
@@ -665,8 +665,8 @@
     {
       "year": "2024",
       "quarter": "Q4",
-      "region": "All.docx",
-      "title": "All.docx Council — Q4 2024",
+      "region": "All",
+      "title": "2024 Q4 All Council Meeting",
       "sourceFile": "2024-Q4-All.docx.docx",
       "modified": "2026-09-11T08:53:34-07:00",
       "sections": [
@@ -738,8 +738,8 @@
     {
       "year": "2024",
       "quarter": "Q3",
-      "region": "All.docx",
-      "title": "All.docx Council — Q3 2024",
+      "region": "All",
+      "title": "2024 Q3 All Council Meeting",
       "sourceFile": "2024-Q3-All.docx.docx",
       "modified": "2026-09-11T08:53:38-07:00",
       "sections": [
@@ -811,8 +811,8 @@
     {
       "year": "2024",
       "quarter": "Q2",
-      "region": "All.docx",
-      "title": "All.docx Council — Q2 2024",
+      "region": "All",
+      "title": "2024 Q2 All Council Meeting",
       "sourceFile": "2024-Q2-All.docx.docx",
       "modified": "2026-09-11T08:53:45-07:00",
       "sections": [
@@ -884,8 +884,8 @@
     {
       "year": "2024",
       "quarter": "Q1",
-      "region": "All.docx",
-      "title": "All.docx Council — Q1 2024",
+      "region": "All",
+      "title": "2024 Q1 All Council Meeting",
       "sourceFile": "2024-Q1-All.docx.docx",
       "modified": "2026-09-11T08:53:49-07:00",
       "sections": [
