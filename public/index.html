@@ -34,6 +34,13 @@ const CONFIG = {
     label: "Council Themes",
     blurb: "This quarter's top issues, and what's recurred since",
     dataUrl: "/council-themes.json"
+  },
+
+  quant: {
+    enabled: true,
+    label: "Claude Dashboard (beta)",
+    blurb: "A from-scratch rebuild of the Benchmarking report, computed entirely from uploaded survey data",
+    dataUrl: "/quant-dashboard.json"
   }
 };
 </script>
@@ -103,6 +110,7 @@ const CONFIG = {
   .pickers { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
              padding:16px 20px; border-bottom:1px solid var(--border); flex:none; }
   .field { display:flex; flex-direction:column; gap:5px; }
+  .field[hidden] { display:none; }
   .field label { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
                  color:var(--text-muted); font-weight:600; }
   .field select { font:inherit; font-size:13.5px; padding:7px 10px; min-width:140px;
@@ -133,6 +141,24 @@ const CONFIG = {
   .theme-tag { font-size:11px; color:var(--text-muted); margin-bottom:8px; }
   .theme-example { margin:0; font-size:12.5px; color:var(--text-secondary); font-style:italic;
                     border-left:2px solid var(--border); padding-left:10px; }
+
+  /* quant dashboard */
+  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+              gap:14px; margin-bottom:32px; }
+  .kpi-card { border:1px solid var(--border); border-radius:10px; padding:16px 18px;
+              background:var(--surface-1); }
+  .kpi-label { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+               color:var(--text-muted); margin-bottom:8px; }
+  .kpi-value { font-size:28px; font-weight:650; letter-spacing:-0.01em; margin-bottom:6px; }
+  .kpi-delta { font-size:12.5px; font-weight:600; }
+  .kpi-delta.up { color:var(--good); }
+  .kpi-delta.down { color:var(--bad); }
+  .kpi-delta.flat { color:var(--text-muted); }
+  .kpi-compare { font-size:11.5px; color:var(--text-muted); margin-top:3px; }
+  .chart-svg { width:100%; height:auto; overflow:visible; }
+  .chart-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; }
+  .chart-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); }
+  .chart-swatch { width:10px; height:10px; border-radius:2px; flex:none; }
 
   .notice { margin:24px 30px; padding:18px 20px; max-width:700px; border:1px solid var(--border);
             border-left:3px solid var(--accent); border-radius:10px; background:var(--wash);
@@ -213,6 +239,10 @@ const CONFIG = {
     tabs.push({ key: "themes", kind: "themes",
                 label: CONFIG.themes.label || "Themes", blurb: CONFIG.themes.blurb || "" });
   }
+  if (CONFIG.quant && CONFIG.quant.enabled) {
+    tabs.push({ key: "quant", kind: "quant",
+                label: CONFIG.quant.label || "Claude Dashboard (beta)", blurb: CONFIG.quant.blurb || "" });
+  }
   tabs.forEach(function (t) {
     t.slug = String(t.label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     var b = document.createElement("button");
@@ -249,8 +279,10 @@ const CONFIG = {
         f.addEventListener("load", function () { load.remove(); });
         panel.appendChild(load); panel.appendChild(f);
       }
-    } else {
+    } else if (t.kind === "themes") {
       panel.appendChild(buildThemes());
+    } else {
+      panel.appendChild(buildQuant());
     }
     stage.appendChild(panel);
     t.panel = panel;
@@ -492,6 +524,318 @@ const CONFIG = {
       inner.appendChild(section);
     });
     doc.scrollTop = 0;
+  }
+
+  /* =================== claude dashboard (beta) =================== */
+  var quantDocs = [];
+  var QUARTER_ORDER = ["Q1", "Q2", "Q3", "Q4"];
+  var CATEGORY_ORDER = ["Meeting logistics", "Prepared", "Overall value", "Presentation", "Panel", "Workshop"];
+  var CATEGORY_COLOR = {
+    "Meeting logistics": "#2a78d6", "Prepared": "#d6852a", "Overall value": "#0ca30c",
+    "Presentation": "#a52ad6", "Panel": "#d62a55", "Workshop": "#2ad6c4"
+  };
+
+  function quarterTotal(d) { return d.year * 4 + QUARTER_ORDER.indexOf(d.quarter); }
+  function docLabel(d) { return d.year + " " + d.quarter + " " + d.region; }
+
+  function buildQuant() {
+    var wrap = document.createElement("div");
+    wrap.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column";
+    wrap.innerHTML =
+      '<div class="pickers">' +
+        '<div class="field"><label for="q-meeting">Meeting</label><select id="q-meeting"></select></div>' +
+        '<div class="field"><label for="q-compare">Compare to</label><select id="q-compare">' +
+          '<option value="prev">Previous quarter</option>' +
+          '<option value="yoy">Same quarter last year</option>' +
+          '<option value="avg">All-time average</option>' +
+          '<option value="specific">Specific meeting…</option>' +
+        '</select></div>' +
+        '<div class="field" id="q-compare-meeting-field" hidden>' +
+          '<label for="q-compare-meeting">Which meeting</label><select id="q-compare-meeting"></select></div>' +
+        '<div class="stamp" id="q-stamp"></div>' +
+      '</div><div class="doc" id="q-doc"></div>';
+    loadQuant(wrap);
+    return wrap;
+  }
+
+  /* quant-dashboard.json is keyed by Survey ID, same convention as council-themes.json,
+     -> { avgAttendees, responses, responseRate, byCategory, generated, sourceFile }. */
+  function loadQuant(wrap) {
+    var doc = wrap.querySelector("#q-doc");
+    doc.innerHTML = '<div class="doc-inner"><p style="color:var(--text-muted)">Loading…</p></div>';
+    fetch(CONFIG.quant.dataUrl + "?t=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (data) {
+        quantDocs = Object.keys(data || {}).map(function (sid) {
+          var m = SURVEY_ID_RE.exec(sid);
+          if (!m) return null;
+          var d = data[sid] || {};
+          return { sid: sid, year: Number(m[1]), quarter: m[2], region: m[3],
+                    avgAttendees: d.avgAttendees, responses: d.responses,
+                    responseRate: d.responseRate, byCategory: d.byCategory || {},
+                    generated: d.generated, sourceFile: d.sourceFile };
+        }).filter(Boolean);
+
+        if (!quantDocs.length) {
+          wrap.querySelector(".pickers").style.display = "none";
+          doc.innerHTML = '<div class="doc-inner"><div class="notice" style="margin:0">' +
+            "<h3>Nothing published yet</h3>" +
+            '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
+            "Quant Data Folder, upload a survey (alongside the Council Meeting Helper and " +
+            "Content Categories reference files), then click <b>Update Dashboard</b>.</p></div></div>";
+          return;
+        }
+        wrap.querySelector(".pickers").style.display = "";
+        wireQuantPickers(wrap);
+      });
+  }
+
+  function wireQuantPickers(wrap) {
+    var mEl = wrap.querySelector("#q-meeting"), cEl = wrap.querySelector("#q-compare"),
+        cmField = wrap.querySelector("#q-compare-meeting-field"), cmEl = wrap.querySelector("#q-compare-meeting");
+
+    var sorted = quantDocs.slice().sort(function (a, b) { return quarterTotal(b) - quarterTotal(a); });
+    mEl.innerHTML = "";
+    sorted.forEach(function (d) {
+      var o = document.createElement("option");
+      o.value = d.sid; o.textContent = docLabel(d);
+      mEl.appendChild(o);
+    });
+
+    function refreshCompareMeetingOptions() {
+      var selected = mEl.value;
+      cmEl.innerHTML = "";
+      sorted.filter(function (d) { return d.sid !== selected; }).forEach(function (d) {
+        var o = document.createElement("option");
+        o.value = d.sid; o.textContent = docLabel(d);
+        cmEl.appendChild(o);
+      });
+    }
+
+    function render() {
+      refreshCompareMeetingOptions();
+      cmField.hidden = cEl.value !== "specific";
+      var meeting = null;
+      quantDocs.forEach(function (d) { if (d.sid === mEl.value) meeting = d; });
+      var gd = meeting && meeting.generated ? new Date(meeting.generated) : null;
+      wrap.querySelector("#q-stamp").textContent = gd && !isNaN(gd) ?
+        "Published " + gd.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "";
+      renderQuantMeeting(wrap.querySelector("#q-doc"), meeting, cEl.value, cmEl.value);
+    }
+
+    mEl.addEventListener("change", render);
+    cEl.addEventListener("change", render);
+    cmEl.addEventListener("change", render);
+    render();
+  }
+
+  function findByOffset(meeting, quartersBack) {
+    var target = quarterTotal(meeting) - quartersBack;
+    var hit = null;
+    quantDocs.forEach(function (d) {
+      if (d.region === meeting.region && quarterTotal(d) === target) hit = d;
+    });
+    return hit;
+  }
+
+  function allTimeAverage(excludeSid) {
+    var pool = quantDocs.filter(function (d) { return d.sid !== excludeSid; });
+    if (!pool.length) return null;
+    function avg(key) {
+      var vals = pool.map(function (d) { return d[key]; }).filter(function (v) { return v != null; });
+      if (!vals.length) return null;
+      return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+    }
+    return { avgAttendees: avg("avgAttendees"), responses: avg("responses"), responseRate: avg("responseRate") };
+  }
+
+  var KPI_DEFS = [
+    { key: "avgAttendees", label: "Avg Attendees", fmt: function (v) { return Math.round(v).toLocaleString("en-US"); } },
+    { key: "responses", label: "Responses", fmt: function (v) { return Math.round(v).toLocaleString("en-US"); } },
+    { key: "responseRate", label: "Response Rate", fmt: function (v) { return Math.round(v * 100) + "%"; } }
+  ];
+
+  function renderQuantMeeting(doc, meeting, compareMode, compareSid) {
+    doc.textContent = "";
+    var inner = document.createElement("div");
+    inner.className = "doc-inner";
+    doc.appendChild(inner);
+
+    if (!meeting) {
+      var none = document.createElement("p");
+      none.style.color = "var(--text-muted)";
+      none.textContent = "No data published for that meeting yet.";
+      inner.appendChild(none);
+      return;
+    }
+
+    var h = document.createElement("p");
+    h.className = "meeting";
+    h.textContent = docLabel(meeting) + " Council Meeting";
+    inner.appendChild(h);
+
+    var sub = document.createElement("p");
+    sub.className = "meeting-sub";
+    sub.textContent = "Benchmarking data from the " + meeting.quarter + " " + meeting.year + " meeting" +
+      (meeting.sourceFile ? " · " + meeting.sourceFile : "");
+    inner.appendChild(sub);
+
+    /* ---- KPI cards ---- */
+    var compareDoc = null, compareLabel = "";
+    if (compareMode === "prev") {
+      compareDoc = findByOffset(meeting, 1);
+      compareLabel = compareDoc ? "vs " + docLabel(compareDoc) : "No previous quarter published for " + meeting.region + ".";
+    } else if (compareMode === "yoy") {
+      compareDoc = findByOffset(meeting, 4);
+      compareLabel = compareDoc ? "vs " + docLabel(compareDoc) : "No year-ago quarter published for " + meeting.region + ".";
+    } else if (compareMode === "specific") {
+      quantDocs.forEach(function (d) { if (d.sid === compareSid) compareDoc = d; });
+      compareLabel = compareDoc ? "vs " + docLabel(compareDoc) : "";
+    } else {
+      var avgDoc = allTimeAverage(meeting.sid);
+      compareDoc = avgDoc;
+      compareLabel = avgDoc ? "vs all-time average (" + (quantDocs.length - 1) + " other meeting" +
+        (quantDocs.length - 1 === 1 ? "" : "s") + ")" : "Not enough data yet.";
+    }
+
+    var grid = document.createElement("div");
+    grid.className = "kpi-grid";
+    KPI_DEFS.forEach(function (kpi) {
+      var card = document.createElement("div");
+      card.className = "kpi-card";
+
+      var label = document.createElement("div");
+      label.className = "kpi-label";
+      label.textContent = kpi.label;
+      card.appendChild(label);
+
+      var value = document.createElement("div");
+      value.className = "kpi-value";
+      var v = meeting[kpi.key];
+      value.textContent = v == null ? "—" : kpi.fmt(v);
+      card.appendChild(value);
+
+      var cv = compareDoc ? compareDoc[kpi.key] : null;
+      if (v != null && cv != null) {
+        var delta = v - cv;
+        var deltaEl = document.createElement("div");
+        var dir = Math.abs(delta) < (kpi.key === "responseRate" ? 0.001 : 0.5) ? "flat" : (delta > 0 ? "up" : "down");
+        deltaEl.className = "kpi-delta " + dir;
+        var sign = delta > 0 ? "+" : (delta < 0 ? "−" : "");
+        deltaEl.textContent = (dir === "flat" ? "No change" : sign + kpi.fmt(Math.abs(delta)));
+        card.appendChild(deltaEl);
+      }
+      var cmp = document.createElement("div");
+      cmp.className = "kpi-compare";
+      cmp.textContent = compareLabel;
+      card.appendChild(cmp);
+
+      grid.appendChild(card);
+    });
+    inner.appendChild(grid);
+
+    /* ---- metrics-over-time chart ---- */
+    var section = document.createElement("section");
+    var t = document.createElement("h3");
+    t.textContent = "Metrics over time";
+    section.appendChild(t);
+
+    var series = quantDocs.filter(function (d) { return d.region === meeting.region; })
+      .sort(function (a, b) { return quarterTotal(a) - quarterTotal(b); });
+    var categories = CATEGORY_ORDER.filter(function (c) {
+      return series.some(function (d) { return d.byCategory && d.byCategory[c] != null; });
+    });
+
+    if (series.length < 2 || !categories.length) {
+      var p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "Not enough published history for " + meeting.region + " yet to chart a trend.";
+      section.appendChild(p);
+    } else {
+      section.appendChild(buildQuantChart(series, categories));
+    }
+    inner.appendChild(section);
+    doc.scrollTop = 0;
+  }
+
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  function svgEl(name, attrs) {
+    var node = document.createElementNS(SVG_NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+    return node;
+  }
+
+  function buildQuantChart(series, categories) {
+    var box = document.createElement("div");
+    var W = 720, H = 260, ML = 34, MR = 12, MT = 12, MB = 28;
+    var plotW = W - ML - MR, plotH = H - MT - MB;
+    var n = series.length;
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg", role: "img",
+      "aria-label": "Metrics over time" });
+
+    function x(i) { return n <= 1 ? ML + plotW / 2 : ML + (i / (n - 1)) * plotW; }
+    function y(v) { return MT + (1 - Math.max(0, Math.min(5, v)) / 5) * plotH; }
+
+    // gridlines + y-axis labels, 0..5
+    for (var g = 0; g <= 5; g++) {
+      var gy = y(g);
+      svg.appendChild(svgEl("line", { x1: ML, x2: W - MR, y1: gy, y2: gy, stroke: "var(--grid)", "stroke-width": 1 }));
+      var gl = svgEl("text", { x: ML - 8, y: gy + 3, "text-anchor": "end", "font-size": 10, fill: "var(--text-muted)" });
+      gl.textContent = String(g);
+      svg.appendChild(gl);
+    }
+
+    // x-axis labels
+    series.forEach(function (d, i) {
+      var lx = svgEl("text", { x: x(i), y: H - 8, "text-anchor": "middle", "font-size": 10, fill: "var(--text-muted)" });
+      lx.textContent = d.quarter + " '" + String(d.year).slice(-2);
+      svg.appendChild(lx);
+    });
+
+    categories.forEach(function (cat) {
+      var color = CATEGORY_COLOR[cat] || "var(--accent)";
+      var run = [];
+      function flush() {
+        if (run.length > 1) {
+          svg.appendChild(svgEl("polyline", {
+            points: run.map(function (pt) { return pt[0] + "," + pt[1]; }).join(" "),
+            fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round"
+          }));
+        }
+        run.forEach(function (pt) {
+          svg.appendChild(svgEl("circle", { cx: pt[0], cy: pt[1], r: 2.5, fill: color }));
+        });
+        run = [];
+      }
+      series.forEach(function (d, i) {
+        var v = d.byCategory && d.byCategory[cat];
+        if (v == null) { flush(); return; }
+        run.push([x(i), y(v)]);
+      });
+      flush();
+    });
+
+    box.appendChild(svg);
+
+    var legend = document.createElement("div");
+    legend.className = "chart-legend";
+    categories.forEach(function (cat) {
+      var item = document.createElement("div");
+      item.className = "chart-legend-item";
+      var swatch = document.createElement("span");
+      swatch.className = "chart-swatch";
+      swatch.style.background = CATEGORY_COLOR[cat] || "var(--accent)";
+      item.appendChild(swatch);
+      var label = document.createElement("span");
+      label.textContent = cat;
+      item.appendChild(label);
+      legend.appendChild(item);
+    });
+    box.appendChild(legend);
+
+    return box;
   }
 
   /* ---------- boot ---------- */
