@@ -33,7 +33,7 @@ UPLOAD_API = "https://upload.box.com/api/2.0"
 
 _lock = threading.Lock()
 _cache = {"access_token": None, "upload_folder_id": None, "tracker_file_id": None,
-          "expires_at": 0.0}
+          "quant_folder_id": None, "expires_at": 0.0}
 
 _retry = retry(
     retry=retry_if_exception_type(requests.RequestException),
@@ -74,6 +74,8 @@ def _refresh():
         _cache["access_token"] = body["access_token"]
         _cache["upload_folder_id"] = body["upload_folder_id"]
         _cache["tracker_file_id"] = body["tracker_file_id"]
+        # Nullable: not every run needs quant setup to exist yet (see worker.js).
+        _cache["quant_folder_id"] = body.get("quant_folder_id")
         # The relay reports the token's true remaining lifetime, not Box's original
         # expires_in. Trusting the latter is how an expired token gets sent mid-run.
         _cache["expires_at"] = time.time() + float(body.get("expires_in", 3300))
@@ -97,6 +99,11 @@ def upload_folder_id() -> str:
 def tracker_file_id() -> str:
     _ensure_fresh()
     return _cache["tracker_file_id"]
+
+
+def quant_folder_id() -> str | None:
+    _ensure_fresh()
+    return _cache["quant_folder_id"]
 
 
 @_retry
@@ -126,3 +133,34 @@ def upload_new_version(file_id: str, filename: str, content: bytes) -> None:
         files={"file": (filename, content)}, timeout=180,
     )
     response.raise_for_status()
+
+
+@_retry
+def list_folder(folder_id: str) -> list[dict]:
+    """Every file sitting directly in `folder_id` — {id, name} — following Box's paging.
+
+    Subfolders are not walked or returned. Used by the quant dashboard pipeline, which
+    treats the whole folder as its source: every run relists it rather than remembering
+    what was there last time.
+    """
+    files, offset = [], 0
+    while True:
+        response = requests.get(
+            f"{API}/folders/{folder_id}/items",
+            headers=_headers(),
+            params={"fields": "id,name,type", "limit": 1000, "offset": offset},
+            timeout=30,
+        )
+        if response.status_code == 404:
+            raise BoxError(
+                f"Box cannot find folder {folder_id}. Open the control panel and choose "
+                "the folder again — it may have been moved or deleted."
+            )
+        response.raise_for_status()
+        body = response.json()
+        entries = body.get("entries", [])
+        files.extend({"id": e["id"], "name": e["name"]}
+                     for e in entries if e.get("type") == "file")
+        offset += len(entries)
+        if not entries or offset >= body.get("total_count", offset):
+            return files

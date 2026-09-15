@@ -12,13 +12,18 @@
  *   POST /api/run        { job, inputs }    -> triggers a GitHub Actions workflow
  *   GET  /api/box/authorize-url             -> where to send the browser to log in
  *   GET  /api/box/callback                  -> Box redirects here after consent
- *   GET  /api/box/status                    -> { connected, upload_folder, tracker }
+ *   GET  /api/box/status                    -> { connected, upload_folder, tracker, quant_folder }
  *   POST /api/box/disconnect
- *   GET  /api/box/folders?id=0              -> folder browser (upload-folder picker)
+ *   GET  /api/box/folders?id=0              -> folder browser (upload-folder / quant-folder picker)
  *   POST /api/box/select-upload-folder
+ *   POST /api/box/select-quant-folder
  *   GET  /api/box/files?id=0                -> file browser, .xlsx only (tracker picker)
  *   POST /api/box/select-tracker
- *   POST /api/box/upload                    -> multipart proxy: browser -> Box upload API
+ *   POST /api/box/upload?target=quant       -> multipart proxy: browser -> Box upload API
+ *                                               (target omitted or "survey" -> upload folder;
+ *                                               target=quant -> quant data folder; upserts by
+ *                                               name so a reuploaded same-named file replaces
+ *                                               rather than duplicates)
  *   GET  /api/box/pipeline-token            -> short-lived token for the Actions run
  *
  * CONFIGURATION
@@ -130,6 +135,7 @@ async function workflowRuns(env, workflowFile) {
 const BOX_TOKEN_KEY = "box:tokens";
 const BOX_UPLOAD_FOLDER_KEY = "box:upload_folder";
 const BOX_TRACKER_KEY = "box:tracker";
+const BOX_QUANT_FOLDER_KEY = "box:quant_folder";
 const BOX_TOKEN_URL = "https://api.box.com/oauth2/token";
 const BOX_AUTHORIZE_URL = "https://account.box.com/api/oauth2/authorize";
 const BOX_API = "https://api.box.com/2.0";
@@ -148,6 +154,10 @@ async function boxUploadFolder(env) {
 }
 async function boxTracker(env) {
   const raw = await env.BOX_KV.get(BOX_TRACKER_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+async function boxQuantFolder(env) {
+  const raw = await env.BOX_KV.get(BOX_QUANT_FOLDER_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 
@@ -245,14 +255,25 @@ async function handleApi(route, request, env) {
       if (response.ok) themes = await response.json();
     } catch (e) { /* nothing published yet */ }
 
-    let analyze = { runs: [] }, setupRun = { runs: [] };
+    let quant = null;
+    try {
+      const assetUrl = new URL("/quant-dashboard.json", request.url);
+      const response = await env.ASSETS.fetch(new Request(assetUrl, { method: "GET" }));
+      if (response.ok) quant = await response.json();
+    } catch (e) { /* nothing published yet */ }
+
+    let analyze = { runs: [] }, setupRun = { runs: [] }, updateQuant = { runs: [] };
     if (env.GITHUB_TOKEN && env.GITHUB_REPO) {
-      [analyze, setupRun] = await Promise.all([
+      [analyze, setupRun, updateQuant] = await Promise.all([
         workflowRuns(env, "analyze.yml"),
         workflowRuns(env, "setup_analysis.yml"),
+        workflowRuns(env, "update_quant.yml"),
       ]);
     }
-    return json({ themes, workflows: { analyze, setup: setupRun } });
+    return json({
+      themes, quant,
+      workflows: { analyze, setup: setupRun, update_quant: updateQuant },
+    });
   }
 
   // ---- POST /api/run -----------------------------------------------------------------
@@ -269,7 +290,9 @@ async function handleApi(route, request, env) {
     catch (e) { return json({ error: "Bad request" }, 400); }
     const job = body.job || "";
     // Allowlist: never interpolate caller input into the workflow path.
-    const workflow = { analyze: "analyze.yml", setup: "setup_analysis.yml" }[job];
+    const workflow = {
+      analyze: "analyze.yml", setup: "setup_analysis.yml", update_quant: "update_quant.yml",
+    }[job];
     if (!workflow) return json({ error: "Unknown job" }, 400);
 
     const dispatchBody = { ref: env.GITHUB_BRANCH || "main" };
@@ -351,10 +374,12 @@ async function handleApi(route, request, env) {
     const tokens = env.BOX_KV ? await boxTokens(env) : null;
     const uploadFolder = env.BOX_KV ? await boxUploadFolder(env) : null;
     const tracker = env.BOX_KV ? await boxTracker(env) : null;
+    const quantFolder = env.BOX_KV ? await boxQuantFolder(env) : null;
     return json({
       connected: Boolean(tokens),
       upload_folder: uploadFolder || null,
       tracker: tracker || null,
+      quant_folder: quantFolder || null,
     });
   }
 
@@ -366,6 +391,7 @@ async function handleApi(route, request, env) {
       await env.BOX_KV.delete(BOX_TOKEN_KEY);
       await env.BOX_KV.delete(BOX_UPLOAD_FOLDER_KEY);
       await env.BOX_KV.delete(BOX_TRACKER_KEY);
+      await env.BOX_KV.delete(BOX_QUANT_FOLDER_KEY);
     }
     return json({ ok: true });
   }
@@ -409,6 +435,19 @@ async function handleApi(route, request, env) {
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     if (!body.folder_id) return json({ error: "folder_id is required" }, 400);
     await env.BOX_KV.put(BOX_UPLOAD_FOLDER_KEY, JSON.stringify({
+      id: String(body.folder_id), name: String(body.folder_name || ""),
+    }));
+    return json({ ok: true });
+  }
+
+  // ---- POST /api/box/select-quant-folder -------------------------------------------------
+  if (route === "box/select-quant-folder" && method === "POST") {
+    const denied = await requireAuth(request, env);
+    if (denied) return denied;
+    let body;
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    if (!body.folder_id) return json({ error: "folder_id is required" }, 400);
+    await env.BOX_KV.put(BOX_QUANT_FOLDER_KEY, JSON.stringify({
       id: String(body.folder_id), name: String(body.folder_name || ""),
     }));
     return json({ ok: true });
@@ -459,35 +498,49 @@ async function handleApi(route, request, env) {
     return json({ ok: true });
   }
 
-  // ---- POST /api/box/upload --------------------------------------------------------------
-  // Multipart proxy: the browser posts the raw survey file here (as multipart/form-data,
-  // field name "file"), authenticated by the normal admin session — never a Box token in
-  // the browser. This Worker re-packages it as Box's own multipart upload request. Uploads
-  // always create a new file in the configured upload folder (surveys are never versioned;
-  // each quarter's file is a distinct upload).
+  // ---- POST /api/box/upload?target=quant -------------------------------------------------
+  // Multipart proxy: the browser posts a file here (multipart/form-data, field name
+  // "file"), authenticated by the normal admin session — never a Box token in the browser.
+  // This Worker re-packages it as Box's own multipart upload request. `target=quant` sends
+  // it to the quant data folder; anything else (or omitted) sends it to the survey upload
+  // folder. Upserts by name: if a file with the same name already exists directly in the
+  // destination folder, this uploads a new version of it instead of creating a duplicate —
+  // needed so a reuploaded Council Meeting Helper.csv / Content Categories.xlsx replaces
+  // rather than piling up copies with the same name.
   if (route === "box/upload" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
     const auth = await validBoxAccessToken(env);
     if (!auth) return json({ error: "Box is not connected yet." }, 409);
-    const folder = await boxUploadFolder(env);
-    if (!folder) return json({ error: "No upload folder has been selected yet." }, 409);
+    const target = new URL(request.url).searchParams.get("target") === "quant"
+      ? await boxQuantFolder(env) : await boxUploadFolder(env);
+    if (!target) return json({ error: "No destination folder has been selected yet." }, 409);
 
     const incoming = await request.formData();
     const file = incoming.get("file");
     if (!(file instanceof File)) return json({ error: "No file in the request." }, 400);
 
-    const outgoing = new FormData();
-    outgoing.append("attributes", JSON.stringify({
-      name: file.name, parent: { id: folder.id },
-    }));
-    outgoing.append("file", file, file.name);
+    const headers = { authorization: `Bearer ${auth.token}` };
+    const itemsRes = await fetch(
+      `${BOX_API}/folders/${target.id}/items?fields=name,type&limit=1000`, { headers }
+    );
+    let existingId = null;
+    if (itemsRes.ok) {
+      const items = await itemsRes.json();
+      const match = (items.entries || []).find((e) => e.type === "file" && e.name === file.name);
+      if (match) existingId = match.id;
+    }
 
-    const response = await fetch(`${BOX_UPLOAD_API}/files/content`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${auth.token}` },
-      body: outgoing,
-    });
+    const outgoing = new FormData();
+    if (!existingId) {
+      outgoing.append("attributes", JSON.stringify({ name: file.name, parent: { id: target.id } }));
+    }
+    outgoing.append("file", file, file.name);
+    const uploadUrl = existingId
+      ? `${BOX_UPLOAD_API}/files/${existingId}/content`
+      : `${BOX_UPLOAD_API}/files/content`;
+
+    const response = await fetch(uploadUrl, { method: "POST", headers, body: outgoing });
     if (!response.ok) {
       const detail = await response.text();
       return json({ error: `Box upload failed (${response.status})`,
@@ -517,12 +570,17 @@ async function handleApi(route, request, env) {
     if (!folder || !tracker) {
       return json({ error: "Set up the upload folder and tracker file first. Open the control panel." }, 409);
     }
+    // quant_folder_id is nullable here on purpose: this relay is shared by both pipelines,
+    // and the themes scripts (which don't use it) shouldn't fail just because quant setup
+    // hasn't happened yet. scripts/update_quant_dashboard.py checks for it itself.
+    const quantFolder = await boxQuantFolder(env);
     return json({
       access_token: auth.token,
       expires_in: auth.expiresIn,
       upload_folder_id: folder.id,
       tracker_file_id: tracker.id,
       tracker_file_name: tracker.name,
+      quant_folder_id: quantFolder ? quantFolder.id : null,
     });
   }
 
