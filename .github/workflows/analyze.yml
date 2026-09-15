@@ -1,0 +1,67 @@
+name: Analyze survey
+
+# Triggered from the control panel's Analyze button (workflow_dispatch via the GitHub
+# API), or by hand from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      survey_file_id:
+        description: Box file id of the uploaded survey
+        required: true
+      year:
+        description: "Meeting year, e.g. 2026"
+        required: true
+      quarter:
+        description: "Q1 / Q2 / Q3 / Q4"
+        required: true
+      region:
+        description: "Central / Southern / Northern / All"
+        required: true
+
+concurrency:
+  group: themes-analyze
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Extract, append, and synthesize
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python scripts/analyze_survey.py \
+            --survey-file-id "${{ github.event.inputs.survey_file_id }}" \
+            --year "${{ github.event.inputs.year }}" \
+            --quarter "${{ github.event.inputs.quarter }}" \
+            --region "${{ github.event.inputs.region }}"
+
+      - name: Commit site
+        run: |
+          git config user.name  "themes-bot"
+          git config user.email "actions@github.com"
+          git add public/
+          if git diff --staged --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -m "Analyze ${{ github.event.inputs.year }} ${{ github.event.inputs.quarter }} ${{ github.event.inputs.region }}"
+            git push
+          fi
+          # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
+          # but Cloudflare redeploys the Worker from this push through its own Git
+          # integration.
