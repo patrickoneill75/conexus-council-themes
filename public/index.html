@@ -32,8 +32,8 @@ const CONFIG = {
   themes: {
     enabled: true,
     label: "Council Themes",
-    blurb: "Themes raised at quarterly council meetings",
-    dataUrl: "/themes.json"
+    blurb: "This quarter's top issues, and what's recurred since",
+    dataUrl: "/council-themes.json"
   }
 };
 </script>
@@ -111,23 +111,24 @@ const CONFIG = {
   .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   .stamp { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center; }
 
-  .doc { padding:26px 30px 60px; overflow-y:auto; flex:1; max-width:820px; }
+  .doc { padding:26px 30px 60px; overflow-y:auto; flex:1; max-width:760px; }
   .meeting { font-size:19px; font-weight:650; margin:0 0 3px; letter-spacing:-0.015em; }
   .meeting-sub { color:var(--text-muted); font-size:12.5px; margin:0 0 26px; }
-  .doc section { margin:0 0 26px; }
+  .doc section { margin:0 0 30px; }
   .doc h3 { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-            color:var(--accent); margin:0 0 10px; padding-bottom:7px;
+            color:var(--accent); margin:0 0 12px; padding-bottom:7px;
             border-bottom:1px solid var(--border); }
-  .doc p { margin:0 0 11px; }
-  .doc p.subhead { font-weight:700; margin:22px 0 8px; }
-  .doc p.subhead:first-child { margin-top:0; }
-  .doc ul { list-style:none; margin:0; padding:0; }
-  .doc li { position:relative; padding-left:18px; margin-bottom:8px; }
-  .doc li::before { content:""; position:absolute; left:3px; top:.62em; width:5px; height:5px;
-                    border-radius:50%; background:var(--accent); }
-  .doc li.d1 { margin-left:22px; } .doc li.d2 { margin-left:44px; } .doc li.d3 { margin-left:66px; }
-  .doc li.d1::before, .doc li.d2::before, .doc li.d3::before {
-    background:transparent; border:1.5px solid var(--text-muted); }
+  .doc .empty { color:var(--text-muted); font-size:13px; margin:0; }
+  .theme-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
+  .theme-item { border:1px solid var(--border); border-radius:10px; padding:13px 16px;
+                background:var(--surface-1); }
+  .theme-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+                margin-bottom:5px; }
+  .theme-summary { font-weight:600; font-size:14px; }
+  .theme-count { font-size:11.5px; color:var(--text-muted); white-space:nowrap; flex:none; }
+  .theme-tag { font-size:11px; color:var(--text-muted); margin-bottom:8px; }
+  .theme-example { margin:0; font-size:12.5px; color:var(--text-secondary); font-style:italic;
+                    border-left:2px solid var(--border); padding-left:10px; }
 
   .notice { margin:24px 30px; padding:18px 20px; max-width:700px; border:1px solid var(--border);
             border-left:3px solid var(--accent); border-radius:10px; background:var(--wash);
@@ -330,6 +331,10 @@ const CONFIG = {
     return wrap;
   }
 
+  /* council-themes.json is keyed by Survey ID ("{year}-{quarter} {region}", e.g.
+     "2026-Q3 Central") -> { current, qoq, yoy, generated, sourceFile }. */
+  var SURVEY_ID_RE = /^(\d{4})-(Q[1-4]) (.+)$/;
+
   function loadThemes(wrap) {
     var doc = wrap.querySelector("#doc");
     doc.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
@@ -337,21 +342,25 @@ const CONFIG = {
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })
       .then(function (data) {
-        if (!data || !data.documents || !data.documents.length) {
+        themeDocs = Object.keys(data || {}).map(function (sid) {
+          var m = SURVEY_ID_RE.exec(sid);
+          if (!m) return null;
+          var d = data[sid] || {};
+          return { sid: sid, year: m[1], quarter: m[2], region: m[3],
+                    current: d.current || [], qoq: d.qoq || [], yoy: d.yoy || [],
+                    generated: d.generated, sourceFile: d.sourceFile };
+        }).filter(Boolean);
+
+        if (!themeDocs.length) {
           wrap.querySelector(".pickers").style.display = "none";
           doc.innerHTML = '<div class="notice" style="margin:0"><h3>Nothing published yet</h3>' +
             '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
-            "folder holding the meeting documents, and run <b>Refresh and publish</b>.</p></div>";
+            "Synthesis Data File and New Survey Directory, then upload a survey and click " +
+            "<b>Analyze</b> — or run <b>Run full re-analysis</b> to publish whatever history " +
+            "is already in the Synthesis Data File.</p></div>";
           return;
         }
         wrap.querySelector(".pickers").style.display = "";
-        themeDocs = data.documents.filter(function (d) { return d && d.year && d.quarter && d.region; });
-        if (data.generated) {
-          var d = new Date(data.generated);
-          wrap.querySelector("#stamp").textContent = isNaN(d) ? "" :
-            "Refreshed " + d.toLocaleDateString("en-US",
-              { year: "numeric", month: "short", day: "numeric" });
-        }
         wirePickers(wrap);
       });
   }
@@ -383,6 +392,9 @@ const CONFIG = {
       themeDocs.forEach(function (d) {
         if (d.year === yEl.value && d.quarter === qEl.value && d.region === rEl.value) hit = d;
       });
+      var gd = hit && hit.generated ? new Date(hit.generated) : null;
+      wrap.querySelector("#stamp").textContent = gd && !isNaN(gd) ?
+        "Published " + gd.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "";
       renderMeeting(wrap.querySelector("#doc"), hit);
     }
     fill(yEl, years); refreshQ(); refreshR(); render();
@@ -391,54 +403,83 @@ const CONFIG = {
     rEl.addEventListener("change", render);
   }
 
-  /* Builds DOM nodes and sets textContent, so nothing anyone types into a meeting
-     document is ever interpreted as markup. */
+  var THEME_SECTIONS = [
+    { key: "current", title: "This quarter's top issues", empty: "No issues surfaced this quarter." },
+    { key: "qoq", title: "Recurring since last quarter", empty: "Nothing recurred from last quarter." },
+    { key: "yoy", title: "Recurring over the last year", empty: "Nothing recurred over the last year." }
+  ];
+
+  /* Builds DOM nodes and sets textContent, so nothing Claude wrote into a theme is
+     ever interpreted as markup. */
   function renderMeeting(doc, hit) {
     doc.textContent = "";
     if (!hit) {
       var none = document.createElement("p");
       none.style.color = "var(--text-muted)";
-      none.textContent = "No notes published for that meeting yet.";
+      none.textContent = "No themes published for that meeting yet.";
       doc.appendChild(none);
       return;
     }
     var h = document.createElement("p");
     h.className = "meeting";
-    h.textContent = hit.title || (hit.year + " " + hit.quarter + " " + hit.region + " Council Meeting");
+    h.textContent = hit.year + " " + hit.quarter + " " + hit.region + " Council Meeting";
     doc.appendChild(h);
 
     var sub = document.createElement("p");
     sub.className = "meeting-sub";
-    sub.textContent = "Themes raised at the " + hit.quarter + " " + hit.year + " meeting" +
+    sub.textContent = "Themes from the " + hit.quarter + " " + hit.year + " meeting" +
       (hit.sourceFile ? " · " + hit.sourceFile : "");
     doc.appendChild(sub);
 
-    (hit.sections || []).forEach(function (sec) {
+    THEME_SECTIONS.forEach(function (sec) {
+      var items = hit[sec.key] || [];
       var section = document.createElement("section");
-      if (sec.title) {
-        var t = document.createElement("h3");
-        t.textContent = sec.title;
-        section.appendChild(t);
-      }
-      var list = null;
-      (sec.blocks || []).forEach(function (b) {
-        if (b.type === "bullet") {
-          if (!list) { list = document.createElement("ul"); section.appendChild(list); }
+      var t = document.createElement("h3");
+      t.textContent = sec.title;
+      section.appendChild(t);
+
+      if (!items.length) {
+        var p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = sec.empty;
+        section.appendChild(p);
+      } else {
+        var list = document.createElement("ul");
+        list.className = "theme-list";
+        items.forEach(function (item) {
           var li = document.createElement("li");
-          if (b.depth) li.className = "d" + Math.min(b.depth, 3);
-          li.textContent = b.text;
-          list.appendChild(li);
-        } else {
-          list = null;
-          var p = document.createElement("p");
-          var label = b.text.trim().toLowerCase().replace(/:$/, "");
-          if (label === "what went well" || label === "areas to improve") {
-            p.className = "subhead";
+          li.className = "theme-item";
+
+          var head = document.createElement("div");
+          head.className = "theme-head";
+          var summary = document.createElement("span");
+          summary.className = "theme-summary";
+          summary.textContent = item.summary || "";
+          head.appendChild(summary);
+          if (item.count) {
+            var count = document.createElement("span");
+            count.className = "theme-count";
+            count.textContent = item.count + (item.count === 1 ? " mention" : " mentions");
+            head.appendChild(count);
           }
-          p.textContent = b.text;
-          section.appendChild(p);
-        }
-      });
+          li.appendChild(head);
+
+          if (item.category || item.subcategory) {
+            var tag = document.createElement("div");
+            tag.className = "theme-tag";
+            tag.textContent = [item.category, item.subcategory].filter(Boolean).join(" / ");
+            li.appendChild(tag);
+          }
+          if (item.example) {
+            var ex = document.createElement("blockquote");
+            ex.className = "theme-example";
+            ex.textContent = item.example;
+            li.appendChild(ex);
+          }
+          list.appendChild(li);
+        });
+        section.appendChild(list);
+      }
       doc.appendChild(section);
     });
     doc.scrollTop = 0;
