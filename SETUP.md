@@ -6,6 +6,12 @@ does the reading and publishing. Nothing secret ever reaches the browser.
 
 Everything below is done in a browser. There are no terminal steps.
 
+> **Mid-migration note:** this project is moving from reading Word meeting minutes to
+> reading raw post-meeting survey exports (Claude extracts themes from the free-response
+> answers and synthesizes quarter-over-quarter / year-over-year recurring issues). Steps
+> 1–3 below are current. Steps 4 on still describe the old docx flow and will be rewritten
+> once the new pipeline, workflows, and control-panel UI land.
+
 ---
 
 ## What you end up with
@@ -45,19 +51,31 @@ Everything below is done in a browser. There are no terminal steps.
 
 ## 3 · The Box app
 
-1. `app.box.com/developers/console` → your app → **Configuration**.
+This project's Box app is **shared with conexus-mcm** — same Client ID/Secret, same
+Box Developer Console app. Reuse that app rather than creating a new one:
+
+1. `app.box.com/developers/console` → the shared app → **Configuration**.
 2. Authentication method: **User Authentication (OAuth 2.0)**. This is the "Log in with
    Box" flow — the app acts as *you*, so it sees exactly what you see and nothing more.
-3. **Application Scopes**: tick only **Read all files and folders stored in Box**. This
-   tool never writes to Box.
-4. **OAuth 2.0 Redirect URI** — add exactly:
+3. **Application Scopes** should already have **Read and write all files and folders
+   stored in Box** checked (conexus-mcm needs write access, so this app already has it —
+   this project needs it too, to upload survey files and update the tracker spreadsheet).
+   If it only has read checked, add write now and **Save Changes**.
+4. **OAuth 2.0 Redirect URI** — this field takes one URI per line. Make sure **both**
+   projects' callback URLs are listed:
 
    ```
-   https://<your-worker-address>/api/box/callback
+   https://<conexus-mcm-worker-address>/api/box/callback
+   https://<conexus-council-themes-worker-address>/api/box/callback
    ```
 
-   Box rejects the login if this does not match character for character.
-5. Copy the **Client ID** and **Client Secret**.
+   Box rejects a login whose redirect URI isn't listed here, character for character.
+   If council-themes' own line is missing, add it now.
+5. Copy the **Client ID** and **Client Secret** — same values as conexus-mcm's.
+
+If your Box connection here was set up before this app had write scope, **Disconnect**
+and **Log in with Box** again in the control panel — the stored token was issued under
+the old (read-only) consent and needs to be reissued to pick up write access.
 
 ---
 
@@ -149,9 +167,12 @@ which is the problem this wrapper exists to avoid.
 
 ## Notes for a security review
 
-- **Box access is read-only**, one scope, and user-delegated: the app acts as you, so it
-  can reach exactly what your own account can reach and nothing else. There is no service
-  account with enterprise-wide reach.
+- **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
+  exactly what your own account can reach and nothing else. There is no service account
+  with enterprise-wide reach. It has both read and write scope (shared with conexus-mcm,
+  which needs write) — this project uses write only to upload survey files into the
+  configured upload folder and to push new versions of the tracker spreadsheet; it never
+  touches anything else in your Box account.
 - **No AI.** The refresh extracts text from Word files. No model is called at any point.
 - **Credentials never reach a browser.** The Box client secret and the GitHub token live
   in Cloudflare Worker secrets; the Box token pair lives in Workers KV. The control panel
