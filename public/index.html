@@ -88,12 +88,13 @@ const CONFIG = {
   .blurb { color:var(--text-secondary); font-size:12.5px; margin:0 0 10px; min-height:18px; }
   .stage { flex:1; min-height:0; position:relative; background:var(--surface-1);
            overflow:hidden; }
-  .panel { position:absolute; inset:0; display:none; }
-  .panel.active { display:flex; align-items:center; justify-content:center; }
-  /* The Power BI canvas is 1920x1455. Sizing the frame to that ratio — rather than
-     stretching it to fill the stage — is what stops Power BI's own embed from
-     letterboxing the report inside the iframe. */
-  .panel iframe { aspect-ratio:1920/1455; width:auto; height:100%; max-width:100%;
+  .panel { position:absolute; inset:0; display:none; overflow-y:auto; overflow-x:hidden; }
+  .panel.active { display:block; }
+  /* The Power BI canvas is 1920x1455. Sizing the frame to that ratio at the stage's
+     full width — rather than squeezing it into the stage's height — is what stops
+     Power BI's own embed from cramming the report into a small box with its own
+     internal scrollbars; the page scrolls instead. */
+  .panel iframe { width:100%; aspect-ratio:1920/1455; height:auto;
                   border:0; display:block; }
   .loading { position:absolute; inset:0; display:grid; place-items:center;
              color:var(--text-muted); font-size:13px; pointer-events:none; }
