@@ -23,6 +23,11 @@
  *                                               into the New Survey Directory (upserts by
  *                                               name so a reuploaded same-named file replaces
  *                                               rather than duplicates)
+ *   POST /api/box/upload-helper             -> multipart proxy into the Quant Data Folder's
+ *                                               Council Meeting Helper.csv, merging by Meeting
+ *                                               Date instead of replacing (append-only: new
+ *                                               rows get added, existing rows are never
+ *                                               touched)
  *   GET  /api/box/pipeline-token            -> short-lived token for the Actions run
  *
  * CONFIGURATION
@@ -139,6 +144,42 @@ const BOX_TOKEN_URL = "https://api.box.com/oauth2/token";
 const BOX_AUTHORIZE_URL = "https://account.box.com/api/oauth2/authorize";
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
+
+// Must match themes/quant_data.py's HELPER_FILENAME exactly — the Python side finds
+// this file by this same name.
+const HELPER_FILENAME = "Council Meeting Helper.csv";
+
+/* ---- tiny CSV parse/serialize, just for the Helper-file merge below --------------------
+ * RFC4180-ish: handles quoted fields, embedded commas/newlines, and "" as an escaped quote.
+ * Nothing fancier than that is expected in a Council Meeting Helper export.
+ */
+function parseCsv(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // strip a UTF-8 BOM
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\r") { /* swallow; \n (or EOF) ends the row */ }
+    else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((cell) => cell !== ""));
+}
+
+function csvCell(value) {
+  value = value == null ? "" : String(value);
+  return /[",\r\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
+}
+
+function serializeCsv(rows) {
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
 
 async function boxTokens(env) {
   const raw = await env.BOX_KV.get(BOX_TOKEN_KEY);
@@ -547,6 +588,86 @@ async function handleApi(route, request, env) {
     const uploaded = (body.entries || [])[0];
     if (!uploaded) return json({ error: "Box did not return the uploaded file." }, 502);
     return json({ ok: true, file_id: uploaded.id, file_name: uploaded.name });
+  }
+
+  // ---- POST /api/box/upload-helper -------------------------------------------------------
+  // A second, special-cased upload: the uploaded file is a fresh export of the Council
+  // Meeting Helper, which may only cover the newest meeting(s) rather than the whole
+  // history. Rather than replacing the existing Council Meeting Helper.csv wholesale (which
+  // would drop every earlier meeting the new export doesn't happen to include), this reads
+  // whatever's already in the Quant Data Folder, and appends only the rows whose Meeting
+  // Date isn't already present — existing rows are never touched or overwritten, even if
+  // the new export also happens to include them with different values.
+  if (route === "box/upload-helper" && method === "POST") {
+    const denied = await requireAuth(request, env);
+    if (denied) return denied;
+    const auth = await validBoxAccessToken(env);
+    if (!auth) return json({ error: "Box is not connected yet." }, 409);
+    const target = await boxQuantFolder(env);
+    if (!target) return json({ error: "Choose the Quant Data Folder first (see Developer)." }, 409);
+
+    const incoming = await request.formData();
+    const file = incoming.get("file");
+    if (!(file instanceof File)) return json({ error: "No file in the request." }, 400);
+
+    const newRows = parseCsv(await file.text());
+    if (!newRows.length) return json({ error: "The uploaded file has no rows." }, 400);
+    const [newHeader, ...newData] = newRows;
+    const dateCol = newHeader.findIndex((h) => h.trim().toLowerCase() === "meeting date");
+    if (dateCol === -1) return json({ error: "No 'Meeting Date' column found in the uploaded file." }, 400);
+
+    const headers = { authorization: `Bearer ${auth.token}` };
+    const itemsRes = await fetch(
+      `${BOX_API}/folders/${target.id}/items?fields=name,type&limit=1000`, { headers }
+    );
+    if (!itemsRes.ok) return json({ error: `Box API error (${itemsRes.status})` }, 502);
+    const items = await itemsRes.json();
+    const existing = (items.entries || []).find((e) => e.type === "file" && e.name === HELPER_FILENAME);
+
+    let mergedHeader = newHeader, mergedData = newData, added = newData.length;
+    if (existing) {
+      const contentRes = await fetch(`${BOX_API}/files/${existing.id}/content`, { headers });
+      if (!contentRes.ok) {
+        return json({ error: `Could not download the existing ${HELPER_FILENAME} (${contentRes.status})` }, 502);
+      }
+      const existingRows = parseCsv(await contentRes.text());
+      const [existingHeader, ...existingData] = existingRows;
+      if (JSON.stringify(existingHeader) !== JSON.stringify(newHeader)) {
+        return json({ error: `The uploaded file's columns don't match the existing ${HELPER_FILENAME} `
+                            + "— check it's the same export format." }, 400);
+      }
+      const known = new Set(existingData.map((r) => (r[dateCol] || "").trim()).filter(Boolean));
+      const toAppend = newData.filter((r) => {
+        const d = (r[dateCol] || "").trim();
+        return d && !known.has(d);
+      });
+      mergedHeader = existingHeader;
+      mergedData = existingData.concat(toAppend);
+      added = toAppend.length;
+    }
+
+    const csvText = serializeCsv([mergedHeader, ...mergedData]);
+    const outgoing = new FormData();
+    const blob = new Blob([csvText], { type: "text/csv" });
+    if (!existing) {
+      outgoing.append("attributes", JSON.stringify({ name: HELPER_FILENAME, parent: { id: target.id } }));
+    }
+    outgoing.append("file", blob, HELPER_FILENAME);
+    const uploadUrl = existing
+      ? `${BOX_UPLOAD_API}/files/${existing.id}/content`
+      : `${BOX_UPLOAD_API}/files/content`;
+
+    const response = await fetch(uploadUrl, { method: "POST", headers, body: outgoing });
+    if (!response.ok) {
+      const detail = await response.text();
+      return json({ error: `Box upload failed (${response.status})`,
+                    detail: detail.slice(0, 400) }, 502);
+    }
+    const body = await response.json();
+    const uploaded = (body.entries || [])[0];
+    if (!uploaded) return json({ error: "Box did not return the uploaded file." }, 502);
+    return json({ ok: true, file_id: uploaded.id, file_name: uploaded.name,
+                  added, total: mergedData.length });
   }
 
   // ---- GET /api/box/pipeline-token -------------------------------------------------------
