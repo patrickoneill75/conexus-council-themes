@@ -1,0 +1,96 @@
+{
+  "2026-Q3 Southern": {
+    "current": [
+      {
+        "category": "Agenda & Time Management",
+        "count": 4,
+        "example": "Too much time spent on intros and panel was cut short.",
+        "subcategory": "Session length and pacing",
+        "summary": "Trim lengthy intros and give panels more time"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 2,
+        "example": "Would be interested in learning what some near peers have been able to do with training programs. Most models I have seen are at much larger companies with dedicated resources.",
+        "subcategory": "Small and midsized manufacturer applicability",
+        "summary": "Make content more applicable to small and midsized manufacturers, with near-peer examples"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 2,
+        "example": "Prep panelists and presenters with clear expectations. Low value in hearing people's bio in length.",
+        "subcategory": "Content depth",
+        "summary": "Panel content felt predictable; panelists need clearer prep and expectations"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 2,
+        "example": "Have wifi access posted.",
+        "subcategory": "Venue and connectivity",
+        "summary": "Wifi access information should be posted and easy to find"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 3,
+        "example": "Companies giving the tour should help highlight new technologies, not just a general manufacturing tour.",
+        "subcategory": "Topic requests",
+        "summary": "Want more concrete, technology-forward content: live AI use cases, tech-focused tours, and school/partner showcases"
+      }
+    ],
+    "generated": "2026-09-15T17:51:40+00:00",
+    "qoq": [
+      {
+        "category": "Speakers & Panelists",
+        "count": 2,
+        "example": "Have keynote speakers elaborate more on their own programs.",
+        "subcategory": "Content depth",
+        "summary": "Panel and keynote content lacks depth; speakers should go deeper on their own programs"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 4,
+        "example": "Add a session featuring current or former students sharing their experience.",
+        "subcategory": "Topic requests",
+        "summary": "Ongoing requests for specific future session topics and real examples"
+      }
+    ],
+    "sourceFile": "2026-Q3 Southern survey",
+    "yoy": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 6,
+        "example": "Include more real-world case studies of successful tech implementations.",
+        "subcategory": "Topic requests",
+        "summary": "Recurring asks for applicable, real-world content and case studies relevant to attendees' own companies"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 3,
+        "example": "Make the AI presentation more dynamic, since some speakers struggled to hold attention.",
+        "subcategory": "Content depth",
+        "summary": "Speaker and panel quality concerns — depth, preparation, and engagement"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 2,
+        "example": "One member asked for a clearer channel to get industry freight plans in front of INDOT.",
+        "subcategory": "Access to partners and agencies",
+        "summary": "Members want better access to partner organizations, schools, and agencies"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 3,
+        "example": "Give tours more time so all areas can be adequately covered.",
+        "subcategory": "Session length and pacing",
+        "summary": "Scheduling and pacing pressure — sessions and tours need adequate time"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 3,
+        "example": "Provide microphones for audience Q&A.",
+        "subcategory": "Venue and connectivity",
+        "summary": "Basic logistics and AV gaps at the venue (audio, slides, connectivity)"
+      }
+    ]
+  }
+}
