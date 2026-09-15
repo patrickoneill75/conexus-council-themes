@@ -26,15 +26,22 @@
   .sub { color:var(--text-secondary); font-size:13px; margin:0 0 22px; }
   .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
           padding:20px; margin-bottom:16px; }
+  .card h3 { margin:0 0 4px; font-size:14px; }
+  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
   label { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
           color:var(--text-muted); font-weight:600; margin-bottom:6px; }
-  input[type=password] { width:100%; font:inherit; padding:9px 11px; border-radius:8px;
-                         border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  input[type=password], input[type=number], input[type=file], select {
+    width:100%; font:inherit; padding:9px 11px; border-radius:8px;
+    border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  input[type=file] { padding:7px 9px; }
   button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
            padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.ghost { background:transparent; }
   button:disabled { opacity:.5; cursor:not-allowed; }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .fields { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:12px; margin-bottom:14px; }
+  .field { display:flex; flex-direction:column; }
   .banner { border-radius:10px; padding:11px 14px; font-size:13.5px; display:flex; gap:9px;
             align-items:flex-start; margin-bottom:14px; }
   .banner .dot { width:9px; height:9px; border-radius:50%; background:currentColor; flex:0 0 auto; margin-top:5px; }
@@ -54,10 +61,6 @@
   .pill.nodata { background:var(--wash); color:var(--text-muted); border-color:var(--border); }
   .muted { color:var(--text-muted); }
   .small { font-size:12.5px; }
-  .job { border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
-  .jobs { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
-  .job h3 { margin:0 0 4px; font-size:14px; }
-  .job p { margin:0 0 12px; font-size:12.5px; color:var(--text-secondary); }
   .spin { display:inline-block; width:11px; height:11px; border:2px solid currentColor;
           border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite;
           vertical-align:-1px; margin-right:6px; }
@@ -67,17 +70,22 @@
                 padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
   .folder-row:hover { background:var(--wash); }
   .folder-row .enter { font-size:12px; color:var(--accent); }
+  .file-row { display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:8px;
+              cursor:pointer; font-size:13px; }
+  .file-row:hover { background:var(--wash); }
+  .file-row.selected { background:rgba(42,120,214,.12); }
   .crumb { cursor:pointer; color:var(--accent); }
   .crumb:hover { text-decoration:underline; }
   .crumb-sep { color:var(--text-muted); margin:0 4px; }
   code { background:var(--wash); border-radius:5px; padding:2px 6px; font-size:12.5px; }
-  @media(max-width:760px){ .jobs{grid-template-columns:1fr;} }
+  hr.rule { border:0; border-top:1px solid var(--border); margin:16px 0; }
+  .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Control Panel</h1>
-  <p class="sub">Council Themes — read the meeting documents from Box and publish them.</p>
+  <p class="sub">Council Themes — upload survey results, extract themes with Claude, publish them.</p>
 
   <div class="card" id="loginCard">
     <label for="pw">Password</label>
@@ -92,63 +100,110 @@
     <div id="banners"></div>
 
     <div class="card" id="boxCard">
-      <h3 style="margin:0 0 4px;font-size:14px">Box connection</h3>
-      <p class="small muted" style="margin:0 0 12px">Which folder the council meeting
-        documents are read from. Set up once, per <code>SETUP.md</code> in the repository.</p>
+      <h3>Box connection</h3>
+      <p class="desc">Signs in as you, so this can read and write only what your own Box
+        account can already reach. Set up once — see <code>SETUP.md</code>.</p>
       <div id="boxLoading" class="small muted">Checking…</div>
       <div id="boxDisconnected" hidden>
         <button class="primary" id="boxConnectBtn" type="button">Log in with Box</button>
       </div>
       <div id="boxConnected" hidden>
-        <p class="small" style="margin:0 0 10px">Connected. Reading from <b id="boxFolderName">—</b>.</p>
         <div class="row">
-          <button id="boxChooseBtn" type="button">Choose folder…</button>
+          <span class="pill done">Connected</span>
           <button id="boxDisconnectBtn" type="button">Disconnect</button>
         </div>
       </div>
       <p class="small" id="boxNotice" style="margin:10px 0 0"></p>
-      <div id="boxPicker" hidden style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:12px">
-        <div class="small" id="boxBreadcrumb" style="margin-bottom:8px"></div>
-        <div id="boxFolderList" style="max-height:240px;overflow-y:auto"></div>
-        <div class="row" style="margin-top:12px">
-          <button class="primary" id="boxUseFolderBtn" type="button">Use this folder</button>
-          <button id="boxCancelPickBtn" type="button">Cancel</button>
-          <span class="small muted" id="boxDocCount"></span>
+    </div>
+
+    <div class="card" id="trackerCard">
+      <h3>Synthesis Data File</h3>
+      <p class="desc">The existing spreadsheet holding council meeting themes from past
+        meetings. Every analysis run reads its history and appends to it — this is what
+        gets updated once new survey data is uploaded.</p>
+      <p class="small" style="margin:0 0 10px">Currently: <b id="trackerName">(none selected)</b></p>
+      <div class="row">
+        <button id="trackerChooseBtn" type="button">Choose file…</button>
+      </div>
+      <div id="trackerPicker" hidden class="picker"></div>
+    </div>
+
+    <div class="card" id="uploadFolderCard">
+      <h3>New Survey Directory</h3>
+      <p class="desc">The Box folder new raw survey exports get uploaded into. Set this
+        once — you can change it later, but there's no need to touch it again quarter to
+        quarter.</p>
+      <p class="small" style="margin:0 0 10px">Currently: <b id="uploadFolderName">(none selected)</b></p>
+      <div class="row">
+        <button id="uploadFolderChooseBtn" type="button">Choose folder…</button>
+      </div>
+      <div id="uploadFolderPicker" hidden class="picker"></div>
+    </div>
+
+    <div class="card" id="surveyUploadCard">
+      <h3>New Survey Upload</h3>
+      <p class="desc">The raw survey export from the most recent meeting. Uploaded into
+        the New Survey Directory above.</p>
+      <div class="fields">
+        <div class="field">
+          <label for="surveyYear">Year</label>
+          <input type="number" id="surveyYear" step="1" min="2000" max="2100" placeholder="2026">
+        </div>
+        <div class="field">
+          <label for="surveyQuarter">Quarter</label>
+          <select id="surveyQuarter">
+            <option value="">Select…</option>
+            <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="surveyRegion">Region</label>
+          <select id="surveyRegion">
+            <option value="">Select…</option>
+            <option>Central</option><option>Southern</option><option>Northern</option><option>All</option>
+          </select>
         </div>
       </div>
+      <label for="surveyFile">Survey file</label>
+      <div class="row">
+        <input type="file" id="surveyFile" accept=".xlsx" style="flex:1 1 240px">
+        <button class="primary" id="surveyUploadBtn" type="button">Upload</button>
+      </div>
+      <p class="small muted" id="surveyUploadState" style="margin:10px 0 0"></p>
+    </div>
+
+    <div class="card" id="analysisCard">
+      <h3>Natural Language Analysis</h3>
+      <p class="desc">Claude reads the uploaded survey's free-response answers, extracts
+        "areas to improve" items tagged to the existing category taxonomy, appends them to
+        the Synthesis Data File as an addendum, then reads that file's full history to
+        publish this quarter's top issues plus what's recurred quarter-over-quarter and
+        year-over-year.</p>
+      <p class="small" style="margin:0 0 10px" id="analysisReady"></p>
+      <div class="row">
+        <button class="primary" id="analyzeBtn" type="button" disabled>Analyze</button>
+      </div>
+      <p class="small muted" id="analyzeState" style="margin:10px 0 0"></p>
+      <hr class="rule">
+      <p class="small" style="margin:0 0 8px"><b>Full re-analysis</b></p>
+      <p class="small muted" style="margin:0 0 10px">Re-synthesizes every quarter already
+        in the Synthesis Data File from scratch — no new survey involved. Use this once, to
+        seed the dashboard from existing history, or any time the taxonomy changes enough
+        to warrant redoing past quarters.</p>
+      <div class="row">
+        <button id="setupBtn" type="button" disabled>Run full re-analysis</button>
+      </div>
+      <p class="small muted" id="setupState" style="margin:10px 0 0"></p>
     </div>
 
     <div class="card">
-      <div class="jobs">
-        <div class="job">
-          <h3>Refresh and publish</h3>
-          <p>Reads every correctly named Word document in the selected Box folder, pulls out
-             the headings and bullets, and publishes them to the dashboard. If nothing in Box
-             has changed, nothing is committed. No AI cost.</p>
-          <button class="primary" id="refreshBtn" type="button">Refresh and publish</button>
-          <p class="small muted" id="refreshState" style="margin:10px 0 0"></p>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin:0 0 4px;font-size:14px">Published meetings</h3>
-      <p class="small muted" style="margin:0 0 12px">
-        One row per document, read from its filename: <code>2026-Q2-Central.docx</code> is the
-        Q2 2026 Central Council meeting. A document marked
-        <span class="pill pending">No headings</span> still publishes — its bullets just
-        appear as one ungrouped list.</p>
+      <h3>Analyzed quarters</h3>
       <div style="overflow-x:auto">
         <table>
-          <thead><tr>
-            <th>Meeting</th><th>Source file</th>
-            <th class="num">Sections</th><th class="num">Bullets</th><th>Structure</th>
-          </tr></thead>
-          <tbody id="meetings"></tbody>
+          <thead><tr><th>Quarter</th><th>Top issues</th><th>QoQ</th><th>YoY</th><th>Published</th></tr></thead>
+          <tbody id="quarters"></tbody>
         </table>
       </div>
-      <p class="small muted" id="totals" style="margin:12px 0 0"></p>
-      <div id="skipped"></div>
     </div>
 
     <p class="small muted">
@@ -196,6 +251,21 @@
     });
   }
 
+  /* Multipart uploads go through fetch directly — api()'s forced JSON content-type
+     would stop the browser setting its own multipart boundary. */
+  function apiUpload(path, formData) {
+    return fetch("/api/" + path, {
+      method: "POST",
+      headers: token ? { authorization: "Bearer " + token } : {},
+      body: formData,
+    }).then(function (r) {
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+        return body;
+      });
+    });
+  }
+
   /* ---------- sign in ---------- */
   function login() {
     var password = el("pw").value;
@@ -208,9 +278,7 @@
         try { sessionStorage.setItem("themes-token", token); } catch (e) {}
         el("loginCard").hidden = true;
         el("panel").hidden = false;
-        refresh();
-        refreshBox();
-        statusTimer = setInterval(refresh, 15000);
+        boot();
       })
       .catch(function (e) {
         el("loginBtn").disabled = false;
@@ -238,22 +306,23 @@
   el("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
 
   /* ---------- Box connection ---------- */
-  var boxPickerFolderId = null;
+  var boxConnected = false, uploadFolder = null, tracker = null;
 
   function refreshBox() {
     return api("box/status").then(function (body) {
+      boxConnected = Boolean(body.connected);
+      uploadFolder = body.upload_folder || null;
+      tracker = body.tracker || null;
       el("boxLoading").hidden = true;
-      el("boxDisconnected").hidden = Boolean(body.connected);
-      el("boxConnected").hidden = !body.connected;
-      if (body.connected) {
-        el("boxFolderName").textContent = body.folder ? (body.folder.name || body.folder.id)
-                                                       : "(no folder chosen yet)";
-      }
+      el("boxDisconnected").hidden = boxConnected;
+      el("boxConnected").hidden = !boxConnected;
+      el("trackerName").textContent = tracker ? (tracker.name || tracker.id) : "(none selected)";
+      el("uploadFolderName").textContent = uploadFolder ? (uploadFolder.name || uploadFolder.id) : "(none selected)";
       if (pendingBoxNotice) {
         el("boxNotice").textContent = pendingBoxNotice;
         pendingBoxNotice = null;
       }
-      if (body.connected && !body.folder) openBoxPicker("0");
+      updateAnalysisReadiness();
     }).catch(function (e) {
       el("boxLoading").hidden = true;
       el("boxDisconnected").hidden = false;
@@ -269,55 +338,184 @@
   el("boxConnectBtn").addEventListener("click", connectBox);
 
   el("boxDisconnectBtn").addEventListener("click", function () {
-    if (!window.confirm("Disconnect Box? The next refresh won't be able to read anything " +
-                         "until you log in again. Already-published themes stay up.")) return;
+    if (!window.confirm("Disconnect Box? Nothing can be uploaded or analyzed until you " +
+                         "log in again. Already-published themes stay up.")) return;
     api("box/disconnect", { method: "POST" }).then(refreshBox);
   });
 
-  el("boxChooseBtn").addEventListener("click", function () { openBoxPicker("0"); });
-  el("boxCancelPickBtn").addEventListener("click", function () { el("boxPicker").hidden = true; });
+  /* ---------- shared folder/file browser ----------
+     Powers both the tracker-file picker and the upload-folder picker: same breadcrumb +
+     subfolder navigation, the only difference is whether files are selectable and which
+     Box endpoint lists them. */
+  function makePicker(opts) {
+    // opts: { pickerEl, chooseBtn, endpoint, pickFiles, onPick }
+    var currentId = null, selected = null;
 
-  function openBoxPicker(folderId) {
-    el("boxPicker").hidden = false;
-    el("boxDocCount").textContent = "";
-    el("boxFolderList").innerHTML = '<p class="small muted">Loading…</p>';
-    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
-      boxPickerFolderId = data.id;
-      el("boxBreadcrumb").innerHTML = data.breadcrumb.map(function (c, i) {
+    function render(data) {
+      var html = '<div class="small" id="' + opts.pickerEl + 'Crumb" style="margin-bottom:8px"></div>' +
+        '<div id="' + opts.pickerEl + 'List" style="max-height:240px;overflow-y:auto"></div>' +
+        '<div class="row" style="margin-top:12px">' +
+        (opts.pickFiles ? '' : '<button class="primary" id="' + opts.pickerEl + 'UseBtn" type="button">Use this folder</button>') +
+        '<button id="' + opts.pickerEl + 'CancelBtn" type="button">Cancel</button></div>';
+      el(opts.pickerEl).innerHTML = html;
+
+      var crumbEl = el(opts.pickerEl + "Crumb"), listEl = el(opts.pickerEl + "List");
+      crumbEl.innerHTML = data.breadcrumb.map(function (c, i) {
         var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
         return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' +
           esc(c.name || "All Files") + "</span>";
       }).join("");
-      Array.prototype.forEach.call(el("boxBreadcrumb").querySelectorAll(".crumb"), function (node) {
-        node.addEventListener("click", function () { openBoxPicker(node.dataset.id); });
+      Array.prototype.forEach.call(crumbEl.querySelectorAll(".crumb"), function (node) {
+        node.addEventListener("click", function () { open(node.dataset.id); });
       });
-      el("boxFolderList").innerHTML = data.folders.length
-        ? data.folders.map(function (f) {
-            return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>' + esc(f.name) +
-              '</span><span class="enter">Open →</span></div>';
-          }).join("")
-        : '<p class="small muted">No subfolders here — "Use this folder" reads directly from it.</p>';
-      Array.prototype.forEach.call(el("boxFolderList").querySelectorAll(".folder-row"), function (row) {
-        row.addEventListener("click", function () { openBoxPicker(row.dataset.id); });
+
+      var rows = data.folders.map(function (f) {
+        return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>📁 ' + esc(f.name) +
+          '</span><span class="enter">Open →</span></div>';
       });
-      // Saying what is actually in here beats making you remember which folder was right.
-      var n = data.doc_count || 0;
-      el("boxDocCount").textContent = n
-        ? n + " Word document" + (n === 1 ? "" : "s") + " in this folder"
-        : "No Word documents directly in this folder";
-    }).catch(function (e) {
-      el("boxFolderList").innerHTML = '<p class="small muted">' + esc(e.message) + "</p>";
-    });
+      if (opts.pickFiles) {
+        rows = rows.concat((data.files || []).map(function (f) {
+          return '<div class="file-row" data-id="' + esc(f.id) + '" data-name="' + esc(f.name) + '">📄 ' + esc(f.name) + '</div>';
+        }));
+      }
+      listEl.innerHTML = rows.length ? rows.join("")
+        : '<p class="small muted">' + (opts.pickFiles ? "No .xlsx files here." : 'No subfolders here — "Use this folder" reads directly from it.') + '</p>';
+      Array.prototype.forEach.call(listEl.querySelectorAll(".folder-row"), function (row) {
+        row.addEventListener("click", function () { open(row.dataset.id); });
+      });
+      if (opts.pickFiles) {
+        Array.prototype.forEach.call(listEl.querySelectorAll(".file-row"), function (row) {
+          row.addEventListener("click", function () {
+            selected = { id: row.dataset.id, name: row.dataset.name };
+            opts.onPick(selected);
+            el(opts.pickerEl).hidden = true;
+          });
+        });
+      } else {
+        el(opts.pickerEl + "UseBtn").addEventListener("click", function () {
+          var crumbs = crumbEl.querySelectorAll(".crumb");
+          var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : currentId;
+          opts.onPick({ id: currentId, name: name });
+          el(opts.pickerEl).hidden = true;
+        });
+      }
+      el(opts.pickerEl + "CancelBtn").addEventListener("click", function () { el(opts.pickerEl).hidden = true; });
+    }
+
+    function open(folderId) {
+      currentId = folderId;
+      el(opts.pickerEl).hidden = false;
+      el(opts.pickerEl).innerHTML = '<p class="small muted">Loading…</p>';
+      api(opts.endpoint + "?id=" + encodeURIComponent(folderId)).then(render)
+        .catch(function (e) { el(opts.pickerEl).innerHTML = '<p class="small muted">' + esc(e.message) + "</p>"; });
+    }
+
+    opts.chooseBtn.addEventListener("click", function () { open("0"); });
+    return { open: open };
   }
 
-  el("boxUseFolderBtn").addEventListener("click", function () {
-    if (!boxPickerFolderId) return;
-    var crumbs = el("boxBreadcrumb").querySelectorAll(".crumb");
-    var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : boxPickerFolderId;
-    api("box/select-folder", { method: "POST",
-      body: JSON.stringify({ folder_id: boxPickerFolderId, folder_name: name }) })
-      .then(function () { el("boxPicker").hidden = true; refreshBox(); })
-      .catch(function (e) { window.alert(e.message); });
+  makePicker({
+    pickerEl: "trackerPicker", chooseBtn: el("trackerChooseBtn"),
+    endpoint: "box/files", pickFiles: true,
+    onPick: function (file) {
+      api("box/select-tracker", { method: "POST",
+        body: JSON.stringify({ file_id: file.id, file_name: file.name }) })
+        .then(refreshBox).catch(function (e) { window.alert(e.message); });
+    },
+  });
+
+  makePicker({
+    pickerEl: "uploadFolderPicker", chooseBtn: el("uploadFolderChooseBtn"),
+    endpoint: "box/folders", pickFiles: false,
+    onPick: function (folder) {
+      api("box/select-upload-folder", { method: "POST",
+        body: JSON.stringify({ folder_id: folder.id, folder_name: folder.name }) })
+        .then(refreshBox).catch(function (e) { window.alert(e.message); });
+    },
+  });
+
+  /* ---------- survey upload ---------- */
+  var stagedUpload = null; // { file_id, file_name, year, quarter, region }
+
+  el("surveyUploadBtn").addEventListener("click", function () {
+    var fileInput = el("surveyFile"), year = el("surveyYear").value.trim(),
+        quarter = el("surveyQuarter").value, region = el("surveyRegion").value;
+    var file = fileInput.files && fileInput.files[0];
+    if (!file) { el("surveyUploadState").textContent = "Choose a survey file first."; return; }
+    if (!year || !quarter || !region) {
+      el("surveyUploadState").textContent = "Year, Quarter, and Region are all required.";
+      return;
+    }
+    if (!uploadFolder) {
+      el("surveyUploadState").textContent = "Choose the New Survey Directory first.";
+      return;
+    }
+    el("surveyUploadBtn").disabled = true;
+    el("surveyUploadState").innerHTML = '<span class="spin"></span>Uploading…';
+    var formData = new FormData();
+    formData.append("file", file);
+    apiUpload("box/upload", formData).then(function (body) {
+      stagedUpload = { file_id: body.file_id, file_name: body.file_name,
+                        year: year, quarter: quarter, region: region };
+      el("surveyUploadState").textContent = "Uploaded " + body.file_name + " — " +
+        year + " " + quarter + " " + region + ".";
+      el("surveyUploadBtn").disabled = false;
+      updateAnalysisReadiness();
+    }).catch(function (e) {
+      el("surveyUploadState").textContent = "Upload failed: " + e.message;
+      el("surveyUploadBtn").disabled = false;
+    });
+  });
+
+  /* ---------- analysis ---------- */
+  function updateAnalysisReadiness() {
+    var readyEl = el("analysisReady"), analyzeBtn = el("analyzeBtn"), setupBtn = el("setupBtn");
+    if (!tracker) {
+      readyEl.textContent = "Choose the Synthesis Data File above before analyzing.";
+      analyzeBtn.disabled = true;
+      setupBtn.disabled = true;
+      return;
+    }
+    setupBtn.disabled = false;
+    if (!stagedUpload) {
+      readyEl.textContent = "Upload a survey above, then analyze it against " + (tracker.name || tracker.id) + ".";
+      analyzeBtn.disabled = true;
+      return;
+    }
+    readyEl.textContent = "Ready: " + stagedUpload.file_name + " — " + stagedUpload.year + " " +
+      stagedUpload.quarter + " " + stagedUpload.region + ", against " + (tracker.name || tracker.id) + ".";
+    analyzeBtn.disabled = false;
+  }
+
+  function runJob(job, button, stateEl, inputs) {
+    button.disabled = true;
+    stateEl.innerHTML = '<span class="spin"></span>Starting…';
+    var body = { job: job };
+    if (inputs) body.inputs = inputs;
+    api("run", { method: "POST", body: JSON.stringify(body) })
+      .then(function () {
+        stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
+        // GitHub takes a moment to register the run before the API reports it.
+        setTimeout(refresh, 4000);
+      })
+      .catch(function (e) {
+        stateEl.textContent = "Could not start: " + e.message;
+      })
+      .then(function () { button.disabled = false; updateAnalysisReadiness(); });
+  }
+
+  el("analyzeBtn").addEventListener("click", function () {
+    if (!stagedUpload) return;
+    runJob("analyze", el("analyzeBtn"), el("analyzeState"), {
+      survey_file_id: stagedUpload.file_id, year: stagedUpload.year,
+      quarter: stagedUpload.quarter, region: stagedUpload.region,
+    });
+  });
+  el("setupBtn").addEventListener("click", function () {
+    if (!window.confirm("Re-synthesize every quarter already in the Synthesis Data File? " +
+                         "This replaces the published top issues / QoQ / YoY for all of them."))
+      return;
+    runJob("setup", el("setupBtn"), el("setupState"), null);
   });
 
   /* ---------- status ---------- */
@@ -336,110 +534,51 @@
     return { text: word + " " + when, busy: false, url: r.url, failed: r.conclusion !== "success" };
   }
 
+  function itemCount(list) { return (list || []).length; }
+
   function refresh() {
     return api("status").then(function (body) {
-      var themes = body.themes;
-      var r = runLabel(body.workflows.refresh);
-      el("refreshState").innerHTML = r.text +
-        (r.url ? ' · <a href="' + r.url + '" target="_blank" rel="noopener">log</a>' : "");
-      el("refreshBtn").disabled = r.busy;
+      var themes = body.themes || {};
+      var keys = Object.keys(themes).sort().reverse();
+
+      var a = runLabel(body.workflows && body.workflows.analyze);
+      el("analyzeState").innerHTML = a.text +
+        (a.url ? ' · <a href="' + a.url + '" target="_blank" rel="noopener">log</a>' : "");
+      var s = runLabel(body.workflows && body.workflows.setup);
+      el("setupState").innerHTML = s.text + (s.url ? ' · <a href="' + s.url + '" target="_blank" rel="noopener">log</a>' : "");
 
       var banners = "";
-      if (!themes || !(themes.documents || []).length) {
+      if (!keys.length) {
         banners = '<div class="banner err"><span class="dot"></span><div>Nothing published yet. ' +
-          'Log in with Box, choose the folder, then run <b>Refresh and publish</b>.</div></div>';
-        el("banners").innerHTML = banners;
-        el("meetings").innerHTML = "";
-        el("totals").textContent = "";
-        el("skipped").innerHTML = "";
-        return;
-      }
-
-      var skipped = themes.skipped || [];
-      var when = themes.generated
-        ? new Date(themes.generated).toLocaleString("en-US",
-            { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-        : "an unknown time";
-      banners += '<div class="banner ok"><span class="dot"></span><div><b>' +
-        num(themes.documents.length) + ' meeting' + (themes.documents.length === 1 ? "" : "s") +
-        ' published,</b> last refreshed ' + esc(when) + '.</div></div>';
-      if (skipped.length) {
-        banners += '<div class="banner due"><span class="dot"></span><div><b>' + num(skipped.length) +
-          ' file' + (skipped.length === 1 ? " was" : "s were") + ' skipped on that run.</b> ' +
-          'Listed below — usually a filename that is not Year-Quarter-Council.</div></div>';
-      }
-      var noStructure = themes.documents.filter(function (d) {
-        return !(d.sections || []).some(function (s) { return s.title; });
-      });
-      if (noStructure.length) {
-        banners += '<div class="banner due"><span class="dot"></span><div><b>' +
-          num(noStructure.length) + ' document' + (noStructure.length === 1 ? " has" : "s have") +
-          ' no headings.</b> Their bullets publish as one ungrouped list. Word\'s real ' +
-          'Heading styles are what create the sections — bold text is not enough.</div></div>';
+          'Set up the Synthesis Data File and New Survey Directory below, then run an analysis.</div></div>';
+      } else {
+        banners = '<div class="banner ok"><span class="dot"></span><div><b>' + num(keys.length) +
+          ' quarter' + (keys.length === 1 ? "" : "s") + ' published.</b></div></div>';
       }
       el("banners").innerHTML = banners;
 
-      el("meetings").innerHTML = themes.documents.map(function (d) {
-        var sections = (d.sections || []);
-        var titled = sections.filter(function (s) { return s.title; }).length;
-        var bullets = sections.reduce(function (sum, s) {
-          return sum + (s.blocks || []).filter(function (b) { return b.type === "bullet"; }).length;
-        }, 0);
-        var structurePill = titled
-          ? '<span class="pill done">' + num(titled) + ' heading' + (titled === 1 ? "" : "s") + '</span>'
-          : '<span class="pill pending">No headings</span>';
-        var modified = d.modified
-          ? new Date(d.modified).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-          : "";
-        return "<tr><td><b>" + esc(d.title || (d.region + " · " + d.quarter + " " + d.year)) + "</b>" +
-          (modified ? '<div class="muted small">Edited ' + esc(modified) + "</div>" : "") + "</td>" +
-          "<td>" + esc(d.sourceFile || "") + "</td>" +
-          '<td class="num">' + num(titled) + "</td>" +
-          '<td class="num">' + num(bullets) + "</td>" +
-          "<td>" + structurePill + "</td></tr>";
+      el("quarters").innerHTML = keys.map(function (k) {
+        var d = themes[k] || {};
+        var when = d.generated ? new Date(d.generated).toLocaleString("en-US",
+          { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
+        return "<tr><td><b>" + esc(k) + "</b>" +
+          (d.sourceFile ? '<div class="muted small">' + esc(d.sourceFile) + "</div>" : "") + "</td>" +
+          '<td class="num">' + num(itemCount(d.current)) + '</td>' +
+          '<td class="num">' + num(itemCount(d.qoq)) + '</td>' +
+          '<td class="num">' + num(itemCount(d.yoy)) + '</td>' +
+          "<td>" + esc(when) + "</td></tr>";
       }).join("");
-
-      var totalBullets = themes.documents.reduce(function (sum, d) {
-        return sum + (d.sections || []).reduce(function (s2, s) {
-          return s2 + (s.blocks || []).filter(function (b) { return b.type === "bullet"; }).length;
-        }, 0);
-      }, 0);
-      var councils = {};
-      themes.documents.forEach(function (d) { councils[d.region] = 1; });
-      el("totals").textContent = num(themes.documents.length) + " meetings · " +
-        num(Object.keys(councils).length) + " councils · " + num(totalBullets) +
-        " bullets. Folder " + ((themes.source && themes.source.folderName)
-          || (themes.source && themes.source.folderId) || "—") + ".";
-
-      el("skipped").innerHTML = skipped.length
-        ? '<p class="small muted" style="margin:12px 0 6px"><b>Skipped</b></p>' +
-          '<table><tbody>' + skipped.map(function (s) {
-            return "<tr><td>" + esc(s.name) + '</td><td class="muted">' + esc(s.reason) + "</td></tr>";
-          }).join("") + "</tbody></table>"
-        : "";
     }).catch(function (e) {
       el("banners").innerHTML = '<div class="banner err"><span class="dot"></span><div>' +
         esc(e.message) + "</div></div>";
     });
   }
 
-  /* ---------- trigger jobs ---------- */
-  function run(job, button) {
-    button.disabled = true;
-    var stateEl = el(job + "State");
-    stateEl.innerHTML = '<span class="spin"></span>Starting…';
-    api("run", { method: "POST", body: JSON.stringify({ job: job }) })
-      .then(function () {
-        stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
-        // GitHub takes a moment to register the run before the API reports it.
-        setTimeout(refresh, 4000);
-      })
-      .catch(function (e) {
-        stateEl.textContent = "Could not start: " + e.message;
-        button.disabled = false;
-      });
+  function boot() {
+    refresh();
+    refreshBox();
+    statusTimer = setInterval(refresh, 15000);
   }
-  el("refreshBtn").addEventListener("click", function () { run("refresh", this); });
 
   /* resume an existing session on reload */
   try {
@@ -449,9 +588,7 @@
       api("status").then(function () {
         el("loginCard").hidden = true;
         el("panel").hidden = false;
-        refresh();
-        refreshBox();
-        statusTimer = setInterval(refresh, 15000);
+        boot();
       }).catch(function () { token = null; });
     }
   } catch (e) {}
