@@ -111,7 +111,11 @@ const CONFIG = {
   .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   .stamp { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center; }
 
-  .doc { padding:26px 30px 60px; overflow-y:auto; flex:1; width:100%; max-width:760px; margin:0 auto; }
+  /* .doc is the scroll container and spans the full stage width, so its scrollbar sits
+     at the true right edge of the page rather than hugging the centered content. The
+     content itself is centered by .doc-inner, one level in. */
+  .doc { padding:26px 30px 60px; overflow-y:auto; flex:1; }
+  .doc-inner { width:100%; max-width:760px; margin:0 auto; }
   .meeting { font-size:19px; font-weight:650; margin:0 0 3px; letter-spacing:-0.015em; }
   .meeting-sub { color:var(--text-muted); font-size:12.5px; margin:0 0 26px; }
   .doc section { margin:0 0 30px; }
@@ -337,7 +341,7 @@ const CONFIG = {
 
   function loadThemes(wrap) {
     var doc = wrap.querySelector("#doc");
-    doc.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+    doc.innerHTML = '<div class="doc-inner"><p style="color:var(--text-muted)">Loading…</p></div>';
     fetch(CONFIG.themes.dataUrl + "?t=" + Date.now(), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })
@@ -353,11 +357,12 @@ const CONFIG = {
 
         if (!themeDocs.length) {
           wrap.querySelector(".pickers").style.display = "none";
-          doc.innerHTML = '<div class="notice" style="margin:0"><h3>Nothing published yet</h3>' +
+          doc.innerHTML = '<div class="doc-inner"><div class="notice" style="margin:0">' +
+            "<h3>Nothing published yet</h3>" +
             '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
             "Synthesis Data File and New Survey Directory, then upload a survey and click " +
             "<b>Analyze</b> — or run <b>Run full re-analysis</b> to publish whatever history " +
-            "is already in the Synthesis Data File.</p></div>";
+            "is already in the Synthesis Data File.</p></div></div>";
           return;
         }
         wrap.querySelector(".pickers").style.display = "";
@@ -413,23 +418,27 @@ const CONFIG = {
      ever interpreted as markup. */
   function renderMeeting(doc, hit) {
     doc.textContent = "";
+    var inner = document.createElement("div");
+    inner.className = "doc-inner";
+    doc.appendChild(inner);
+
     if (!hit) {
       var none = document.createElement("p");
       none.style.color = "var(--text-muted)";
       none.textContent = "No themes published for that meeting yet.";
-      doc.appendChild(none);
+      inner.appendChild(none);
       return;
     }
     var h = document.createElement("p");
     h.className = "meeting";
     h.textContent = hit.year + " " + hit.quarter + " " + hit.region + " Council Meeting";
-    doc.appendChild(h);
+    inner.appendChild(h);
 
     var sub = document.createElement("p");
     sub.className = "meeting-sub";
     sub.textContent = "Themes from the " + hit.quarter + " " + hit.year + " meeting" +
       (hit.sourceFile ? " · " + hit.sourceFile : "");
-    doc.appendChild(sub);
+    inner.appendChild(sub);
 
     THEME_SECTIONS.forEach(function (sec) {
       var items = hit[sec.key] || [];
@@ -480,7 +489,7 @@ const CONFIG = {
         });
         section.appendChild(list);
       }
-      doc.appendChild(section);
+      inner.appendChild(section);
     });
     doc.scrollTop = 0;
   }
