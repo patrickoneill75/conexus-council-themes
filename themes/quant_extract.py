@@ -6,17 +6,17 @@ Deterministic, no AI: mirrors the real Power BI model's 'All' table build exactl
 not free text to interpret — so matching by name is the right tool here, unlike the
 themes pipeline's free-response extraction.
 
-Year/Quarter/Region are deliberately not read from this file at all: the survey only
-ever carries Meeting Date, and Year/Quarter/Region get resolved from that via the
+Year/Quarter/Region are deliberately not read from this file at all, even though a
+real export carries its own Year/Quarter/Region columns: the survey only ever
+reliably carries Meeting Date, and Year/Quarter/Region get resolved from that via the
 Council Meeting Helper (see quant_data.py) — confirmed with the user as the real
 relationship (mirroring the Power BI model's own All -> Council Meeting Helper join).
 """
 from __future__ import annotations
 
-import io
 from datetime import date, datetime
 
-from openpyxl import load_workbook
+from . import sheet_io
 
 KNOWN_METRICS = [
     "Meeting logistics", "Prepared", "Overall value",
@@ -27,23 +27,34 @@ KNOWN_METRICS = [
 _METRIC_BY_LOWER = {m.lower(): m for m in KNOWN_METRICS}
 
 
+_DATE_FORMATS = ("%d-%b-%y", "%d-%b-%Y", "%m/%d/%Y", "%Y-%m-%d")
+
+
 def _as_date(value) -> date | None:
+    """Excel gives typed date/datetime cells; a real .csv export gives a plain string
+    like '12-Aug-26' (%d-%b-%y) — both are meeting dates, just shaped differently."""
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
         return value
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        for fmt in _DATE_FORMATS:
+            try:
+                return datetime.strptime(value, fmt).date()
+            except ValueError:
+                continue
     return None
 
 
-def unpivot(survey_bytes: bytes) -> list[dict]:
+def unpivot(filename: str, survey_bytes: bytes) -> list[dict]:
     """One survey file -> [{meeting_date, organization, metric, value}, ...], one row per
     (respondent, metric) answered. Rows with no Meeting Date, or whose value isn't a
     whole number, are skipped rather than guessed at.
     """
-    wb = load_workbook(io.BytesIO(survey_bytes), data_only=True)
-    ws = wb.active
-    header = [str(c.value).strip() if c.value is not None else ""
-              for c in next(ws.iter_rows(max_row=1))]
+    header, data_rows = sheet_io.read_rows(filename, survey_bytes)
 
     date_col = next((i for i, h in enumerate(header) if h.lower() == "meeting date"), None)
     org_col = next((i for i, h in enumerate(header) if h.lower() == "organization name"), None)
@@ -56,7 +67,7 @@ def unpivot(survey_bytes: bytes) -> list[dict]:
         raise ValueError("No known rating columns found in the survey file.")
 
     rows = []
-    for raw in ws.iter_rows(min_row=2, values_only=True):
+    for raw in data_rows:
         if not any(raw):
             continue
         meeting_date = _as_date(raw[date_col])

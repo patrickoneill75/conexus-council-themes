@@ -19,9 +19,8 @@
  *   POST /api/box/select-quant-folder
  *   GET  /api/box/files?id=0                -> file browser, .xlsx only (tracker picker)
  *   POST /api/box/select-tracker
- *   POST /api/box/upload?target=quant       -> multipart proxy: browser -> Box upload API
- *                                               (target omitted or "survey" -> upload folder;
- *                                               target=quant -> quant data folder; upserts by
+ *   POST /api/box/upload                    -> multipart proxy: browser -> Box upload API,
+ *                                               into the New Survey Directory (upserts by
  *                                               name so a reuploaded same-named file replaces
  *                                               rather than duplicates)
  *   GET  /api/box/pipeline-token            -> short-lived token for the Actions run
@@ -262,22 +261,22 @@ async function handleApi(route, request, env) {
       if (response.ok) quant = await response.json();
     } catch (e) { /* nothing published yet */ }
 
-    let analyze = { runs: [] }, setupRun = { runs: [] }, updateQuant = { runs: [] };
+    let updateDashboard = { runs: [] }, setupRun = { runs: [] };
     if (env.GITHUB_TOKEN && env.GITHUB_REPO) {
-      [analyze, setupRun, updateQuant] = await Promise.all([
-        workflowRuns(env, "analyze.yml"),
+      [updateDashboard, setupRun] = await Promise.all([
+        workflowRuns(env, "update_dashboard.yml"),
         workflowRuns(env, "setup_analysis.yml"),
-        workflowRuns(env, "update_quant.yml"),
       ]);
     }
     return json({
       themes, quant,
-      workflows: { analyze, setup: setupRun, update_quant: updateQuant },
+      workflows: { update_dashboard: updateDashboard, setup: setupRun },
     });
   }
 
   // ---- POST /api/run -----------------------------------------------------------------
-  // { job: "analyze", inputs: { survey_file_id, year, quarter, region } } or { job: "setup" }
+  // { job: "update_dashboard", inputs: { survey_file_id, survey_file_name, year, quarter,
+  //   region } } or { job: "setup" }
   if (route === "run" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
@@ -291,18 +290,19 @@ async function handleApi(route, request, env) {
     const job = body.job || "";
     // Allowlist: never interpolate caller input into the workflow path.
     const workflow = {
-      analyze: "analyze.yml", setup: "setup_analysis.yml", update_quant: "update_quant.yml",
+      update_dashboard: "update_dashboard.yml", setup: "setup_analysis.yml",
     }[job];
     if (!workflow) return json({ error: "Unknown job" }, 400);
 
     const dispatchBody = { ref: env.GITHUB_BRANCH || "main" };
-    if (job === "analyze") {
+    if (job === "update_dashboard") {
       const inputs = body.inputs || {};
-      for (const key of ["survey_file_id", "year", "quarter", "region"]) {
+      for (const key of ["survey_file_id", "survey_file_name", "year", "quarter", "region"]) {
         if (!inputs[key]) return json({ error: `Missing input: ${key}` }, 400);
       }
       dispatchBody.inputs = {
         survey_file_id: String(inputs.survey_file_id),
+        survey_file_name: String(inputs.survey_file_name),
         year: String(inputs.year),
         quarter: String(inputs.quarter),
         region: String(inputs.region),
@@ -498,22 +498,19 @@ async function handleApi(route, request, env) {
     return json({ ok: true });
   }
 
-  // ---- POST /api/box/upload?target=quant -------------------------------------------------
+  // ---- POST /api/box/upload -----------------------------------------------------------
   // Multipart proxy: the browser posts a file here (multipart/form-data, field name
   // "file"), authenticated by the normal admin session — never a Box token in the browser.
-  // This Worker re-packages it as Box's own multipart upload request. `target=quant` sends
-  // it to the quant data folder; anything else (or omitted) sends it to the survey upload
-  // folder. Upserts by name: if a file with the same name already exists directly in the
-  // destination folder, this uploads a new version of it instead of creating a duplicate —
-  // needed so a reuploaded Council Meeting Helper.csv / Content Categories.xlsx replaces
-  // rather than piling up copies with the same name.
+  // This Worker re-packages it as Box's own multipart upload request and sends it to the
+  // New Survey Directory, the one shared source both the themes and quant pipelines read
+  // from. Upserts by name: if a file with the same name already exists directly in the
+  // destination folder, this uploads a new version of it instead of creating a duplicate.
   if (route === "box/upload" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
     const auth = await validBoxAccessToken(env);
     if (!auth) return json({ error: "Box is not connected yet." }, 409);
-    const target = new URL(request.url).searchParams.get("target") === "quant"
-      ? await boxQuantFolder(env) : await boxUploadFolder(env);
+    const target = await boxUploadFolder(env);
     if (!target) return json({ error: "No destination folder has been selected yet." }, 409);
 
     const incoming = await request.formData();

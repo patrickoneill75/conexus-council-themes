@@ -13,9 +13,9 @@ Everything below is done in a browser. There are no terminal steps.
 | Piece | Where it lives | What it does |
 | --- | --- | --- |
 | `public/index.html` | Worker static assets | The public dashboard. Power BI pages plus the Council Themes tab. No login. |
-| `public/admin.html` | Worker static assets | The control panel. Box login, the Synthesis Data File and New Survey Directory pickers, survey upload, Analyze / Run full re-analysis. |
+| `public/admin.html` | Worker static assets | The control panel. Survey upload and Update Dashboard on the main page; Box login, folder/file pickers, and Run full re-analysis under Developer. |
 | `src/worker.js` | Cloudflare Worker | `/api/*`. Holds the password, the GitHub token and the Box credentials. |
-| `scripts/analyze_survey.py` | GitHub Actions | Extracts feedback items from an uploaded survey with Claude, appends them to the tracker spreadsheet in Box, then synthesizes and publishes that quarter's themes. |
+| `scripts/update_dashboard.py` | GitHub Actions | Extracts feedback items from the uploaded survey with Claude, appends them to the tracker spreadsheet in Box, publishes that quarter's themes, then rebuilds the quant dashboard from every survey file in the New Survey Directory. |
 | `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in the tracker, no new survey involved — the one-time bootstrap (or a full redo). |
 
 ---
@@ -115,14 +115,17 @@ looking for `"configured": true`.
    (upload `Council_Survey_Feedback_Tracker_Template.xlsx`, or your own, into Box first
    if it isn't there yet). This is the running history every analysis reads and appends to.
 4. **New Survey Directory** → **Choose folder…** and pick (or create) a Box folder for
-   raw survey exports to land in. Set this once — there's no need to revisit it quarterly.
-5. **Run full re-analysis**, under Natural Language Analysis. This is the one-time
-   bootstrap: it synthesizes current/QoQ/YoY themes for every quarter already sitting in
-   the Synthesis Data File and publishes them, with no new survey involved. Re-run it
-   any time you want every quarter redone from scratch (e.g. after a taxonomy change).
+   raw survey exports to land in. This is the one shared source both the natural-language
+   analysis and the quant dashboard read from. Set this once — there's no need to revisit
+   it quarterly.
+5. Under **Developer → Full re-analysis**, click **Run full re-analysis**. This is the
+   one-time bootstrap: it synthesizes current/QoQ/YoY themes for every quarter already
+   sitting in the Synthesis Data File and publishes them, with no new survey involved.
+   Re-run it any time you want every quarter redone from scratch (e.g. after a taxonomy
+   change).
 
 From here on, each new quarter: **New Survey Upload** (the raw export, plus Year/Quarter/
-Region), then **Analyze**.
+Region), then **Update Dashboard**.
 
 ---
 
@@ -195,10 +198,10 @@ which is the problem this wrapper exists to avoid.
 | Login says "not configured" | The Set Cloudflare secrets workflow has not run, or ran against a different Worker. The error message names the Worker serving the page. |
 | Box login returns an error | The redirect URI in the Box app does not exactly match `https://<worker>/api/box/callback` — check the shared app has *both* projects' callback URLs listed (step 3). |
 | "Login link expired or was already used" | The one-time state value is spent. Click **Log in with Box** again. |
-| "Could not start: GitHub refused the trigger (404)" | The workflow file (`analyze.yml` / `setup_analysis.yml`) isn't on the branch the Worker dispatches to (`GITHUB_BRANCH`, default `main`) — check it's merged. |
+| "Could not start: GitHub refused the trigger (404)" | The workflow file (`update_dashboard.yml` / `setup_analysis.yml`) isn't on the branch the Worker dispatches to (`GITHUB_BRANCH`, default `main`) — check it's merged. |
 | An Actions run fails with a 401 from the relay | `BOX_RELAY_SECRET` differs between the repository secret and the Worker secret. |
 | An Actions run fails with "Box is not connected" | Nobody has logged in with Box yet. Open the panel. |
 | An Actions run fails with "Set up the upload folder and tracker file first" | The Synthesis Data File and/or New Survey Directory haven't been chosen yet. Open the panel. |
-| Analyze fails with "already has rows in the tracker" | That Year/Quarter/Region combination was already analyzed once — this is a safeguard against double-appending, not a bug. Pick the next quarter, or edit the tracker by hand in Box if you genuinely need to redo one. |
+| Update Dashboard fails with "already has rows in the tracker" | That Year/Quarter/Region combination was already analyzed once — this is a safeguard against double-appending, not a bug. Pick the next quarter, or edit the tracker by hand in Box if you genuinely need to redo one. |
 | Run succeeds, page unchanged | Nothing changed, or Cloudflare is still redeploying. Give it a minute. |
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
