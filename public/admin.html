@@ -139,6 +139,20 @@
       <p class="small muted" id="surveyUploadState" style="margin:10px 0 0"></p>
     </div>
 
+    <div class="card" id="helperUploadCard">
+      <h3>Council Meeting Helper Upload</h3>
+      <p class="desc">A fresh export of the Council Meeting Helper — it doesn't need to
+        cover the full history, just whatever meetings it has. Rows are merged in by
+        Meeting Date: anything not already on file gets added, and existing meetings are
+        never touched or overwritten.</p>
+      <label for="helperFile">Helper file</label>
+      <div class="row">
+        <input type="file" id="helperFile" accept=".csv" style="flex:1 1 240px">
+        <button class="primary" id="helperUploadBtn" type="button">Upload</button>
+      </div>
+      <p class="small muted" id="helperUploadState" style="margin:10px 0 0"></p>
+    </div>
+
     <div class="card" id="updateCard">
       <h3>Update Dashboard</h3>
       <p class="desc">Claude reads the uploaded survey's free-response answers, extracts
@@ -216,10 +230,11 @@
         <div class="card" id="quantFolderCard">
           <h3>Quant Data Folder</h3>
           <p class="desc">The Box folder holding the two reference files the Claude
-            Dashboard (beta) is built from: <code>Council Meeting Helper.csv</code> and
-            <code>Content Categories.xlsx</code>. Survey files themselves live in the New
-            Survey Directory above — this folder is just the two references, maintained
-            directly in Box.</p>
+            Dashboard (beta) is built from: <code>Council Meeting Helper.csv</code>
+            (kept up to date from the Council Meeting Helper Upload card on the main
+            page) and <code>Content Categories.xlsx</code> (maintained directly in Box —
+            it changes rarely enough not to need an upload path). Survey files
+            themselves live in the New Survey Directory above.</p>
           <p class="small" style="margin:0 0 10px">Currently: <b id="quantFolderName">(none selected)</b></p>
           <div class="row">
             <button id="quantFolderChooseBtn" type="button">Choose folder…</button>
@@ -507,6 +522,32 @@
     }).catch(function (e) {
       el("surveyUploadState").textContent = "Upload failed: " + e.message;
       el("surveyUploadBtn").disabled = false;
+    });
+  });
+
+  /* ---------- helper file upload ---------- */
+  el("helperUploadBtn").addEventListener("click", function () {
+    var fileInput = el("helperFile");
+    var file = fileInput.files && fileInput.files[0];
+    if (!file) { el("helperUploadState").textContent = "Choose a helper file first."; return; }
+    if (!quantFolder) {
+      el("helperUploadState").textContent = "Choose the Quant Data Folder first (see Developer below).";
+      return;
+    }
+    el("helperUploadBtn").disabled = true;
+    el("helperUploadState").innerHTML = '<span class="spin"></span>Uploading…';
+    var formData = new FormData();
+    formData.append("file", file);
+    apiUpload("box/upload-helper", formData).then(function (body) {
+      el("helperUploadState").textContent = body.added
+        ? "Added " + body.added + " new meeting" + (body.added === 1 ? "" : "s") +
+          " — " + body.total + " total."
+        : "No new meetings — every Meeting Date in that file is already on file.";
+      el("helperUploadBtn").disabled = false;
+      fileInput.value = "";
+    }).catch(function (e) {
+      el("helperUploadState").textContent = "Upload failed: " + e.message;
+      el("helperUploadBtn").disabled = false;
     });
   });
 

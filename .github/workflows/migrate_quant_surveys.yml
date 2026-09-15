@@ -1,0 +1,30 @@
+name: Migrate quant survey files (one-off)
+
+# Temporary: copies the historical quant survey files into the New Survey Directory now
+# that quant reads from there. Triggered once, by hand, then this workflow and its script
+# get deleted.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Copy survey files into the New Survey Directory
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: python scripts/migrate_quant_surveys.py
