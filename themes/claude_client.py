@@ -93,7 +93,10 @@ def extract_feedback_items(survey_rows: list[dict], taxonomy: dict[str, list[str
 
 _THEME_LIST_SCHEMA = {
     "type": "array",
-    "maxItems": 5,
+    # No maxItems: Claude's tool input_schema validation rejects it ("property
+    # 'maxItems' is not supported" — a real, confirmed API 400, not a documentation
+    # gap). The system prompt instructs "cap every list at 5" instead, backed up by
+    # the defensive [:5] slice in synthesize_themes() below.
     "items": {
         "type": "object",
         "properties": {
