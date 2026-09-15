@@ -90,13 +90,11 @@ const CONFIG = {
            overflow:hidden; }
   .panel { position:absolute; inset:0; display:none; overflow-y:auto; overflow-x:hidden; }
   .panel.active { display:block; }
-  /* The Power BI canvas is 1920x1455. Sizing the frame to that ratio — rather than
-     squeezing it into the stage's height — is what stops Power BI's own embed from
-     cramming the report into a small box with its own internal scrollbars; the page
-     scrolls instead. 70% width is the default "zoom": Power BI's own zoom control
-     isn't reachable from outside a Publish to Web embed, so this scales the whole
-     frame down instead — shrinking the frame shrinks its fit-to-width content with it. */
-  .panel iframe { width:70%; aspect-ratio:1920/1455; height:auto; margin:0 auto;
+  /* The Power BI canvas is 1920x1455. Sizing the frame to that ratio at the stage's
+     full width — rather than squeezing it into the stage's height — is what stops
+     Power BI's own embed from cramming the report into a small box with its own
+     internal scrollbars; the page scrolls instead. */
+  .panel iframe { width:100%; aspect-ratio:1920/1455; height:auto;
                   border:0; display:block; }
   .loading { position:absolute; inset:0; display:grid; place-items:center;
              color:var(--text-muted); font-size:13px; pointer-events:none; }
