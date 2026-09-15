@@ -8,20 +8,25 @@
  * Routes:
  *   GET  /api/config-check                  -> which variables are set (unauthenticated)
  *   POST /api/login      { password }       -> { ok, token }
- *   GET  /api/status                        -> published themes + workflow run info
- *   POST /api/run        { job: refresh }   -> triggers the GitHub Actions workflow
+ *   GET  /api/status                        -> published council-themes.json + workflow run info
+ *   POST /api/run        { job, inputs }    -> triggers a GitHub Actions workflow
  *   GET  /api/box/authorize-url             -> where to send the browser to log in
  *   GET  /api/box/callback                  -> Box redirects here after consent
- *   GET  /api/box/status                    -> { connected, folder }
+ *   GET  /api/box/status                    -> { connected, upload_folder, tracker }
  *   POST /api/box/disconnect
- *   GET  /api/box/folders?id=0              -> folder browser for the panel
- *   POST /api/box/select-folder
+ *   GET  /api/box/folders?id=0              -> folder browser (upload-folder picker)
+ *   POST /api/box/select-upload-folder
+ *   GET  /api/box/files?id=0                -> file browser, .xlsx only (tracker picker)
+ *   POST /api/box/select-tracker
+ *   POST /api/box/upload                    -> multipart proxy: browser -> Box upload API
  *   GET  /api/box/pipeline-token            -> short-lived token for the Actions run
  *
  * CONFIGURATION
  *   CONTROL_PASSWORD   (secret)  the control-panel password. Needed to sign in.
  *   GITHUB_TOKEN       (secret)  fine-grained PAT, Actions: read+write on this repo.
- *   BOX_CLIENT_ID      (secret)  the Box app's client ID.
+ *   BOX_CLIENT_ID      (secret)  the Box app's client ID — shared with conexus-mcm, whose
+ *                                app already has "Read and write all files and folders"
+ *                                under Application Scopes.
  *   BOX_CLIENT_SECRET  (secret)  the Box app's client secret.
  *   BOX_RELAY_SECRET   (secret)  shared with GitHub Actions, so a run can fetch a token.
  *   GITHUB_REPO        (var)     owner/name, set in wrangler.jsonc rather than a dashboard.
@@ -123,10 +128,12 @@ async function workflowRuns(env, workflowFile) {
  * BOX_CLIENT_ID / BOX_CLIENT_SECRET are the app's own credentials and stay in env.
  */
 const BOX_TOKEN_KEY = "box:tokens";
-const BOX_FOLDER_KEY = "box:folder";
+const BOX_UPLOAD_FOLDER_KEY = "box:upload_folder";
+const BOX_TRACKER_KEY = "box:tracker";
 const BOX_TOKEN_URL = "https://api.box.com/oauth2/token";
 const BOX_AUTHORIZE_URL = "https://account.box.com/api/oauth2/authorize";
 const BOX_API = "https://api.box.com/2.0";
+const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 
 async function boxTokens(env) {
   const raw = await env.BOX_KV.get(BOX_TOKEN_KEY);
@@ -135,8 +142,12 @@ async function boxTokens(env) {
 async function saveBoxTokens(env, tokens) {
   await env.BOX_KV.put(BOX_TOKEN_KEY, JSON.stringify(tokens));
 }
-async function boxFolder(env) {
-  const raw = await env.BOX_KV.get(BOX_FOLDER_KEY);
+async function boxUploadFolder(env) {
+  const raw = await env.BOX_KV.get(BOX_UPLOAD_FOLDER_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+async function boxTracker(env) {
+  const raw = await env.BOX_KV.get(BOX_TRACKER_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 
@@ -228,18 +239,24 @@ async function handleApi(route, request, env) {
 
     let themes = null;
     try {
-      // themes.json is one of this Worker's own static assets.
-      const assetUrl = new URL("/themes.json", request.url);
+      // council-themes.json is one of this Worker's own static assets.
+      const assetUrl = new URL("/council-themes.json", request.url);
       const response = await env.ASSETS.fetch(new Request(assetUrl, { method: "GET" }));
       if (response.ok) themes = await response.json();
     } catch (e) { /* nothing published yet */ }
 
-    let refresh = { runs: [] };
-    if (env.GITHUB_TOKEN && env.GITHUB_REPO) refresh = await workflowRuns(env, "refresh.yml");
-    return json({ themes, workflows: { refresh } });
+    let analyze = { runs: [] }, setupRun = { runs: [] };
+    if (env.GITHUB_TOKEN && env.GITHUB_REPO) {
+      [analyze, setupRun] = await Promise.all([
+        workflowRuns(env, "analyze.yml"),
+        workflowRuns(env, "setup_analysis.yml"),
+      ]);
+    }
+    return json({ themes, workflows: { analyze, setup: setupRun } });
   }
 
   // ---- POST /api/run -----------------------------------------------------------------
+  // { job: "analyze", inputs: { survey_file_id, year, quarter, region } } or { job: "setup" }
   if (route === "run" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
@@ -247,19 +264,34 @@ async function handleApi(route, request, env) {
       return json({ error: "GitHub is not connected yet: add the GITHUB_TOKEN secret "
                            + "(and set GITHUB_REPO in wrangler.jsonc)." }, 500);
     }
-    let job = "";
-    try { job = (await request.json()).job || ""; }
+    let body = {};
+    try { body = await request.json(); }
     catch (e) { return json({ error: "Bad request" }, 400); }
+    const job = body.job || "";
     // Allowlist: never interpolate caller input into the workflow path.
-    const workflow = { refresh: "refresh.yml" }[job];
+    const workflow = { analyze: "analyze.yml", setup: "setup_analysis.yml" }[job];
     if (!workflow) return json({ error: "Unknown job" }, 400);
+
+    const dispatchBody = { ref: env.GITHUB_BRANCH || "main" };
+    if (job === "analyze") {
+      const inputs = body.inputs || {};
+      for (const key of ["survey_file_id", "year", "quarter", "region"]) {
+        if (!inputs[key]) return json({ error: `Missing input: ${key}` }, 400);
+      }
+      dispatchBody.inputs = {
+        survey_file_id: String(inputs.survey_file_id),
+        year: String(inputs.year),
+        quarter: String(inputs.quarter),
+        region: String(inputs.region),
+      };
+    }
 
     const response = await fetch(
       `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${workflow}/dispatches`,
       {
         method: "POST",
         headers: { ...githubHeaders(env), "content-type": "application/json" },
-        body: JSON.stringify({ ref: env.GITHUB_BRANCH || "main" }),
+        body: JSON.stringify(dispatchBody),
       }
     );
     if (!response.ok) {
@@ -317,8 +349,13 @@ async function handleApi(route, request, env) {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
     const tokens = env.BOX_KV ? await boxTokens(env) : null;
-    const folder = env.BOX_KV ? await boxFolder(env) : null;
-    return json({ connected: Boolean(tokens), folder: folder || null });
+    const uploadFolder = env.BOX_KV ? await boxUploadFolder(env) : null;
+    const tracker = env.BOX_KV ? await boxTracker(env) : null;
+    return json({
+      connected: Boolean(tokens),
+      upload_folder: uploadFolder || null,
+      tracker: tracker || null,
+    });
   }
 
   // ---- POST /api/box/disconnect --------------------------------------------------------
@@ -327,15 +364,15 @@ async function handleApi(route, request, env) {
     if (denied) return denied;
     if (env.BOX_KV) {
       await env.BOX_KV.delete(BOX_TOKEN_KEY);
-      await env.BOX_KV.delete(BOX_FOLDER_KEY);
+      await env.BOX_KV.delete(BOX_UPLOAD_FOLDER_KEY);
+      await env.BOX_KV.delete(BOX_TRACKER_KEY);
     }
     return json({ ok: true });
   }
 
   // ---- GET /api/box/folders?id=0 --------------------------------------------------------
-  // Powers the control panel's own folder browser. Deliberately not one of Box's pre-built
-  // picker widgets — this has no dependency beyond Box's core folders API, the same one
-  // themes/box_store.py already uses for the refresh itself.
+  // Powers the control panel's upload-folder browser. Deliberately not one of Box's
+  // pre-built picker widgets — this has no dependency beyond Box's core folders API.
   if (route === "box/folders" && method === "GET") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
@@ -358,29 +395,112 @@ async function handleApi(route, request, env) {
     const folders = entries.filter((e) => e.type === "folder")
       .map((e) => ({ id: e.id, name: e.name }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    // How many Word documents sit here, so the panel can say "12 documents" next to
-    // "Use this folder" rather than making you guess whether you picked the right one.
-    const docCount = entries.filter(
-      (e) => e.type === "file" && /\.docx$/i.test(e.name) && !/^~\$/.test(e.name)
+    const fileCount = entries.filter(
+      (e) => e.type === "file" && !/^~\$/.test(e.name)
     ).length;
-    return json({ id, name: info.name, breadcrumb, folders, doc_count: docCount });
+    return json({ id, name: info.name, breadcrumb, folders, file_count: fileCount });
   }
 
-  // ---- POST /api/box/select-folder ------------------------------------------------------
-  if (route === "box/select-folder" && method === "POST") {
+  // ---- POST /api/box/select-upload-folder -----------------------------------------------
+  if (route === "box/select-upload-folder" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
     let body;
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     if (!body.folder_id) return json({ error: "folder_id is required" }, 400);
-    await env.BOX_KV.put(BOX_FOLDER_KEY, JSON.stringify({
+    await env.BOX_KV.put(BOX_UPLOAD_FOLDER_KEY, JSON.stringify({
       id: String(body.folder_id), name: String(body.folder_name || ""),
     }));
     return json({ ok: true });
   }
 
+  // ---- GET /api/box/files?id=0 -----------------------------------------------------------
+  // Same folder-browsing shape as box/folders, but the panel picks a FILE (the running
+  // tracker spreadsheet) rather than a folder to descend into. Lists both, since you often
+  // need to navigate through subfolders to find the file.
+  if (route === "box/files" && method === "GET") {
+    const denied = await requireAuth(request, env);
+    if (denied) return denied;
+    const auth = await validBoxAccessToken(env);
+    if (!auth) return json({ error: "Box is not connected yet." }, 409);
+    const id = new URL(request.url).searchParams.get("id") || "0";
+    const headers = { authorization: `Bearer ${auth.token}` };
+    const [infoRes, itemsRes] = await Promise.all([
+      fetch(`${BOX_API}/folders/${id}?fields=name,path_collection`, { headers }),
+      fetch(`${BOX_API}/folders/${id}/items?fields=name,type&limit=1000`, { headers }),
+    ]);
+    if (!infoRes.ok || !itemsRes.ok) {
+      return json({ error: `Box API error (${infoRes.status}/${itemsRes.status})` }, 502);
+    }
+    const info = await infoRes.json();
+    const items = await itemsRes.json();
+    const breadcrumb = [...((info.path_collection && info.path_collection.entries) || [])
+      .map((e) => ({ id: e.id, name: e.name })), { id, name: info.name }];
+    const entries = items.entries || [];
+    const folders = entries.filter((e) => e.type === "folder")
+      .map((e) => ({ id: e.id, name: e.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const files = entries.filter(
+      (e) => e.type === "file" && /\.xlsx$/i.test(e.name) && !/^~\$/.test(e.name)
+    ).map((e) => ({ id: e.id, name: e.name })).sort((a, b) => a.name.localeCompare(b.name));
+    return json({ id, name: info.name, breadcrumb, folders, files });
+  }
+
+  // ---- POST /api/box/select-tracker ------------------------------------------------------
+  if (route === "box/select-tracker" && method === "POST") {
+    const denied = await requireAuth(request, env);
+    if (denied) return denied;
+    let body;
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    if (!body.file_id) return json({ error: "file_id is required" }, 400);
+    await env.BOX_KV.put(BOX_TRACKER_KEY, JSON.stringify({
+      id: String(body.file_id), name: String(body.file_name || ""),
+    }));
+    return json({ ok: true });
+  }
+
+  // ---- POST /api/box/upload --------------------------------------------------------------
+  // Multipart proxy: the browser posts the raw survey file here (as multipart/form-data,
+  // field name "file"), authenticated by the normal admin session — never a Box token in
+  // the browser. This Worker re-packages it as Box's own multipart upload request. Uploads
+  // always create a new file in the configured upload folder (surveys are never versioned;
+  // each quarter's file is a distinct upload).
+  if (route === "box/upload" && method === "POST") {
+    const denied = await requireAuth(request, env);
+    if (denied) return denied;
+    const auth = await validBoxAccessToken(env);
+    if (!auth) return json({ error: "Box is not connected yet." }, 409);
+    const folder = await boxUploadFolder(env);
+    if (!folder) return json({ error: "No upload folder has been selected yet." }, 409);
+
+    const incoming = await request.formData();
+    const file = incoming.get("file");
+    if (!(file instanceof File)) return json({ error: "No file in the request." }, 400);
+
+    const outgoing = new FormData();
+    outgoing.append("attributes", JSON.stringify({
+      name: file.name, parent: { id: folder.id },
+    }));
+    outgoing.append("file", file, file.name);
+
+    const response = await fetch(`${BOX_UPLOAD_API}/files/content`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${auth.token}` },
+      body: outgoing,
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      return json({ error: `Box upload failed (${response.status})`,
+                    detail: detail.slice(0, 400) }, 502);
+    }
+    const body = await response.json();
+    const uploaded = (body.entries || [])[0];
+    if (!uploaded) return json({ error: "Box did not return the uploaded file." }, 502);
+    return json({ ok: true, file_id: uploaded.id, file_name: uploaded.name });
+  }
+
   // ---- GET /api/box/pipeline-token -------------------------------------------------------
-  // Called by themes/box_store.py during a refresh run, authenticated by a shared secret
+  // Called by themes/box_store.py during an Actions run, authenticated by a shared secret
   // rather than the admin session — GitHub Actions has no browser to sign in with. This is
   // the only way to reach a Box access token from outside this Worker.
   if (route === "box/pipeline-token" && method === "GET") {
@@ -392,11 +512,18 @@ async function handleApi(route, request, env) {
     if (!auth) {
       return json({ error: "Box is not connected. Open the control panel and log in with Box." }, 409);
     }
-    const folder = await boxFolder(env);
-    if (!folder) {
-      return json({ error: "No Box folder has been selected yet. Open the control panel." }, 409);
+    const folder = await boxUploadFolder(env);
+    const tracker = await boxTracker(env);
+    if (!folder || !tracker) {
+      return json({ error: "Set up the upload folder and tracker file first. Open the control panel." }, 409);
     }
-    return json({ access_token: auth.token, folder_id: folder.id, expires_in: auth.expiresIn });
+    return json({
+      access_token: auth.token,
+      expires_in: auth.expiresIn,
+      upload_folder_id: folder.id,
+      tracker_file_id: tracker.id,
+      tracker_file_name: tracker.name,
+    });
   }
 
   return json({ error: "Not found" }, 404);
