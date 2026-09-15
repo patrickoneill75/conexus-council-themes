@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # assets, so writing here and committing is what makes an analysis run go live.
 PUBLIC_DIR = ROOT / "public"
 COUNCIL_THEMES_JSON = PUBLIC_DIR / "council-themes.json"
+QUANT_DASHBOARD_JSON = PUBLIC_DIR / "quant-dashboard.json"
 
 # The Worker relay. Both are set as GitHub repository secrets; the URL is just the
 # Worker's own address with the relay path on the end.
