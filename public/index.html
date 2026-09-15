@@ -148,16 +148,24 @@ const CONFIG = {
   /* quant dashboard */
   .q-title { font-size:15px; font-weight:700; margin:26px 0 12px; letter-spacing:-0.01em; }
   .q-title:first-child { margin-top:0; }
-  .compare-row { border-radius:12px; padding:16px 18px 18px; margin-bottom:16px; }
-  .compare-row.bench { background:var(--bench-bg); }
-  .compare-row.meeting { background:var(--meeting-bg); }
-  .compare-slicers { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
-  .kpi-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(108px, 1fr)); gap:10px; }
-  .kpi-card { border:1px solid var(--border); border-radius:10px; padding:12px 14px;
-              background:var(--surface-1); }
-  .kpi-label { font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
-               color:var(--text-muted); margin-bottom:6px; }
-  .kpi-value { font-size:19px; font-weight:650; letter-spacing:-0.01em; }
+  .compare-box { border:1px solid var(--border); border-radius:12px; padding:18px 20px 20px;
+                 background:var(--bench-bg); margin-bottom:8px; }
+  .compare-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px; }
+  .compare-note { font-size:12px; color:var(--text-muted); margin:0 0 14px; }
+  .metric-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+  .metric-card { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+                 background:var(--surface-1); }
+  .metric-label { font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+                  color:var(--text-muted); margin-bottom:8px; }
+  .metric-primary-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .metric-primary { font-size:23px; font-weight:700; letter-spacing:-0.01em; }
+  .metric-delta { font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:999px;
+                  display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
+  .metric-delta.up { background:rgba(12,163,12,.14); color:var(--good); }
+  .metric-delta.down { background:rgba(208,59,59,.13); color:var(--bad); }
+  .metric-delta.flat { background:var(--wash); color:var(--text-muted); }
+  .metric-benchmark { font-size:11.5px; color:var(--text-muted); }
+  .metric-benchmark b { color:var(--text-secondary); font-weight:600; }
   .time-controls { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
   .date-inputs { display:flex; gap:7px; align-items:center; }
   .date-inputs input[type=date] { font:inherit; font-size:12.5px; padding:6px 8px; border-radius:7px;
@@ -184,6 +192,11 @@ const CONFIG = {
                 background:var(--surface-1); padding:14px 16px; }
   .chart-title { font-size:12px; font-weight:600; margin:0 0 10px; color:var(--text-secondary); }
   .chart-svg { width:100%; height:auto; overflow:visible; }
+  .chart-tooltip { position:absolute; transform:translate(-50%,-100%) translateY(-10px);
+    background:var(--text-primary); color:var(--page); font-size:11.5px; padding:7px 10px;
+    border-radius:7px; pointer-events:none; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.2); z-index:5; }
+  .chart-tooltip-head { font-weight:700; margin-bottom:2px; }
+  .chart-tooltip-row { opacity:.85; }
 
   .notice { margin:24px 30px; padding:18px 20px; max-width:700px; border:1px solid var(--border);
             border-left:3px solid var(--accent); border-radius:10px; background:var(--wash);
@@ -593,21 +606,19 @@ const CONFIG = {
         '<div id="q-empty"></div>' +
         '<div id="q-content" hidden>' +
           '<h3 class="q-title">Meeting Comparison</h3>' +
-          '<div class="compare-row bench">' +
-            '<div class="compare-slicers">' +
-              '<div class="field"><label for="q-bench-year">Year</label><select id="q-bench-year"></select></div>' +
-              '<div class="field"><label for="q-bench-quarter">Quarter</label><select id="q-bench-quarter"></select></div>' +
-              '<div class="field"><label for="q-bench-region">Region</label><select id="q-bench-region"></select></div>' +
-            '</div>' +
-            '<div class="kpi-cards" id="q-bench-cards"></div>' +
-          '</div>' +
-          '<div class="compare-row meeting">' +
-            '<div class="compare-slicers">' +
+          '<div class="compare-box">' +
+            '<div class="compare-controls">' +
               '<div class="field"><label for="q-meeting-year">Year</label><select id="q-meeting-year"></select></div>' +
               '<div class="field"><label for="q-meeting-quarter">Quarter</label><select id="q-meeting-quarter"></select></div>' +
               '<div class="field"><label for="q-meeting-region">Region</label><select id="q-meeting-region"></select></div>' +
+              '<div class="field"><label for="q-compare-mode">Compare to</label><select id="q-compare-mode">' +
+                '<option value="prev">Previous quarter</option>' +
+                '<option value="yoy">Same quarter last year</option>' +
+                '<option value="avg">All-time average</option>' +
+              '</select></div>' +
             '</div>' +
-            '<div class="kpi-cards" id="q-meeting-cards"></div>' +
+            '<p class="compare-note" id="q-compare-note"></p>' +
+            '<div class="metric-grid" id="q-metric-cards"></div>' +
           '</div>' +
           '<h3 class="q-title">Metrics over Time</h3>' +
           '<div class="time-controls">' +
@@ -680,21 +691,28 @@ const CONFIG = {
     return true;
   }
 
-  /* The first card's label reads "Avg Attendees" in the benchmark row (it's usually an
-     average across several matching meetings) and "Attendees" in the selected-meeting row
-     (usually exactly one) -- both are computed the same way, an average over whatever the
-     slicers currently match, so a row that matches several meetings behaves sensibly too. */
-  var CARD_DEFS = [
-    { key: "avgAttendees", benchLabel: "Avg Attendees", meetingLabel: "Attendees", fmt: intFmt },
-    { key: "responses", benchLabel: "Responses", meetingLabel: "Responses", fmt: intFmt },
-    { key: "responseRate", benchLabel: "Response Rate", meetingLabel: "Response Rate", fmt: pctFmt },
-    { key: "cat:Overall value", benchLabel: "Overall Value", meetingLabel: "Overall Value", fmt: decFmt },
-    { key: "cat:Meeting logistics", benchLabel: "Mtg Logistics", meetingLabel: "Mtg Logistics", fmt: decFmt },
-    { key: "cat:Presentation", benchLabel: "Presentations", meetingLabel: "Presentations", fmt: decFmt },
-    { key: "cat:Panel", benchLabel: "Panels", meetingLabel: "Panels", fmt: decFmt }
-  ];
+  function docLabel(d) { return d.year + " " + d.quarter + " " + d.region; }
 
-  function cardValue(matched, def) {
+  /* Mirrors the real report's own measures rather than treating every metric the same way:
+     Responses is a total (SUM) across whatever meetings are matched, Response Rate is a
+     weighted ratio of those totals (sum of responses over sum of attendees, not an average
+     of each meeting's own rate), and everything else -- Attendees, the rating categories --
+     is a plain average. Averaging Responses/Response Rate instead of this is exactly the
+     bug that made those two (and Attendees, downstream of the same "matched" set) stop
+     lining up with the Power BI numbers once more than one meeting was in view. */
+  function aggregate(matched, def) {
+    if (def.key === "responses") {
+      var vals = matched.map(function (d) { return d.responses; }).filter(function (v) { return v != null; });
+      if (!vals.length) return null;
+      return vals.reduce(function (a, b) { return a + b; }, 0);
+    }
+    if (def.key === "responseRate") {
+      var withBoth = matched.filter(function (d) { return d.responses != null && d.avgAttendees != null; });
+      if (!withBoth.length) return null;
+      var totalResp = withBoth.reduce(function (a, d) { return a + d.responses; }, 0);
+      var totalAtt = withBoth.reduce(function (a, d) { return a + d.avgAttendees; }, 0);
+      return totalAtt ? totalResp / totalAtt : null;
+    }
     if (def.key.indexOf("cat:") === 0) {
       var cat = def.key.slice(4);
       return avgOf(matched.map(function (d) { return d.byCategory ? d.byCategory[cat] : null; }));
@@ -702,20 +720,92 @@ const CONFIG = {
     return avgOf(matched.map(function (d) { return d[def.key]; }));
   }
 
-  function renderCards(container, matched, labelKey) {
+  var CARD_DEFS = [
+    { key: "avgAttendees", label: "Attendees", fmt: intFmt },
+    { key: "responses", label: "Responses", fmt: intFmt },
+    { key: "responseRate", label: "Response Rate", fmt: pctFmt },
+    { key: "cat:Overall value", label: "Overall Value", fmt: decFmt },
+    { key: "cat:Meeting logistics", label: "Mtg Logistics", fmt: decFmt },
+    { key: "cat:Presentation", label: "Presentations", fmt: decFmt },
+    { key: "cat:Panel", label: "Panels", fmt: decFmt }
+  ];
+
+  /* "Compare to" resolves against the selected meeting rather than its own slicers, so it
+     only makes unambiguous sense when the Year/Quarter/Region controls above currently
+     resolve to exactly one meeting -- "the quarter before this one" isn't well-defined once
+     several meetings are in view. All-time average has no such requirement. */
+  function computeCompare(selected, mode) {
+    if (mode === "avg") {
+      var ids = {};
+      selected.forEach(function (d) { ids[d.sid] = 1; });
+      var pool = quantDocs.filter(function (d) { return !ids[d.sid]; });
+      if (!pool.length) return { matched: null, note: "Not enough other published meetings yet to average." };
+      return { matched: pool, note: "Comparing against the all-time average across " + pool.length +
+        " other meeting" + (pool.length === 1 ? "" : "s") + "." };
+    }
+    if (selected.length !== 1) {
+      return { matched: null, note: "Choose a single meeting above to compare by quarter, or switch to All-time average." };
+    }
+    var anchor = selected[0];
+    var offset = mode === "yoy" ? 4 : 1;
+    var target = quarterTotal(anchor) - offset;
+    var hit = null;
+    quantDocs.forEach(function (d) { if (d.region === anchor.region && quarterTotal(d) === target) hit = d; });
+    if (!hit) {
+      return { matched: null, note: (mode === "yoy" ? "No year-ago quarter published for " : "No previous quarter published for ")
+        + anchor.region + "." };
+    }
+    return { matched: [hit], note: "Comparing against " + docLabel(hit) + "." };
+  }
+
+  /* Big primary number (the selected meeting), a small colored delta badge, and the raw
+     benchmark value underneath -- higher is better for all seven of these, so up is always
+     green and down always red. */
+  function renderMetricCards(container, selected, compareMatched) {
     container.textContent = "";
     CARD_DEFS.forEach(function (def) {
       var card = document.createElement("div");
-      card.className = "kpi-card";
+      card.className = "metric-card";
+
       var label = document.createElement("div");
-      label.className = "kpi-label";
-      label.textContent = def[labelKey];
+      label.className = "metric-label";
+      label.textContent = def.label;
       card.appendChild(label);
-      var value = document.createElement("div");
-      value.className = "kpi-value";
-      var v = cardValue(matched, def);
-      value.textContent = v == null ? "--" : def.fmt(v);
-      card.appendChild(value);
+
+      var row = document.createElement("div");
+      row.className = "metric-primary-row";
+      var v = aggregate(selected, def);
+      var primary = document.createElement("span");
+      primary.className = "metric-primary";
+      primary.textContent = v == null ? "--" : def.fmt(v);
+      row.appendChild(primary);
+
+      var cv = compareMatched ? aggregate(compareMatched, def) : null;
+      if (v != null && cv != null) {
+        var delta = v - cv;
+        var threshold = def.key === "responseRate" ? 0.001 : (def.key.indexOf("cat:") === 0 ? 0.005 : 0.5);
+        var dir = Math.abs(delta) < threshold ? "flat" : (delta > 0 ? "up" : "down");
+        var badge = document.createElement("span");
+        badge.className = "metric-delta " + dir;
+        var arrow = dir === "up" ? "▲" : (dir === "down" ? "▼" : "–");
+        var sign = delta > 0 ? "+" : (delta < 0 ? "−" : "");
+        badge.textContent = arrow + " " + (dir === "flat" ? "No change" : sign + def.fmt(Math.abs(delta)));
+        row.appendChild(badge);
+      }
+      card.appendChild(row);
+
+      var bench = document.createElement("div");
+      bench.className = "metric-benchmark";
+      if (cv != null) {
+        bench.appendChild(document.createTextNode("Benchmark: "));
+        var b = document.createElement("b");
+        b.textContent = def.fmt(cv);
+        bench.appendChild(b);
+      } else {
+        bench.textContent = "No benchmark data";
+      }
+      card.appendChild(bench);
+
       container.appendChild(card);
     });
   }
@@ -739,13 +829,6 @@ const CONFIG = {
       });
     }
 
-    fillSlicer(byId("q-bench-year"), years);
-    fillSlicer(byId("q-bench-quarter"), QUARTER_ORDER);
-    fillSlicer(byId("q-bench-region"), regions);
-    byId("q-bench-year").value = FILTER_ALL;
-    byId("q-bench-quarter").value = FILTER_ALL;
-    byId("q-bench-region").value = FILTER_ALL;
-
     fillSlicer(byId("q-meeting-year"), years);
     fillSlicer(byId("q-meeting-quarter"), QUARTER_ORDER);
     fillSlicer(byId("q-meeting-region"), regions);
@@ -753,20 +836,17 @@ const CONFIG = {
     byId("q-meeting-year").value = String(latest.year);
     byId("q-meeting-quarter").value = latest.quarter;
     byId("q-meeting-region").value = latest.region;
+    byId("q-compare-mode").value = "prev";
 
     function renderCompare() {
-      var benchMatched = quantDocs.filter(function (d) {
-        return matchesFilter(d, byId("q-bench-year").value, byId("q-bench-quarter").value, byId("q-bench-region").value);
-      });
-      renderCards(byId("q-bench-cards"), benchMatched, "benchLabel");
-
-      var meetingMatched = quantDocs.filter(function (d) {
+      var selected = quantDocs.filter(function (d) {
         return matchesFilter(d, byId("q-meeting-year").value, byId("q-meeting-quarter").value, byId("q-meeting-region").value);
       });
-      renderCards(byId("q-meeting-cards"), meetingMatched, "meetingLabel");
+      var compare = computeCompare(selected, byId("q-compare-mode").value);
+      byId("q-compare-note").textContent = compare.note || "";
+      renderMetricCards(byId("q-metric-cards"), selected, compare.matched);
     }
-    ["q-bench-year", "q-bench-quarter", "q-bench-region",
-     "q-meeting-year", "q-meeting-quarter", "q-meeting-region"].forEach(function (id) {
+    ["q-meeting-year", "q-meeting-quarter", "q-meeting-region", "q-compare-mode"].forEach(function (id) {
       byId(id).addEventListener("change", renderCompare);
     });
     renderCompare();
@@ -774,23 +854,41 @@ const CONFIG = {
     wireTimeSection(wrap);
   }
 
+  /* Each point also carries "points": the raw value from every region contributing to that
+     quarter, so a hover tooltip can show exactly what was averaged -- not just the blended
+     number on the line. */
   function timeSeries(totals, valueFn) {
     return totals.map(function (total) {
       var matched = quantDocs.filter(function (d) { return quarterTotal(d) === total; });
+      var points = matched.map(function (d) { return { region: d.region, value: valueFn(d) }; })
+        .filter(function (p) { return p.value != null; });
       var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
-      return { total: total, year: y, quarter: QUARTER_ORDER[qi], value: avgOf(matched.map(valueFn)) };
+      return { total: total, year: y, quarter: QUARTER_ORDER[qi],
+               value: avgOf(points.map(function (p) { return p.value; })), points: points };
     });
   }
 
-  function renderTimeCard(container, label, series, fmt) {
+  /* The plotted value is the weighted rate (sum responses / sum attendees, matching
+     aggregate()), but each point's tooltip still shows every region's own raw rate. */
+  function responseRateTimeSeries(totals) {
+    return totals.map(function (total) {
+      var matched = quantDocs.filter(function (d) { return quarterTotal(d) === total; });
+      var points = matched.filter(function (d) { return d.responseRate != null; })
+        .map(function (d) { return { region: d.region, value: d.responseRate }; });
+      var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
+      return { total: total, year: y, quarter: QUARTER_ORDER[qi],
+               value: aggregate(matched, { key: "responseRate" }), points: points };
+    });
+  }
+
+  function renderTimeCard(container, label, value, fmt) {
     container.textContent = "";
     var l = document.createElement("div");
-    l.className = "kpi-label"; l.textContent = label;
+    l.className = "metric-label"; l.textContent = label;
     container.appendChild(l);
     var v = document.createElement("div");
-    v.className = "kpi-value";
-    var avg = avgOf(series.map(function (p) { return p.value; }));
-    v.textContent = avg == null ? "--" : fmt(avg);
+    v.className = "metric-primary";
+    v.textContent = value == null ? "--" : fmt(value);
     container.appendChild(v);
   }
 
@@ -829,6 +927,7 @@ const CONFIG = {
      "Survey Response Rate" charts from the real report, redrawn from scratch. */
   function renderTimeChart(container, series, opts) {
     container.textContent = "";
+    container.style.position = "relative";
     if (series.length < 2 || !series.some(function (p) { return p.value != null; })) {
       var p = document.createElement("p");
       p.className = "empty";
@@ -892,7 +991,46 @@ const CONFIG = {
       svg.appendChild(svgEl("line", { x1: x(0), y1: y(y0), x2: x(n - 1), y2: y(y1),
         stroke: "var(--text-primary)", "stroke-width": 1.5, "stroke-dasharray": "5,4", opacity: 0.55 }));
     }
+
+    /* Hover targets: a generously-sized invisible circle per point (rather than relying on
+       the small 2.5px visible dot) so hovering is easy to land on, with a floating tooltip
+       naming exactly what's on the line at that quarter -- every contributing region's own
+       value, not just the blended number the line shows. */
+    var tooltip = document.createElement("div");
+    tooltip.className = "chart-tooltip";
+    tooltip.hidden = true;
+
+    function showTooltip(pt, cx, cy) {
+      tooltip.textContent = "";
+      var head = document.createElement("div");
+      head.className = "chart-tooltip-head";
+      head.textContent = pt.quarter + " " + pt.year;
+      tooltip.appendChild(head);
+      pt.points.forEach(function (p) {
+        var row = document.createElement("div");
+        row.className = "chart-tooltip-row";
+        row.textContent = p.region + ": " + opts.fmt(p.value);
+        tooltip.appendChild(row);
+      });
+      var svgBox = svg.getBoundingClientRect(), containerBox = container.getBoundingClientRect();
+      var scale = svgBox.width / W;
+      tooltip.style.left = (svgBox.left - containerBox.left + cx * scale) + "px";
+      tooltip.style.top = (svgBox.top - containerBox.top + cy * scale) + "px";
+      tooltip.hidden = false;
+    }
+
+    series.forEach(function (pt, i) {
+      if (!pt.points.length) return;
+      var cx = x(i), cy = y(pt.value);
+      var hit = svgEl("circle", { cx: cx, cy: cy, r: 10, fill: "transparent" });
+      hit.style.cursor = "pointer";
+      hit.addEventListener("mouseenter", function () { showTooltip(pt, cx, cy); });
+      hit.addEventListener("mouseleave", function () { tooltip.hidden = true; });
+      svg.appendChild(hit);
+    });
+
     container.appendChild(svg);
+    container.appendChild(tooltip);
   }
 
   function wireTimeSection(wrap) {
@@ -947,15 +1085,19 @@ const CONFIG = {
     function renderTime() {
       var cat = catEl.value;
       var rangeSlots = slots.slice(startSlot, endSlot + 1);
-      var valueSeries = timeSeries(rangeSlots, function (d) { return d.byCategory ? d.byCategory[cat] : null; });
-      var rateSeries = timeSeries(rangeSlots, function (d) { return d.responseRate; });
+      var rangeSlotSet = {}; rangeSlots.forEach(function (t) { rangeSlotSet[t] = 1; });
+      var rangeDocs = quantDocs.filter(function (d) { return rangeSlotSet[quarterTotal(d)]; });
 
-      renderTimeCard(byId("q-value-card"), "Avg " + (cat || "Value"), valueSeries, decFmt);
+      var valueSeries = timeSeries(rangeSlots, function (d) { return d.byCategory ? d.byCategory[cat] : null; });
+      var valueOverall = avgOf(rangeDocs.map(function (d) { return d.byCategory ? d.byCategory[cat] : null; }));
+      renderTimeCard(byId("q-value-card"), "Avg " + (cat || "Value"), valueOverall, decFmt);
       byId("q-value-title").textContent = "Average of " + (cat || "Value") + " by Date";
       renderTimeChart(byId("q-value-chart"), valueSeries,
         { fmt: function (v) { return v.toFixed(1); }, domain: valueDomain(valueSeries) });
 
-      renderTimeCard(byId("q-rate-card"), "Avg Response Rate", rateSeries, pctFmt);
+      var rateSeries = responseRateTimeSeries(rangeSlots);
+      var rateOverall = aggregate(rangeDocs, { key: "responseRate" });
+      renderTimeCard(byId("q-rate-card"), "Avg Response Rate", rateOverall, pctFmt);
       renderTimeChart(byId("q-rate-chart"), rateSeries,
         { fmt: function (v) { return Math.round(v * 100) + "%"; }, domain: [0, 1] });
     }
