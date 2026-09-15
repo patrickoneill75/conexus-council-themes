@@ -179,6 +179,44 @@
       <p class="small muted" id="surveyUploadState" style="margin:10px 0 0"></p>
     </div>
 
+    <div class="card" id="quantFolderCard">
+      <h3>Quant Data Folder</h3>
+      <p class="desc">The Box folder holding everything the Claude Dashboard (beta) is
+        built from: <code>Council Meeting Helper.csv</code>, <code>Content
+        Categories.xlsx</code>, and one <code>.xlsx</code> survey export per meeting.
+        Every "Update Dashboard" run re-reads this whole folder from scratch, so it's
+        safe to add, replace, or reorganize files here at any time.</p>
+      <p class="small" style="margin:0 0 10px">Currently: <b id="quantFolderName">(none selected)</b></p>
+      <div class="row">
+        <button id="quantFolderChooseBtn" type="button">Choose folder…</button>
+      </div>
+      <div id="quantFolderPicker" hidden class="picker"></div>
+    </div>
+
+    <div class="card" id="quantUploadCard">
+      <h3>Quant Survey Upload <span class="muted small">(temporary)</span></h3>
+      <p class="desc">Adds a survey file to the Quant Data Folder above — filename
+        doesn't matter, Year/Quarter/Region are resolved from each response's Meeting
+        Date against the Council Meeting Helper. Re-uploading <code>Council Meeting
+        Helper.csv</code> or <code>Content Categories.xlsx</code> here replaces that
+        file in place. Kept separate from the themes upload above while this is still
+        being tested; the two will merge into one upload later.</p>
+      <label for="quantFile">File</label>
+      <div class="row">
+        <input type="file" id="quantFile" accept=".xlsx,.csv" style="flex:1 1 240px">
+        <button class="primary" id="quantUploadBtn" type="button">Upload</button>
+      </div>
+      <p class="small muted" id="quantUploadState" style="margin:10px 0 0"></p>
+      <hr class="rule">
+      <p class="small" style="margin:0 0 8px"><b>Update Dashboard</b></p>
+      <p class="small muted" style="margin:0 0 10px">Re-reads every file currently in
+        the Quant Data Folder and republishes the whole dashboard from scratch.</p>
+      <div class="row">
+        <button id="quantUpdateBtn" type="button" disabled>Update Dashboard</button>
+      </div>
+      <p class="small muted" id="quantUpdateState" style="margin:10px 0 0"></p>
+    </div>
+
     <div class="card" id="analysisCard">
       <h3>Natural Language Analysis</h3>
       <p class="desc">Claude reads the uploaded survey's free-response answers, extracts
@@ -318,18 +356,21 @@
   el("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
 
   /* ---------- Box connection ---------- */
-  var boxConnected = false, uploadFolder = null, tracker = null;
+  var boxConnected = false, uploadFolder = null, tracker = null, quantFolder = null;
 
   function refreshBox() {
     return api("box/status").then(function (body) {
       boxConnected = Boolean(body.connected);
       uploadFolder = body.upload_folder || null;
       tracker = body.tracker || null;
+      quantFolder = body.quant_folder || null;
       el("boxLoading").hidden = true;
       el("boxDisconnected").hidden = boxConnected;
       el("boxConnected").hidden = !boxConnected;
       el("trackerName").textContent = tracker ? (tracker.name || tracker.id) : "(none selected)";
       el("uploadFolderName").textContent = uploadFolder ? (uploadFolder.name || uploadFolder.id) : "(none selected)";
+      el("quantFolderName").textContent = quantFolder ? (quantFolder.name || quantFolder.id) : "(none selected)";
+      el("quantUpdateBtn").disabled = !quantFolder;
       if (pendingBoxNotice) {
         el("boxNotice").textContent = pendingBoxNotice;
         pendingBoxNotice = null;
@@ -446,6 +487,16 @@
     },
   });
 
+  makePicker({
+    pickerEl: "quantFolderPicker", chooseBtn: el("quantFolderChooseBtn"),
+    endpoint: "box/folders", pickFiles: false,
+    onPick: function (folder) {
+      api("box/select-quant-folder", { method: "POST",
+        body: JSON.stringify({ folder_id: folder.id, folder_name: folder.name }) })
+        .then(refreshBox).catch(function (e) { window.alert(e.message); });
+    },
+  });
+
   /* ---------- survey upload ---------- */
   var stagedUpload = null; // { file_id, file_name, year, quarter, region }
 
@@ -477,6 +528,33 @@
       el("surveyUploadState").textContent = "Upload failed: " + e.message;
       el("surveyUploadBtn").disabled = false;
     });
+  });
+
+  /* ---------- quant upload ---------- */
+  el("quantUploadBtn").addEventListener("click", function () {
+    var fileInput = el("quantFile");
+    var file = fileInput.files && fileInput.files[0];
+    if (!file) { el("quantUploadState").textContent = "Choose a file first."; return; }
+    if (!quantFolder) {
+      el("quantUploadState").textContent = "Choose the Quant Data Folder first.";
+      return;
+    }
+    el("quantUploadBtn").disabled = true;
+    el("quantUploadState").innerHTML = '<span class="spin"></span>Uploading…';
+    var formData = new FormData();
+    formData.append("file", file);
+    apiUpload("box/upload?target=quant", formData).then(function (body) {
+      el("quantUploadState").textContent = "Uploaded " + body.file_name + ".";
+      el("quantUploadBtn").disabled = false;
+      fileInput.value = "";
+    }).catch(function (e) {
+      el("quantUploadState").textContent = "Upload failed: " + e.message;
+      el("quantUploadBtn").disabled = false;
+    });
+  });
+
+  el("quantUpdateBtn").addEventListener("click", function () {
+    runJob("update_quant", el("quantUpdateBtn"), el("quantUpdateState"), null);
   });
 
   /* ---------- analysis ---------- */
@@ -558,6 +636,8 @@
         (a.url ? ' · <a href="' + a.url + '" target="_blank" rel="noopener">log</a>' : "");
       var s = runLabel(body.workflows && body.workflows.setup);
       el("setupState").innerHTML = s.text + (s.url ? ' · <a href="' + s.url + '" target="_blank" rel="noopener">log</a>' : "");
+      var q = runLabel(body.workflows && body.workflows.update_quant);
+      el("quantUpdateState").innerHTML = q.text + (q.url ? ' · <a href="' + q.url + '" target="_blank" rel="noopener">log</a>' : "");
 
       var banners = "";
       if (!keys.length) {
