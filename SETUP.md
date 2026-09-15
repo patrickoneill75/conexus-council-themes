@@ -6,12 +6,6 @@ does the reading and publishing. Nothing secret ever reaches the browser.
 
 Everything below is done in a browser. There are no terminal steps.
 
-> **Mid-migration note:** this project is moving from reading Word meeting minutes to
-> reading raw post-meeting survey exports (Claude extracts themes from the free-response
-> answers and synthesizes quarter-over-quarter / year-over-year recurring issues). Steps
-> 1–3 below are current. Steps 4 on still describe the old docx flow and will be rewritten
-> once the new pipeline, workflows, and control-panel UI land.
-
 ---
 
 ## What you end up with
@@ -19,9 +13,10 @@ Everything below is done in a browser. There are no terminal steps.
 | Piece | Where it lives | What it does |
 | --- | --- | --- |
 | `public/index.html` | Worker static assets | The public dashboard. Power BI pages plus the Council Themes tab. No login. |
-| `public/admin.html` | Worker static assets | The control panel. Password, Box login, folder picker, Refresh button. |
+| `public/admin.html` | Worker static assets | The control panel. Box login, the Synthesis Data File and New Survey Directory pickers, survey upload, Analyze / Run full re-analysis. |
 | `src/worker.js` | Cloudflare Worker | `/api/*`. Holds the password, the GitHub token and the Box credentials. |
-| `scripts/run_refresh.py` | GitHub Actions | Reads the Box folder, writes `public/themes.json`, commits. |
+| `scripts/analyze_survey.py` | GitHub Actions | Extracts feedback items from an uploaded survey with Claude, appends them to the tracker spreadsheet in Box, then synthesizes and publishes that quarter's themes. |
+| `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in the tracker, no new survey involved — the one-time bootstrap (or a full redo). |
 
 ---
 
@@ -30,7 +25,7 @@ Everything below is done in a browser. There are no terminal steps.
 1. Create a repository — say `conexus-council-themes` — and upload every file from this
    project, keeping the folder structure.
 2. `Settings → Actions → General → Workflow permissions` → **Read and write permissions**.
-   Without this the refresh run cannot commit.
+   Without this an analysis run cannot commit.
 3. Open `wrangler.jsonc` and set `GITHUB_REPO` to your repository in `owner/name` form.
 
 ---
@@ -89,15 +84,22 @@ Add these under `Settings → Secrets and variables → Actions` in your reposit
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → Workers & Pages → Account details |
 | `CONTROL_PASSWORD` | A password you choose for the control panel |
 | `PANEL_GITHUB_TOKEN` | A fine-grained GitHub token, this repo only, **Actions: read and write** |
-| `BOX_CLIENT_ID` | Box app Configuration tab |
-| `BOX_CLIENT_SECRET` | Box app Configuration tab |
+| `BOX_CLIENT_ID` | Box app Configuration tab (the shared app — see step 3) |
+| `BOX_CLIENT_SECRET` | Box app Configuration tab (the shared app — see step 3) |
 | `BOX_RELAY_SECRET` | A long random string you make up |
 | `BOX_RELAY_URL` | `https://<your-worker-address>/api/box/pipeline-token` |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → Settings → API Keys |
 
-Then run **Actions → Set Cloudflare secrets → Run workflow**. That hands the Worker-side
-values to Cloudflare for you, which is the step that would otherwise need a terminal.
+`ANTHROPIC_API_KEY` is the one exception to "everything is done in a browser, no
+terminal" being about secrets specifically living in *this* repository's GitHub
+settings — it's only ever read by the Python scripts running in GitHub Actions, so
+unlike the others it does **not** need to go to Cloudflare at all.
 
-`BOX_RELAY_SECRET` is deliberately in both places: the Worker checks it, and the refresh
+Everything else, run **Actions → Set Cloudflare secrets → Run workflow**. That hands the
+Worker-side values to Cloudflare for you, which is the step that would otherwise need a
+terminal.
+
+`BOX_RELAY_SECRET` is deliberately in both places: the Worker checks it, and an analysis
 run sends it. They must be the same value.
 
 Check it worked by opening `https://<your-worker-address>/api/config-check`. You are
@@ -105,38 +107,34 @@ looking for `"configured": true`.
 
 ---
 
-## 5 · Connect Box
+## 5 · Connect Box and set up the panel
 
 1. Open `https://<your-worker-address>/admin.html` and sign in with `CONTROL_PASSWORD`.
 2. **Log in with Box**. Box asks you to authorise the app; it comes back to the panel.
-3. The folder picker opens by itself the first time. Browse to the folder holding the
-   meeting documents — it tells you how many Word documents are in each folder as you go,
-   so you can confirm you are in the right one — then **Use this folder**.
-4. **Refresh and publish**. The button shows the run progressing and links to its log.
+3. **Synthesis Data File** → **Choose file…** and pick the tracker spreadsheet in Box
+   (upload `Council_Survey_Feedback_Tracker_Template.xlsx`, or your own, into Box first
+   if it isn't there yet). This is the running history every analysis reads and appends to.
+4. **New Survey Directory** → **Choose folder…** and pick (or create) a Box folder for
+   raw survey exports to land in. Set this once — there's no need to revisit it quarterly.
+5. **Run full re-analysis**, under Natural Language Analysis. This is the one-time
+   bootstrap: it synthesizes current/QoQ/YoY themes for every quarter already sitting in
+   the Synthesis Data File and publishes them, with no new survey involved. Re-run it
+   any time you want every quarter redone from scratch (e.g. after a taxonomy change).
+
+From here on, each new quarter: **New Survey Upload** (the raw export, plus Year/Quarter/
+Region), then **Analyze**.
 
 ---
 
-## 6 · Naming the documents
+## 6 · The taxonomy
 
-```
-2026-Q2-Central.docx   ->   Q2 2026 Central Council meeting
-2026 Q2 Central.docx   ->   Q2 2026 Central Council meeting
-2026Q2Central.docx     ->   Q2 2026 Central Council meeting
-2026-Q2.docx            ->   Q2 2026 All Council meeting
-```
-
-Year, then quarter, then council. Between them you can use a hyphen, a space, an
-underscore, a dot, or nothing at all — however it ends up typed in Box. The council name
-is whatever's left after the quarter, so adding a council needs no code change; leaving
-it off entirely is read as `All`. Anything that does not match is
-listed as **Skipped** in the panel with the reason, so drafts can live in the same folder.
-
-Documents are read from the chosen folder only — subfolders are not walked, which keeps
-"why did that not appear" a question with one answer.
-
-**Use Word's real Heading styles** for theme titles. That is what groups the bullets into
-sections. Bold text that merely looks like a heading gives the parser nothing, and the
-panel will flag the document as **No headings**.
+The tracker's `Lists` tab holds the fixed Category → Subcategory vocabulary (its own
+`How to Use` tab explains it). Claude is given this list on every extraction run and
+told to reuse an existing pair whenever one reasonably fits, only writing a new
+Subcategory when nothing listed fits at all — the tracker's value comes from the same
+label being reused across quarters, so resist adding new ones often. Add one the same
+way a human would per the tracker's own instructions: column B of `Lists`, then extend
+the `SubcategoryList` named range.
 
 ---
 
@@ -173,14 +171,20 @@ which is the problem this wrapper exists to avoid.
   which needs write) — this project uses write only to upload survey files into the
   configured upload folder and to push new versions of the tracker spreadsheet; it never
   touches anything else in your Box account.
-- **No AI.** The refresh extracts text from Word files. No model is called at any point.
-- **Credentials never reach a browser.** The Box client secret and the GitHub token live
-  in Cloudflare Worker secrets; the Box token pair lives in Workers KV. The control panel
-  only ever holds a short-lived session token.
+- **Claude sees survey responses and tracker rows, nothing else.** Each analysis run
+  sends the uploaded survey's free-text answers (organization name and rating numbers
+  included, but never the respondent's name — those columns are stripped before the
+  request) and the tracker's existing feedback items to the Claude API, and nothing
+  else in your Box account. Both calls are logged in the Actions run's own output.
+- **Credentials never reach a browser.** The Box client secret, the GitHub token, and the
+  Anthropic API key live in Cloudflare Worker / GitHub Actions secrets respectively; the
+  Box token pair lives in Workers KV. The control panel only ever holds a short-lived
+  session token, and survey uploads are proxied through the Worker so a Box token never
+  reaches the browser either.
 - **Revocable in one click.** *Disconnect* in the panel deletes the stored token pair, and
   you can revoke the app's access from your own Box account settings at any time.
-- **Auditable.** Every refresh is a logged GitHub Actions run showing when it ran, who
-  triggered it, and which documents it read or skipped.
+- **Auditable.** Every analysis run is a logged GitHub Actions run showing when it ran,
+  who triggered it, and exactly what it extracted, appended, and published.
 
 ---
 
@@ -189,10 +193,12 @@ which is the problem this wrapper exists to avoid.
 | Symptom | Cause |
 | --- | --- |
 | Login says "not configured" | The Set Cloudflare secrets workflow has not run, or ran against a different Worker. The error message names the Worker serving the page. |
-| Box login returns an error | The redirect URI in the Box app does not exactly match `https://<worker>/api/box/callback`. |
+| Box login returns an error | The redirect URI in the Box app does not exactly match `https://<worker>/api/box/callback` — check the shared app has *both* projects' callback URLs listed (step 3). |
 | "Login link expired or was already used" | The one-time state value is spent. Click **Log in with Box** again. |
-| Refresh fails with 401 from the relay | `BOX_RELAY_SECRET` differs between the repository secret and the Worker secret. |
-| Refresh fails with "Box is not connected" | Nobody has logged in with Box yet, or no folder is chosen. Open the panel. |
-| Run succeeds, page unchanged | Nothing in Box changed, or Cloudflare is still redeploying. Give it a minute. |
-| Everything skipped, nothing published | No filename matched. The run deliberately leaves the last good `themes.json` in place rather than publishing an empty page. |
+| "Could not start: GitHub refused the trigger (404)" | The workflow file (`analyze.yml` / `setup_analysis.yml`) isn't on the branch the Worker dispatches to (`GITHUB_BRANCH`, default `main`) — check it's merged. |
+| An Actions run fails with a 401 from the relay | `BOX_RELAY_SECRET` differs between the repository secret and the Worker secret. |
+| An Actions run fails with "Box is not connected" | Nobody has logged in with Box yet. Open the panel. |
+| An Actions run fails with "Set up the upload folder and tracker file first" | The Synthesis Data File and/or New Survey Directory haven't been chosen yet. Open the panel. |
+| Analyze fails with "already has rows in the tracker" | That Year/Quarter/Region combination was already analyzed once — this is a safeguard against double-appending, not a bug. Pick the next quarter, or edit the tracker by hand in Box if you genuinely need to redo one. |
+| Run succeeds, page unchanged | Nothing changed, or Cloudflare is still redeploying. Give it a minute. |
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
