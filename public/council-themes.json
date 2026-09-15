@@ -1,4 +1,98 @@
 {
+  "2026-Q3 Central": {
+    "current": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 8,
+        "example": "What would we be talking about if it wasn't AI?",
+        "subcategory": "Topic requests",
+        "summary": "Broaden topics beyond AI — operations, supply chain, workforce and capital planning"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 4,
+        "example": "Stay on time with agenda. All out of time left.",
+        "subcategory": "Schedule adherence",
+        "summary": "Keep the agenda on time, hold speakers to slots, and manage breaks better"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 2,
+        "example": "Visual aid on AI actual deployment example to drive further brainstorms.",
+        "subcategory": "Real-world case studies",
+        "summary": "Want concrete, real-world AI/tech deployment examples"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 3,
+        "example": "List attendees by industry.",
+        "subcategory": "Attendee information",
+        "summary": "Make it easier to connect — attendee lists by industry and business card sharing"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 2,
+        "example": "Hard to hear people at times, some were perfect and some were way too low/quiet.",
+        "subcategory": "Audio and sound",
+        "summary": "AV issues: inconsistent audio levels and slide text too small to read"
+      }
+    ],
+    "generated": "2026-09-15T17:52:49+00:00",
+    "qoq": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 8,
+        "example": "Workforce development/training/onboarding.",
+        "subcategory": "Topic requests",
+        "summary": "Requests for broader business topics, especially workforce development"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 1,
+        "example": "Text on slides too small.",
+        "subcategory": "Slide design and legibility",
+        "summary": "Slides hard to read and need clearer visual support"
+      }
+    ],
+    "sourceFile": "2026-Q3 Central survey",
+    "yoy": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 8,
+        "example": "AI in supply chain/logistics, not just manufacturing.",
+        "subcategory": "Topic requests",
+        "summary": "Ongoing appetite for wider topic coverage beyond the headline theme"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 2,
+        "example": "Would be great to learn more about Conductor and how it is used in real cases.",
+        "subcategory": "Real-world case studies",
+        "summary": "Repeated ask for real-world case studies of successful tech implementations"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 3,
+        "example": "Share business cards at beginning - maybe a box to drop them off so everyone can get more info on every other company.",
+        "subcategory": "Attendee information",
+        "summary": "Persistent need for attendee/company info to enable peer networking"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 2,
+        "example": "Hard to hear people at times, some were perfect and some were way too low/quiet.",
+        "subcategory": "Audio and sound",
+        "summary": "Audio and slide legibility problems recur across meetings"
+      },
+      {
+        "category": "Post-Meeting Materials & Follow-Up",
+        "count": 1,
+        "example": "Would be great to have a calendar of events of trade shows and conferences for IN, midwest, and USA.",
+        "subcategory": "Resource requests",
+        "summary": "Continued request for a trade show and conference resource/calendar"
+      }
+    ]
+  },
   "2026-Q3 Southern": {
     "current": [
       {
