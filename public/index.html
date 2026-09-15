@@ -614,6 +614,7 @@ const CONFIG = {
               '<div class="field"><label for="q-compare-mode">Compare to</label><select id="q-compare-mode">' +
                 '<option value="prev">Previous quarter</option>' +
                 '<option value="yoy">Same quarter last year</option>' +
+                '<option value="prevYear">Previous year</option>' +
                 '<option value="avg">All-time average</option>' +
               '</select></div>' +
             '</div>' +
@@ -691,19 +692,19 @@ const CONFIG = {
     return true;
   }
 
-  function docLabel(d) { return d.year + " " + d.quarter + " " + d.region; }
-
   /* Mirrors the real report's own measures rather than treating every metric the same way:
-     Responses is a total (SUM) across whatever meetings are matched, Response Rate is a
-     weighted ratio of those totals (sum of responses over sum of attendees, not an average
-     of each meeting's own rate), and everything else -- Attendees, the rating categories --
-     is a plain average. Averaging Responses/Response Rate instead of this is exactly the
-     bug that made those two (and Attendees, downstream of the same "matched" set) stop
-     lining up with the Power BI numbers once more than one meeting was in view. */
-  function aggregate(matched, def) {
+     Response Rate is always a weighted ratio of totals (sum of responses over sum of
+     attendees, not an average of each meeting's own rate), and Attendees and the rating
+     categories are always a plain average. Responses defaults to a total (SUM) across
+     whatever meetings are matched -- except when `opts.avgCounts` is set, used for the
+     All-time-average and Previous-year benchmarks, where the user wants "average responses
+     per meeting" instead of a total that grows with however many meetings got averaged in. */
+  function aggregate(matched, def, opts) {
+    opts = opts || {};
     if (def.key === "responses") {
       var vals = matched.map(function (d) { return d.responses; }).filter(function (v) { return v != null; });
       if (!vals.length) return null;
+      if (opts.avgCounts) return avgOf(vals);
       return vals.reduce(function (a, b) { return a + b; }, 0);
     }
     if (def.key === "responseRate") {
@@ -720,6 +721,11 @@ const CONFIG = {
     return avgOf(matched.map(function (d) { return d[def.key]; }));
   }
 
+  function quarterLabel(total) {
+    var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
+    return QUARTER_ORDER[qi] + " " + y;
+  }
+
   var CARD_DEFS = [
     { key: "avgAttendees", label: "Attendees", fmt: intFmt },
     { key: "responses", label: "Responses", fmt: intFmt },
@@ -730,38 +736,53 @@ const CONFIG = {
     { key: "cat:Panel", label: "Panels", fmt: decFmt }
   ];
 
-  /* "Compare to" resolves against the selected meeting rather than its own slicers, so it
-     only makes unambiguous sense when the Year/Quarter/Region controls above currently
-     resolve to exactly one meeting -- "the quarter before this one" isn't well-defined once
-     several meetings are in view. All-time average has no such requirement. */
+  /* "Compare to" resolves against the selected meeting rather than its own slicers, so
+     Previous quarter / Same quarter last year / Previous year only make unambiguous sense
+     when the Year/Quarter/Region controls above currently resolve to exactly one meeting --
+     "the quarter before this one" isn't well-defined once several meetings are in view.
+     All-time average has no such requirement.
+
+     Previous quarter and Same quarter last year compare against every region published for
+     that one target quarter ("previous quarter, all regions"), not just the selected
+     meeting's own region -- summed/weighted the same way the selected meeting's own card
+     values are. All-time average and Previous year instead average per meeting (avgCounts),
+     since they're meant to read as "what a typical meeting looks like," not a total that
+     grows with however many meetings happen to be in the pool. */
   function computeCompare(selected, mode) {
     if (mode === "avg") {
       var ids = {};
       selected.forEach(function (d) { ids[d.sid] = 1; });
       var pool = quantDocs.filter(function (d) { return !ids[d.sid]; });
       if (!pool.length) return { matched: null, note: "Not enough other published meetings yet to average." };
-      return { matched: pool, note: "Comparing against the all-time average across " + pool.length +
+      return { matched: pool, avgCounts: true, note: "Comparing against the all-time average across " + pool.length +
         " other meeting" + (pool.length === 1 ? "" : "s") + "." };
     }
     if (selected.length !== 1) {
-      return { matched: null, note: "Choose a single meeting above to compare by quarter, or switch to All-time average." };
+      return { matched: null, note: "Choose a single meeting above to compare by quarter or year, or switch to All-time average." };
     }
     var anchor = selected[0];
+
+    if (mode === "prevYear") {
+      var yearPool = quantDocs.filter(function (d) { return d.year === anchor.year - 1; });
+      if (!yearPool.length) return { matched: null, note: "No meetings published for " + (anchor.year - 1) + "." };
+      return { matched: yearPool, avgCounts: true, note: "Comparing against " + (anchor.year - 1) + " (" +
+        yearPool.length + " meeting" + (yearPool.length === 1 ? "" : "s") + ")." };
+    }
+
     var offset = mode === "yoy" ? 4 : 1;
     var target = quarterTotal(anchor) - offset;
-    var hit = null;
-    quantDocs.forEach(function (d) { if (d.region === anchor.region && quarterTotal(d) === target) hit = d; });
-    if (!hit) {
-      return { matched: null, note: (mode === "yoy" ? "No year-ago quarter published for " : "No previous quarter published for ")
-        + anchor.region + "." };
+    var quarterPool = quantDocs.filter(function (d) { return quarterTotal(d) === target; });
+    if (!quarterPool.length) {
+      return { matched: null, note: "No meetings published for " + quarterLabel(target) + "." };
     }
-    return { matched: [hit], note: "Comparing against " + docLabel(hit) + "." };
+    return { matched: quarterPool, note: "Comparing against " + quarterLabel(target) + " (all regions, " +
+      quarterPool.length + " meeting" + (quarterPool.length === 1 ? "" : "s") + ")." };
   }
 
   /* Big primary number (the selected meeting), a small colored delta badge, and the raw
      benchmark value underneath -- higher is better for all seven of these, so up is always
      green and down always red. */
-  function renderMetricCards(container, selected, compareMatched) {
+  function renderMetricCards(container, selected, compareMatched, compareAvgCounts) {
     container.textContent = "";
     CARD_DEFS.forEach(function (def) {
       var card = document.createElement("div");
@@ -780,7 +801,7 @@ const CONFIG = {
       primary.textContent = v == null ? "--" : def.fmt(v);
       row.appendChild(primary);
 
-      var cv = compareMatched ? aggregate(compareMatched, def) : null;
+      var cv = compareMatched ? aggregate(compareMatched, def, { avgCounts: compareAvgCounts }) : null;
       if (v != null && cv != null) {
         var delta = v - cv;
         var threshold = def.key === "responseRate" ? 0.001 : (def.key.indexOf("cat:") === 0 ? 0.005 : 0.5);
@@ -844,7 +865,7 @@ const CONFIG = {
       });
       var compare = computeCompare(selected, byId("q-compare-mode").value);
       byId("q-compare-note").textContent = compare.note || "";
-      renderMetricCards(byId("q-metric-cards"), selected, compare.matched);
+      renderMetricCards(byId("q-metric-cards"), selected, compare.matched, compare.avgCounts);
     }
     ["q-meeting-year", "q-meeting-quarter", "q-meeting-region", "q-compare-mode"].forEach(function (id) {
       byId(id).addEventListener("change", renderCompare);
