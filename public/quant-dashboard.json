@@ -1,174 +1,26 @@
 {
-  "2023-Q3 All": {
-    "avgAttendees": 72,
+  "2026-Q3 Central": {
+    "avgAttendees": 99,
     "byCategory": {
-      "Meeting logistics": 4.73,
+      "Meeting logistics": 4.67,
+      "Overall value": 4.41,
+      "Panel": 4.44
+    },
+    "generated": "2026-09-16T15:02:58+00:00",
+    "responseRate": 0.2727272727272727,
+    "responses": 27,
+    "sourceFile": "Post-Meeting Survey.csv"
+  },
+  "2026-Q3 Southern": {
+    "avgAttendees": 65,
+    "byCategory": {
+      "Meeting logistics": 4.67,
       "Overall value": 4.53,
-      "Panel": 0.0,
-      "Prepared": 4.4,
-      "Presentation": 0.0,
-      "Workshop": 0.0
+      "Panel": 4.38
     },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.625,
-    "responses": 45,
-    "sourceFile": "2023-Q3.xlsx"
-  },
-  "2023-Q4 All": {
-    "avgAttendees": 32,
-    "byCategory": {
-      "Meeting logistics": 4.56,
-      "Overall value": 4.44,
-      "Prepared": 4.33
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.28125,
-    "responses": 9,
-    "sourceFile": "2023-Q4.xlsx"
-  },
-  "2024-Q1 All": {
-    "avgAttendees": 136,
-    "byCategory": {
-      "Meeting logistics": 4.84,
-      "Overall value": 4.7,
-      "Prepared": 4.52
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.36764705882352944,
-    "responses": 50,
-    "sourceFile": "2024-Q1.xlsx"
-  },
-  "2024-Q2 All": {
-    "avgAttendees": 62,
-    "byCategory": {
-      "Meeting logistics": 4.8,
-      "Overall value": 4.55,
-      "Prepared": 4.4,
-      "Presentation": 4.41
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.8064516129032258,
-    "responses": 50,
-    "sourceFile": "2024-Q2.xlsx"
-  },
-  "2024-Q3 All": {
-    "avgAttendees": 58,
-    "byCategory": {
-      "Meeting logistics": 4.5,
-      "Overall value": 4.47,
-      "Prepared": 4.43,
-      "Presentation": 4.28
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.5172413793103449,
-    "responses": 30,
-    "sourceFile": "2024-Q3.xlsx"
-  },
-  "2024-Q4 All": {
-    "avgAttendees": 60,
-    "byCategory": {
-      "Meeting logistics": 4.73,
-      "Overall value": 4.64,
-      "Prepared": 4.27,
-      "Presentation": 4.29
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.18333333333333332,
-    "responses": 11,
-    "sourceFile": "2024-Q4.xlsx"
-  },
-  "2025-Q1 All": {
-    "avgAttendees": 72,
-    "byCategory": {
-      "Meeting logistics": 4.78,
-      "Overall value": 4.72,
-      "Prepared": 4.44,
-      "Presentation": 4.56
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.25,
-    "responses": 18,
-    "sourceFile": "2025-Q1.xlsx"
-  },
-  "2025-Q2 All": {
-    "avgAttendees": 54,
-    "byCategory": {
-      "Meeting logistics": 4.69,
-      "Overall value": 4.6,
-      "Prepared": 4.38,
-      "Presentation": 4.38,
-      "Workshop": 4.4
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.2962962962962963,
-    "responses": 16,
-    "sourceFile": "2025-Q2.xlsx"
-  },
-  "2025-Q3 All": {
-    "avgAttendees": 48,
-    "byCategory": {
-      "Meeting logistics": 4.85,
-      "Overall value": 4.0,
-      "Panel": 4.31,
-      "Prepared": 4.46,
-      "Presentation": 3.85
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.2708333333333333,
-    "responses": 13,
-    "sourceFile": "2025-Q3.xlsx"
-  },
-  "2025-Q4 All": {
-    "avgAttendees": 75,
-    "byCategory": {
-      "Meeting logistics": 4.78,
-      "Overall value": 4.69,
-      "Panel": 4.63,
-      "Prepared": 4.49,
-      "Presentation": 4.6
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.6,
-    "responses": 45,
-    "sourceFile": "2025-Q4.xlsx"
-  },
-  "2026-Q1 All": {
-    "avgAttendees": 116,
-    "byCategory": {
-      "Meeting logistics": 4.82,
-      "Overall value": 4.82,
-      "Panel": 4.73,
-      "Presentation": 4.77
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.3879310344827586,
-    "responses": 45,
-    "sourceFile": "2026-Q1.xlsx"
-  },
-  "2026-Q2 Central": {
-    "avgAttendees": 88,
-    "byCategory": {
-      "Meeting logistics": 3.79,
-      "Overall value": 3.43,
-      "Panel": 3.23,
-      "Presentation": 3.21
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.1590909090909091,
-    "responses": 14,
-    "sourceFile": "2026-Q2.xlsx"
-  },
-  "2026-Q2 South": {
-    "avgAttendees": 72,
-    "byCategory": {
-      "Meeting logistics": 4.68,
-      "Overall value": 4.63,
-      "Panel": 4.58,
-      "Presentation": 4.21
-    },
-    "generated": "2026-09-15T20:04:12+00:00",
-    "responseRate": 0.2638888888888889,
-    "responses": 19,
-    "sourceFile": "2026-Q2.xlsx"
+    "generated": "2026-09-16T15:02:58+00:00",
+    "responseRate": 0.23076923076923078,
+    "responses": 15,
+    "sourceFile": "Post-Meeting Survey.csv"
   }
 }
