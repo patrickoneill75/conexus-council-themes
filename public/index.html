@@ -432,9 +432,9 @@ const CONFIG = {
           doc.innerHTML = '<div class="doc-inner"><div class="notice" style="margin:0">' +
             "<h3>Nothing published yet</h3>" +
             '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
-            "Synthesis Data File and New Survey Directory, then upload a survey and click " +
-            "<b>Analyze</b> — or run <b>Run full re-analysis</b> to publish whatever history " +
-            "is already in the Synthesis Data File.</p></div></div>";
+            "Data Folder, upload the Council Meeting Helper and Post-Meeting Survey files, then " +
+            "click <b>Update Dashboard</b> — or run <b>Run full re-analysis</b> to publish " +
+            "whatever history is already in the Feedback Log.</p></div></div>";
           return;
         }
         wrap.querySelector(".pickers").style.display = "";
@@ -675,8 +675,9 @@ const CONFIG = {
           emptyEl.innerHTML = '<div class="notice" style="margin:0">' +
             "<h3>Nothing published yet</h3>" +
             '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
-            "Quant Data Folder, upload a survey (alongside the Council Meeting Helper and " +
-            "Content Categories reference files), then click <b>Update Dashboard</b>.</p></div>";
+            "Data Folder, upload the Council Meeting Helper and Post-Meeting Survey files " +
+            "(alongside the Content Categories reference file), then click " +
+            "<b>Update Dashboard</b>.</p></div>";
           return;
         }
         emptyEl.textContent = "";

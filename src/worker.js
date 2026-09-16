@@ -9,26 +9,30 @@
  *   GET  /api/config-check                  -> which variables are set (unauthenticated)
  *   POST /api/login      { password }       -> { ok, token }
  *   GET  /api/status                        -> published council-themes.json + workflow run info
- *   POST /api/run        { job, inputs }    -> triggers a GitHub Actions workflow
+ *   POST /api/run        { job }            -> triggers a GitHub Actions workflow (no job
+ *                                               takes inputs any more -- update_dashboard
+ *                                               auto-detects new meetings on its own)
  *   GET  /api/box/authorize-url             -> where to send the browser to log in
  *   GET  /api/box/callback                  -> Box redirects here after consent
- *   GET  /api/box/status                    -> { connected, upload_folder, tracker, quant_folder }
+ *   GET  /api/box/status                    -> { connected, data_folder }
  *   POST /api/box/disconnect
- *   GET  /api/box/folders?id=0              -> folder browser (upload-folder / quant-folder picker)
- *   POST /api/box/select-upload-folder
- *   POST /api/box/select-quant-folder
- *   GET  /api/box/files?id=0                -> file browser, .xlsx only (tracker picker)
- *   POST /api/box/select-tracker
- *   POST /api/box/upload                    -> multipart proxy: browser -> Box upload API,
- *                                               into the New Survey Directory (upserts by
- *                                               name so a reuploaded same-named file replaces
- *                                               rather than duplicates)
- *   POST /api/box/upload-helper             -> multipart proxy into the Quant Data Folder's
- *                                               Council Meeting Helper.csv, merging by Meeting
- *                                               Date instead of replacing (append-only: new
- *                                               rows get added, existing rows are never
- *                                               touched)
+ *   GET  /api/box/folders?id=0              -> folder browser (Data Folder picker)
+ *   POST /api/box/select-data-folder
+ *   POST /api/box/upload  { target: "helper"|"survey", file }
+ *                                            -> multipart proxy: browser -> Box upload API,
+ *                                               into the Data Folder under a fixed name
+ *                                               (Council Meeting Helper.csv / Post-Meeting
+ *                                               Survey.csv) regardless of the uploaded
+ *                                               file's own name -- upserts, so a reupload
+ *                                               replaces the previous export wholesale
+ *                                               rather than duplicating (both exports are
+ *                                               cumulative, so a plain replace is correct)
  *   GET  /api/box/pipeline-token            -> short-lived token for the Actions run
+ *
+ * GET /api/box/files?id=0 and POST /api/box/select-tracker still exist, unused by the
+ * current admin UI, kept only so the one-time Feedback Log migration script can read
+ * whichever tracker.xlsx was already selected before this cutover -- see
+ * scripts/migrate_feedback_log.py. Removed once that migration has run.
  *
  * CONFIGURATION
  *   CONTROL_PASSWORD   (secret)  the control-panel password. Needed to sign in.
@@ -137,49 +141,20 @@ async function workflowRuns(env, workflowFile) {
  * BOX_CLIENT_ID / BOX_CLIENT_SECRET are the app's own credentials and stay in env.
  */
 const BOX_TOKEN_KEY = "box:tokens";
-const BOX_UPLOAD_FOLDER_KEY = "box:upload_folder";
+const BOX_DATA_FOLDER_KEY = "box:data_folder";
 const BOX_TRACKER_KEY = "box:tracker";
-const BOX_QUANT_FOLDER_KEY = "box:quant_folder";
 const BOX_TOKEN_URL = "https://api.box.com/oauth2/token";
 const BOX_AUTHORIZE_URL = "https://account.box.com/api/oauth2/authorize";
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 
-// Must match themes/quant_data.py's HELPER_FILENAME exactly — the Python side finds
-// this file by this same name.
-const HELPER_FILENAME = "Council Meeting Helper.csv";
-
-/* ---- tiny CSV parse/serialize, just for the Helper-file merge below --------------------
- * RFC4180-ish: handles quoted fields, embedded commas/newlines, and "" as an escaped quote.
- * Nothing fancier than that is expected in a Council Meeting Helper export.
- */
-function parseCsv(text) {
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // strip a UTF-8 BOM
-  const rows = [];
-  let row = [], field = "", inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
-      else field += c;
-    } else if (c === '"') inQuotes = true;
-    else if (c === ",") { row.push(field); field = ""; }
-    else if (c === "\r") { /* swallow; \n (or EOF) ends the row */ }
-    else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
-    else field += c;
-  }
-  if (field.length || row.length) { row.push(field); rows.push(row); }
-  return rows.filter((r) => r.some((cell) => cell !== ""));
-}
-
-function csvCell(value) {
-  value = value == null ? "" : String(value);
-  return /[",\r\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
-}
-
-function serializeCsv(rows) {
-  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
-}
+// The fixed names each upload target replaces in the Data Folder, wholesale, regardless
+// of the uploaded file's own name -- must match themes/quant_data.py's HELPER_FILENAME /
+// SURVEY_FILENAME exactly, since the Python side finds these files by name.
+const UPLOAD_TARGETS = {
+  helper: "Council Meeting Helper.csv",
+  survey: "Post-Meeting Survey.csv",
+};
 
 async function boxTokens(env) {
   const raw = await env.BOX_KV.get(BOX_TOKEN_KEY);
@@ -188,16 +163,12 @@ async function boxTokens(env) {
 async function saveBoxTokens(env, tokens) {
   await env.BOX_KV.put(BOX_TOKEN_KEY, JSON.stringify(tokens));
 }
-async function boxUploadFolder(env) {
-  const raw = await env.BOX_KV.get(BOX_UPLOAD_FOLDER_KEY);
+async function boxDataFolder(env) {
+  const raw = await env.BOX_KV.get(BOX_DATA_FOLDER_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 async function boxTracker(env) {
   const raw = await env.BOX_KV.get(BOX_TRACKER_KEY);
-  return raw ? JSON.parse(raw) : null;
-}
-async function boxQuantFolder(env) {
-  const raw = await env.BOX_KV.get(BOX_QUANT_FOLDER_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 
@@ -302,22 +273,22 @@ async function handleApi(route, request, env) {
       if (response.ok) quant = await response.json();
     } catch (e) { /* nothing published yet */ }
 
-    let updateDashboard = { runs: [] }, setupRun = { runs: [] };
+    let updateDashboard = { runs: [] }, setupRun = { runs: [] }, refreshRun = { runs: [] };
     if (env.GITHUB_TOKEN && env.GITHUB_REPO) {
-      [updateDashboard, setupRun] = await Promise.all([
+      [updateDashboard, setupRun, refreshRun] = await Promise.all([
         workflowRuns(env, "update_dashboard.yml"),
         workflowRuns(env, "setup_analysis.yml"),
+        workflowRuns(env, "refresh_dashboard.yml"),
       ]);
     }
     return json({
       themes, quant,
-      workflows: { update_dashboard: updateDashboard, setup: setupRun },
+      workflows: { update_dashboard: updateDashboard, setup: setupRun, refresh_dashboard: refreshRun },
     });
   }
 
   // ---- POST /api/run -----------------------------------------------------------------
-  // { job: "update_dashboard", inputs: { survey_file_id, survey_file_name, year, quarter,
-  //   region } } or { job: "setup" }
+  // { job: "update_dashboard" | "setup" | "refresh_dashboard" } -- no job takes inputs.
   if (route === "run" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
@@ -332,23 +303,11 @@ async function handleApi(route, request, env) {
     // Allowlist: never interpolate caller input into the workflow path.
     const workflow = {
       update_dashboard: "update_dashboard.yml", setup: "setup_analysis.yml",
+      refresh_dashboard: "refresh_dashboard.yml",
     }[job];
     if (!workflow) return json({ error: "Unknown job" }, 400);
 
     const dispatchBody = { ref: env.GITHUB_BRANCH || "main" };
-    if (job === "update_dashboard") {
-      const inputs = body.inputs || {};
-      for (const key of ["survey_file_id", "survey_file_name", "year", "quarter", "region"]) {
-        if (!inputs[key]) return json({ error: `Missing input: ${key}` }, 400);
-      }
-      dispatchBody.inputs = {
-        survey_file_id: String(inputs.survey_file_id),
-        survey_file_name: String(inputs.survey_file_name),
-        year: String(inputs.year),
-        quarter: String(inputs.quarter),
-        region: String(inputs.region),
-      };
-    }
 
     const response = await fetch(
       `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${workflow}/dispatches`,
@@ -413,14 +372,10 @@ async function handleApi(route, request, env) {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
     const tokens = env.BOX_KV ? await boxTokens(env) : null;
-    const uploadFolder = env.BOX_KV ? await boxUploadFolder(env) : null;
-    const tracker = env.BOX_KV ? await boxTracker(env) : null;
-    const quantFolder = env.BOX_KV ? await boxQuantFolder(env) : null;
+    const dataFolder = env.BOX_KV ? await boxDataFolder(env) : null;
     return json({
       connected: Boolean(tokens),
-      upload_folder: uploadFolder || null,
-      tracker: tracker || null,
-      quant_folder: quantFolder || null,
+      data_folder: dataFolder || null,
     });
   }
 
@@ -430,9 +385,8 @@ async function handleApi(route, request, env) {
     if (denied) return denied;
     if (env.BOX_KV) {
       await env.BOX_KV.delete(BOX_TOKEN_KEY);
-      await env.BOX_KV.delete(BOX_UPLOAD_FOLDER_KEY);
+      await env.BOX_KV.delete(BOX_DATA_FOLDER_KEY);
       await env.BOX_KV.delete(BOX_TRACKER_KEY);
-      await env.BOX_KV.delete(BOX_QUANT_FOLDER_KEY);
     }
     return json({ ok: true });
   }
@@ -468,27 +422,14 @@ async function handleApi(route, request, env) {
     return json({ id, name: info.name, breadcrumb, folders, file_count: fileCount });
   }
 
-  // ---- POST /api/box/select-upload-folder -----------------------------------------------
-  if (route === "box/select-upload-folder" && method === "POST") {
+  // ---- POST /api/box/select-data-folder ---------------------------------------------------
+  if (route === "box/select-data-folder" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
     let body;
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     if (!body.folder_id) return json({ error: "folder_id is required" }, 400);
-    await env.BOX_KV.put(BOX_UPLOAD_FOLDER_KEY, JSON.stringify({
-      id: String(body.folder_id), name: String(body.folder_name || ""),
-    }));
-    return json({ ok: true });
-  }
-
-  // ---- POST /api/box/select-quant-folder -------------------------------------------------
-  if (route === "box/select-quant-folder" && method === "POST") {
-    const denied = await requireAuth(request, env);
-    if (denied) return denied;
-    let body;
-    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    if (!body.folder_id) return json({ error: "folder_id is required" }, 400);
-    await env.BOX_KV.put(BOX_QUANT_FOLDER_KEY, JSON.stringify({
+    await env.BOX_KV.put(BOX_DATA_FOLDER_KEY, JSON.stringify({
       id: String(body.folder_id), name: String(body.folder_name || ""),
     }));
     return json({ ok: true });
@@ -540,23 +481,27 @@ async function handleApi(route, request, env) {
   }
 
   // ---- POST /api/box/upload -----------------------------------------------------------
-  // Multipart proxy: the browser posts a file here (multipart/form-data, field name
-  // "file"), authenticated by the normal admin session — never a Box token in the browser.
-  // This Worker re-packages it as Box's own multipart upload request and sends it to the
-  // New Survey Directory, the one shared source both the themes and quant pipelines read
-  // from. Upserts by name: if a file with the same name already exists directly in the
-  // destination folder, this uploads a new version of it instead of creating a duplicate.
+  // Multipart proxy: the browser posts a file here (multipart/form-data, fields "file"
+  // and "target"), authenticated by the normal admin session — never a Box token in the
+  // browser. This Worker re-packages it as Box's own multipart upload request and sends
+  // it to the Data Folder, under the fixed name UPLOAD_TARGETS[target] rather than
+  // whatever the uploaded file happens to be called locally. Upserts by that fixed name:
+  // if it already exists in the Data Folder, this uploads a new version of it instead of
+  // creating a duplicate — both exports are cumulative (each fresh export already
+  // contains all previous data plus new data), so replacing wholesale is correct.
   if (route === "box/upload" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
     const auth = await validBoxAccessToken(env);
     if (!auth) return json({ error: "Box is not connected yet." }, 409);
-    const target = await boxUploadFolder(env);
-    if (!target) return json({ error: "No destination folder has been selected yet." }, 409);
+    const target = await boxDataFolder(env);
+    if (!target) return json({ error: "No Data Folder has been selected yet (see Developer)." }, 409);
 
     const incoming = await request.formData();
     const file = incoming.get("file");
     if (!(file instanceof File)) return json({ error: "No file in the request." }, 400);
+    const filename = UPLOAD_TARGETS[incoming.get("target")];
+    if (!filename) return json({ error: "Unknown upload target." }, 400);
 
     const headers = { authorization: `Bearer ${auth.token}` };
     const itemsRes = await fetch(
@@ -565,15 +510,15 @@ async function handleApi(route, request, env) {
     let existingId = null;
     if (itemsRes.ok) {
       const items = await itemsRes.json();
-      const match = (items.entries || []).find((e) => e.type === "file" && e.name === file.name);
+      const match = (items.entries || []).find((e) => e.type === "file" && e.name === filename);
       if (match) existingId = match.id;
     }
 
     const outgoing = new FormData();
     if (!existingId) {
-      outgoing.append("attributes", JSON.stringify({ name: file.name, parent: { id: target.id } }));
+      outgoing.append("attributes", JSON.stringify({ name: filename, parent: { id: target.id } }));
     }
-    outgoing.append("file", file, file.name);
+    outgoing.append("file", file, filename);
     const uploadUrl = existingId
       ? `${BOX_UPLOAD_API}/files/${existingId}/content`
       : `${BOX_UPLOAD_API}/files/content`;
@@ -590,86 +535,6 @@ async function handleApi(route, request, env) {
     return json({ ok: true, file_id: uploaded.id, file_name: uploaded.name });
   }
 
-  // ---- POST /api/box/upload-helper -------------------------------------------------------
-  // A second, special-cased upload: the uploaded file is a fresh export of the Council
-  // Meeting Helper, which may only cover the newest meeting(s) rather than the whole
-  // history. Rather than replacing the existing Council Meeting Helper.csv wholesale (which
-  // would drop every earlier meeting the new export doesn't happen to include), this reads
-  // whatever's already in the Quant Data Folder, and appends only the rows whose Meeting
-  // Date isn't already present — existing rows are never touched or overwritten, even if
-  // the new export also happens to include them with different values.
-  if (route === "box/upload-helper" && method === "POST") {
-    const denied = await requireAuth(request, env);
-    if (denied) return denied;
-    const auth = await validBoxAccessToken(env);
-    if (!auth) return json({ error: "Box is not connected yet." }, 409);
-    const target = await boxQuantFolder(env);
-    if (!target) return json({ error: "Choose the Quant Data Folder first (see Developer)." }, 409);
-
-    const incoming = await request.formData();
-    const file = incoming.get("file");
-    if (!(file instanceof File)) return json({ error: "No file in the request." }, 400);
-
-    const newRows = parseCsv(await file.text());
-    if (!newRows.length) return json({ error: "The uploaded file has no rows." }, 400);
-    const [newHeader, ...newData] = newRows;
-    const dateCol = newHeader.findIndex((h) => h.trim().toLowerCase() === "meeting date");
-    if (dateCol === -1) return json({ error: "No 'Meeting Date' column found in the uploaded file." }, 400);
-
-    const headers = { authorization: `Bearer ${auth.token}` };
-    const itemsRes = await fetch(
-      `${BOX_API}/folders/${target.id}/items?fields=name,type&limit=1000`, { headers }
-    );
-    if (!itemsRes.ok) return json({ error: `Box API error (${itemsRes.status})` }, 502);
-    const items = await itemsRes.json();
-    const existing = (items.entries || []).find((e) => e.type === "file" && e.name === HELPER_FILENAME);
-
-    let mergedHeader = newHeader, mergedData = newData, added = newData.length;
-    if (existing) {
-      const contentRes = await fetch(`${BOX_API}/files/${existing.id}/content`, { headers });
-      if (!contentRes.ok) {
-        return json({ error: `Could not download the existing ${HELPER_FILENAME} (${contentRes.status})` }, 502);
-      }
-      const existingRows = parseCsv(await contentRes.text());
-      const [existingHeader, ...existingData] = existingRows;
-      if (JSON.stringify(existingHeader) !== JSON.stringify(newHeader)) {
-        return json({ error: `The uploaded file's columns don't match the existing ${HELPER_FILENAME} `
-                            + "— check it's the same export format." }, 400);
-      }
-      const known = new Set(existingData.map((r) => (r[dateCol] || "").trim()).filter(Boolean));
-      const toAppend = newData.filter((r) => {
-        const d = (r[dateCol] || "").trim();
-        return d && !known.has(d);
-      });
-      mergedHeader = existingHeader;
-      mergedData = existingData.concat(toAppend);
-      added = toAppend.length;
-    }
-
-    const csvText = serializeCsv([mergedHeader, ...mergedData]);
-    const outgoing = new FormData();
-    const blob = new Blob([csvText], { type: "text/csv" });
-    if (!existing) {
-      outgoing.append("attributes", JSON.stringify({ name: HELPER_FILENAME, parent: { id: target.id } }));
-    }
-    outgoing.append("file", blob, HELPER_FILENAME);
-    const uploadUrl = existing
-      ? `${BOX_UPLOAD_API}/files/${existing.id}/content`
-      : `${BOX_UPLOAD_API}/files/content`;
-
-    const response = await fetch(uploadUrl, { method: "POST", headers, body: outgoing });
-    if (!response.ok) {
-      const detail = await response.text();
-      return json({ error: `Box upload failed (${response.status})`,
-                    detail: detail.slice(0, 400) }, 502);
-    }
-    const body = await response.json();
-    const uploaded = (body.entries || [])[0];
-    if (!uploaded) return json({ error: "Box did not return the uploaded file." }, 502);
-    return json({ ok: true, file_id: uploaded.id, file_name: uploaded.name,
-                  added, total: mergedData.length });
-  }
-
   // ---- GET /api/box/pipeline-token -------------------------------------------------------
   // Called by themes/box_store.py during an Actions run, authenticated by a shared secret
   // rather than the admin session — GitHub Actions has no browser to sign in with. This is
@@ -683,22 +548,20 @@ async function handleApi(route, request, env) {
     if (!auth) {
       return json({ error: "Box is not connected. Open the control panel and log in with Box." }, 409);
     }
-    const folder = await boxUploadFolder(env);
-    const tracker = await boxTracker(env);
-    if (!folder || !tracker) {
-      return json({ error: "Set up the upload folder and tracker file first. Open the control panel." }, 409);
+    const folder = await boxDataFolder(env);
+    if (!folder) {
+      return json({ error: "Set up the Data Folder first. Open the control panel." }, 409);
     }
-    // quant_folder_id is nullable here on purpose: this relay is shared by both pipelines,
-    // and the themes scripts (which don't use it) shouldn't fail just because quant setup
-    // hasn't happened yet. scripts/update_quant_dashboard.py checks for it itself.
-    const quantFolder = await boxQuantFolder(env);
+    // tracker_file_id is nullable here on purpose: it's only needed by the one-time
+    // Feedback Log migration script, not by the normal update_dashboard/refresh_dashboard
+    // runs, which shouldn't fail just because a tracker was never picked (or the migration
+    // has already run and this route's tracker support has since been removed).
+    const tracker = await boxTracker(env);
     return json({
       access_token: auth.token,
       expires_in: auth.expiresIn,
-      upload_folder_id: folder.id,
-      tracker_file_id: tracker.id,
-      tracker_file_name: tracker.name,
-      quant_folder_id: quantFolder ? quantFolder.id : null,
+      data_folder_id: folder.id,
+      tracker_file_id: tracker ? tracker.id : null,
     });
   }
 

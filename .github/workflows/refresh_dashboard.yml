@@ -1,11 +1,9 @@
-name: Update dashboard
+name: Refresh dashboard
 
-# Triggered from the control panel's single "Update Dashboard" button (workflow_dispatch
-# via the GitHub API), or by hand from the Actions tab. No inputs -- it auto-detects
-# every meeting in the Data Folder's Post-Meeting Survey export that isn't in
-# data/feedback_log.json yet (resolving Year/Quarter/Region per meeting from the
-# Council Meeting Helper export), extracts and synthesizes themes for each one, then
-# rebuilds the quant dashboard from the same two files.
+# Triggered from the control panel's "Refresh Dashboard" button (workflow_dispatch via
+# the GitHub API), or by hand from the Actions tab. No inputs -- it re-reads the Data
+# Folder's three fixed-name files, no new upload needed. Use this after editing or
+# deleting something directly in Box.
 on:
   workflow_dispatch:
 
@@ -17,7 +15,7 @@ permissions:
   contents: write
 
 jobs:
-  update:
+  refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -30,22 +28,21 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Extract themes for new meetings and rebuild the quant dashboard
+      - name: Rebuild the quant dashboard from current Box contents
         env:
           BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
           BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python scripts/update_dashboard.py
+        run: python scripts/refresh_dashboard.py
 
-      - name: Commit site and data
+      - name: Commit site
         run: |
           git config user.name  "themes-bot"
           git config user.email "actions@github.com"
-          git add public/ data/
+          git add public/
           if git diff --staged --quiet; then
             echo "Nothing changed."
           else
-            git commit -m "Update dashboard"
+            git commit -m "Refresh quant dashboard"
             git push
           fi
           # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,

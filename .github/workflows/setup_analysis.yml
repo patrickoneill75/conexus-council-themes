@@ -2,7 +2,7 @@ name: Full re-analysis
 
 # Triggered from the control panel's "Run full re-analysis" button (workflow_dispatch
 # via the GitHub API), or by hand from the Actions tab. No inputs — it always reads
-# whichever tracker file is currently selected in the control panel.
+# data/feedback_log.json.
 on:
   workflow_dispatch:
 
@@ -27,10 +27,8 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Synthesize every quarter already in the tracker
+      - name: Synthesize every quarter already in the Feedback Log
         env:
-          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
-          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/setup_analysis.py
 
