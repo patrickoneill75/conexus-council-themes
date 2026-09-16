@@ -1,28 +1,22 @@
-name: Refresh dashboard
+name: Migrate feedback log (one-time)
 
-# Triggered from the control panel's "Refresh Dashboard" button (workflow_dispatch via
-# the GitHub API), or by hand from the Actions tab. No inputs -- it re-reads the Data
-# Folder's three fixed-name files, no new upload needed. Use this after editing or
-# deleting something directly in Box.
+# One-off: seeds data/feedback_log.json and data/taxonomy.json from the historical
+# tracker.xlsx in Box, so QoQ/YoY comparisons have real history to compute against.
+# No inputs, no button in the control panel -- triggered once via the GitHub Actions
+# API, then this workflow (and scripts/migrate_feedback_log.py) gets deleted.
 on:
   workflow_dispatch:
-
-concurrency:
-  group: themes-analyze
-  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  refresh:
+  migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          # See update_dashboard.yml -- the commit step below rebases onto origin/main
-          # on a rejected push, which needs real (non-shallow) history to do.
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -32,23 +26,21 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Rebuild the quant dashboard from current Box contents
+      - name: Seed the Feedback Log and taxonomy from tracker.xlsx
         env:
           BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
           BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
-        run: python scripts/refresh_dashboard.py
+        run: python scripts/migrate_feedback_log.py
 
-      - name: Commit site
-        # Consistent with the other two workflows' commit steps -- see update_dashboard.yml.
-        if: always()
+      - name: Commit data
         run: |
           git config user.name  "themes-bot"
           git config user.email "actions@github.com"
-          git add public/
+          git add data/
           if git diff --staged --quiet; then
             echo "Nothing changed."
           else
-            git commit -m "Refresh quant dashboard"
+            git commit -m "Migrate Feedback Log and taxonomy from tracker.xlsx"
             for attempt in 1 2 3 4 5; do
               if git push; then
                 break
@@ -62,6 +54,3 @@ jobs:
               git rebase origin/main
             done
           fi
-          # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
-          # but Cloudflare redeploys the Worker from this push through its own Git
-          # integration.
