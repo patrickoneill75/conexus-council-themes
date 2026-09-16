@@ -54,21 +54,24 @@ const CONFIG = {
     --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
     --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
     --accent:#2a78d6; --good:#006300; --bad:#d03b3b;
-    --bench-bg:#e6e5df; --meeting-bg:rgba(42,120,214,.14); --meeting-select-bg:rgba(42,120,214,.07);
+    --bench-bg:#e6e5df; --meeting-bg:rgba(42,120,214,.14); --meeting-select-bg:rgba(42,120,214,.035);
+    --bench-text:#2666b6;
   }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
     color-scheme: dark;
     --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
     --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
     --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
-    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:rgba(57,135,229,.10);
+    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:rgba(57,135,229,.05);
+    --bench-text:#3379ce;
   } }
   :root[data-theme="dark"] {
     color-scheme: dark;
     --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
     --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
     --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
-    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:rgba(57,135,229,.10);
+    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:rgba(57,135,229,.05);
+    --bench-text:#3379ce;
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
@@ -178,10 +181,12 @@ const CONFIG = {
   .metric-delta.down { background:rgba(208,59,59,.13); color:var(--bad); }
   .metric-delta.flat { background:var(--wash); color:var(--text-muted); }
   .metric-benchmark { font-size:11.5px; color:var(--text-muted); }
-  /* Same blue as the Benchmark period field, carried down into every card that's
-     actually showing a benchmark value -- one visual cue for "benchmark" everywhere
-     it shows up on the tab. */
-  .metric-benchmark.has-value, .metric-benchmark.has-value b { color:var(--accent); }
+  /* Same family of blue as the Benchmark period field, carried down into every card
+     that's actually showing a benchmark value -- one visual cue for "benchmark"
+     everywhere it shows up on the tab. A touch darker than --accent (its own token,
+     --bench-text) since a whole line of body text reads better a shade less bright
+     than a button or a link. */
+  .metric-benchmark.has-value, .metric-benchmark.has-value b { color:var(--bench-text); }
   .metric-benchmark.has-value b { font-weight:600; }
   .time-controls { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
   .date-inputs { display:flex; gap:7px; align-items:center; }
