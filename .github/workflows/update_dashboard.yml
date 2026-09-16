@@ -38,6 +38,14 @@ jobs:
         run: python scripts/update_dashboard.py
 
       - name: Commit site and data
+        # Runs even if the previous step failed: it processes every new meeting's
+        # themes (real Claude calls, real cost) before rebuilding the quant dashboard,
+        # and those two halves are independent -- a quant-side failure (e.g. a missing
+        # Content Categories.xlsx) shouldn't discard already-successful, already-paid-for
+        # theme extractions sitting in the runner's working directory. Whatever got
+        # written to public/ and data/ before the failure still gets committed; anything
+        # that never got processed simply isn't there yet, to be picked up next run.
+        if: always()
         run: |
           git config user.name  "themes-bot"
           git config user.email "actions@github.com"
