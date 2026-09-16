@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Mini App Platform</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --bad:#d03b3b; --good:#0ca30c;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --bad:#d03b3b; --good:#0ca30c;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; padding:24px; }
+  .wrap { width:100%; max-width:380px; }
+  h1 { font-size:19px; font-weight:650; margin:0 0 4px; letter-spacing:-0.01em; text-align:center; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:0 0 22px; text-align:center; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:22px; margin-bottom:14px; }
+  label { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+          color:var(--text-muted); font-weight:600; margin:12px 0 6px; }
+  label:first-of-type { margin-top:0; }
+  input[type=text], input[type=email], input[type=password] {
+    width:100%; font:inherit; padding:9px 11px; border-radius:8px;
+    border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  button { width:100%; font:inherit; font-weight:600; border-radius:8px; border:1px solid var(--accent);
+           cursor:pointer; padding:10px 16px; background:var(--accent); color:#fff; margin-top:16px; }
+  button:disabled { opacity:.55; cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--accent); border-color:transparent;
+                 font-weight:600; margin-top:10px; }
+  .msg { font-size:12.5px; margin:10px 0 0; min-height:1em; }
+  .msg.err { color:var(--bad); }
+  .msg.ok { color:var(--good); }
+  .msg.muted { color:var(--text-muted); }
+  .toggle-row { text-align:center; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mini App Platform</h1>
+  <p class="sub">Sign in with your admin account.</p>
+
+  <div class="card" id="loginCard">
+    <label for="loginId">Email or username</label>
+    <input type="text" id="loginId" autocomplete="username">
+    <label for="loginPw">Password</label>
+    <input type="password" id="loginPw" autocomplete="current-password">
+    <button type="button" id="loginBtn">Sign in</button>
+    <p class="msg" id="loginMsg"></p>
+    <div class="toggle-row">
+      <button type="button" class="ghost" id="showSetupBtn">Set up new account / Forgot password</button>
+    </div>
+  </div>
+
+  <div class="card" id="setupCard" hidden>
+    <div id="setupEmailStep">
+      <label for="setupEmail">Email address</label>
+      <input type="email" id="setupEmail" autocomplete="email">
+      <button type="button" id="setupCheckBtn">Continue</button>
+      <p class="msg" id="setupCheckMsg"></p>
+    </div>
+    <div id="setupPasswordStep" hidden>
+      <label for="setupUsername">Choose a username</label>
+      <input type="text" id="setupUsername" autocomplete="username">
+      <label for="setupPassword">Choose a password</label>
+      <input type="password" id="setupPassword" autocomplete="new-password">
+      <p class="msg muted">At least 8 characters.</p>
+      <button type="button" id="setupCompleteBtn">Set password &amp; sign in</button>
+      <p class="msg" id="setupCompleteMsg"></p>
+    </div>
+    <div class="toggle-row">
+      <button type="button" class="ghost" id="showLoginBtn">Back to sign in</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+
+  function api(path, body) {
+    return fetch("/api/beta/" + path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body || {}),
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+        return data;
+      });
+    });
+  }
+
+  function goToPlatform(token) {
+    try { sessionStorage.setItem("beta-token", token); } catch (e) {}
+    window.location.href = "/beta/index.html";
+  }
+
+  /* resume an existing session */
+  try {
+    if (sessionStorage.getItem("beta-token")) {
+      window.location.href = "/beta/index.html";
+    }
+  } catch (e) {}
+
+  el("loginBtn").addEventListener("click", function () {
+    var identifier = el("loginId").value.trim();
+    var password = el("loginPw").value;
+    if (!identifier || !password) {
+      el("loginMsg").className = "msg err";
+      el("loginMsg").textContent = "Enter your email/username and password.";
+      return;
+    }
+    el("loginBtn").disabled = true;
+    el("loginMsg").className = "msg muted";
+    el("loginMsg").textContent = "Signing in…";
+    api("login", { identifier: identifier, password: password })
+      .then(function (data) { goToPlatform(data.token); })
+      .catch(function (e) {
+        el("loginBtn").disabled = false;
+        el("loginMsg").className = "msg err";
+        el("loginMsg").textContent = e.message;
+      });
+  });
+  el("loginPw").addEventListener("keydown", function (e) { if (e.key === "Enter") el("loginBtn").click(); });
+  el("loginId").addEventListener("keydown", function (e) { if (e.key === "Enter") el("loginPw").focus(); });
+
+  function showSetup() {
+    el("loginCard").hidden = true;
+    el("setupCard").hidden = false;
+    el("setupEmailStep").hidden = false;
+    el("setupPasswordStep").hidden = true;
+    el("setupCheckMsg").textContent = "";
+    el("setupCompleteMsg").textContent = "";
+  }
+  function showLogin() {
+    el("setupCard").hidden = true;
+    el("loginCard").hidden = false;
+  }
+  el("showSetupBtn").addEventListener("click", showSetup);
+  el("showLoginBtn").addEventListener("click", showLogin);
+
+  el("setupCheckBtn").addEventListener("click", function () {
+    var email = el("setupEmail").value.trim();
+    if (!email) {
+      el("setupCheckMsg").className = "msg err";
+      el("setupCheckMsg").textContent = "Enter an email address.";
+      return;
+    }
+    el("setupCheckBtn").disabled = true;
+    el("setupCheckMsg").className = "msg muted";
+    el("setupCheckMsg").textContent = "Checking…";
+    fetch("/api/beta/setup-check", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: email }),
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      el("setupCheckBtn").disabled = false;
+      if (!data.allowed) {
+        el("setupCheckMsg").className = "msg err";
+        el("setupCheckMsg").textContent = data.reason || "That email can't set up a password right now.";
+        return;
+      }
+      el("setupCheckMsg").textContent = "";
+      el("setupEmailStep").hidden = true;
+      el("setupPasswordStep").hidden = false;
+      var suggested = email.split("@")[0].replace(/[^a-z0-9._-]/gi, "");
+      if (!el("setupUsername").value) el("setupUsername").value = suggested;
+    }).catch(function () {
+      el("setupCheckBtn").disabled = false;
+      el("setupCheckMsg").className = "msg err";
+      el("setupCheckMsg").textContent = "Something went wrong -- try again.";
+    });
+  });
+
+  el("setupCompleteBtn").addEventListener("click", function () {
+    var email = el("setupEmail").value.trim();
+    var username = el("setupUsername").value.trim();
+    var password = el("setupPassword").value;
+    if (!username || password.length < 8) {
+      el("setupCompleteMsg").className = "msg err";
+      el("setupCompleteMsg").textContent = "Choose a username and a password of at least 8 characters.";
+      return;
+    }
+    el("setupCompleteBtn").disabled = true;
+    el("setupCompleteMsg").className = "msg muted";
+    el("setupCompleteMsg").textContent = "Saving…";
+    api("setup-complete", { email: email, username: username, password: password })
+      .then(function (data) { goToPlatform(data.token); })
+      .catch(function (e) {
+        el("setupCompleteBtn").disabled = false;
+        el("setupCompleteMsg").className = "msg err";
+        el("setupCompleteMsg").textContent = e.message;
+      });
+  });
+})();
+</script>
+</body>
+</html>
