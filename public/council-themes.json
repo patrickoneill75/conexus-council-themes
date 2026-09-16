@@ -6,24 +6,31 @@
         "count": 2,
         "example": "Add more Q&A time and have speakers repeat or hold the mic for questions so the room can hear.",
         "subcategory": "Q&A time",
-        "summary": "More interaction: longer Q&A and small-group discussion instead of straight presentations"
+        "summary": "More interaction: extra Q&A and small-group discussion instead of all-presentation format"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 1,
+        "example": "Share an attendee list to make networking easier.",
+        "subcategory": "Attendee information",
+        "summary": "Better networking support, starting with an attendee list"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
-        "count": 2,
+        "count": 1,
         "example": "Send pre-read data (like the TEConomy report) further ahead so attendees can prepare questions.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Get materials and attendee info out earlier to support prep and networking"
+        "summary": "Send pre-reads earlier so attendees can prepare"
       },
       {
         "category": "Content Relevance & Depth",
         "count": 1,
         "example": "Clarify how Industry 4.0 content applies to smaller companies and suppliers, not just large ones.",
         "subcategory": "Small and midsized manufacturer applicability",
-        "summary": "Make content applicable to smaller manufacturers and suppliers, not just large firms"
+        "summary": "Make content relevant to smaller manufacturers and suppliers"
       }
     ],
-    "generated": "2026-09-15T17:53:39+00:00",
+    "generated": "2026-09-16T16:59:57+00:00",
     "qoq": [],
     "sourceFile": "2024-Q1-All.docx",
     "yoy": []
@@ -35,7 +42,7 @@
         "count": 1,
         "example": "Add a facilitated roundtable discussion format to complement presentations.",
         "subcategory": "Small-group and roundtable discussion",
-        "summary": "Add interactive roundtable/small-group formats alongside presentations"
+        "summary": "Add interactive roundtable discussion alongside presentations"
       },
       {
         "category": "Content Relevance & Depth",
@@ -49,45 +56,45 @@
         "count": 1,
         "example": "Improve audio quality, especially for tours held on noisy warehouse floors.",
         "subcategory": "Audio and sound",
-        "summary": "Improve audio quality, especially during noisy facility tours"
-      },
-      {
-        "category": "Pre-Meeting Communication & Materials",
-        "count": 1,
-        "example": "Share more background on host companies in advance of facility tours.",
-        "subcategory": "Tour preparation info",
-        "summary": "Send host company background ahead of facility tours"
+        "summary": "Better audio, especially on noisy facility tours"
       },
       {
         "category": "Agenda & Time Management",
         "count": 1,
         "example": "Break sessions into smaller chunks to help hold attention throughout the day.",
         "subcategory": "Session length and pacing",
-        "summary": "Shorten and break up sessions to sustain attention"
+        "summary": "Shorter session blocks to sustain attention across the day"
+      },
+      {
+        "category": "Pre-Meeting Communication & Materials",
+        "count": 1,
+        "example": "Share more background on host companies in advance of facility tours.",
+        "subcategory": "Tour preparation info",
+        "summary": "More advance background on host companies before tours"
       }
     ],
-    "generated": "2026-09-15T17:53:50+00:00",
+    "generated": "2026-09-16T17:00:08+00:00",
     "qoq": [
       {
         "category": "Session Format & Facilitation",
         "count": 2,
         "example": "Add small-group discussion time to break up the large-format presentations.",
         "subcategory": "Small-group and roundtable discussion",
-        "summary": "Add interactive roundtable/small-group formats alongside presentations"
+        "summary": "Ongoing ask for small-group/roundtable discussion to break up large-format presentations"
       },
       {
         "category": "Content Relevance & Depth",
         "count": 2,
         "example": "Clarify how Industry 4.0 content applies to smaller companies and suppliers, not just large ones.",
         "subcategory": "Small and midsized manufacturer applicability",
-        "summary": "Make content more actionable for small and mid-sized manufacturers"
+        "summary": "Repeated request to tailor content to smaller and mid-sized manufacturers"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 2,
         "example": "Send pre-read data (like the TEConomy report) further ahead so attendees can prepare questions.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Provide advance materials earlier so attendees can prepare"
+        "summary": "Persistent need for advance materials so attendees can prepare"
       }
     ],
     "sourceFile": "2024-Q2-All.docx",
@@ -97,21 +104,21 @@
         "count": 2,
         "example": "Add small-group discussion time to break up the large-format presentations.",
         "subcategory": "Small-group and roundtable discussion",
-        "summary": "Add interactive roundtable/small-group formats alongside presentations"
+        "summary": "Year-long theme: more interactive small-group discussion vs. one-way presentations"
       },
       {
         "category": "Content Relevance & Depth",
         "count": 2,
         "example": "Clarify how Industry 4.0 content applies to smaller companies and suppliers, not just large ones.",
         "subcategory": "Small and midsized manufacturer applicability",
-        "summary": "Make content more actionable for small and mid-sized manufacturers"
+        "summary": "Year-long theme: relevance of content for small and mid-sized manufacturers"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 2,
         "example": "Send pre-read data (like the TEConomy report) further ahead so attendees can prepare questions.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Provide advance materials earlier so attendees can prepare"
+        "summary": "Year-long theme: send background and pre-read materials earlier"
       }
     ]
   },
@@ -120,26 +127,33 @@
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 2,
-        "example": "Fix pre-meeting communication delivery so materials reliably reach all attendees.",
+        "example": "Clarify meeting location instructions in advance to avoid confusion.",
         "subcategory": "Logistics instructions",
         "summary": "Pre-meeting communication needs to be clearer and actually reach everyone"
       },
       {
         "category": "Meeting Logistics & AV",
-        "count": 2,
+        "count": 1,
         "example": "Improve projection and slide visibility, since some presentations were hard to see.",
         "subcategory": "Slide design and legibility",
-        "summary": "Slides and projection were hard to see; attendees also want takeaway materials beyond the deck"
+        "summary": "Slides were hard to see; improve projection and legibility"
       },
       {
         "category": "Content Relevance & Depth",
         "count": 1,
         "example": "Some content felt too far out to act on; attendees prefer more near-term, actionable topics.",
         "subcategory": "Actionability and near-term relevance",
-        "summary": "Content felt too forward-looking; attendees want near-term, actionable topics"
+        "summary": "Content felt too far out; attendees want near-term, actionable topics"
+      },
+      {
+        "category": "Post-Meeting Materials & Follow-Up",
+        "count": 1,
+        "example": "Provide more takeaway materials beyond the slides for detailed topics.",
+        "subcategory": "Handouts and takeaways",
+        "summary": "Want takeaway materials beyond the slide decks for detailed topics"
       }
     ],
-    "generated": "2026-09-15T17:54:01+00:00",
+    "generated": "2026-09-16T17:00:19+00:00",
     "qoq": [
       {
         "category": "Pre-Meeting Communication & Materials",
@@ -153,14 +167,7 @@
         "count": 2,
         "example": "Provide more specifics on how smaller and mid-sized manufacturers can access opportunities.",
         "subcategory": "Actionability and near-term relevance",
-        "summary": "Content relevance gap — attendees want material they can act on in their own operations"
-      },
-      {
-        "category": "Meeting Logistics & AV",
-        "count": 2,
-        "example": "Improve audio quality, especially for tours held on noisy warehouse floors.",
-        "subcategory": "Slide design and legibility",
-        "summary": "Recurring AV problems make sessions hard to see or hear"
+        "summary": "Attendees keep asking for content they can actually act on"
       }
     ],
     "sourceFile": "2024-Q3-All.docx",
@@ -170,28 +177,21 @@
         "count": 4,
         "example": "Send pre-read data (like the TEConomy report) further ahead so attendees can prepare questions.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Advance materials and logistics info repeatedly arrive late, incomplete, or not at all"
+        "summary": "Recurring gaps in advance materials and logistics info sent before meetings"
       },
       {
         "category": "Content Relevance & Depth",
         "count": 3,
         "example": "Clarify how Industry 4.0 content applies to smaller companies and suppliers, not just large ones.",
         "subcategory": "Actionability and near-term relevance",
-        "summary": "Persistent ask for content that is practical and applicable to attendees' own companies"
+        "summary": "Ongoing requests for practical, applicable content rather than big-picture or far-off material"
       },
       {
         "category": "Meeting Logistics & AV",
         "count": 3,
         "example": "Improve audio quality, especially for tours held on noisy warehouse floors.",
         "subcategory": "Slide design and legibility",
-        "summary": "AV quality — audio and slide legibility — remains a year-long complaint"
-      },
-      {
-        "category": "Post-Meeting Materials & Follow-Up",
-        "count": 2,
-        "example": "Provide more takeaway materials beyond the slides for detailed topics.",
-        "subcategory": "Handouts and takeaways",
-        "summary": "Attendees want usable materials to take away or reference after sessions"
+        "summary": "Persistent AV issues making it hard to see or hear presentations"
       }
     ]
   },
@@ -202,7 +202,7 @@
         "count": 2,
         "example": "Provide more detail on success stories behind the high school redesign and apprenticeships.",
         "subcategory": "Real-world case studies",
-        "summary": "Want more concrete case studies and success stories"
+        "summary": "More concrete case studies and success stories on work-based learning"
       },
       {
         "category": "Session Format & Facilitation",
@@ -223,41 +223,41 @@
         "count": 1,
         "example": "Address extracurricular/STEM pathway credit (e.g., robotics, alternative-fuel programs) toward employment recognition.",
         "subcategory": "Topic requests",
-        "summary": "Specific topic request: credit for STEM/extracurricular pathways toward employment"
+        "summary": "Cover alternative pathways like STEM/extracurricular credit toward employment"
       }
     ],
-    "generated": "2026-09-15T17:54:10+00:00",
+    "generated": "2026-09-16T17:00:27+00:00",
     "qoq": [
       {
         "category": "Content Relevance & Depth",
-        "count": 3,
+        "count": 1,
         "example": "Some content felt too far out to act on; attendees prefer more near-term, actionable topics.",
         "subcategory": "Real-world case studies",
-        "summary": "Content depth: attendees keep asking for concrete, applicable examples rather than high-level material"
+        "summary": "Content that is concrete and directly applicable to attendees"
       }
     ],
     "sourceFile": "2024-Q4-All.docx",
     "yoy": [
       {
-        "category": "Content Relevance & Depth",
-        "count": 5,
-        "example": "Provide more specifics on how smaller and mid-sized manufacturers can access opportunities.",
-        "subcategory": "Real-world case studies",
-        "summary": "Recurring ask for concrete, applicable examples and specifics on how programs work in practice"
-      },
-      {
         "category": "Session Format & Facilitation",
-        "count": 4,
+        "count": 3,
         "example": "Add more Q&A time and have speakers repeat or hold the mic for questions so the room can hear.",
         "subcategory": "Q&A time",
-        "summary": "Ongoing demand for more Q&A and interactive discussion time"
+        "summary": "More Q&A and interactive discussion time"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 3,
+        "example": "Provide more specifics on how smaller and mid-sized manufacturers can access opportunities.",
+        "subcategory": "Real-world case studies",
+        "summary": "Content that is concrete and applicable, with specifics attendees can act on"
       },
       {
         "category": "Networking & Member Connection",
-        "count": 2,
+        "count": 1,
         "example": "Share an attendee list to make networking easier.",
         "subcategory": "Facilitated introductions",
-        "summary": "Attendees want more help making connections, such as attendee lists or introductions"
+        "summary": "Make it easier for attendees to know and connect with each other"
       }
     ]
   },
@@ -271,11 +271,18 @@
         "summary": "Make it easier to identify and connect with other attendees"
       },
       {
+        "category": "Session Format & Facilitation",
+        "count": 1,
+        "example": "Moderate Q&A time better and offer an after-session chat for detailed follow-up questions.",
+        "subcategory": "Q&A moderation",
+        "summary": "Better-moderated Q&A plus a chance for follow-up conversation"
+      },
+      {
         "category": "Content Relevance & Depth",
         "count": 1,
         "example": "Give more real-world, practical examples alongside the presentations.",
         "subcategory": "Real-world case studies",
-        "summary": "More real-world, practical examples in presentations"
+        "summary": "More practical, real-world examples alongside presentations"
       },
       {
         "category": "Post-Meeting Materials & Follow-Up",
@@ -283,16 +290,9 @@
         "example": "Provide handouts like QR codes or electronic copies of reports for attendees to keep.",
         "subcategory": "Handouts and takeaways",
         "summary": "Provide takeaway handouts and electronic copies of materials"
-      },
-      {
-        "category": "Session Format & Facilitation",
-        "count": 1,
-        "example": "Moderate Q&A time better and offer an after-session chat for detailed follow-up questions.",
-        "subcategory": "Q&A moderation",
-        "summary": "Better-moderated Q&A plus a chance for detailed follow-up afterward"
       }
     ],
-    "generated": "2026-09-15T17:54:20+00:00",
+    "generated": "2026-09-16T17:00:37+00:00",
     "qoq": [
       {
         "category": "Networking & Member Connection",
@@ -306,45 +306,45 @@
         "count": 3,
         "example": "Share concrete examples of companies successfully implementing work-based learning.",
         "subcategory": "Real-world case studies",
-        "summary": "Ongoing demand for concrete case studies and success stories"
+        "summary": "Requests for concrete, real-world case studies and success stories"
       },
       {
         "category": "Session Format & Facilitation",
         "count": 2,
         "example": "Add more Q&A time for attendees to dig into topics.",
         "subcategory": "Q&A moderation",
-        "summary": "Q&A continues to need more time and better handling"
+        "summary": "More and better-managed Q&A time"
       }
     ],
     "sourceFile": "2025-Q1-All.docx",
     "yoy": [
       {
+        "category": "Content Relevance & Depth",
+        "count": 4,
+        "example": "Share concrete examples of companies successfully implementing work-based learning.",
+        "subcategory": "Real-world case studies",
+        "summary": "Ongoing demand for practical, applicable real-world examples"
+      },
+      {
         "category": "Session Format & Facilitation",
         "count": 3,
         "example": "Add more Q&A time and have speakers repeat or hold the mic for questions so the room can hear.",
         "subcategory": "Q&A moderation",
-        "summary": "Q&A time and management is a recurring year-long ask"
+        "summary": "Recurring requests for more and better-run Q&A and discussion time"
       },
       {
         "category": "Networking & Member Connection",
         "count": 3,
         "example": "Share an attendee list to make networking easier.",
         "subcategory": "Attendee information",
-        "summary": "Attendee lists and facilitated introductions requested all year"
-      },
-      {
-        "category": "Content Relevance & Depth",
-        "count": 3,
-        "example": "Provide more detail on success stories behind the high school redesign and apprenticeships.",
-        "subcategory": "Real-world case studies",
-        "summary": "Persistent request for practical, real-world examples and applicability"
+        "summary": "Persistent need for attendee lists and networking support"
       },
       {
         "category": "Post-Meeting Materials & Follow-Up",
         "count": 2,
         "example": "Provide more takeaway materials beyond the slides for detailed topics.",
         "subcategory": "Handouts and takeaways",
-        "summary": "Attendees keep asking for takeaway materials beyond the slides"
+        "summary": "Continued requests for takeaway materials beyond the slides"
       }
     ]
   },
@@ -355,21 +355,14 @@
         "count": 2,
         "example": "Start afternoon tours earlier to close the gap between the meeting ending and the tour starting.",
         "subcategory": "Schedule and timing",
-        "summary": "Tighten agenda timing and build in more breaks"
+        "summary": "Tighten the agenda schedule and build in more breaks"
       },
       {
         "category": "Networking & Member Connection",
         "count": 1,
         "example": "Address how attendees can better tap into and use the council network itself.",
         "subcategory": "Using the council network",
-        "summary": "Help attendees actually tap into the council network"
-      },
-      {
-        "category": "Speakers & Panelists",
-        "count": 1,
-        "example": "Have member companies present their own case studies as part of the program.",
-        "subcategory": "Member and peer presenters",
-        "summary": "Feature member companies presenting their own case studies"
+        "summary": "Help attendees actually tap into and use the council network"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
@@ -377,54 +370,61 @@
         "example": "Send workshop materials in advance so attendees can prepare thoughts beforehand.",
         "subcategory": "Pre-reads and advance materials",
         "summary": "Send materials ahead of time so attendees can prepare"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 1,
+        "example": "Have member companies present their own case studies as part of the program.",
+        "subcategory": "Member and peer presenters",
+        "summary": "Feature member companies presenting their own case studies"
       }
     ],
-    "generated": "2026-09-15T17:54:30+00:00",
+    "generated": "2026-09-16T17:00:48+00:00",
     "qoq": [
       {
         "category": "Networking & Member Connection",
         "count": 3,
         "example": "Add an attendee list and clearer ways to connect, such as company info cards or a networking area.",
         "subcategory": "Using the council network",
-        "summary": "Help attendees connect with and use the member network"
+        "summary": "Members still want easier ways to connect with and use the network"
       },
       {
         "category": "Speakers & Panelists",
         "count": 2,
         "example": "Give more real-world, practical examples alongside the presentations.",
         "subcategory": "Member and peer presenters",
-        "summary": "More peer/member case studies and real-world examples in the program"
+        "summary": "Continued appetite for peer/member real-world case studies in the program"
       }
     ],
     "sourceFile": "2025-Q2-All.docx",
     "yoy": [
       {
+        "category": "Speakers & Panelists",
+        "count": 5,
+        "example": "Share concrete examples of companies successfully implementing work-based learning.",
+        "subcategory": "Member and peer presenters",
+        "summary": "Year-long demand for peer company case studies and concrete success stories"
+      },
+      {
         "category": "Networking & Member Connection",
         "count": 4,
         "example": "Help new or less-connected attendees know who to network with at lunch.",
         "subcategory": "Using the council network",
-        "summary": "Make it easier to identify and connect with fellow members"
-      },
-      {
-        "category": "Speakers & Panelists",
-        "count": 4,
-        "example": "Share concrete examples of companies successfully implementing work-based learning.",
-        "subcategory": "Member and peer presenters",
-        "summary": "Demand for peer company case studies and concrete real-world examples"
+        "summary": "Recurring requests for help connecting to and leveraging the member network"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 4,
         "example": "Share more background on host companies in advance of facility tours.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Send background and logistics materials reliably in advance"
+        "summary": "Ongoing gaps in advance materials and pre-meeting information"
       },
       {
         "category": "Agenda & Time Management",
         "count": 2,
         "example": "Break sessions into smaller chunks to help hold attention throughout the day.",
         "subcategory": "Schedule and timing",
-        "summary": "Better pacing of the day, including session length and breaks"
+        "summary": "Pacing and scheduling of the day continues to need adjustment"
       }
     ]
   },
@@ -435,45 +435,45 @@
         "count": 2,
         "example": "Several attendees found the topics only partly relevant to their own role or sector.",
         "subcategory": "Role and sector relevance",
-        "summary": "Content felt only partly relevant to attendees' roles/sectors, and the overview session rated lowest"
+        "summary": "Content didn't land for every role/sector, and session ratings reflected it"
       },
       {
         "category": "Session Format & Facilitation",
         "count": 1,
         "example": "Not all questions submitted through the QR code got answered.",
         "subcategory": "Q&A moderation",
-        "summary": "Q&A didn't get through all submitted questions"
+        "summary": "Q&A left submitted questions unanswered"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 1,
         "example": "Attendees want short pre-reads or articles to prepare for discussion topics.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Attendees want short pre-reads sent ahead so they can prepare"
+        "summary": "Attendees want pre-reads to prepare for discussions"
       },
       {
         "category": "Networking & Member Connection",
         "count": 1,
         "example": "One member asked for a clearer channel to get industry freight plans in front of INDOT.",
         "subcategory": "Access to partners and agencies",
-        "summary": "Members want clearer channels to reach partner agencies with their input"
+        "summary": "Members want clearer channels to reach agencies and partners"
       }
     ],
-    "generated": "2026-09-15T17:54:41+00:00",
+    "generated": "2026-09-16T17:00:59+00:00",
     "qoq": [
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 2,
         "example": "Send workshop materials in advance so attendees can prepare thoughts beforehand.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Advance materials/pre-reads requested again so attendees can prepare"
+        "summary": "Advance materials requested again so attendees can prepare"
       },
       {
         "category": "Networking & Member Connection",
         "count": 2,
         "example": "Address how attendees can better tap into and use the council network itself.",
         "subcategory": "Access to partners and agencies",
-        "summary": "Ongoing desire for better ways to tap the council network and reach partners"
+        "summary": "Ongoing desire for better ways to tap the council network and its partners"
       }
     ],
     "sourceFile": "2025-Q3-All.docx",
@@ -483,28 +483,28 @@
         "count": 6,
         "example": "Some content felt too far out to act on; attendees prefer more near-term, actionable topics.",
         "subcategory": "Role and sector relevance",
-        "summary": "Recurring calls for content that is more relevant, actionable, and grounded in real examples"
+        "summary": "Relevance and actionability of content is a recurring year-long concern"
       },
       {
         "category": "Session Format & Facilitation",
         "count": 3,
         "example": "Moderate Q&A time better and offer an after-session chat for detailed follow-up questions.",
         "subcategory": "Q&A moderation",
-        "summary": "Q&A time and moderation repeatedly flagged, with questions left unanswered"
+        "summary": "Q&A moderation and time have come up repeatedly all year"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 5,
+        "example": "Add an attendee list and clearer ways to connect, such as company info cards or a networking area.",
+        "subcategory": "Access to partners and agencies",
+        "summary": "Members repeatedly ask for easier connections to peers, partners and agencies"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 3,
         "example": "Send workshop materials in advance so attendees can prepare thoughts beforehand.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Persistent gaps in pre-meeting materials and their reliable delivery"
-      },
-      {
-        "category": "Networking & Member Connection",
-        "count": 5,
-        "example": "Address how attendees can better tap into and use the council network itself.",
-        "subcategory": "Access to partners and agencies",
-        "summary": "Attendees want easier connection to peers, partners, and agencies year-round"
+        "summary": "Pre-meeting materials and communication reliability recur across the year"
       }
     ]
   },
@@ -526,10 +526,17 @@
       },
       {
         "category": "Session Format & Facilitation",
-        "count": 2,
+        "count": 1,
         "example": "Add clearer takeaways or a roadmap after discussion-heavy sessions, not just open conversation.",
         "subcategory": "Synthesis and takeaways",
-        "summary": "Sessions need stronger delivery and clearer takeaways — more dynamic speakers and a wrap-up roadmap after open discussion"
+        "summary": "Close discussion-heavy sessions with clearer takeaways or next steps"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 1,
+        "example": "Make the AI presentation more dynamic, since some speakers struggled to hold attention.",
+        "subcategory": "Delivery and engagement",
+        "summary": "Make presentations more dynamic and engaging to hold attention"
       },
       {
         "category": "Site Tours",
@@ -539,59 +546,66 @@
         "summary": "Allow more time for site tours to cover all areas"
       }
     ],
-    "generated": "2026-09-15T17:54:53+00:00",
+    "generated": "2026-09-16T17:01:12+00:00",
     "qoq": [
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 2,
         "example": "Attendees want short pre-reads or articles to prepare for discussion topics.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Advance materials and pre-reads requested again this quarter"
+        "summary": "Advance materials and pre-reads remain a recurring request"
       },
       {
         "category": "Session Format & Facilitation",
-        "count": 3,
+        "count": 2,
         "example": "Not all questions submitted through the QR code got answered.",
         "subcategory": "Synthesis and takeaways",
-        "summary": "Discussion and Q&A sessions still fall short on facilitation and clear outcomes"
+        "summary": "Discussion and Q&A sessions still need tighter facilitation and clearer resolution"
       },
       {
         "category": "Networking & Member Connection",
         "count": 2,
         "example": "One member asked for a clearer channel to get industry freight plans in front of INDOT.",
         "subcategory": "Attendee information",
-        "summary": "Attendees continue to ask for easier ways to identify and connect with each other and partners"
+        "summary": "Members continue to want better information and channels for connecting"
       }
     ],
     "sourceFile": "2025-Q4-All.docx",
     "yoy": [
       {
         "category": "Networking & Member Connection",
-        "count": 6,
+        "count": 5,
         "example": "Add an attendee list and clearer ways to connect, such as company info cards or a networking area.",
         "subcategory": "Attendee information",
-        "summary": "Recurring ask all year for attendee lists, readable badges and facilitated introductions"
-      },
-      {
-        "category": "Session Format & Facilitation",
-        "count": 7,
-        "example": "Moderate Q&A time better and offer an after-session chat for detailed follow-up questions.",
-        "subcategory": "Synthesis and takeaways",
-        "summary": "Year-long pattern of wanting better-moderated Q&A, more engaging presenters and concrete takeaways"
+        "summary": "Persistent demand for attendee lists, badges, and easier ways to connect"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 3,
         "example": "Send workshop materials in advance so attendees can prepare thoughts beforehand.",
         "subcategory": "Pre-reads and advance materials",
-        "summary": "Persistent request to send agendas, presentations and pre-reads ahead of the meeting"
+        "summary": "Year-long ask for agendas and workshop materials sent ahead of time"
       },
       {
-        "category": "Agenda & Time Management",
+        "category": "Session Format & Facilitation",
+        "count": 4,
+        "example": "Moderate Q&A time better and offer an after-session chat for detailed follow-up questions.",
+        "subcategory": "Synthesis and takeaways",
+        "summary": "Ongoing need for better-moderated discussion and clearer takeaways from sessions"
+      },
+      {
+        "category": "Speakers & Panelists",
         "count": 2,
+        "example": "Have member companies present their own case studies as part of the program.",
+        "subcategory": "Delivery and engagement",
+        "summary": "Requests for more engaging, practical presenters including member peers"
+      },
+      {
+        "category": "Site Tours",
+        "count": 1,
         "example": "Start afternoon tours earlier to close the gap between the meeting ending and the tour starting.",
-        "subcategory": "Schedule and timing",
-        "summary": "Tour and agenda timing keeps coming up — earlier starts and enough time for site visits"
+        "subcategory": "Tour time",
+        "summary": "Tour scheduling and timing have needed adjustment over the year"
       }
     ]
   },
@@ -609,31 +623,31 @@
         "count": 1,
         "example": "Include more real-world case studies of successful tech implementations.",
         "subcategory": "Real-world case studies",
-        "summary": "More practical, real-world case studies and applied content"
-      },
-      {
-        "category": "Speakers & Panelists",
-        "count": 1,
-        "example": "One attendee felt the AI panel leaned too heavily into a vendor sales pitch.",
-        "subcategory": "Vendor neutrality",
-        "summary": "Keep panels vendor-neutral rather than sales-oriented"
+        "summary": "More practical, real-world case studies in the content"
       },
       {
         "category": "Meeting Logistics & AV",
         "count": 1,
         "example": "Provide microphones for audience Q&A.",
         "subcategory": "Audio and sound",
-        "summary": "Audio support for audience participation, e.g. Q&A mics"
+        "summary": "Audio support for audience participation (mics for Q&A)"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 1,
+        "example": "One attendee felt the AI panel leaned too heavily into a vendor sales pitch.",
+        "subcategory": "Vendor neutrality",
+        "summary": "Keep panels vendor-neutral rather than sales-focused"
       },
       {
         "category": "Post-Meeting Materials & Follow-Up",
         "count": 1,
         "example": "Add a resource highlighting relevant trade shows for Indiana manufacturers.",
         "subcategory": "Resource requests",
-        "summary": "Share follow-up resources such as relevant trade show listings"
+        "summary": "Follow-up resources tailored to Indiana manufacturers"
       }
     ],
-    "generated": "2026-09-15T17:55:02+00:00",
+    "generated": "2026-09-16T17:01:19+00:00",
     "qoq": [
       {
         "category": "Networking & Member Connection",
@@ -654,17 +668,10 @@
       },
       {
         "category": "Content Relevance & Depth",
-        "count": 3,
+        "count": 2,
         "example": "Give more real-world, practical examples alongside the presentations.",
         "subcategory": "Real-world case studies",
-        "summary": "More practical, real-world case studies and applied content"
-      },
-      {
-        "category": "Post-Meeting Materials & Follow-Up",
-        "count": 2,
-        "example": "Provide handouts like QR codes or electronic copies of reports for attendees to keep.",
-        "subcategory": "Resource requests",
-        "summary": "Share takeaway resources and materials after the meeting"
+        "summary": "More practical, real-world case studies in the content"
       }
     ]
   },
@@ -689,24 +696,24 @@
         "count": 1,
         "example": "Reduce the morning tour to one stop instead of two to ease the schedule.",
         "subcategory": "Tour structure",
-        "summary": "Lighten the tour schedule to one morning stop"
+        "summary": "Lighten the tour schedule to a single morning stop"
       },
       {
         "category": "Survey & Ratings Signals",
         "count": 1,
         "example": "Ratings dipped slightly on the workforce and employer panel sessions compared to overall meeting value.",
         "subcategory": "Session rating dip",
-        "summary": "Workforce/employer panel sessions rated below overall meeting value"
+        "summary": "Workforce/employer panel sessions rated below the overall meeting"
       }
     ],
-    "generated": "2026-09-15T17:55:12+00:00",
+    "generated": "2026-09-16T17:01:29+00:00",
     "qoq": [
       {
         "category": "Post-Meeting Materials & Follow-Up",
         "count": 2,
-        "example": "Provide presentation materials to attendees afterward.",
+        "example": "Add a resource highlighting relevant trade shows for Indiana manufacturers.",
         "subcategory": "Slides and presentations",
-        "summary": "Requests for materials and resources to be shared with attendees"
+        "summary": "Follow-up materials and resources requested after the meeting"
       },
       {
         "category": "Content Relevance & Depth",
@@ -720,31 +727,31 @@
     "yoy": [
       {
         "category": "Post-Meeting Materials & Follow-Up",
-        "count": 4,
+        "count": 5,
         "example": "Send the agenda and presentations a week in advance so attendees can prepare and take notes.",
         "subcategory": "Slides and presentations",
-        "summary": "Ongoing requests for slides, agendas and supporting materials"
+        "summary": "Ongoing requests for slides, pre-reads and supporting materials"
       },
       {
         "category": "Content Relevance & Depth",
         "count": 3,
         "example": "Several attendees found the topics only partly relevant to their own role or sector.",
         "subcategory": "Topic requests",
-        "summary": "Content not always matching attendee roles, sectors or topic interests"
-      },
-      {
-        "category": "Survey & Ratings Signals",
-        "count": 2,
-        "example": "The Federal Overview and Q&A scored lowest of the two sessions.",
-        "subcategory": "Session rating dip",
-        "summary": "Specific panel/overview sessions consistently score lower than the meeting overall"
+        "summary": "Content not always relevant; requests for specific topics and case studies"
       },
       {
         "category": "Site Tours",
-        "count": 3,
+        "count": 2,
         "example": "Give tours more time so all areas can be adequately covered.",
         "subcategory": "Tour structure",
-        "summary": "Tour timing and structure need rebalancing against the agenda"
+        "summary": "Tour scheduling and timing needs adjustment"
+      },
+      {
+        "category": "Survey & Ratings Signals",
+        "count": 1,
+        "example": "The Federal Overview and Q&A scored lowest of the two sessions.",
+        "subcategory": "Session rating dip",
+        "summary": "Certain sessions consistently score lower than the rest of the meeting"
       }
     ]
   },
@@ -755,38 +762,31 @@
         "count": 3,
         "example": "Add a session featuring current or former students sharing their experience.",
         "subcategory": "Topic requests",
-        "summary": "Requests for more workforce-development content — student voices, soft skills, and the employer's role"
+        "summary": "Requests for more workforce-development content, including student voices and soft skills"
       },
       {
         "category": "Speakers & Panelists",
         "count": 1,
         "example": "Have keynote speakers elaborate more on their own programs.",
         "subcategory": "Content depth",
-        "summary": "Want speakers to go deeper on their own programs"
+        "summary": "Want speakers to go deeper on their own programs and experience"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
         "count": 1,
         "example": "Send more pre-meeting details ahead of site tours.",
         "subcategory": "Tour preparation info",
-        "summary": "More advance detail ahead of site tours"
+        "summary": "More advance information before site tours"
       }
     ],
-    "generated": "2026-09-15T17:55:21+00:00",
+    "generated": "2026-09-16T17:01:38+00:00",
     "qoq": [
       {
         "category": "Content Relevance & Depth",
         "count": 1,
         "example": "Include more real-world case studies of successful tech implementations.",
         "subcategory": "Topic requests",
-        "summary": "Content requests for more practical, experience-based material continue from last quarter"
-      },
-      {
-        "category": "Speakers & Panelists",
-        "count": 1,
-        "example": "One attendee felt the AI panel leaned too heavily into a vendor sales pitch.",
-        "subcategory": "Content depth",
-        "summary": "Ongoing feedback on speaker substance and program content"
+        "summary": "Continued appetite for more substantive, practically relevant content topics"
       }
     ],
     "sourceFile": "2026-Q2-Southern.docx",
@@ -796,21 +796,21 @@
         "count": 2,
         "example": "Several attendees found the topics only partly relevant to their own role or sector.",
         "subcategory": "Topic requests",
-        "summary": "Year-long pattern of asking for more relevant, real-world content tailored to members' roles and sectors"
+        "summary": "Ongoing requests for content that is more relevant and practical to attendees' roles and sectors"
       },
       {
         "category": "Speakers & Panelists",
-        "count": 3,
+        "count": 2,
         "example": "Have member companies present their own case studies as part of the program.",
         "subcategory": "Content depth",
-        "summary": "Recurring desire for speakers and member companies to share deeper detail on their own programs and cases"
+        "summary": "Recurring desire for speakers and member companies to share their own programs and case studies in depth"
       },
       {
         "category": "Pre-Meeting Communication & Materials",
-        "count": 4,
+        "count": 3,
         "example": "Send the agenda and presentations a week in advance so attendees can prepare and take notes.",
         "subcategory": "Tour preparation info",
-        "summary": "Persistent request for advance materials and details before meetings and tours"
+        "summary": "Persistent gap in advance materials and details sent before meetings and tours"
       }
     ]
   },
@@ -818,44 +818,95 @@
     "current": [
       {
         "category": "Content",
-        "count": 7,
-        "example": "Go above and beyond using AI in generic, discuss what is after AI",
+        "count": 6,
+        "example": "Visual aid on AI actual. Deployment example to drive further brainstorms",
         "subcategory": "Future Topic Requests",
-        "summary": "Want AI content that goes deeper and broader — real deployment cases, ROI, supply chain, and what comes after AI"
+        "summary": "Go deeper on AI — practical deployment examples, ROI, and what comes next"
+      },
+      {
+        "category": "Content",
+        "count": 5,
+        "example": "A lot of discussion around raw materials and lead times. What do we do?",
+        "subcategory": "Future Topic Requests",
+        "summary": "Broaden topics beyond AI: supply chain, raw materials/lead times, capital and utility infrastructure planning, industry outlooks"
       },
       {
         "category": "Logistics",
         "count": 4,
         "example": "Stay on time with agenda. All out of time left",
         "subcategory": "Agenda & Schedule",
-        "summary": "Keep the agenda on time and manage breaks/attention better"
+        "summary": "Keep the agenda on time and hold speakers to their slots; manage breaks and attention better"
       },
       {
         "category": "Content",
         "count": 5,
         "example": "More interested in AI adoption for increasing capacity of existing workforce — those jobs that we have a difficult job filling",
         "subcategory": "Training & Workforce Development",
-        "summary": "More on workforce development — training, onboarding, and using AI to boost capacity of hard-to-fill roles"
-      },
-      {
-        "category": "Content",
-        "count": 3,
-        "example": "A lot of discussion around raw materials and lead times. What do we do?",
-        "subcategory": "Future Topic Requests",
-        "summary": "Requests for non-AI operational topics: capital/utility infrastructure planning, manufacturing trends, raw materials and lead times"
+        "summary": "Workforce development, training and onboarding — including using AI/tech to expand capacity of hard-to-fill roles"
       },
       {
         "category": "Networking",
-        "count": 2,
-        "example": "Share business cards at beginning - maybe a box to drop them off so everyone can get more info on every other company",
+        "count": 3,
+        "example": "List attendees by industry",
         "subcategory": "Attendee Connections",
-        "summary": "Make it easier to connect — attendee lists by industry and a structured business card exchange"
+        "summary": "Make it easier to connect: attendee lists by industry, business card exchange, and an events/trade show calendar"
       }
     ],
-    "generated": "2026-09-16T16:57:11+00:00",
-    "qoq": [],
+    "generated": "2026-09-16T17:01:52+00:00",
+    "qoq": [
+      {
+        "category": "Content",
+        "count": 5,
+        "example": "Capital planning, utility infrastructure planning",
+        "subcategory": "Future Topic Requests",
+        "summary": "Requests to broaden the topic mix beyond the headline theme (economy, trade, infrastructure, sector outlooks)"
+      },
+      {
+        "category": "Content",
+        "count": 5,
+        "example": "Workforce development/training/onboarding",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Continued appetite for workforce development, training and onboarding content"
+      }
+    ],
     "sourceFile": "2026-Q3 Central (Post-Meeting Survey.csv)",
-    "yoy": []
+    "yoy": [
+      {
+        "category": "Content",
+        "count": 6,
+        "example": "Visual aid on AI actual. Deployment example to drive further brainstorms",
+        "subcategory": "Future Topic Requests",
+        "summary": "Want concrete, real-world AI/tech implementation examples rather than generic overviews"
+      },
+      {
+        "category": "Content",
+        "count": 5,
+        "example": "Workforce development/training/onboarding",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Workforce development and training remains a recurring content request"
+      },
+      {
+        "category": "Networking",
+        "count": 3,
+        "example": "Would be great to have a calendar of events of trade shows and conferences for IN, midwest, and USA",
+        "subcategory": "Attendee Connections",
+        "summary": "Ongoing ask for attendee info sharing and a trade show/events resource to support networking"
+      },
+      {
+        "category": "Logistics",
+        "count": 1,
+        "example": "Hard to hear people at times, some were perfect and some were way too low/quiet. Text on slides too small",
+        "subcategory": "Venue & Audio/Visual",
+        "summary": "Audio and slide legibility problems persist — speakers hard to hear and text too small"
+      },
+      {
+        "category": "Logistics",
+        "count": 4,
+        "example": "Hard to get/keep attention after breaks",
+        "subcategory": "Agenda & Schedule",
+        "summary": "Schedule pacing and holding attention/keeping speakers to time"
+      }
+    ]
   },
   "2026-Q3 Southern": {
     "current": [
@@ -864,40 +915,105 @@
         "count": 3,
         "example": "Too much time spent on intros and the panel was cut short; low value in hearing people's bios at length.",
         "subcategory": "Agenda & Schedule",
-        "summary": "Trim intros and give panels more time"
-      },
-      {
-        "category": "Content",
-        "count": 2,
-        "example": "The panel answers were pretty predictable. Prep panelists and presenters with clear expectations.",
-        "subcategory": "Presentation & Materials",
-        "summary": "Prep panelists and tour hosts for deeper, less generic content"
+        "summary": "More time for panels, less time on lengthy intros"
       },
       {
         "category": "Content",
         "count": 2,
         "example": "Especially if schools could collaborate and present what opportunities they have — Ivy Tech, Vincennes, Purdue, etc. More 2-year associates degree focused.",
         "subcategory": "Training & Workforce Development",
-        "summary": "Want workforce/training examples from near peers and local schools"
+        "summary": "Want workforce/training examples from near peers and 2-year schools"
+      },
+      {
+        "category": "Content",
+        "count": 2,
+        "example": "Companies giving the tour should help highlight new technologies, not just a general manufacturing tour.",
+        "subcategory": "Presentation & Materials",
+        "summary": "Better prep for panelists and tour hosts so sessions go beyond predictable, generic content"
       },
       {
         "category": "Content",
         "count": 2,
         "example": "Continue AI. It would be helpful to show live use cases.",
         "subcategory": "Future Topic Requests",
-        "summary": "More AI use cases and small/midsized manufacturer focus"
+        "summary": "Continue AI with live use cases and focus on small/midsized manufacturers"
+      },
+      {
+        "category": "Logistics",
+        "count": 3,
+        "example": "Have wifi access posted.",
+        "subcategory": "Venue & Audio/Visual",
+        "summary": "Basic venue/admin fixes: post wifi access and move the survey to digital"
+      }
+    ],
+    "generated": "2026-09-16T17:02:06+00:00",
+    "qoq": [
+      {
+        "category": "Content",
+        "count": 5,
+        "example": "Add a session featuring current or former students sharing their experience.",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Workforce development content remains a top request, including school and student perspectives"
+      },
+      {
+        "category": "Logistics",
+        "count": 3,
+        "example": "Reduce the morning tour to one stop instead of two to ease the schedule.",
+        "subcategory": "Agenda & Schedule",
+        "summary": "Schedule pacing complaints persist — trim low-value time to protect core sessions"
+      },
+      {
+        "category": "Content",
+        "count": 3,
+        "example": "Have keynote speakers elaborate more on their own programs.",
+        "subcategory": "Presentation & Materials",
+        "summary": "Speakers and panelists asked to go deeper rather than deliver generic content"
+      },
+      {
+        "category": "Content",
+        "count": 3,
+        "example": "Cover tariff, foreign trade, and economic development topics in future sessions.",
+        "subcategory": "Future Topic Requests",
+        "summary": "Ongoing requests for specific future topics relevant to members' businesses"
+      }
+    ],
+    "sourceFile": "2026-Q3 Southern (Post-Meeting Survey.csv)",
+    "yoy": [
+      {
+        "category": "Content",
+        "count": 5,
+        "example": "Continue building employer understanding of their role in workforce development.",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Workforce and training topics recur all year, with demand for relatable school/student input"
+      },
+      {
+        "category": "Content",
+        "count": 6,
+        "example": "Include more real-world case studies of successful tech implementations.",
+        "subcategory": "Presentation & Materials",
+        "summary": "Persistent asks for more engaging, substantive speakers, panels and tours with real examples"
+      },
+      {
+        "category": "Content",
+        "count": 4,
+        "example": "Several attendees found the topics only partly relevant to their own role or sector.",
+        "subcategory": "Future Topic Requests",
+        "summary": "Recurring requests for topics tied to attendees' own role, sector and size of company"
+      },
+      {
+        "category": "Logistics",
+        "count": 3,
+        "example": "Give tours more time so all areas can be adequately covered.",
+        "subcategory": "Agenda & Schedule",
+        "summary": "Time allocation issues recur — sessions and tours feel rushed or unbalanced"
       },
       {
         "category": "Logistics",
         "count": 2,
-        "example": "Have wifi access posted.",
+        "example": "Provide microphones for audience Q&A.",
         "subcategory": "Venue & Audio/Visual",
-        "summary": "Post wifi access info at the venue"
+        "summary": "Basic AV and logistics gaps keep coming up at meetings"
       }
-    ],
-    "generated": "2026-09-16T16:57:17+00:00",
-    "qoq": [],
-    "sourceFile": "2026-Q3 Southern (Post-Meeting Survey.csv)",
-    "yoy": []
+    ]
   }
 }
