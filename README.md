@@ -1,7 +1,7 @@
 # Conexus Council Themes
 
 A navigation wrapper around the Power BI dashboard, plus a Council Themes tab and a
-Claude Dashboard (beta) tab, both built from each meeting's post-meeting survey.
+Survey Benchmarking tab, both built from each meeting's post-meeting survey.
 
 - **Dashboard** — `public/index.html`. Buttons across the top switch Power BI pages
   without the native page tabs. Public; no login.
