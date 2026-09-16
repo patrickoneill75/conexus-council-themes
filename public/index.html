@@ -117,7 +117,12 @@ const CONFIG = {
              padding:16px 20px; border-bottom:1px solid var(--border); flex:none; }
   .field { display:flex; flex-direction:column; gap:5px; }
   .field[hidden] { display:none; }
-  .benchmark-field { background:var(--meeting-bg); border-radius:8px; padding:8px 12px; }
+  /* Same box shape as .benchmark-field (so their selects line up on the same baseline
+     under align-items:flex-end) but a neutral wash instead of the blue tint, to keep
+     Year/Quarter/Region reading as a group distinct from the benchmark field. */
+  .benchmark-field, .meeting-field { border-radius:8px; padding:8px 12px; }
+  .benchmark-field { background:var(--meeting-bg); }
+  .meeting-field { background:var(--wash); }
   .field label { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
                  color:var(--text-muted); font-weight:600; }
   .field select { font:inherit; font-size:13.5px; padding:7px 10px; min-width:140px;
@@ -630,9 +635,9 @@ const CONFIG = {
                 '<option value="prevYear">Previous year</option>' +
                 '<option value="avg">All-time average</option>' +
               '</select></div>' +
-              '<div class="field"><label for="q-meeting-year">Year</label><select id="q-meeting-year"></select></div>' +
-              '<div class="field"><label for="q-meeting-quarter">Quarter</label><select id="q-meeting-quarter"></select></div>' +
-              '<div class="field"><label for="q-meeting-region">Region</label><select id="q-meeting-region"></select></div>' +
+              '<div class="field meeting-field"><label for="q-meeting-year">Year</label><select id="q-meeting-year"></select></div>' +
+              '<div class="field meeting-field"><label for="q-meeting-quarter">Quarter</label><select id="q-meeting-quarter"></select></div>' +
+              '<div class="field meeting-field"><label for="q-meeting-region">Region</label><select id="q-meeting-region"></select></div>' +
             '</div>' +
             '<p class="compare-note" id="q-compare-note"></p>' +
             '<div class="metric-grid" id="q-metric-cards"></div>' +
