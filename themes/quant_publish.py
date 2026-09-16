@@ -70,6 +70,12 @@ def build(long_rows: list[dict], helper: dict[date, dict], categories: dict[str,
     return data
 
 
+def load() -> dict:
+    if not config.QUANT_DASHBOARD_JSON.exists():
+        return {}
+    return json.loads(config.QUANT_DASHBOARD_JSON.read_text(encoding="utf-8"))
+
+
 def save(data: dict) -> None:
     config.QUANT_DASHBOARD_JSON.parent.mkdir(parents=True, exist_ok=True)
     config.QUANT_DASHBOARD_JSON.write_text(
@@ -113,6 +119,19 @@ def refresh() -> None:
     print(f"Downloading {quant_data.HELPER_FILENAME}...")
     helper = quant_data.read_helper(box_store.download(helper_id))
     print(f"  {len(helper)} meeting(s) in the helper.")
+    if not helper:
+        # This build rebuilds public/quant-dashboard.json from scratch every run (see
+        # module docstring) -- an empty helper resolves every single meeting to nothing,
+        # which would silently wipe out everything already published rather than just
+        # skip whatever's actually new. A real Data Folder essentially never has a
+        # genuinely empty Helper file, so this is virtually always Council Meeting
+        # Helper.csv failing to parse (wrong file, wrong format, unrecognized date
+        # values) -- fail loudly instead of publishing an empty dashboard.
+        print(f"ERROR: '{quant_data.HELPER_FILENAME}' parsed to zero meetings. Refusing "
+              "to rebuild the quant dashboard from this -- it would wipe out everything "
+              "already published. Check the file is a real Helper export with valid "
+              "Meeting Date values.", file=sys.stderr)
+        raise SystemExit(1)
 
     print(f"Downloading {quant_data.CATEGORIES_FILENAME}...")
     categories = quant_data.read_categories(box_store.download(categories_id))
@@ -126,5 +145,12 @@ def refresh() -> None:
 
     print("Building the quant dashboard...")
     data = build(rows, helper, categories, source_files)
+    existing = load()
+    if not data and existing:
+        print(f"ERROR: This run resolved zero meetings, but {config.QUANT_DASHBOARD_JSON} "
+              f"already has {len(existing)} published. Refusing to overwrite -- this "
+              "almost always means something's wrong with the Data Folder's files rather "
+              "than every meeting genuinely being gone.", file=sys.stderr)
+        raise SystemExit(1)
     save(data)
     print(f"Published {len(data)} meeting(s) to {config.QUANT_DASHBOARD_JSON}.")

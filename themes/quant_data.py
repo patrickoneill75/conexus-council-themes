@@ -50,23 +50,30 @@ def read_helper(content: bytes) -> dict[date, dict]:
     """
     text = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
-    fieldnames = {(f or "").strip().lower() for f in (reader.fieldnames or [])}
-    if not fieldnames & {"meeting date", "year", "quarter", "region"}:
-        # None of the columns this whole function depends on are present at all -- almost
-        # always means the uploaded file isn't really a Helper export (wrong file picked,
-        # or a spreadsheet saved in some other format and just renamed to .csv on the way
-        # in). Silently returning {} here is how that turns into every meeting being
-        # skipped downstream with no clue why -- fail loudly instead.
+    fieldnames = {(f or "").strip() for f in (reader.fieldnames or [])}
+    date_col = next((f for f in fieldnames if f.lower() == "meeting date"), None)
+    if date_col is None:
+        # Every row's Meeting Date lookup below depends on this exact column existing --
+        # its absence alone means the whole file resolves to zero meetings, which (since
+        # the quant dashboard is rebuilt from scratch every run -- see quant_publish.py)
+        # would silently wipe out everything already published. Almost always means the
+        # uploaded file isn't really a Helper export (wrong file picked, a spreadsheet
+        # saved in some other format and renamed to .csv on the way in, or a real export
+        # whose column got renamed) -- fail loudly instead of silently returning {}.
         raise ValueError(
-            f"'{HELPER_FILENAME}' doesn't look like a Council Meeting Helper export -- "
-            "none of its expected columns (Meeting Date, Year, Quarter, Region) were "
-            f"found. Its header reads: {sorted(f for f in (reader.fieldnames or []) if f)!r}. "
-            "Check the uploaded file is really a .csv export from the Helper form."
+            f"'{HELPER_FILENAME}' has no 'Meeting Date' column -- nothing in it can "
+            f"resolve. Its header reads: {sorted(fieldnames)!r}. Check the uploaded file "
+            "is really a .csv export from the Helper form."
         )
+
     out: dict[date, dict] = {}
+    unparseable: list[str] = []
     for row in reader:
-        meeting_date = parse_date(row.get("Meeting Date", ""))
+        raw_date = row.get(date_col, "")
+        meeting_date = parse_date(raw_date)
         if not meeting_date:
+            if (raw_date or "").strip():
+                unparseable.append(raw_date)
             continue
         out[meeting_date] = {
             "year": _int_or_none(row.get("Year", "")),
@@ -75,6 +82,18 @@ def read_helper(content: bytes) -> dict[date, dict]:
             "total_registrants": _int_or_none(row.get("Total Registrants", "")),
             "total_attendees": _int_or_none(row.get("Total Attendees", "")),
         }
+
+    if not out and unparseable:
+        # The column exists, and rows have real values in it, but none of them matched
+        # any known format -- almost certainly a date format this hasn't seen before
+        # (parse_date()'s format list is a fixed, known set). Surfacing real examples
+        # here is what makes that fixable instead of just "0 meetings" with no clue why.
+        raise ValueError(
+            f"'{HELPER_FILENAME}' has a '{date_col}' column, but none of its values "
+            f"parsed as a date -- e.g. {unparseable[:3]!r}. Check the export's date "
+            "format matches one this reads (\"Aug 12, 2026\", \"8/12/2026\", or "
+            "\"2026-08-12\")."
+        )
     return out
 
 
