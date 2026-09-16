@@ -20,6 +20,9 @@ Everything below is done in a browser. There are no terminal steps.
 | `scripts/remove_meetings.py` | GitHub Actions | Deletes one or more meetings' data from the Feedback Log and both published dashboards, then re-synthesizes every quarter still left. Also strips the matching rows out of the Data Folder's own Helper and Survey exports in Box, best-effort, so the meeting doesn't come back on the next Update Dashboard. Triggered from the Meetings table's "Remove & refresh" button. |
 | `public/beta/` | Worker static assets | The Mini App Platform: a grid of every tool built on this Worker, gated by its own admin accounts (separate from `admin.html`'s single password). See **8 · The Mini App Platform** below. |
 | `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. The platform's multi-user admin accounts -- signup, sign-in, password reset, the admin list. Completely independent of `src/worker.js`'s own `CONTROL_PASSWORD` gate. |
+| `public/consensus/` | Worker static assets | Consensus: survey builder + results (`index.html`, `results.html`, beta-account gated) and the public respondent chat (`respond.html`, no login). See **9 · Consensus** below. |
+| `src/consensus.js` | Cloudflare Worker | `/api/consensus/*`. Survey CRUD, the live follow-up-question chat, response storage in Box, and triggering the batch analysis -- gates its admin routes with the same beta accounts via `requireBetaAuth`. |
+| `scripts/consensus_analyze.py` | GitHub Actions | Synthesizes a survey's collected responses (out of Box) into prioritized themes per question with Claude, and publishes `public/consensus-results/<id>.json`. Triggered from the Consensus admin page's "Analyze" button. |
 
 ---
 
@@ -236,6 +239,64 @@ project doesn't otherwise need.
 
 ---
 
+## 9 · Consensus
+
+The first mini app built on the platform: chatbot-style surveys, where each question can
+ask Claude to generate a set number of follow-up questions on the fly, based on context
+you give it. Once responses are in, one click synthesizes each question into prioritized
+themes plus areas of consensus and areas needing more information.
+
+Reachable from the grid (`/beta/`) → **Consensus**, or directly at
+`/consensus/index.html`. Uses the same admin accounts as the rest of `/beta` — nothing
+extra to sign in to — and the same Box connection as the Council Survey Dashboard.
+
+### Setup
+
+1. Add `consensus_claude_api` as a repository secret — an Anthropic API key, separate
+   from the Council Survey Dashboard's `ANTHROPIC_API_KEY` so the two mini apps' Claude
+   spend is easy to tell apart. Run **Actions → Set Cloudflare secrets** afterward — this
+   one secret is needed in *two* places and that workflow sends the Worker its copy:
+   - The Worker itself needs it, because the live chat's follow-up questions are
+     generated while a respondent is sitting there waiting — that can't be deferred to a
+     GitHub Actions run the way the batch analysis is.
+   - `consensus_analyze.yml` (the batch analysis) reads the same value as a plain
+     repository secret, the same way `ANTHROPIC_API_KEY` already does for the Council
+     app.
+2. That's it — no separate Box setup. Each survey you create picks its own responses
+   folder from the same Box connection already set up in step 5.
+
+### Building a survey
+
+From **Consensus** → **New survey**:
+
+- **Survey context** — objective and audience. Given to Claude alongside every
+  question, so follow-ups (and later, the analysis) stay grounded in what the survey is
+  actually for.
+- **Questions** — each one has its own follow-up count (0-5) and its own context box for
+  guiding what those follow-ups should probe for.
+- **Responses folder** — the Box folder responses are saved to, as one CSV per survey.
+
+Saving gives you a respondent link (`/consensus/respond.html?survey=<id>`) — share that
+however you'd share any survey link. It's public, no sign-in, by design.
+
+Once responses have come in, **Analyze** (back on the survey list) kicks off
+`consensus_analyze.yml`, which publishes `public/consensus-results/<id>.json` — open
+**Results** next to that survey once it's done. Re-running **Analyze** re-publishes the
+same file from whatever's in the responses CSV at that point, so it's safe to run again
+after more responses come in.
+
+### Cost
+
+Two different models, deliberately: the live follow-up-question generator uses
+**Claude Haiku 4.5** (cheapest current model — writing one short question from a little
+context is exactly the high-volume, low-complexity workload it's for), and the batch
+analysis uses **Claude Sonnet 5** (real synthesis across many respondents' answers earns
+a stronger model, at a fraction of Opus's per-token cost). See the comments above
+`FOLLOWUP_MODEL` in `src/consensus.js` and above `MODEL` in `consensus/analyze.py` if you
+want to change either.
+
+---
+
 ## Notes for a security review
 
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
@@ -266,6 +327,14 @@ project doesn't otherwise need.
   `PBKDF2_ITERATIONS` in `src/beta_auth.js` for the actual numbers. What it does *not* do
   is verify email ownership before letting someone set a password (see step 8 above) — a
   deliberate simplicity trade for a small, trusted admin list, not an oversight.
+- **Consensus's respondent-facing routes are intentionally public and unauthenticated**
+  (`GET /api/consensus/public/*`, `POST /api/consensus/followup`, `POST
+  /api/consensus/submit`) — that's the whole point of a survey link. None of them trust
+  the client for anything that matters: which follow-up to generate (and how many to
+  allow) is read from the stored survey, never from the request, and `submit` only
+  writes to the one Box folder that survey's admin already configured. The admin routes
+  (create/edit a survey, trigger analysis) require a signed-in `/beta` account, same as
+  the rest of the platform.
 
 ---
 
@@ -285,3 +354,6 @@ project doesn't otherwise need.
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
 | `/beta/login.html` says "That email isn't on the admin list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
 | "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an existing admin to **Reset** it under Manage admins, then try again. |
+| Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
+| Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |
+| Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |

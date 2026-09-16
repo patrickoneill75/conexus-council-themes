@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results — Consensus</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --good-bg:rgba(12,163,12,.08); --good-border:rgba(12,163,12,.3);
+    --warn:#93370d; --warn-bg:rgba(250,178,25,.12); --warn-border:rgba(250,178,25,.4);
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --good-bg:rgba(12,163,12,.12); --good-border:rgba(12,163,12,.35);
+    --warn:#fab219; --warn-bg:rgba(250,178,25,.10); --warn-border:rgba(250,178,25,.35);
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:820px; margin:0 auto; padding:32px 20px 64px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
+           flex-wrap:wrap; margin-bottom:6px; }
+  h1 { font-size:20px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:12.5px; margin:4px 0 22px; }
+  a.link { color:var(--accent); font-size:13px; text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+  .question-block { margin-bottom:32px; }
+  .question-block h2 { font-size:16px; font-weight:650; margin:0 0 14px; letter-spacing:-0.005em; }
+  .theme { border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:12px;
+           background:var(--surface-1); }
+  .theme-head { display:flex; gap:10px; align-items:baseline; }
+  .theme-num { flex:0 0 auto; font-size:13px; font-weight:700; color:var(--accent);
+               width:20px; }
+  .theme-summary { font-weight:700; font-size:14.5px; }
+  .theme-details { margin:8px 0 0 30px; font-size:13.5px; color:var(--text-secondary); }
+  .theme-details div { margin-bottom:3px; }
+  .deepdive-toggle { margin:10px 0 0 30px; background:none; border:0; padding:0; cursor:pointer;
+                     color:var(--accent); font:inherit; font-size:12.5px; font-weight:600;
+                     display:flex; align-items:center; gap:5px; }
+  .deepdive-toggle .chevron { display:inline-block; transition:transform .15s; font-size:10px; }
+  .deepdive-toggle[aria-expanded="true"] .chevron { transform:rotate(90deg); }
+  .deepdive-body { margin:8px 0 0 30px; font-size:13.5px; color:var(--text-secondary);
+                   padding-left:12px; border-left:2px solid var(--border); }
+  .boxes { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:6px; }
+  @media (max-width:600px) { .boxes { grid-template-columns:1fr; } }
+  .box { border-radius:12px; padding:14px 16px; border:1px solid; }
+  .box.good { background:var(--good-bg); border-color:var(--good-border); }
+  .box.warn { background:var(--warn-bg); border-color:var(--warn-border); }
+  .box h4 { margin:0 0 8px; font-size:11.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+  .box.good h4 { color:var(--good); }
+  .box.warn h4 { color:var(--warn); }
+  .box ul { margin:0; padding-left:18px; font-size:13px; }
+  .box li { margin-bottom:5px; }
+  .box li:last-child { margin-bottom:0; }
+  .box p.empty { margin:0; font-size:12.5px; color:var(--text-muted); font-style:italic; }
+  .no-responses { color:var(--text-muted); font-size:13px; font-style:italic; }
+  .notice { margin:40px 0; padding:20px; border:1px solid var(--border); border-radius:12px;
+            background:var(--surface-1); font-size:14px; text-align:center; color:var(--text-secondary); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="surveyTitle">Loading…</h1>
+    <a class="link" href="/consensus/index.html">&larr; Consensus</a>
+  </header>
+  <p class="sub" id="generatedAt"></p>
+  <div id="content"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  if (!token) { window.location.href = "/beta/login.html"; return; }
+
+  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
+    .then(function (r) { if (!r.ok) throw new Error("not signed in"); })
+    .catch(function () {
+      try { sessionStorage.removeItem("beta-token"); } catch (e) {}
+      window.location.href = "/beta/login.html";
+    });
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  var surveyId = new URLSearchParams(window.location.search).get("survey");
+  if (!surveyId) {
+    el("content").innerHTML = '<div class="notice">No survey specified.</div>';
+  } else {
+    fetch("/consensus-results/" + encodeURIComponent(surveyId) + ".json?t=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(render)
+      .catch(function () {
+        el("surveyTitle").textContent = "Results not found";
+        el("content").innerHTML = '<div class="notice">This survey hasn\'t been analyzed yet, ' +
+          'or the results couldn\'t be loaded.</div>';
+      });
+  }
+
+  function bulletBox(kind, label, items) {
+    var body = items.length
+      ? "<ul>" + items.map(function (b) { return "<li>" + esc(b) + "</li>"; }).join("") + "</ul>"
+      : '<p class="empty">None identified.</p>';
+    return '<div class="box ' + kind + '"><h4>' + esc(label) + "</h4>" + body + "</div>";
+  }
+
+  function themeHtml(theme, index) {
+    var details = (theme.details || []).map(function (d) {
+      return "<div>" + esc(d) + "</div>";
+    }).join("");
+    var deepDiveId = "deepdive-" + index + "-" + Math.random().toString(36).slice(2, 8);
+    return '<div class="theme">' +
+      '<div class="theme-head"><span class="theme-num">' + (index + 1) + ".</span>" +
+      '<span class="theme-summary">' + esc(theme.summary) + "</span></div>" +
+      (details ? '<div class="theme-details">' + details + "</div>" : "") +
+      (theme.deepDive ? (
+        '<button type="button" class="deepdive-toggle" aria-expanded="false" aria-controls="' + deepDiveId + '">' +
+        '<span class="chevron">▸</span> Deep dive</button>' +
+        '<div class="deepdive-body" id="' + deepDiveId + '" hidden>' + esc(theme.deepDive) + "</div>"
+      ) : "") +
+      "</div>";
+  }
+
+  function questionHtml(q) {
+    if (!q.responseCount) {
+      return '<div class="question-block"><h2>' + esc(q.text) + "</h2>" +
+        '<p class="no-responses">No responses yet for this question.</p></div>';
+    }
+    var themes = (q.themes || []).map(themeHtml).join("");
+    return '<div class="question-block"><h2>' + esc(q.text) + "</h2>" +
+      themes +
+      '<div class="boxes">' +
+      bulletBox("good", "Areas of Consensus", q.consensus || []) +
+      bulletBox("warn", "Needs More Information", q.needsMoreInfo || []) +
+      "</div></div>";
+  }
+
+  function render(data) {
+    el("surveyTitle").textContent = data.surveyName;
+    document.title = data.surveyName + " — Consensus";
+    if (data.generatedAt) {
+      el("generatedAt").textContent = "Analyzed " + new Date(data.generatedAt).toLocaleString("en-US",
+        { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+    }
+    el("content").innerHTML = (data.questions || []).map(questionHtml).join("");
+    Array.prototype.forEach.call(el("content").querySelectorAll(".deepdive-toggle"), function (btn) {
+      btn.addEventListener("click", function () {
+        var body = document.getElementById(btn.getAttribute("aria-controls"));
+        var open = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", open ? "false" : "true");
+        body.hidden = open;
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>

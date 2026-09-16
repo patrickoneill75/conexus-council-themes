@@ -1,0 +1,73 @@
+name: Consensus analyze
+
+# Triggered from the Consensus admin page's "Analyze" button -- reads the given
+# survey's collected responses out of Box, asks Claude to synthesize each question's
+# themes, and publishes public/consensus-results/<id>.json. See
+# scripts/consensus_analyze.py.
+on:
+  workflow_dispatch:
+    inputs:
+      survey_id:
+        description: "The Consensus survey ID to analyze"
+        required: true
+        type: string
+
+concurrency:
+  group: consensus-analyze
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # See update_dashboard.yml -- the commit step below rebases onto origin/main
+          # on a rejected push, which needs real (non-shallow) history to do.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Analyze the survey's responses
+        env:
+          SURVEY_ID: ${{ inputs.survey_id }}
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+          CONSENSUS_CLAUDE_API_KEY: ${{ secrets.consensus_claude_api }}
+        run: python scripts/consensus_analyze.py
+
+      - name: Commit results
+        if: always()
+        run: |
+          git config user.name  "themes-bot"
+          git config user.email "actions@github.com"
+          git add public/consensus-results/
+          if git diff --staged --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -m "Analyze Consensus survey ${{ inputs.survey_id }}"
+            for attempt in 1 2 3 4 5; do
+              if git push; then
+                break
+              fi
+              if [ "$attempt" = 5 ]; then
+                echo "::error::Could not push after 5 attempts -- main keeps moving faster than this run can catch up."
+                exit 1
+              fi
+              echo "Push rejected (attempt $attempt/5) -- rebasing onto the current main and retrying..."
+              git fetch origin main
+              git rebase origin/main
+            done
+          fi
+          # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
+          # but Cloudflare redeploys the Worker from this push through its own Git
+          # integration.
