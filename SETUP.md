@@ -13,10 +13,11 @@ Everything below is done in a browser. There are no terminal steps.
 | Piece | Where it lives | What it does |
 | --- | --- | --- |
 | `public/index.html` | Worker static assets | The public dashboard. Power BI pages plus the Council Themes tab. No login. |
-| `public/admin.html` | Worker static assets | The control panel. Helper/Survey upload and Update Dashboard on the main page; Box login, the Data Folder picker, and Refresh Dashboard/Themes/All under Developer. |
+| `public/admin.html` | Worker static assets | The control panel. Helper/Survey upload, Update Dashboard, and the Meetings table (delete a meeting's published data and re-synthesize what's left) on the main page; Box login, the Data Folder picker, and Refresh Dashboard/Themes/All under Developer. |
 | `src/worker.js` | Cloudflare Worker | `/api/*`. Holds the password, the GitHub token and the Box credentials. |
 | `scripts/update_dashboard.py` | GitHub Actions | Auto-detects every meeting in the Data Folder's Post-Meeting Survey export that isn't in `data/feedback_log.json` yet (resolving Year/Quarter/Region per meeting from the Council Meeting Helper export), extracts and publishes each one's themes with Claude, then rebuilds the quant dashboard. |
 | `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in `data/feedback_log.json`, no new survey involved — the one-time bootstrap (or a full redo). |
+| `scripts/remove_meetings.py` | GitHub Actions | Deletes one or more meetings' data from the Feedback Log and both published dashboards, then re-synthesizes every quarter still left. Triggered from the Meetings table's "Remove & refresh" button. |
 
 ---
 

@@ -150,6 +150,31 @@
       <p class="small muted" id="updateState" style="margin:10px 0 0"></p>
     </div>
 
+    <div class="card" id="meetingsCard">
+      <h3>Meetings</h3>
+      <p class="desc">Every meeting with data currently published, across both
+        dashboards. Select one or more and <b>Remove &amp; refresh</b> to delete their
+        entries from the Feedback Log and both dashboards, then re-synthesize
+        whatever's left -- a removed meeting can have been part of another quarter's
+        QoQ/YoY pool. This doesn't touch Box: if the same data is still in the Data
+        Folder's survey export, a future Update Dashboard run will bring it back, so
+        fix or remove it there too if it shouldn't return.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th style="width:1%"><input type="checkbox" id="meetingsSelectAll"></th>
+            <th>Meeting</th><th>Themes</th><th>Quant</th><th>Published</th>
+          </tr></thead>
+          <tbody id="meetingsRows"></tbody>
+        </table>
+      </div>
+      <p class="small muted" id="meetingsEmpty" hidden style="margin:10px 0 0">No meetings published yet.</p>
+      <div class="row" style="margin-top:14px">
+        <button id="meetingsRemoveBtn" type="button" disabled>Remove &amp; refresh selected</button>
+      </div>
+      <p class="small muted" id="meetingsRemoveState" style="margin:10px 0 0"></p>
+    </div>
+
     <div class="card">
       <h3>Analyzed quarters</h3>
       <div style="overflow-x:auto">
@@ -486,11 +511,12 @@
   // Dispatches `job`, updating `stateEl` and `button` either way, but -- unlike a plain
   // api() call wrapped in its own try/catch -- still rejects on failure, so a caller
   // chaining a second dispatch after this one (Refresh All) can tell the first one
-  // actually queued before starting the second.
-  function dispatchJob(job, button, stateEl) {
+  // actually queued before starting the second. `extra` merges extra fields into the
+  // request body (remove_meetings needs survey_ids alongside job).
+  function dispatchJob(job, button, stateEl, extra) {
     button.disabled = true;
     stateEl.innerHTML = '<span class="spin"></span>Starting…';
-    return api("run", { method: "POST", body: JSON.stringify({ job: job }) }).then(
+    return api("run", { method: "POST", body: JSON.stringify(Object.assign({ job: job }, extra)) }).then(
       function () {
         stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
         // GitHub takes a moment to register the run before the API reports it.
@@ -554,6 +580,84 @@
     ).catch(function () {});
   });
 
+  /* ---------- meetings table (remove & refresh) ---------- */
+  var meetingsSelected = {};
+
+  function updateMeetingsRemoveBtn() {
+    var n = Object.keys(meetingsSelected).length;
+    el("meetingsRemoveBtn").disabled = n === 0;
+    el("meetingsRemoveBtn").textContent = n
+      ? "Remove & refresh " + n + " selected" : "Remove & refresh selected";
+  }
+
+  function renderMeetings(themes, quant) {
+    var present = {};
+    Object.keys(themes || {}).forEach(function (k) { present[k] = 1; });
+    Object.keys(quant || {}).forEach(function (k) { present[k] = 1; });
+    var keys = Object.keys(present).sort().reverse();
+    // Drop any selection for a meeting that no longer exists (e.g. a previous
+    // Remove & refresh already cleared it).
+    Object.keys(meetingsSelected).forEach(function (k) { if (!present[k]) delete meetingsSelected[k]; });
+
+    el("meetingsEmpty").hidden = keys.length > 0;
+    el("meetingsRows").innerHTML = keys.map(function (k) {
+      var t = (themes || {})[k], q = (quant || {})[k];
+      var when = (t && t.generated) || (q && q.generated);
+      var whenText = when ? new Date(when).toLocaleString("en-US",
+        { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
+      var pill = function (has) {
+        return has ? '<span class="pill done">Yes</span>' : '<span class="pill nodata">No</span>';
+      };
+      return "<tr><td><input type=\"checkbox\" class=\"meetingCheck\" data-sid=\"" + esc(k) + "\"" +
+        (meetingsSelected[k] ? " checked" : "") + "></td>" +
+        "<td><b>" + esc(k) + "</b></td>" +
+        "<td>" + pill(Boolean(t)) + "</td>" +
+        "<td>" + pill(Boolean(q)) + "</td>" +
+        "<td>" + esc(whenText) + "</td></tr>";
+    }).join("");
+
+    Array.prototype.forEach.call(el("meetingsRows").querySelectorAll(".meetingCheck"), function (cb) {
+      cb.addEventListener("change", function () {
+        if (cb.checked) meetingsSelected[cb.dataset.sid] = 1;
+        else delete meetingsSelected[cb.dataset.sid];
+        el("meetingsSelectAll").checked = keys.length > 0 && keys.every(function (k) { return meetingsSelected[k]; });
+        updateMeetingsRemoveBtn();
+      });
+    });
+    el("meetingsSelectAll").checked = keys.length > 0 && keys.every(function (k) { return meetingsSelected[k]; });
+    updateMeetingsRemoveBtn();
+  }
+
+  el("meetingsSelectAll").addEventListener("change", function () {
+    var checked = el("meetingsSelectAll").checked;
+    Array.prototype.forEach.call(el("meetingsRows").querySelectorAll(".meetingCheck"), function (cb) {
+      cb.checked = checked;
+      if (checked) meetingsSelected[cb.dataset.sid] = 1;
+      else delete meetingsSelected[cb.dataset.sid];
+    });
+    updateMeetingsRemoveBtn();
+  });
+
+  el("meetingsRemoveBtn").addEventListener("click", function () {
+    var ids = Object.keys(meetingsSelected);
+    if (!ids.length) return;
+    if (!window.confirm("Permanently remove " + ids.length + " meeting" + (ids.length === 1 ? "" : "s") +
+        " (" + ids.join(", ") + ") from the Feedback Log and both dashboards, then " +
+        "re-synthesize everything that's left? This does not touch Box -- if the same " +
+        "data is still in the Data Folder's survey export, a future Update Dashboard " +
+        "run will bring it back."))
+      return;
+    always(
+      dispatchJob("remove_meetings", el("meetingsRemoveBtn"), el("meetingsRemoveState"), { survey_ids: ids }),
+      function () {
+        meetingsSelected = {};
+        Array.prototype.forEach.call(el("meetingsRows").querySelectorAll(".meetingCheck"), function (cb) { cb.checked = false; });
+        el("meetingsSelectAll").checked = false;
+        updateMeetingsRemoveBtn();
+      }
+    ).catch(function () {});
+  });
+
   /* ---------- status ---------- */
   function runLabel(workflow) {
     var runs = (workflow && workflow.runs) || [];
@@ -575,7 +679,10 @@
   function refresh() {
     return api("status").then(function (body) {
       var themes = body.themes || {};
+      var quant = body.quant || {};
       var keys = Object.keys(themes).sort().reverse();
+
+      renderMeetings(themes, quant);
 
       var u = runLabel(body.workflows && body.workflows.update_dashboard);
       el("updateState").innerHTML = u.text +
@@ -586,6 +693,9 @@
       var s = runLabel(body.workflows && body.workflows.setup);
       el("refreshThemesState").innerHTML = "Refresh Themes: " + s.text +
         (s.url ? ' · <a href="' + s.url + '" target="_blank" rel="noopener">log</a>' : "");
+      var m = runLabel(body.workflows && body.workflows.remove_meetings);
+      el("meetingsRemoveState").innerHTML = "Remove & refresh: " + m.text +
+        (m.url ? ' · <a href="' + m.url + '" target="_blank" rel="noopener">log</a>' : "");
 
       var banners = "";
       if (!keys.length) {

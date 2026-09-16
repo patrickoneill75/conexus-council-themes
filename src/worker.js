@@ -9,9 +9,11 @@
  *   GET  /api/config-check                  -> which variables are set (unauthenticated)
  *   POST /api/login      { password }       -> { ok, token }
  *   GET  /api/status                        -> published council-themes.json + workflow run info
- *   POST /api/run        { job }            -> triggers a GitHub Actions workflow (no job
- *                                               takes inputs any more -- update_dashboard
- *                                               auto-detects new meetings on its own)
+ *   POST /api/run        { job }            -> triggers a GitHub Actions workflow. Every job
+ *                                               except "remove_meetings" takes no inputs --
+ *                                               update_dashboard auto-detects new meetings on
+ *                                               its own. "remove_meetings" additionally takes
+ *                                               { survey_ids: [...] }.
  *   GET  /api/box/authorize-url             -> where to send the browser to log in
  *   GET  /api/box/callback                  -> Box redirects here after consent
  *   GET  /api/box/status                    -> { connected, data_folder }
@@ -273,17 +275,20 @@ async function handleApi(route, request, env) {
       if (response.ok) quant = await response.json();
     } catch (e) { /* nothing published yet */ }
 
-    let updateDashboard = { runs: [] }, setupRun = { runs: [] }, refreshRun = { runs: [] };
+    let updateDashboard = { runs: [] }, setupRun = { runs: [] }, refreshRun = { runs: [] },
+        removeRun = { runs: [] };
     if (env.GITHUB_TOKEN && env.GITHUB_REPO) {
-      [updateDashboard, setupRun, refreshRun] = await Promise.all([
+      [updateDashboard, setupRun, refreshRun, removeRun] = await Promise.all([
         workflowRuns(env, "update_dashboard.yml"),
         workflowRuns(env, "setup_analysis.yml"),
         workflowRuns(env, "refresh_dashboard.yml"),
+        workflowRuns(env, "remove_meetings.yml"),
       ]);
     }
     return json({
       themes, quant,
-      workflows: { update_dashboard: updateDashboard, setup: setupRun, refresh_dashboard: refreshRun },
+      workflows: { update_dashboard: updateDashboard, setup: setupRun,
+                   refresh_dashboard: refreshRun, remove_meetings: removeRun },
     });
   }
 
@@ -303,11 +308,17 @@ async function handleApi(route, request, env) {
     // Allowlist: never interpolate caller input into the workflow path.
     const workflow = {
       update_dashboard: "update_dashboard.yml", setup: "setup_analysis.yml",
-      refresh_dashboard: "refresh_dashboard.yml",
+      refresh_dashboard: "refresh_dashboard.yml", remove_meetings: "remove_meetings.yml",
     }[job];
     if (!workflow) return json({ error: "Unknown job" }, 400);
 
     const dispatchBody = { ref: env.GITHUB_BRANCH || "main" };
+    if (job === "remove_meetings") {
+      const ids = Array.isArray(body.survey_ids)
+        ? body.survey_ids.map((s) => String(s).trim()).filter(Boolean) : [];
+      if (!ids.length) return json({ error: "survey_ids is required" }, 400);
+      dispatchBody.inputs = { survey_ids: ids.join(",") };
+    }
 
     const response = await fetch(
       `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${workflow}/dispatches`,

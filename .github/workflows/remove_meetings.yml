@@ -1,0 +1,77 @@
+name: Remove meetings
+
+# Triggered from the control panel's "Remove & refresh" button next to the meetings
+# table -- deletes one or more Survey IDs' data from the Feedback Log and both
+# published dashboards, then re-synthesizes every quarter still left (a removed
+# meeting can have been part of another quarter's QoQ/YoY pool). Does not touch Box:
+# if the same bad row is still in the Data Folder's Post-Meeting Survey export, a
+# future Update Dashboard run will pick it up again as new.
+on:
+  workflow_dispatch:
+    inputs:
+      survey_ids:
+        description: "Comma-separated Survey IDs to remove, e.g. '2026-Q3 Central,2026-Q3 Southern'"
+        required: true
+        type: string
+
+concurrency:
+  group: themes-analyze
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # See update_dashboard.yml -- the commit step below rebases onto origin/main
+          # on a rejected push, which needs real (non-shallow) history to do.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Remove the given meetings and re-synthesize what's left
+        env:
+          SURVEY_IDS: ${{ inputs.survey_ids }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/remove_meetings.py
+
+      - name: Commit site and data
+        # Consistent with the other workflows' commit steps -- see update_dashboard.yml.
+        if: always()
+        env:
+          SURVEY_IDS: ${{ inputs.survey_ids }}
+        run: |
+          git config user.name  "themes-bot"
+          git config user.email "actions@github.com"
+          git add public/
+          if [ -d data ]; then git add data/; fi
+          if git diff --staged --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -m "Remove meeting(s): $SURVEY_IDS"
+            for attempt in 1 2 3 4 5; do
+              if git push; then
+                break
+              fi
+              if [ "$attempt" = 5 ]; then
+                echo "::error::Could not push after 5 attempts -- main keeps moving faster than this run can catch up."
+                exit 1
+              fi
+              echo "Push rejected (attempt $attempt/5) -- rebasing onto the current main and retrying..."
+              git fetch origin main
+              git rebase origin/main
+            done
+          fi
+          # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
+          # but Cloudflare redeploys the Worker from this push through its own Git
+          # integration.
