@@ -2,8 +2,9 @@ name: Refresh dashboard
 
 # Triggered from the control panel's "Refresh Dashboard" button (workflow_dispatch via
 # the GitHub API), or by hand from the Actions tab. No inputs -- it re-reads the Data
-# Folder's three fixed-name files, no new upload needed. Use this after editing or
-# deleting something directly in Box.
+# Folder's three fixed-name files and merges the result in, no new upload needed. Use
+# this after editing something directly in Box (deleting a meeting's rows out of
+# Post-Meeting Survey.csv does not remove it from the published dashboard).
 on:
   workflow_dispatch:
 

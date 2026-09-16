@@ -1,8 +1,16 @@
 """Grouping unpivoted survey rows by meeting and writing public/quant-dashboard.json.
 
-Every run replaces the file wholesale — see quant_extract.py and quant_data.py for why:
-the source is "everything currently in Box," not a running log, so there is nothing to
-merge. A meeting with no Council Meeting Helper row is skipped rather than published
+Every run MERGES its results into whatever's already published rather than replacing
+the file wholesale. The original design assumed Post-Meeting Survey.csv was always a
+full cumulative export the same way Council Meeting Helper.csv is -- a real run proved
+that wrong: the Post-Meeting Survey export the survey tool actually produces can carry
+just the newest meeting's raw responses, not the full multi-year history, and a full
+rebuild from that alone silently wiped 13 already-published quarters down to the 2 the
+file happened to contain. Merging means a meeting only ever gets added or updated, on
+whatever's actually present in the current Survey file -- never removed because an
+older response simply isn't in this particular export.
+
+A meeting with no Council Meeting Helper row is skipped rather than published
 half-resolved, since Year/Quarter/Region only ever come from that lookup (confirmed
 with the user — the survey export itself never carries them).
 """
@@ -84,10 +92,13 @@ def save(data: dict) -> None:
 
 
 def refresh() -> None:
-    """Rebuild the whole quant dashboard from the Data Folder's three fixed-name files.
-    No new upload needed -- used both as the second half of a normal Update Dashboard
-    run, and on its own from the control panel's "Refresh Dashboard" button, e.g. after
-    editing or deleting something directly in Box.
+    """Merge newly-computed meetings from the Data Folder's three fixed-name files into
+    the quant dashboard. No new upload needed -- used both as the second half of a
+    normal Update Dashboard run, and on its own from the control panel's "Refresh
+    Dashboard" button, e.g. after editing something directly in Box. Since this merges
+    rather than replaces (see module docstring), deleting a meeting's rows out of
+    Post-Meeting Survey.csv does NOT remove it from the published dashboard -- edit
+    public/quant-dashboard.json by hand for that.
 
     A no-op (prints why, returns) if no Data Folder has been picked yet -- that's a
     normal, not-yet-configured state, not an error.
@@ -120,17 +131,13 @@ def refresh() -> None:
     helper = quant_data.read_helper(box_store.download(helper_id))
     print(f"  {len(helper)} meeting(s) in the helper.")
     if not helper:
-        # This build rebuilds public/quant-dashboard.json from scratch every run (see
-        # module docstring) -- an empty helper resolves every single meeting to nothing,
-        # which would silently wipe out everything already published rather than just
-        # skip whatever's actually new. A real Data Folder essentially never has a
-        # genuinely empty Helper file, so this is virtually always Council Meeting
-        # Helper.csv failing to parse (wrong file, wrong format, unrecognized date
-        # values) -- fail loudly instead of publishing an empty dashboard.
-        print(f"ERROR: '{quant_data.HELPER_FILENAME}' parsed to zero meetings. Refusing "
-              "to rebuild the quant dashboard from this -- it would wipe out everything "
-              "already published. Check the file is a real Helper export with valid "
-              "Meeting Date values.", file=sys.stderr)
+        # A real Data Folder essentially never has a genuinely empty Helper file, so
+        # this is virtually always Council Meeting Helper.csv failing to parse (wrong
+        # file, wrong format, unrecognized date values). Nothing can resolve without
+        # it -- fail loudly rather than silently publishing no updates at all.
+        print(f"ERROR: '{quant_data.HELPER_FILENAME}' parsed to zero meetings. Check "
+              "the file is a real Helper export with valid Meeting Date values.",
+              file=sys.stderr)
         raise SystemExit(1)
 
     print(f"Downloading {categories_name}...")
@@ -146,11 +153,7 @@ def refresh() -> None:
     print("Building the quant dashboard...")
     data = build(rows, helper, categories, source_files)
     existing = load()
-    if not data and existing:
-        print(f"ERROR: This run resolved zero meetings, but {config.QUANT_DASHBOARD_JSON} "
-              f"already has {len(existing)} published. Refusing to overwrite -- this "
-              "almost always means something's wrong with the Data Folder's files rather "
-              "than every meeting genuinely being gone.", file=sys.stderr)
-        raise SystemExit(1)
-    save(data)
-    print(f"Published {len(data)} meeting(s) to {config.QUANT_DASHBOARD_JSON}.")
+    existing.update(data)
+    save(existing)
+    print(f"Published {len(data)} meeting(s) from this run; "
+          f"{len(existing)} total in {config.QUANT_DASHBOARD_JSON}.")
