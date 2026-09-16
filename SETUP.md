@@ -258,11 +258,14 @@ project doesn't otherwise need.
 - **Auditable.** Every analysis run is a logged GitHub Actions run showing when it ran,
   who triggered it, and exactly what it extracted, appended, and published.
 - **`/beta`'s admin accounts are a separate, lighter-weight system.** Passwords are hashed
-  (PBKDF2-SHA256, 210,000 iterations, a random salt per account) — never stored or logged
-  in plain text — and session tokens are HMAC-signed, not cookies, so there's nothing for
-  a CSRF attack to ride on. What it does *not* do is verify email ownership before letting
-  someone set a password (see step 8 above) — a deliberate simplicity trade for a small,
-  trusted admin list, not an oversight.
+  (PBKDF2-SHA256, a random salt per account) — never stored or logged in plain text — and
+  session tokens are HMAC-signed, not cookies, so there's nothing for a CSRF attack to
+  ride on. The iteration count is intentionally lower than a typical server-side
+  recommendation, because it has to fit inside a Cloudflare Worker's per-request CPU
+  budget (not wall-clock time) rather than a normal server's — see the comment above
+  `PBKDF2_ITERATIONS` in `src/beta_auth.js` for the actual numbers. What it does *not* do
+  is verify email ownership before letting someone set a password (see step 8 above) — a
+  deliberate simplicity trade for a small, trusted admin list, not an oversight.
 
 ---
 

@@ -22,8 +22,19 @@
  *                                 the same role CONTROL_PASSWORD itself plays for
  *                                 admin.html's session tokens (see worker.js).
  *
- * Passwords are hashed with PBKDF2-SHA256 (210,000 iterations, a random 16-byte salt
- * per account) via the Workers runtime's own Web Crypto -- no external dependency.
+ * Passwords are hashed with PBKDF2-SHA256 (a random 16-byte salt per account) via the
+ * Workers runtime's own Web Crypto -- no external dependency. The iteration count
+ * (PBKDF2_ITERATIONS below) is deliberately much lower than a typical server-side
+ * recommendation like OWASP's 210,000+: Workers meters actual CPU time per request
+ * (the Free plan's default budget is ~10ms), not wall-clock time, and PBKDF2 is pure
+ * CPU work -- 210,000 iterations measured at ~95ms in testing, comfortably over that
+ * budget on its own, which is what actually happened the first time this shipped: the
+ * Worker was killed mid-request for exceeding its CPU limit, and Cloudflare's own
+ * generic HTML error page came back instead of JSON (surfacing in the browser as a
+ * "<!DOCTYPE" JSON-parse error, not as anything this code ever returns). 5,000
+ * iterations measures at ~3ms, leaving headroom even for the one request that ever
+ * does two PBKDF2 calls at once (ensureSeedAdmin() hashing the seed password, then the
+ * login handler verifying it, the first time anyone ever hits /api/beta/*).
  *
  * Setup and "forgot password" are deliberately the same endpoint (setup-complete): an
  * email can set a password whenever it's on the allowlist AND has no password on file,
@@ -46,7 +57,7 @@ const decoder = new TextDecoder();
 const ALLOWLIST_KEY = "beta:admin-emails";
 const SESSION_SECRET_KEY = "beta:session-secret";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
-const PBKDF2_ITERATIONS = 210000;
+const PBKDF2_ITERATIONS = 5000;
 
 const SEED_ADMIN_EMAIL = "poneill@conexusindiana.com";
 const SEED_ADMIN_USERNAME = "poneill";
