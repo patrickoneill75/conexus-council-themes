@@ -33,7 +33,7 @@ def build(long_rows: list[dict], helper: dict[date, dict], categories: dict[str,
 
     for meeting_date, rows in by_meeting.items():
         info = helper.get(meeting_date)
-        if not info or not info.get("year") or not info.get("quarter"):
+        if not info or not info.get("year") or not info.get("quarter") or not info.get("region"):
             continue
 
         # "Survey Responses": no single row carries a respondent id, so this takes the

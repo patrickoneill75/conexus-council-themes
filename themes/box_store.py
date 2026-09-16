@@ -51,8 +51,12 @@ class BoxError(RuntimeError):
 
 
 class NotConnected(RuntimeError):
-    """Box isn't logged in yet, or no folder has been picked — a normal state before the
-    admin has finished the control panel's setup, not a bug."""
+    """Box isn't logged in yet — a normal state before the admin has finished the control
+    panel's setup, not a bug. A Data Folder not having been picked yet is a separate,
+    equally normal state, but isn't this: it's reported by data_folder_id() returning
+    None rather than by an exception, since only some callers (e.g. Update Dashboard,
+    which cannot do anything without one) should treat that as fatal — others (e.g.
+    Refresh Dashboard) no-op instead. See themes/quant_publish.py's refresh()."""
 
 
 def enabled() -> bool:

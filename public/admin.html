@@ -481,34 +481,53 @@
     el("refreshAllBtn").disabled = !dataFolder;
   }
 
-  function runJob(job, button, stateEl) {
+  // Dispatches `job`, updating `stateEl` and `button` either way, but -- unlike a plain
+  // api() call wrapped in its own try/catch -- still rejects on failure, so a caller
+  // chaining a second dispatch after this one (Refresh All) can tell the first one
+  // actually queued before starting the second.
+  function dispatchJob(job, button, stateEl) {
     button.disabled = true;
     stateEl.innerHTML = '<span class="spin"></span>Starting…';
-    return api("run", { method: "POST", body: JSON.stringify({ job: job }) })
-      .then(function () {
+    return api("run", { method: "POST", body: JSON.stringify({ job: job }) }).then(
+      function () {
         stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
         // GitHub takes a moment to register the run before the API reports it.
         setTimeout(refresh, 4000);
-      })
-      .catch(function (e) {
+        button.disabled = false;
+      },
+      function (e) {
         stateEl.textContent = "Could not start: " + e.message;
-      })
-      .then(function () { button.disabled = false; });
+        button.disabled = false;
+        throw e;
+      }
+    );
+  }
+
+  // Runs `after` once `promise` settles, whichever way, without swallowing a rejection --
+  // the equivalent of Promise.prototype.finally spelled out for broader compatibility.
+  function always(promise, after) {
+    return promise.then(
+      function (v) { after(); return v; },
+      function (e) { after(); throw e; }
+    );
   }
 
   el("updateBtn").addEventListener("click", function () {
-    runJob("update_dashboard", el("updateBtn"), el("updateState")).then(updateAnalysisReadiness);
+    always(dispatchJob("update_dashboard", el("updateBtn"), el("updateState")), updateAnalysisReadiness)
+      .catch(function () {});
   });
 
   el("refreshDashboardBtn").addEventListener("click", function () {
-    runJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState")).then(updateRefreshButtons);
+    always(dispatchJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState")), updateRefreshButtons)
+      .catch(function () {});
   });
 
   el("refreshThemesBtn").addEventListener("click", function () {
     if (!window.confirm("Re-synthesize every quarter already in the Feedback Log? " +
                          "This replaces the published top issues / QoQ / YoY for all of them."))
       return;
-    runJob("setup", el("refreshThemesBtn"), el("refreshThemesState")).then(updateRefreshButtons);
+    always(dispatchJob("setup", el("refreshThemesBtn"), el("refreshThemesState")), updateRefreshButtons)
+      .catch(function () {});
   });
 
   el("refreshAllBtn").addEventListener("click", function () {
@@ -516,12 +535,21 @@
                          "rebuild the quant dashboard? This replaces every published " +
                          "top issues / QoQ / YoY and every quant figure."))
       return;
-    // Same "themes-analyze" concurrency group as every other run, so these two queue
-    // one after the other on GitHub's side rather than racing to commit public/.
+    // Disable all three up front -- not just refreshAllBtn -- so a click on the
+    // standalone Refresh Themes button can't sneak in a second "setup" dispatch while
+    // Refresh Dashboard's own dispatch is still in flight.
     el("refreshAllBtn").disabled = true;
-    runJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState"))
-      .then(function () { return runJob("setup", el("refreshThemesBtn"), el("refreshThemesState")); })
-      .then(updateRefreshButtons);
+    el("refreshDashboardBtn").disabled = true;
+    el("refreshThemesBtn").disabled = true;
+    // Same "themes-analyze" concurrency group as every other run, so these two queue one
+    // after the other on GitHub's side rather than racing to commit public/. If the first
+    // dispatch fails to even queue, dispatchJob's rejection short-circuits this chain --
+    // the second job is never triggered, rather than silently doing half the work.
+    always(
+      dispatchJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState"))
+        .then(function () { return dispatchJob("setup", el("refreshThemesBtn"), el("refreshThemesState")); }),
+      updateRefreshButtons
+    ).catch(function () {});
   });
 
   /* ---------- status ---------- */
