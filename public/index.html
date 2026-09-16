@@ -846,11 +846,6 @@ const CONFIG = {
     var byId = function (id) { return wrap.querySelector("#" + id); };
     var years = distinctSorted(quantDocs.map(function (d) { return d.year; }))
       .sort(function (a, b) { return a - b; });
-    /* A literal Region value of "All" shows up in older, pre-regional-split meetings.
-       It's left out of the specific-region list since it would read as a second, identical
-       "All" option -- selecting the slicer's own "All" already includes those rows anyway. */
-    var regions = distinctSorted(quantDocs.map(function (d) { return d.region; }))
-      .filter(function (r) { return r !== FILTER_ALL; }).sort();
 
     function fillSlicer(sel, extra) {
       sel.innerHTML = "";
@@ -861,13 +856,37 @@ const CONFIG = {
       });
     }
 
+    /* Which regions actually have a published meeting for this exact year+quarter --
+       e.g. 2026-Q3 only has Central and Southern, so that's all the slicer should
+       offer; a quarter published before the regional split only has the literal
+       region "All", so that's the only option there. Unlike the slicer's own
+       always-present "All" (every other slicer here gets one via fillSlicer), this
+       list never gets FILTER_ALL prepended -- it only contains "All" when that's a
+       genuinely published region value for the selected quarter. */
+    function regionsFor(year, quarter) {
+      return distinctSorted(quantDocs.filter(function (d) {
+        return String(d.year) === String(year) && d.quarter === quarter;
+      }).map(function (d) { return d.region; })).sort();
+    }
+
+    function fillRegionSlicer(year, quarter, preferred) {
+      var sel = byId("q-meeting-region");
+      var opts = regionsFor(year, quarter);
+      sel.innerHTML = "";
+      opts.forEach(function (v) {
+        var o = document.createElement("option");
+        o.value = String(v); o.textContent = String(v);
+        sel.appendChild(o);
+      });
+      sel.value = opts.indexOf(preferred) !== -1 ? preferred : (opts[0] || "");
+    }
+
     fillSlicer(byId("q-meeting-year"), years);
     fillSlicer(byId("q-meeting-quarter"), QUARTER_ORDER);
-    fillSlicer(byId("q-meeting-region"), regions);
     var latest = quantDocs.slice().sort(function (a, b) { return quarterTotal(b) - quarterTotal(a); })[0];
     byId("q-meeting-year").value = String(latest.year);
     byId("q-meeting-quarter").value = latest.quarter;
-    byId("q-meeting-region").value = latest.region;
+    fillRegionSlicer(latest.year, latest.quarter, latest.region);
     byId("q-compare-mode").value = "prev";
 
     function renderCompare() {
@@ -878,7 +897,14 @@ const CONFIG = {
       byId("q-compare-note").textContent = compare.note || "";
       renderMetricCards(byId("q-metric-cards"), selected, compare.matched, compare.avgCounts);
     }
-    ["q-meeting-year", "q-meeting-quarter", "q-meeting-region", "q-compare-mode"].forEach(function (id) {
+    function onYearQuarterChange() {
+      fillRegionSlicer(byId("q-meeting-year").value, byId("q-meeting-quarter").value, byId("q-meeting-region").value);
+      renderCompare();
+    }
+    ["q-meeting-year", "q-meeting-quarter"].forEach(function (id) {
+      byId(id).addEventListener("change", onYearQuarterChange);
+    });
+    ["q-meeting-region", "q-compare-mode"].forEach(function (id) {
       byId(id).addEventListener("change", renderCompare);
     });
     renderCompare();
