@@ -1,8 +1,11 @@
-"""Reading the two reference files a quant dashboard run finds by exact filename in the
-Quant Data Folder: 'Council Meeting Helper.csv' and 'Content Categories.xlsx'.
+"""Reading the three fixed-name files a dashboard run finds in the Data Folder:
+'Council Meeting Helper.csv', 'Post-Meeting Survey.csv', and 'Content
+Categories.xlsx'.
 
-Both are static/slow-changing and admin-maintained (uploaded whole, not appended to by
-this pipeline) — see SETUP.md for what goes in the folder and how it gets updated.
+The Helper and Survey exports are cumulative — every fresh export from the survey
+tool contains every meeting/response ever collected, not just the newest — so each
+upload replaces the file in Box wholesale rather than merging. Content Categories is
+static/slow-changing and admin-maintained directly in Box.
 """
 from __future__ import annotations
 
@@ -13,14 +16,15 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 HELPER_FILENAME = "Council Meeting Helper.csv"
+SURVEY_FILENAME = "Post-Meeting Survey.csv"
 CATEGORIES_FILENAME = "Content Categories.xlsx"
 
 
-def _parse_date(value: str) -> date | None:
+def parse_date(value: str) -> date | None:
     value = (value or "").strip()
     if not value:
         return None
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+    for fmt in ("%b %d, %Y", "%m/%d/%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(value, fmt).date()
         except ValueError:
@@ -48,7 +52,7 @@ def read_helper(content: bytes) -> dict[date, dict]:
     reader = csv.DictReader(io.StringIO(text))
     out: dict[date, dict] = {}
     for row in reader:
-        meeting_date = _parse_date(row.get("Meeting Date", ""))
+        meeting_date = parse_date(row.get("Meeting Date", ""))
         if not meeting_date:
             continue
         out[meeting_date] = {

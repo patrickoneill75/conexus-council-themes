@@ -2,9 +2,9 @@
 """Rebuild the quant dashboard from whatever's currently in Box -- no new survey
 upload needed.
 
-Triggered from the control panel's "Refresh Dashboard" button, for when files in the
-Quant Data Folder or New Survey Directory changed directly in Box (added, edited, or
-deleted) rather than through an upload here.
+Triggered from the control panel's "Refresh Dashboard" button, for when a file in the
+Data Folder changed directly in Box (edited or deleted) rather than through an upload
+here.
 """
 from __future__ import annotations
 

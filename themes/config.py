@@ -21,6 +21,15 @@ PUBLIC_DIR = ROOT / "public"
 COUNCIL_THEMES_JSON = PUBLIC_DIR / "council-themes.json"
 QUANT_DASHBOARD_JSON = PUBLIC_DIR / "quant-dashboard.json"
 
+# The Feedback Log (every extracted "area to improve" item, every quarter) and the
+# category taxonomy used to live in a tracker spreadsheet in Box. They're committed
+# here in the repo instead: Box's job is just to hold the two raw exports the survey
+# tool produces (see themes/quant_data.py), not to be the durable store for anything
+# this app derives from them.
+DATA_DIR = ROOT / "data"
+FEEDBACK_LOG_JSON = DATA_DIR / "feedback_log.json"
+TAXONOMY_JSON = DATA_DIR / "taxonomy.json"
+
 # The Worker relay. Both are set as GitHub repository secrets; the URL is just the
 # Worker's own address with the relay path on the end.
 BOX_RELAY_URL = os.environ.get("BOX_RELAY_URL", "").strip()

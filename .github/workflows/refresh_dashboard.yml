@@ -1,9 +1,9 @@
 name: Refresh dashboard
 
 # Triggered from the control panel's "Refresh Dashboard" button (workflow_dispatch via
-# the GitHub API), or by hand from the Actions tab. No inputs -- it re-reads whatever is
-# currently in the Quant Data Folder and New Survey Directory, no new upload needed. Use
-# this after adding, editing, or deleting files directly in Box.
+# the GitHub API), or by hand from the Actions tab. No inputs -- it re-reads the Data
+# Folder's three fixed-name files, no new upload needed. Use this after editing or
+# deleting something directly in Box.
 on:
   workflow_dispatch:
 

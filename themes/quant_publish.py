@@ -78,31 +78,35 @@ def save(data: dict) -> None:
 
 
 def refresh() -> None:
-    """Rebuild the whole quant dashboard from whatever's currently in Box: the Quant
-    Data Folder's two reference files, and every survey file in the New Survey
-    Directory. No new upload needed -- used both as the second half of a normal
-    Update Dashboard run, and on its own from the control panel's "Refresh Dashboard"
-    button, e.g. after adding, editing, or deleting files directly in Box.
+    """Rebuild the whole quant dashboard from the Data Folder's three fixed-name files.
+    No new upload needed -- used both as the second half of a normal Update Dashboard
+    run, and on its own from the control panel's "Refresh Dashboard" button, e.g. after
+    editing or deleting something directly in Box.
 
-    A no-op (prints why, returns) if no Quant Data Folder has been picked yet -- that's
-    a normal, not-yet-configured state, not an error.
+    A no-op (prints why, returns) if no Data Folder has been picked yet -- that's a
+    normal, not-yet-configured state, not an error.
     """
-    folder_id = box_store.quant_folder_id()
+    folder_id = box_store.data_folder_id()
     if not folder_id:
-        print("Skipping quant dashboard update: no Quant Data Folder has been picked "
-              "yet on the control panel.")
+        print("Skipping quant dashboard update: no Data Folder has been picked yet on "
+              "the control panel.")
         return
 
-    print(f"Listing the Quant Data Folder ({folder_id}) for reference files...")
-    quant_files = {f["name"]: f["id"] for f in box_store.list_folder(folder_id)}
-    helper_id = quant_files.get(quant_data.HELPER_FILENAME)
-    categories_id = quant_files.get(quant_data.CATEGORIES_FILENAME)
+    print(f"Listing the Data Folder ({folder_id})...")
+    files = {f["name"]: f["id"] for f in box_store.list_folder(folder_id)}
+    helper_id = files.get(quant_data.HELPER_FILENAME)
+    survey_id_ = files.get(quant_data.SURVEY_FILENAME)
+    categories_id = files.get(quant_data.CATEGORIES_FILENAME)
     if not helper_id:
-        print(f"ERROR: '{quant_data.HELPER_FILENAME}' not found in the Quant Data "
-              "Folder.", file=sys.stderr)
+        print(f"ERROR: '{quant_data.HELPER_FILENAME}' not found in the Data Folder.",
+              file=sys.stderr)
+        raise SystemExit(1)
+    if not survey_id_:
+        print(f"ERROR: '{quant_data.SURVEY_FILENAME}' not found in the Data Folder.",
+              file=sys.stderr)
         raise SystemExit(1)
     if not categories_id:
-        print(f"ERROR: '{quant_data.CATEGORIES_FILENAME}' not found in the Quant Data "
+        print(f"ERROR: '{quant_data.CATEGORIES_FILENAME}' not found in the Data "
               "Folder.", file=sys.stderr)
         raise SystemExit(1)
 
@@ -114,26 +118,13 @@ def refresh() -> None:
     categories = quant_data.read_categories(box_store.download(categories_id))
     print(f"  {len(categories)} metric(s) mapped.")
 
-    print("Listing the New Survey Directory for survey files...")
-    survey_files = box_store.list_folder(box_store.upload_folder_id())
-    survey_names = [f["name"] for f in survey_files
-                    if f["name"].lower().endswith((".xlsx", ".csv"))
-                    and not f["name"].startswith("~$")]
-    print(f"Found {len(survey_names)} survey file(s): {', '.join(survey_names) or '(none)'}")
-    by_name = {f["name"]: f["id"] for f in survey_files}
-
-    all_rows: list[dict] = []
-    source_files: dict = {}
-    for name in survey_names:
-        print(f"  Reading {name}...")
-        content = box_store.download(by_name[name])
-        rows = quant_extract.unpivot(name, content)
-        print(f"    {len(rows)} row(s).")
-        all_rows.extend(rows)
-        for row in rows:
-            source_files[row["meeting_date"]] = name
+    print(f"Downloading {quant_data.SURVEY_FILENAME}...")
+    content = box_store.download(survey_id_)
+    rows = quant_extract.unpivot(quant_data.SURVEY_FILENAME, content)
+    print(f"  {len(rows)} row(s).")
+    source_files = {row["meeting_date"]: quant_data.SURVEY_FILENAME for row in rows}
 
     print("Building the quant dashboard...")
-    data = build(all_rows, helper, categories, source_files)
+    data = build(rows, helper, categories, source_files)
     save(data)
     print(f"Published {len(data)} meeting(s) to {config.QUANT_DASHBOARD_JSON}.")

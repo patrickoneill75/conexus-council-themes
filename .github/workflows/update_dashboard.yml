@@ -1,27 +1,13 @@
 name: Update dashboard
 
 # Triggered from the control panel's single "Update Dashboard" button (workflow_dispatch
-# via the GitHub API), or by hand from the Actions tab. Runs the natural-language theme
-# extraction for the uploaded survey, then rebuilds the quant dashboard from every survey
-# file currently in the New Survey Directory.
+# via the GitHub API), or by hand from the Actions tab. No inputs -- it auto-detects
+# every meeting in the Data Folder's Post-Meeting Survey export that isn't in
+# data/feedback_log.json yet (resolving Year/Quarter/Region per meeting from the
+# Council Meeting Helper export), extracts and synthesizes themes for each one, then
+# rebuilds the quant dashboard from the same two files.
 on:
   workflow_dispatch:
-    inputs:
-      survey_file_id:
-        description: Box file id of the uploaded survey
-        required: true
-      survey_file_name:
-        description: Name of the uploaded survey file (decides .csv vs .xlsx reading)
-        required: true
-      year:
-        description: "Meeting year, e.g. 2026"
-        required: true
-      quarter:
-        description: "Q1 / Q2 / Q3 / Q4"
-        required: true
-      region:
-        description: "Central / Southern / Northern / All"
-        required: true
 
 concurrency:
   group: themes-analyze
@@ -44,28 +30,22 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Extract themes and rebuild the quant dashboard
+      - name: Extract themes for new meetings and rebuild the quant dashboard
         env:
           BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
           BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          python scripts/update_dashboard.py \
-            --survey-file-id "${{ github.event.inputs.survey_file_id }}" \
-            --survey-file-name "${{ github.event.inputs.survey_file_name }}" \
-            --year "${{ github.event.inputs.year }}" \
-            --quarter "${{ github.event.inputs.quarter }}" \
-            --region "${{ github.event.inputs.region }}"
+        run: python scripts/update_dashboard.py
 
-      - name: Commit site
+      - name: Commit site and data
         run: |
           git config user.name  "themes-bot"
           git config user.email "actions@github.com"
-          git add public/
+          git add public/ data/
           if git diff --staged --quiet; then
             echo "Nothing changed."
           else
-            git commit -m "Update dashboard: ${{ github.event.inputs.year }} ${{ github.event.inputs.quarter }} ${{ github.event.inputs.region }}"
+            git commit -m "Update dashboard"
             git push
           fi
           # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,

@@ -1,17 +1,20 @@
-"""Reading the survey and tracker files out of Box, and writing the tracker back.
+"""Reading the Data Folder's files out of Box, and writing new versions back.
 
 This module never talks to Box's OAuth directly. Box login happens once, interactively,
 in the control panel (see public/admin.html and src/worker.js): the admin clicks "Log in
 with Box", Box's standard OAuth 2.0 flow runs, and the resulting access/refresh tokens
 are kept by the Cloudflare Worker in Workers KV — the right place for them, since the
 refresh token rotates every time it's used and a GitHub Actions run has no durable place
-of its own to keep something that changes underneath it. The admin also picks the upload
-folder and the tracker file there, once, and can change either any time.
+of its own to keep something that changes underneath it. The admin also picks the Data
+Folder there, once, and can change it any time.
 
 Instead, this module calls the Worker's own relay endpoint — GET /api/box/pipeline-token,
 authenticated by a shared secret (BOX_RELAY_SECRET) rather than a login — which hands
-back a short-lived access token plus the currently-selected upload folder ID and tracker
-file ID.
+back a short-lived access token plus the currently-selected Data Folder ID.
+
+`tracker_file_id()` is a leftover, kept only for the one-time migration that reads the
+old tracker.xlsx out of Box (see scripts/migrate_feedback_log.py) — everything else in
+this module works off the single Data Folder now.
 
 This Box app has read AND write scope (it's shared with conexus-mcm, whose app already
 has "Read and write all files and folders" — see SETUP.md), so this run re-uploads the
@@ -32,8 +35,8 @@ API = "https://api.box.com/2.0"
 UPLOAD_API = "https://upload.box.com/api/2.0"
 
 _lock = threading.Lock()
-_cache = {"access_token": None, "upload_folder_id": None, "tracker_file_id": None,
-          "quant_folder_id": None, "expires_at": 0.0}
+_cache = {"access_token": None, "data_folder_id": None, "tracker_file_id": None,
+          "expires_at": 0.0}
 
 _retry = retry(
     retry=retry_if_exception_type(requests.RequestException),
@@ -72,10 +75,8 @@ def _refresh():
         response.raise_for_status()
         body = response.json()
         _cache["access_token"] = body["access_token"]
-        _cache["upload_folder_id"] = body["upload_folder_id"]
-        _cache["tracker_file_id"] = body["tracker_file_id"]
-        # Nullable: not every run needs quant setup to exist yet (see worker.js).
-        _cache["quant_folder_id"] = body.get("quant_folder_id")
+        _cache["data_folder_id"] = body.get("data_folder_id")
+        _cache["tracker_file_id"] = body.get("tracker_file_id")
         # The relay reports the token's true remaining lifetime, not Box's original
         # expires_in. Trusting the latter is how an expired token gets sent mid-run.
         _cache["expires_at"] = time.time() + float(body.get("expires_in", 3300))
@@ -91,19 +92,14 @@ def _headers():
     return {"authorization": f"Bearer {_cache['access_token']}"}
 
 
-def upload_folder_id() -> str:
+def data_folder_id() -> str | None:
     _ensure_fresh()
-    return _cache["upload_folder_id"]
+    return _cache["data_folder_id"]
 
 
-def tracker_file_id() -> str:
+def tracker_file_id() -> str | None:
     _ensure_fresh()
     return _cache["tracker_file_id"]
-
-
-def quant_folder_id() -> str | None:
-    _ensure_fresh()
-    return _cache["quant_folder_id"]
 
 
 @_retry

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One-time (or re-run-able) bootstrap: synthesize current/QoQ/YoY themes for every
-quarter already sitting in the tracker's Feedback Log — no new survey involved.
+quarter already sitting in data/feedback_log.json -- no new survey involved.
 
 Triggered from the control panel's "Run full re-analysis" button.
 """
@@ -11,31 +11,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from themes import box_store, claude_client, config, publish  # noqa: E402
-from themes.tracker import Tracker, quarters_before, rows_in  # noqa: E402
+from themes import claude_client, config, feedback_log, publish  # noqa: E402
+from themes.tracker import quarters_before, rows_in  # noqa: E402
 
 
 def main() -> int:
-    if not box_store.enabled():
-        print("ERROR: BOX_RELAY_URL and BOX_RELAY_SECRET are not set as repository "
-              "secrets, so there is no way to reach Box. See SETUP.md.", file=sys.stderr)
-        return 1
     if not config.ANTHROPIC_API_KEY:
         print("ERROR: ANTHROPIC_API_KEY is not set as a repository secret. See SETUP.md.",
               file=sys.stderr)
         return 1
 
-    tracker_file_id = box_store.tracker_file_id()
-    print(f"Downloading tracker {tracker_file_id}...")
-    t = Tracker(box_store.download(tracker_file_id))
-    all_rows = t.feedback_rows()
+    all_rows = feedback_log.load()
+    if not all_rows:
+        print(f"ERROR: {config.FEEDBACK_LOG_JSON} is empty or missing -- nothing to "
+              "re-analyze.", file=sys.stderr)
+        return 1
 
     groups: dict[str, list[dict]] = {}
     for row in all_rows:
         sid = row.get("Survey ID")
         if sid:
             groups.setdefault(sid, []).append(row)
-    print(f"Found {len(groups)} quarter(s) in the tracker: {', '.join(sorted(groups))}")
+    print(f"Found {len(groups)} quarter(s) in the Feedback Log: {', '.join(sorted(groups))}")
 
     for sid, items in sorted(groups.items()):
         year, quarter = items[0].get("Year"), items[0].get("Quarter")

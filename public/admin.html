@@ -107,60 +107,42 @@
     <div id="banners"></div>
 
     <div class="card" id="uploadCard">
-      <h3>New Survey Upload</h3>
-      <p class="desc">The raw survey export from the most recent meeting. Uploaded into
-        the New Survey Directory, which feeds both the natural-language analysis and the
-        quant dashboard.</p>
-      <div class="fields">
-        <div class="field">
-          <label for="surveyYear">Year</label>
-          <input type="number" id="surveyYear" step="1" min="2000" max="2100" placeholder="2026">
-        </div>
-        <div class="field">
-          <label for="surveyQuarter">Quarter</label>
-          <select id="surveyQuarter">
-            <option value="">Select…</option>
-            <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="surveyRegion">Region</label>
-          <select id="surveyRegion">
-            <option value="">Select…</option>
-            <option>Central</option><option>Southern</option><option>Northern</option><option>All</option>
-          </select>
-        </div>
-      </div>
-      <label for="surveyFile">Survey file</label>
-      <div class="row">
-        <input type="file" id="surveyFile" accept=".xlsx,.csv" style="flex:1 1 240px">
-        <button class="primary" id="surveyUploadBtn" type="button">Upload</button>
-      </div>
-      <p class="small muted" id="surveyUploadState" style="margin:10px 0 0"></p>
-
-      <hr class="rule">
-
-      <p class="small" style="margin:0 0 4px"><b>Council Meeting Helper Upload</b></p>
-      <p class="small muted" style="margin:0 0 10px">A fresh export of the Council
-        Meeting Helper — it doesn't need to cover the full history, just whatever
-        meetings it has. Rows are merged in by Meeting Date: anything not already on
-        file gets added, and existing meetings are never touched or overwritten.</p>
+      <h3>Council Meeting Helper Upload</h3>
+      <p class="desc">A fresh export of the Council Meeting Helper — one row per
+        meeting, with its Year/Quarter/Region. Each export already contains the full
+        history plus anything new, so this replaces the file in the Data Folder
+        wholesale.</p>
       <label for="helperFile">Helper file</label>
       <div class="row">
         <input type="file" id="helperFile" accept=".csv" style="flex:1 1 240px">
         <button class="primary" id="helperUploadBtn" type="button">Upload</button>
       </div>
       <p class="small muted" id="helperUploadState" style="margin:10px 0 0"></p>
+
+      <hr class="rule">
+
+      <p class="small" style="margin:0 0 4px"><b>Post-Meeting Survey Upload</b></p>
+      <p class="small muted" style="margin:0 0 10px">A fresh export of every
+        respondent's answers, across every meeting. Also cumulative, so this replaces
+        the file in the Data Folder wholesale — Year/Quarter/Region for each response
+        are resolved automatically from its Meeting Date via the Helper file above.</p>
+      <label for="surveyFile">Survey file</label>
+      <div class="row">
+        <input type="file" id="surveyFile" accept=".xlsx,.csv" style="flex:1 1 240px">
+        <button class="primary" id="surveyUploadBtn" type="button">Upload</button>
+      </div>
+      <p class="small muted" id="surveyUploadState" style="margin:10px 0 0"></p>
     </div>
 
     <div class="card" id="updateCard">
       <h3>Update Dashboard</h3>
-      <p class="desc">Claude reads the uploaded survey's free-response answers, extracts
-        "areas to improve" items tagged to the existing category taxonomy, appends them to
-        the Synthesis Data File, then publishes this quarter's top issues plus what's
-        recurred quarter-over-quarter and year-over-year. In the same run, the quant
-        dashboard is rebuilt from scratch out of every survey file in the New Survey
-        Directory.</p>
+      <p class="desc">Reads the Data Folder's two files, figures out which meetings
+        aren't published yet, and for each one: asks Claude to extract "areas to
+        improve" items tagged to the existing category taxonomy, appends them to the
+        Feedback Log, then publishes that quarter's top issues plus what's recurred
+        quarter-over-quarter and year-over-year. Also rebuilds the quant dashboard from
+        the same two files. No upload needed first if the files are already current in
+        Box.</p>
       <p class="small" style="margin:0 0 10px" id="analysisReady"></p>
       <div class="row">
         <button class="primary" id="updateBtn" type="button" disabled>Update Dashboard</button>
@@ -170,10 +152,9 @@
       <hr class="rule">
 
       <p class="small" style="margin:0 0 4px"><b>Refresh Dashboard</b></p>
-      <p class="small muted" style="margin:0 0 10px">Rebuilds the quant dashboard from
-        whatever's currently in Box — no new survey needed. Use this after adding,
-        editing, or deleting files directly in Box, in either the Quant Data Folder or
-        the New Survey Directory.</p>
+      <p class="small muted" style="margin:0 0 10px">Rebuilds just the quant dashboard
+        from whatever's currently in the Data Folder — no new upload needed. Use this
+        after editing or deleting something directly in Box.</p>
       <div class="row">
         <button id="refreshBtn" type="button" disabled>Refresh Dashboard</button>
       </div>
@@ -214,52 +195,26 @@
           <p class="small" id="boxNotice" style="margin:10px 0 0"></p>
         </div>
 
-        <div class="card" id="trackerCard">
-          <h3>Synthesis Data File</h3>
-          <p class="desc">The existing spreadsheet holding council meeting themes from past
-            meetings. Every analysis run reads its history and appends to it — this is what
-            gets updated once new survey data is uploaded.</p>
-          <p class="small" style="margin:0 0 10px">Currently: <b id="trackerName">(none selected)</b></p>
+        <div class="card" id="dataFolderCard">
+          <h3>Data Folder</h3>
+          <p class="desc">The one Box folder holding all three source files:
+            <code>Council Meeting Helper.csv</code> and <code>Post-Meeting Survey.csv</code>
+            (kept up to date from the two upload cards on the main page) and
+            <code>Content Categories.xlsx</code> (maintained directly in Box — it changes
+            rarely enough not to need an upload path). Set this once — you can change it
+            later, but there's no need to touch it again quarter to quarter.</p>
+          <p class="small" style="margin:0 0 10px">Currently: <b id="dataFolderName">(none selected)</b></p>
           <div class="row">
-            <button id="trackerChooseBtn" type="button">Choose file…</button>
+            <button id="dataFolderChooseBtn" type="button">Choose folder…</button>
           </div>
-          <div id="trackerPicker" hidden class="picker"></div>
-        </div>
-
-        <div class="card" id="uploadFolderCard">
-          <h3>New Survey Directory</h3>
-          <p class="desc">The Box folder new raw survey exports get uploaded into — the one
-            shared source both the natural-language analysis and the quant dashboard read
-            from. Set this once — you can change it later, but there's no need to touch it
-            again quarter to quarter.</p>
-          <p class="small" style="margin:0 0 10px">Currently: <b id="uploadFolderName">(none selected)</b></p>
-          <div class="row">
-            <button id="uploadFolderChooseBtn" type="button">Choose folder…</button>
-          </div>
-          <div id="uploadFolderPicker" hidden class="picker"></div>
-        </div>
-
-        <div class="card" id="quantFolderCard">
-          <h3>Quant Data Folder</h3>
-          <p class="desc">The Box folder holding the two reference files the Claude
-            Dashboard (beta) is built from: <code>Council Meeting Helper.csv</code>
-            (kept up to date from the Council Meeting Helper Upload card on the main
-            page) and <code>Content Categories.xlsx</code> (maintained directly in Box —
-            it changes rarely enough not to need an upload path). Survey files
-            themselves live in the New Survey Directory above.</p>
-          <p class="small" style="margin:0 0 10px">Currently: <b id="quantFolderName">(none selected)</b></p>
-          <div class="row">
-            <button id="quantFolderChooseBtn" type="button">Choose folder…</button>
-          </div>
-          <div id="quantFolderPicker" hidden class="picker"></div>
+          <div id="dataFolderPicker" hidden class="picker"></div>
         </div>
 
         <div class="card">
           <h3>Full re-analysis</h3>
-          <p class="desc">Re-synthesizes every quarter already in the Synthesis Data File
-            from scratch — no new survey involved. Use this once, to seed the dashboard
-            from existing history, or any time the taxonomy changes enough to warrant
-            redoing past quarters.</p>
+          <p class="desc">Re-synthesizes every quarter already in the Feedback Log from
+            scratch — no new survey involved. Use this any time the taxonomy changes
+            enough to warrant redoing past quarters.</p>
           <div class="row">
             <button id="setupBtn" type="button" disabled>Run full re-analysis</button>
           </div>
@@ -364,21 +319,18 @@
   el("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
 
   /* ---------- Box connection ---------- */
-  var boxConnected = false, uploadFolder = null, tracker = null, quantFolder = null;
+  var boxConnected = false, dataFolder = null;
 
   function refreshBox() {
     return api("box/status").then(function (body) {
       boxConnected = Boolean(body.connected);
-      uploadFolder = body.upload_folder || null;
-      tracker = body.tracker || null;
-      quantFolder = body.quant_folder || null;
+      dataFolder = body.data_folder || null;
       el("boxLoading").hidden = true;
       el("boxDisconnected").hidden = boxConnected;
       el("boxConnected").hidden = !boxConnected;
-      el("trackerName").textContent = tracker ? (tracker.name || tracker.id) : "(none selected)";
-      el("uploadFolderName").textContent = uploadFolder ? (uploadFolder.name || uploadFolder.id) : "(none selected)";
-      el("quantFolderName").textContent = quantFolder ? (quantFolder.name || quantFolder.id) : "(none selected)";
-      el("refreshBtn").disabled = !quantFolder;
+      el("dataFolderName").textContent = dataFolder ? (dataFolder.name || dataFolder.id) : "(none selected)";
+      el("refreshBtn").disabled = !dataFolder;
+      el("setupBtn").disabled = false;
       if (pendingBoxNotice) {
         el("boxNotice").textContent = pendingBoxNotice;
         pendingBoxNotice = null;
@@ -476,120 +428,59 @@
   }
 
   makePicker({
-    pickerEl: "trackerPicker", chooseBtn: el("trackerChooseBtn"),
-    endpoint: "box/files", pickFiles: true,
-    onPick: function (file) {
-      api("box/select-tracker", { method: "POST",
-        body: JSON.stringify({ file_id: file.id, file_name: file.name }) })
-        .then(refreshBox).catch(function (e) { window.alert(e.message); });
-    },
-  });
-
-  makePicker({
-    pickerEl: "uploadFolderPicker", chooseBtn: el("uploadFolderChooseBtn"),
+    pickerEl: "dataFolderPicker", chooseBtn: el("dataFolderChooseBtn"),
     endpoint: "box/folders", pickFiles: false,
     onPick: function (folder) {
-      api("box/select-upload-folder", { method: "POST",
+      api("box/select-data-folder", { method: "POST",
         body: JSON.stringify({ folder_id: folder.id, folder_name: folder.name }) })
         .then(refreshBox).catch(function (e) { window.alert(e.message); });
     },
   });
 
-  makePicker({
-    pickerEl: "quantFolderPicker", chooseBtn: el("quantFolderChooseBtn"),
-    endpoint: "box/folders", pickFiles: false,
-    onPick: function (folder) {
-      api("box/select-quant-folder", { method: "POST",
-        body: JSON.stringify({ folder_id: folder.id, folder_name: folder.name }) })
-        .then(refreshBox).catch(function (e) { window.alert(e.message); });
-    },
-  });
-
-  /* ---------- survey upload ---------- */
-  var stagedUpload = null; // { file_id, file_name, year, quarter, region }
-
-  el("surveyUploadBtn").addEventListener("click", function () {
-    var fileInput = el("surveyFile"), year = el("surveyYear").value.trim(),
-        quarter = el("surveyQuarter").value, region = el("surveyRegion").value;
-    var file = fileInput.files && fileInput.files[0];
-    if (!file) { el("surveyUploadState").textContent = "Choose a survey file first."; return; }
-    if (!year || !quarter || !region) {
-      el("surveyUploadState").textContent = "Year, Quarter, and Region are all required.";
-      return;
-    }
-    if (!uploadFolder) {
-      el("surveyUploadState").textContent = "Choose the New Survey Directory first (see Developer below).";
-      return;
-    }
-    el("surveyUploadBtn").disabled = true;
-    el("surveyUploadState").innerHTML = '<span class="spin"></span>Uploading…';
-    var formData = new FormData();
-    formData.append("file", file);
-    apiUpload("box/upload", formData).then(function (body) {
-      stagedUpload = { file_id: body.file_id, file_name: body.file_name,
-                        year: year, quarter: quarter, region: region };
-      el("surveyUploadState").textContent = "Uploaded " + body.file_name + " — " +
-        year + " " + quarter + " " + region + ".";
-      el("surveyUploadBtn").disabled = false;
-      updateAnalysisReadiness();
-    }).catch(function (e) {
-      el("surveyUploadState").textContent = "Upload failed: " + e.message;
-      el("surveyUploadBtn").disabled = false;
+  /* ---------- fixed-name uploads (Helper / Survey) ---------- */
+  function bindUpload(fileInputId, buttonId, stateId, target, label) {
+    el(buttonId).addEventListener("click", function () {
+      var fileInput = el(fileInputId);
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) { el(stateId).textContent = "Choose a " + label + " file first."; return; }
+      if (!dataFolder) {
+        el(stateId).textContent = "Choose the Data Folder first (see Developer below).";
+        return;
+      }
+      el(buttonId).disabled = true;
+      el(stateId).innerHTML = '<span class="spin"></span>Uploading…';
+      var formData = new FormData();
+      formData.append("file", file);
+      formData.append("target", target);
+      apiUpload("box/upload", formData).then(function (body) {
+        el(stateId).textContent = "Uploaded as " + body.file_name + ".";
+        el(buttonId).disabled = false;
+        fileInput.value = "";
+      }).catch(function (e) {
+        el(stateId).textContent = "Upload failed: " + e.message;
+        el(buttonId).disabled = false;
+      });
     });
-  });
-
-  /* ---------- helper file upload ---------- */
-  el("helperUploadBtn").addEventListener("click", function () {
-    var fileInput = el("helperFile");
-    var file = fileInput.files && fileInput.files[0];
-    if (!file) { el("helperUploadState").textContent = "Choose a helper file first."; return; }
-    if (!quantFolder) {
-      el("helperUploadState").textContent = "Choose the Quant Data Folder first (see Developer below).";
-      return;
-    }
-    el("helperUploadBtn").disabled = true;
-    el("helperUploadState").innerHTML = '<span class="spin"></span>Uploading…';
-    var formData = new FormData();
-    formData.append("file", file);
-    apiUpload("box/upload-helper", formData).then(function (body) {
-      el("helperUploadState").textContent = body.added
-        ? "Added " + body.added + " new meeting" + (body.added === 1 ? "" : "s") +
-          " — " + body.total + " total."
-        : "No new meetings — every Meeting Date in that file is already on file.";
-      el("helperUploadBtn").disabled = false;
-      fileInput.value = "";
-    }).catch(function (e) {
-      el("helperUploadState").textContent = "Upload failed: " + e.message;
-      el("helperUploadBtn").disabled = false;
-    });
-  });
+  }
+  bindUpload("helperFile", "helperUploadBtn", "helperUploadState", "helper", "helper");
+  bindUpload("surveyFile", "surveyUploadBtn", "surveyUploadState", "survey", "survey");
 
   /* ---------- update dashboard / full re-analysis ---------- */
   function updateAnalysisReadiness() {
-    var readyEl = el("analysisReady"), updateBtn = el("updateBtn"), setupBtn = el("setupBtn");
-    if (!tracker) {
-      readyEl.textContent = "Choose the Synthesis Data File (see Developer below) before updating.";
-      updateBtn.disabled = true;
-      setupBtn.disabled = true;
-      return;
-    }
-    setupBtn.disabled = false;
-    if (!stagedUpload) {
-      readyEl.textContent = "Upload a survey above, then update the dashboard against " + (tracker.name || tracker.id) + ".";
+    var readyEl = el("analysisReady"), updateBtn = el("updateBtn");
+    if (!dataFolder) {
+      readyEl.textContent = "Choose the Data Folder (see Developer below) before updating.";
       updateBtn.disabled = true;
       return;
     }
-    readyEl.textContent = "Ready: " + stagedUpload.file_name + " — " + stagedUpload.year + " " +
-      stagedUpload.quarter + " " + stagedUpload.region + ", against " + (tracker.name || tracker.id) + ".";
+    readyEl.textContent = "Ready — reads the Data Folder's current files and auto-detects any new meetings.";
     updateBtn.disabled = false;
   }
 
-  function runJob(job, button, stateEl, inputs) {
+  function runJob(job, button, stateEl) {
     button.disabled = true;
     stateEl.innerHTML = '<span class="spin"></span>Starting…';
-    var body = { job: job };
-    if (inputs) body.inputs = inputs;
-    api("run", { method: "POST", body: JSON.stringify(body) })
+    api("run", { method: "POST", body: JSON.stringify({ job: job }) })
       .then(function () {
         stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
         // GitHub takes a moment to register the run before the API reports it.
@@ -602,21 +493,17 @@
   }
 
   el("refreshBtn").addEventListener("click", function () {
-    runJob("refresh_dashboard", el("refreshBtn"), el("refreshState"), null);
+    runJob("refresh_dashboard", el("refreshBtn"), el("refreshState"));
   });
 
   el("updateBtn").addEventListener("click", function () {
-    if (!stagedUpload) return;
-    runJob("update_dashboard", el("updateBtn"), el("updateState"), {
-      survey_file_id: stagedUpload.file_id, survey_file_name: stagedUpload.file_name,
-      year: stagedUpload.year, quarter: stagedUpload.quarter, region: stagedUpload.region,
-    });
+    runJob("update_dashboard", el("updateBtn"), el("updateState"));
   });
   el("setupBtn").addEventListener("click", function () {
-    if (!window.confirm("Re-synthesize every quarter already in the Synthesis Data File? " +
+    if (!window.confirm("Re-synthesize every quarter already in the Feedback Log? " +
                          "This replaces the published top issues / QoQ / YoY for all of them."))
       return;
-    runJob("setup", el("setupBtn"), el("setupState"), null);
+    runJob("setup", el("setupBtn"), el("setupState"));
   });
 
   /* ---------- status ---------- */
@@ -653,7 +540,7 @@
       var banners = "";
       if (!keys.length) {
         banners = '<div class="banner err"><span class="dot"></span><div>Nothing published yet. ' +
-          'Set up the Synthesis Data File and New Survey Directory under Developer below, then run an update.</div></div>';
+          'Set up the Data Folder under Developer below, then run an update.</div></div>';
       } else {
         banners = '<div class="banner ok"><span class="dot"></span><div><b>' + num(keys.length) +
           ' quarter' + (keys.length === 1 ? "" : "s") + ' published.</b></div></div>';

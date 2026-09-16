@@ -1,9 +1,9 @@
 """Reading a survey export's rows regardless of whether it's a .csv or .xlsx file.
 
 Both survey_extract.py (natural-language extraction) and quant_extract.py (the quant
-unpivot) read from the same New Survey Directory now, and real exports from the survey
-tool come out as .csv while some historical files are .xlsx -- this is the one place
-that decides which reader to use, so neither module has to know or care.
+unpivot) read from the same Data Folder now, and real exports from the survey tool
+come out as .csv while some historical files are .xlsx -- this is the one place that
+decides which reader to use, so neither module has to know or care.
 """
 from __future__ import annotations
 

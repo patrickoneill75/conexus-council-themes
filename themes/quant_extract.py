@@ -27,12 +27,14 @@ KNOWN_METRICS = [
 _METRIC_BY_LOWER = {m.lower(): m for m in KNOWN_METRICS}
 
 
-_DATE_FORMATS = ("%d-%b-%y", "%d-%b-%Y", "%m/%d/%Y", "%Y-%m-%d")
+_DATE_FORMATS = ("%b %d, %Y", "%d-%b-%y", "%d-%b-%Y", "%m/%d/%Y", "%Y-%m-%d")
 
 
-def _as_date(value) -> date | None:
+def as_date(value) -> date | None:
     """Excel gives typed date/datetime cells; a real .csv export gives a plain string
-    like '12-Aug-26' (%d-%b-%y) — both are meeting dates, just shaped differently."""
+    like 'Aug 12, 2026' (%b %d, %Y) — both are meeting dates, just shaped differently.
+    Older formats (%d-%b-%y and friends) are kept too, for data exported before the
+    survey tool's format changed."""
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -70,7 +72,7 @@ def unpivot(filename: str, survey_bytes: bytes) -> list[dict]:
     for raw in data_rows:
         if not any(raw):
             continue
-        meeting_date = _as_date(raw[date_col])
+        meeting_date = as_date(raw[date_col])
         if not meeting_date:
             continue
         organization = raw[org_col] if org_col is not None else None

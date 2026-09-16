@@ -13,10 +13,10 @@ Everything below is done in a browser. There are no terminal steps.
 | Piece | Where it lives | What it does |
 | --- | --- | --- |
 | `public/index.html` | Worker static assets | The public dashboard. Power BI pages plus the Council Themes tab. No login. |
-| `public/admin.html` | Worker static assets | The control panel. Survey upload and Update Dashboard on the main page; Box login, folder/file pickers, and Run full re-analysis under Developer. |
+| `public/admin.html` | Worker static assets | The control panel. Helper/Survey upload and Update Dashboard on the main page; Box login, the Data Folder picker, and Run full re-analysis under Developer. |
 | `src/worker.js` | Cloudflare Worker | `/api/*`. Holds the password, the GitHub token and the Box credentials. |
-| `scripts/update_dashboard.py` | GitHub Actions | Extracts feedback items from the uploaded survey with Claude, appends them to the tracker spreadsheet in Box, publishes that quarter's themes, then rebuilds the quant dashboard from every survey file in the New Survey Directory. |
-| `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in the tracker, no new survey involved — the one-time bootstrap (or a full redo). |
+| `scripts/update_dashboard.py` | GitHub Actions | Auto-detects every meeting in the Data Folder's Post-Meeting Survey export that isn't in `data/feedback_log.json` yet (resolving Year/Quarter/Region per meeting from the Council Meeting Helper export), extracts and publishes each one's themes with Claude, then rebuilds the quant dashboard. |
+| `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in `data/feedback_log.json`, no new survey involved — the one-time bootstrap (or a full redo). |
 
 ---
 
@@ -111,33 +111,33 @@ looking for `"configured": true`.
 
 1. Open `https://<your-worker-address>/admin.html` and sign in with `CONTROL_PASSWORD`.
 2. **Log in with Box**. Box asks you to authorise the app; it comes back to the panel.
-3. **Synthesis Data File** → **Choose file…** and pick the tracker spreadsheet in Box
-   (upload `Council_Survey_Feedback_Tracker_Template.xlsx`, or your own, into Box first
-   if it isn't there yet). This is the running history every analysis reads and appends to.
-4. **New Survey Directory** → **Choose folder…** and pick (or create) a Box folder for
-   raw survey exports to land in. This is the one shared source both the natural-language
-   analysis and the quant dashboard read from. Set this once — there's no need to revisit
-   it quarterly.
-5. Under **Developer → Full re-analysis**, click **Run full re-analysis**. This is the
-   one-time bootstrap: it synthesizes current/QoQ/YoY themes for every quarter already
-   sitting in the Synthesis Data File and publishes them, with no new survey involved.
-   Re-run it any time you want every quarter redone from scratch (e.g. after a taxonomy
-   change).
+3. **Data Folder** → **Choose folder…** and pick (or create) a Box folder to hold the
+   three source files: `Council Meeting Helper.csv`, `Post-Meeting Survey.csv` (both
+   kept current from the two upload cards on the main page), and `Content
+   Categories.xlsx` (maintained directly in Box). Set this once — there's no need to
+   revisit it quarterly.
+4. Under **Developer → Full re-analysis**, click **Run full re-analysis**. This
+   synthesizes current/QoQ/YoY themes for every quarter already sitting in
+   `data/feedback_log.json` and publishes them, with no new survey involved. Re-run it
+   any time you want every quarter redone from scratch (e.g. after a taxonomy change).
 
-From here on, each new quarter: **New Survey Upload** (the raw export, plus Year/Quarter/
-Region), then **Update Dashboard**.
+From here on, each new meeting: upload the latest exports via **Council Meeting Helper
+Upload** and **Post-Meeting Survey Upload** (each replaces the previous export
+wholesale — both are cumulative, so the new file already contains everything the old
+one did), then **Update Dashboard**. It auto-detects which meeting(s) are new by
+Survey ID, so it's safe to click any time, even with nothing new uploaded.
 
 ---
 
 ## 6 · The taxonomy
 
-The tracker's `Lists` tab holds the fixed Category → Subcategory vocabulary (its own
-`How to Use` tab explains it). Claude is given this list on every extraction run and
-told to reuse an existing pair whenever one reasonably fits, only writing a new
-Subcategory when nothing listed fits at all — the tracker's value comes from the same
-label being reused across quarters, so resist adding new ones often. Add one the same
-way a human would per the tracker's own instructions: column B of `Lists`, then extend
-the `SubcategoryList` named range.
+`data/taxonomy.json` holds the fixed Category → Subcategory vocabulary. Claude is
+given this list on every extraction run and told to reuse an existing pair whenever
+one reasonably fits, only writing a new Subcategory when nothing listed fits at all —
+the taxonomy's value comes from the same label being reused across quarters, so it
+resists adding new ones often, but does extend the file in place on its own when it
+legitimately needs to. Edit it by hand in the repo if you want to add or rename one
+yourself.
 
 ---
 
@@ -171,14 +171,13 @@ which is the problem this wrapper exists to avoid.
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
   exactly what your own account can reach and nothing else. There is no service account
   with enterprise-wide reach. It has both read and write scope (shared with conexus-mcm,
-  which needs write) — this project uses write only to upload survey files into the
-  configured upload folder and to push new versions of the tracker spreadsheet; it never
-  touches anything else in your Box account.
-- **Claude sees survey responses and tracker rows, nothing else.** Each analysis run
-  sends the uploaded survey's free-text answers (organization name and rating numbers
+  which needs write) — this project uses write only to replace the two export files in
+  the configured Data Folder; it never touches anything else in your Box account.
+- **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
+  run sends a new meeting's free-text answers (organization name and rating numbers
   included, but never the respondent's name — those columns are stripped before the
-  request) and the tracker's existing feedback items to the Claude API, and nothing
-  else in your Box account. Both calls are logged in the Actions run's own output.
+  request) and the existing Feedback Log's items to the Claude API, and nothing else in
+  your Box account. Both calls are logged in the Actions run's own output.
 - **Credentials never reach a browser.** The Box client secret, the GitHub token, and the
   Anthropic API key live in Cloudflare Worker / GitHub Actions secrets respectively; the
   Box token pair lives in Workers KV. The control panel only ever holds a short-lived
@@ -201,7 +200,7 @@ which is the problem this wrapper exists to avoid.
 | "Could not start: GitHub refused the trigger (404)" | The workflow file (`update_dashboard.yml` / `setup_analysis.yml`) isn't on the branch the Worker dispatches to (`GITHUB_BRANCH`, default `main`) — check it's merged. |
 | An Actions run fails with a 401 from the relay | `BOX_RELAY_SECRET` differs between the repository secret and the Worker secret. |
 | An Actions run fails with "Box is not connected" | Nobody has logged in with Box yet. Open the panel. |
-| An Actions run fails with "Set up the upload folder and tracker file first" | The Synthesis Data File and/or New Survey Directory haven't been chosen yet. Open the panel. |
-| Update Dashboard fails with "already has rows in the tracker" | That Year/Quarter/Region combination was already analyzed once — this is a safeguard against double-appending, not a bug. Pick the next quarter, or edit the tracker by hand in Box if you genuinely need to redo one. |
+| An Actions run fails with "Set up the Data Folder first" | The Data Folder hasn't been chosen yet. Open the panel. |
+| Update Dashboard says "No new meetings found" | Every meeting in the current Post-Meeting Survey export is already in `data/feedback_log.json` — this is expected if nothing new was uploaded, not a bug. |
 | Run succeeds, page unchanged | Nothing changed, or Cloudflare is still redeploying. Give it a minute. |
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
