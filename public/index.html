@@ -54,7 +54,7 @@ const CONFIG = {
     --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
     --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
     --accent:#2a78d6; --good:#006300; --bad:#d03b3b;
-    --bench-bg:#e6e5df; --meeting-bg:rgba(42,120,214,.14); --meeting-select-bg:rgba(42,120,214,.035);
+    --bench-bg:#e6e5df; --meeting-bg:rgba(42,120,214,.14); --meeting-select-bg:#eef4fb;
     --bench-text:#2666b6;
   }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -62,7 +62,7 @@ const CONFIG = {
     --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
     --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
     --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
-    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:rgba(57,135,229,.05);
+    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:#1b2430;
     --bench-text:#3379ce;
   } }
   :root[data-theme="dark"] {
@@ -70,7 +70,7 @@ const CONFIG = {
     --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
     --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
     --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
-    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:rgba(57,135,229,.05);
+    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:#1b2430;
     --bench-text:#3379ce;
   }
   * { box-sizing:border-box; }
@@ -141,9 +141,12 @@ const CONFIG = {
                   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23898781' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
                   background-repeat:no-repeat; background-position:right 10px center; background-size:14px; }
   .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  /* The benchmark field's own select gets a lighter tint of the same blue as its box,
-     so the "this one is the benchmark" cue carries down into the control itself --
-     background-color only, so the chevron's own background-image above survives. */
+  /* Same relationship as Year/Quarter/Region's plain white select sitting on the grey
+     .meeting-fields box: an off-white select on a more saturated box. Here it's an
+     off-white blue instead of plain white, so the "this one is the benchmark" cue still
+     carries down into the control itself. A solid color, not a low-alpha tint of
+     --meeting-bg -- an overlay that subtle read as barely different from the box behind
+     it. background-color only, so the chevron's own background-image above survives. */
   .benchmark-field select { background-color:var(--meeting-select-bg); }
   .stamp { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center; }
 
