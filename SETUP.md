@@ -17,7 +17,7 @@ Everything below is done in a browser. There are no terminal steps.
 | `src/worker.js` | Cloudflare Worker | `/api/*`. Holds the password, the GitHub token and the Box credentials. |
 | `scripts/update_dashboard.py` | GitHub Actions | Auto-detects every meeting in the Data Folder's Post-Meeting Survey export that isn't in `data/feedback_log.json` yet (resolving Year/Quarter/Region per meeting from the Council Meeting Helper export), extracts and publishes each one's themes with Claude, then rebuilds the quant dashboard. |
 | `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in `data/feedback_log.json`, no new survey involved — the one-time bootstrap (or a full redo). |
-| `scripts/remove_meetings.py` | GitHub Actions | Deletes one or more meetings' data from the Feedback Log and both published dashboards, then re-synthesizes every quarter still left. Triggered from the Meetings table's "Remove & refresh" button. |
+| `scripts/remove_meetings.py` | GitHub Actions | Deletes one or more meetings' data from the Feedback Log and both published dashboards, then re-synthesizes every quarter still left. Also strips the matching rows out of the Data Folder's own Helper and Survey exports in Box, best-effort, so the meeting doesn't come back on the next Update Dashboard. Triggered from the Meetings table's "Remove & refresh" button. |
 
 ---
 
