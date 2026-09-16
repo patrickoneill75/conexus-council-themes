@@ -11,25 +11,21 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date, datetime
+from datetime import date
 
 from openpyxl import load_workbook
+
+from . import quant_extract
 
 HELPER_FILENAME = "Council Meeting Helper.csv"
 SURVEY_FILENAME = "Post-Meeting Survey.csv"
 CATEGORIES_FILENAME = "Content Categories.xlsx"
 
-
-def parse_date(value: str) -> date | None:
-    value = (value or "").strip()
-    if not value:
-        return None
-    for fmt in ("%b %d, %Y", "%m/%d/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    return None
+# quant_extract.as_date() is the one canonical date parser both this module and
+# quant_extract's own unpivot() use -- keeping a second, separately-maintained format
+# list here is exactly how the Helper file's real "12-Aug-26" (%d-%b-%y) style dates
+# went unrecognized even though quant_extract already handled that format.
+parse_date = quant_extract.as_date
 
 
 def _int_or_none(value: str) -> int | None:
@@ -90,9 +86,8 @@ def read_helper(content: bytes) -> dict[date, dict]:
         # here is what makes that fixable instead of just "0 meetings" with no clue why.
         raise ValueError(
             f"'{HELPER_FILENAME}' has a '{date_col}' column, but none of its values "
-            f"parsed as a date -- e.g. {unparseable[:3]!r}. Check the export's date "
-            "format matches one this reads (\"Aug 12, 2026\", \"8/12/2026\", or "
-            "\"2026-08-12\")."
+            f"parsed as a date -- e.g. {unparseable[:3]!r}. Recognized formats: "
+            f"{quant_extract._DATE_FORMATS!r}."
         )
     return out
 
