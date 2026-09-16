@@ -18,6 +18,8 @@ Everything below is done in a browser. There are no terminal steps.
 | `scripts/update_dashboard.py` | GitHub Actions | Auto-detects every meeting in the Data Folder's Post-Meeting Survey export that isn't in `data/feedback_log.json` yet (resolving Year/Quarter/Region per meeting from the Council Meeting Helper export), extracts and publishes each one's themes with Claude, then rebuilds the quant dashboard. |
 | `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in `data/feedback_log.json`, no new survey involved — the one-time bootstrap (or a full redo). |
 | `scripts/remove_meetings.py` | GitHub Actions | Deletes one or more meetings' data from the Feedback Log and both published dashboards, then re-synthesizes every quarter still left. Also strips the matching rows out of the Data Folder's own Helper and Survey exports in Box, best-effort, so the meeting doesn't come back on the next Update Dashboard. Triggered from the Meetings table's "Remove & refresh" button. |
+| `public/beta/` | Worker static assets | The Mini App Platform: a grid of every tool built on this Worker, gated by its own admin accounts (separate from `admin.html`'s single password). See **8 · The Mini App Platform** below. |
+| `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. The platform's multi-user admin accounts -- signup, sign-in, password reset, the admin list. Completely independent of `src/worker.js`'s own `CONTROL_PASSWORD` gate. |
 
 ---
 
@@ -168,6 +170,72 @@ which is the problem this wrapper exists to avoid.
 
 ---
 
+## 8 · The Mini App Platform
+
+Every tool built the same way as this one (Claude → GitHub → Cloudflare) ends up needing
+its own repo, its own Worker, its own round of "paste in the API keys again." `/beta` is a
+thin layer on top of *this* Worker that fixes that going forward: one grid of tools
+("mini apps" — that's the name to use when asking for a new one), gated by admin accounts
+that live in the same KV namespace this project already uses.
+
+**It's a separate thing from everything above.** The Council Survey Dashboard
+(`public/index.html`) and its control panel (`public/admin.html`, `CONTROL_PASSWORD`) keep
+working exactly as they do today, at the same addresses, for your whole team — `/beta`
+doesn't touch either. It's reachable at `https://<your-worker-address>/beta/`.
+
+### Signing in
+
+1. Add `poneill_password` as a repository secret (a password of your choosing), then run
+   **Actions → Set Cloudflare secrets → Run workflow** — same mechanism as every other
+   secret in this project (step 4 above). This seeds one admin account: email
+   `poneill@conexusindiana.com`, username `poneill`, that password. It's read exactly
+   once, the first time anyone hits `/beta`; after that the account is stored the same
+   way every other admin's is, and the secret is never read again.
+2. Open `/beta/login.html` and sign in with that username/email and password.
+
+### Adding another admin
+
+From the grid (`/beta/`), **Manage admins** → enter their email → **Add**. That's it —
+they're now allowed to set up their own account, but nothing is created for them yet.
+
+They go to `/beta/login.html` → **Set up new account / Forgot password** → enter their
+email → if it's on the list and doesn't have a password yet, they're prompted to pick a
+username and password right there. The same button handles "I forgot my password": once
+another admin clears it for you (**Manage admins** → **Reset**), your account is back in
+that same "allowed, no password yet" state, and you use the same button to set a new one.
+
+**Worth knowing:** there's no email-sending step anywhere in that flow — setting a
+password only checks that the email is on the admin list, not that whoever's typing
+actually owns that inbox. For a small, trusted team that's a reasonable trade for staying
+free and simple, but it does mean anyone who knows an admin's email (and that it doesn't
+have a password set yet, e.g. right after a reset) could claim the account first. If that
+ever stops being an acceptable trade, the fix is a real "magic link" flow — a one-time
+link emailed to the address, using something like Resend or Postmark — which would need
+one more secret (an email-provider API key, pushed the same way as everything else) and a
+couple more routes in `src/beta_auth.js`, not a different storage model. Ask for it if you
+want it; it wasn't built now because it adds a moving part (an email provider) this
+project doesn't otherwise need.
+
+### Adding a mini app
+
+1. Build it wherever makes sense in the repo — its own `public/<name>/` pages, its own
+   `/api/<name>/*` routes if it needs a backend, its own GitHub Actions workflow if it
+   needs one. `src/beta_auth.js` and the rest of the platform don't need to know anything
+   about how it works internally.
+2. Add one entry to the `MINI_APPS` array at the top of `public/beta/index.html` — name,
+   description, and its public/admin URLs (either can be omitted). That's the only step
+   that makes it show up in the grid.
+3. If it needs its own secrets (an API key, a webhook secret, whatever), they follow the
+   same pattern every secret in this project already follows: store it as a GitHub
+   repository secret, and either send it to Cloudflare via
+   **Actions → Set Cloudflare secrets** (add a step there, same shape as `poneill_password`'s)
+   if a Worker route needs to read it, or leave it as a plain repository secret if only a
+   GitHub Actions script needs it (like `ANTHROPIC_API_KEY` already does — see step 4).
+   No need to rename anything already set up for the Council Survey Dashboard; each mini
+   app's secrets are namespaced by whatever name you give them.
+
+---
+
 ## Notes for a security review
 
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
@@ -189,6 +257,12 @@ which is the problem this wrapper exists to avoid.
   you can revoke the app's access from your own Box account settings at any time.
 - **Auditable.** Every analysis run is a logged GitHub Actions run showing when it ran,
   who triggered it, and exactly what it extracted, appended, and published.
+- **`/beta`'s admin accounts are a separate, lighter-weight system.** Passwords are hashed
+  (PBKDF2-SHA256, 210,000 iterations, a random salt per account) — never stored or logged
+  in plain text — and session tokens are HMAC-signed, not cookies, so there's nothing for
+  a CSRF attack to ride on. What it does *not* do is verify email ownership before letting
+  someone set a password (see step 8 above) — a deliberate simplicity trade for a small,
+  trusted admin list, not an oversight.
 
 ---
 
@@ -206,3 +280,5 @@ which is the problem this wrapper exists to avoid.
 | Update Dashboard says "No new meetings found" | Every meeting in the current Post-Meeting Survey export is already in `data/feedback_log.json` — this is expected if nothing new was uploaded, not a bug. |
 | Run succeeds, page unchanged | Nothing changed, or Cloudflare is still redeploying. Give it a minute. |
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
+| `/beta/login.html` says "That email isn't on the admin list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
+| "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an existing admin to **Reset** it under Manage admins, then try again. |

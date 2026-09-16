@@ -1,9 +1,15 @@
+import { handleBetaApi } from "./beta_auth.js";
+
 /**
  * Worker entry point: serves the public dashboard and the control-panel API.
  *
  * Same shape as conexus-mcm: everything under public/ is served by Cloudflare's asset
  * layer, and anything under /api/ runs here, on Cloudflare's servers. That is what keeps
  * the control password, the GitHub token and the Box credentials out of the browser.
+ *
+ * /api/beta/* is the mini-app platform's own routes (multi-user admin accounts for the
+ * /beta portal) -- see src/beta_auth.js for that whole surface; everything below this
+ * point is the original Council Survey Dashboard's API, untouched by it.
  *
  * Routes:
  *   GET  /api/config-check                  -> which variables are set (unauthenticated)
@@ -220,6 +226,13 @@ const BOX_VARS = ["BOX_CLIENT_ID", "BOX_CLIENT_SECRET", "BOX_RELAY_SECRET"];
 
 async function handleApi(route, request, env) {
   const method = request.method.toUpperCase();
+
+  // ---- /api/beta/* -----------------------------------------------------------------
+  // Delegated entirely to beta_auth.js -- a separate multi-user admin-account system
+  // for the /beta portal, independent of this file's own CONTROL_PASSWORD gate below.
+  if (route === "beta" || route.startsWith("beta/")) {
+    return handleBetaApi(route.slice("beta".length).replace(/^\/+/, ""), request, env);
+  }
 
   // ---- GET /api/config-check ---------------------------------------------------------
   // Deliberately unauthenticated: you cannot sign in to diagnose a broken sign-in. It
