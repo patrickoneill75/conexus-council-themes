@@ -1015,5 +1015,235 @@
         "summary": "Basic AV and logistics gaps keep coming up at meetings"
       }
     ]
+  },
+  "2026-Q4 Central": {
+    "current": [
+      {
+        "category": "Content",
+        "count": 5,
+        "example": "Tariffs and how peers are handling material cost swings",
+        "subcategory": "Future Topic Requests",
+        "summary": "Requests for future topics on cost pressure, supply chain and market shifts (energy, tariffs, sourcing, reshoring)"
+      },
+      {
+        "category": "Content",
+        "count": 8,
+        "example": "Anything on measuring return, that is where we get stuck",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Practical workforce development help: adaptable templates, ROI measurement, school partnerships, funding and retention"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 4,
+        "example": "Lunch seating assignments would push people to meet someone new",
+        "subcategory": "Facilitated introductions",
+        "summary": "More structured networking — assigned lunch seating, first-timer session, name tents and open networking time"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 3,
+        "example": "Keep the intros short so the panels get their full time",
+        "subcategory": "Session length and pacing",
+        "summary": "Tighten intros, give panels and workshops more time, and announce exact restart times after breaks"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 2,
+        "example": "Would like a little more data and a little less anecdote",
+        "subcategory": "Small and midsized manufacturer applicability",
+        "summary": "Want more small-manufacturer perspective and more data over anecdote from panelists"
+      }
+    ],
+    "generated": "2026-09-16T18:04:49+00:00",
+    "qoq": [
+      {
+        "category": "Content",
+        "count": 6,
+        "example": "Especially if schools could collaborate and present what opportunities they have — Ivy Tech, Vincennes, Purdue, etc.",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Practical, peer-level workforce development and training content, including school collaboration"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 5,
+        "example": "Too much time spent on intros and the panel was cut short",
+        "subcategory": "Session length and pacing",
+        "summary": "Shorter intros, more panel time, and stating exact restart times after breaks"
+      },
+      {
+        "category": "Content",
+        "count": 3,
+        "example": "A lot of discussion around raw materials and lead times. What do we do?",
+        "subcategory": "Future Topic Requests",
+        "summary": "Topics on cost, materials and utility/capital planning pressures"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 3,
+        "example": "Possibly focus more time on the small and midsized manufacturers.",
+        "subcategory": "Small and midsized manufacturer applicability",
+        "summary": "More focus on small and midsized manufacturers and less predictable, deeper panel content"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 2,
+        "example": "Share business cards at beginning - maybe a box to drop them off",
+        "subcategory": "Facilitated introductions",
+        "summary": "Help attendees identify and connect with each other (attendee lists, card exchange)"
+      }
+    ],
+    "sourceFile": "2026-Q4 Central (Post-Meeting Survey.csv)",
+    "yoy": [
+      {
+        "category": "Content",
+        "count": 8,
+        "example": "Continue building employer understanding of their role in workforce development.",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Ongoing demand for actionable workforce development content — peer models, school partnerships, employer role"
+      },
+      {
+        "category": "Networking & Member Connection",
+        "count": 4,
+        "example": "Include attendee names and companies in the handouts for easier networking.",
+        "subcategory": "Facilitated introductions",
+        "summary": "Recurring asks for easier attendee identification and facilitated peer connections"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 6,
+        "example": "Wish we had more time with the panels. Limit intros.",
+        "subcategory": "Session length and pacing",
+        "summary": "Persistent pacing complaints: intros too long, sessions and tours cut short, breaks poorly timed"
+      },
+      {
+        "category": "Post-Meeting Materials & Follow-Up",
+        "count": 2,
+        "example": "Provide presentation materials to attendees afterward.",
+        "subcategory": "Slides and presentations",
+        "summary": "Requests to share slides and resources with attendees after the meeting"
+      },
+      {
+        "category": "Content",
+        "count": 4,
+        "example": "Cover tariff, foreign trade, and economic development topics in future sessions.",
+        "subcategory": "Future Topic Requests",
+        "summary": "Repeated topic requests around tariffs, trade, materials and utility/capital planning"
+      }
+    ]
+  },
+  "2026-Q4 Northern": {
+    "current": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 11,
+        "example": "Maintenance staffing and predictive maintenance results.",
+        "subcategory": "Topic requests",
+        "summary": "Operational topic requests: maintenance/predictive maintenance, energy and utility planning, supply chain, automation, and post-AI-pilot next steps"
+      },
+      {
+        "category": "Content",
+        "count": 7,
+        "example": "A workshop with the schools in the room would help.",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Workforce development content: a workshop with schools in the room, plus help measuring ROI on training"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 3,
+        "example": "Keep the intros short so the panels get their full time.",
+        "subcategory": "Schedule adherence",
+        "summary": "Agenda and time management: keep intros short, protect panel/workshop time, and announce exact restart times after breaks"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 3,
+        "example": "More small manufacturer perspectives on the panels.",
+        "subcategory": "Small and midsized manufacturer applicability",
+        "summary": "More small/midsized manufacturer relevance and harder data on panels rather than anecdotes"
+      },
+      {
+        "category": "Logistics",
+        "count": 4,
+        "example": "Make the survey digital, a QR code on the table would do it.",
+        "subcategory": "Communications & Resources",
+        "summary": "Logistics and materials fixes: digital QR-code survey, legible slides, and posting slides afterward"
+      }
+    ],
+    "generated": "2026-09-16T18:04:21+00:00",
+    "qoq": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 8,
+        "example": "Capital planning, utility infrastructure planning",
+        "subcategory": "Topic requests",
+        "summary": "Operational topic requests repeat: utility/capital planning, supply chain and raw materials, and what comes after AI"
+      },
+      {
+        "category": "Content",
+        "count": 6,
+        "example": "Especially if schools could collaborate and present what opportunities they have — Ivy Tech, Vincennes, Purdue, etc.",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Workforce development content persists, including asking schools to present their programs"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 6,
+        "example": "Too much time spent on intros and the panel was cut short; low value in hearing people's bios at length.",
+        "subcategory": "Schedule adherence",
+        "summary": "Same agenda complaints: long intros cutting panels short and vague break restart times"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 3,
+        "example": "Possibly focus more time on the small and midsized manufacturers.",
+        "subcategory": "Small and midsized manufacturer applicability",
+        "summary": "Continued ask for small and midsized manufacturer focus and less predictable panel content"
+      },
+      {
+        "category": "Logistics",
+        "count": 3,
+        "example": "Perhaps convert this survey to digital.",
+        "subcategory": "Communications & Resources",
+        "summary": "Repeat logistics asks: make the survey digital and fix slide text that is too small to read"
+      }
+    ],
+    "sourceFile": "2026-Q4 Northern (Post-Meeting Survey.csv)",
+    "yoy": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 10,
+        "example": "Capital planning, utility infrastructure planning",
+        "subcategory": "Topic requests",
+        "summary": "Year-long pattern of operational topic requests: utility and capital planning, supply chain, trade/economic topics, and life after AI pilots"
+      },
+      {
+        "category": "Content",
+        "count": 8,
+        "example": "Workforce development/training/onboarding",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Workforce and training content recurs all year, especially school partnerships and employer role in workforce development"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 6,
+        "example": "Hold the speakers/panelists to their time slots.",
+        "subcategory": "Schedule adherence",
+        "summary": "Time management issues recur: intros run long, sessions get cut short, and breaks lack clear restart times"
+      },
+      {
+        "category": "Logistics",
+        "count": 5,
+        "example": "Provide presentation materials to attendees afterward.",
+        "subcategory": "Communications & Resources",
+        "summary": "Recurring materials and logistics asks: digital survey, legible slides, and sharing presentations afterward"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 4,
+        "example": "Include more real-world case studies of successful tech implementations.",
+        "subcategory": "Small and midsized manufacturer applicability",
+        "summary": "Ongoing request for small-manufacturer applicability and more concrete data and case studies over anecdote"
+      }
+    ]
   }
 }
