@@ -92,6 +92,60 @@ def read_helper(content: bytes) -> dict[date, dict]:
     return out
 
 
+def _find_col(header: list[str], name: str) -> int | None:
+    return next((i for i, h in enumerate(header) if h.strip().lower() == name), None)
+
+
+def strip_meetings(helper_content: bytes, survey_content: bytes,
+                    targets: set[tuple[int, str, str]]) -> tuple[bytes, bytes, list[date]]:
+    """Remove every Helper row whose raw (Year, Quarter, Region) is in `targets`
+    (exactly the tuples a Survey ID like "2026-Q4 Northern" parses into), and every
+    Survey row whose Meeting Date matches one of those removed rows.
+    -> (new Helper .csv bytes, new Survey .csv bytes, the meeting dates removed).
+
+    A target with no matching Helper row is simply a no-op for that target, not an
+    error -- its meeting may have already aged out of the cumulative export, or Box
+    may never have had it in the first place (e.g. historical data migrated straight
+    into the published dashboards, before this pipeline existed).
+    """
+    helper_header, helper_rows = sheet_io.read_rows(HELPER_FILENAME, helper_content)
+    year_col = _find_col(helper_header, "year")
+    quarter_col = _find_col(helper_header, "quarter")
+    region_col = _find_col(helper_header, "region")
+    helper_date_col = _find_col(helper_header, "meeting date")
+    if None in (year_col, quarter_col, region_col, helper_date_col):
+        raise ValueError(
+            f"'{HELPER_FILENAME}' is missing a Year/Quarter/Region/Meeting Date column "
+            f"-- cannot identify which rows to remove. Its header reads: {helper_header!r}."
+        )
+
+    keep_helper_rows = []
+    removed_dates: list[date] = []
+    for row in helper_rows:
+        if not any(row):
+            continue
+        key = (_int_or_none(str(row[year_col] or "")),
+               str(row[quarter_col] or "").strip(),
+               str(row[region_col] or "").strip())
+        if key in targets:
+            d = parse_date(str(row[helper_date_col] or ""))
+            if d:
+                removed_dates.append(d)
+            continue
+        keep_helper_rows.append(row)
+
+    survey_header, survey_rows = sheet_io.read_rows(SURVEY_FILENAME, survey_content)
+    survey_date_col = _find_col(survey_header, "meeting date")
+    removed_set = set(removed_dates)
+    keep_survey_rows = survey_rows if survey_date_col is None or not removed_set else [
+        row for row in survey_rows if parse_date(str(row[survey_date_col] or "")) not in removed_set
+    ]
+
+    return (sheet_io.write_csv(helper_header, keep_helper_rows),
+            sheet_io.write_csv(survey_header, keep_survey_rows),
+            removed_dates)
+
+
 def read_categories(filename: str, content: bytes) -> dict[str, str]:
     """-> { Metric name ("Detailed Category" in the source file): Content Category }.
     `filename` decides whether to read `content` as .csv or .xlsx (see sheet_io).

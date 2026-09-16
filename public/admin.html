@@ -156,9 +156,10 @@
         dashboards. Select one or more and <b>Remove &amp; refresh</b> to delete their
         entries from the Feedback Log and both dashboards, then re-synthesize
         whatever's left -- a removed meeting can have been part of another quarter's
-        QoQ/YoY pool. This doesn't touch Box: if the same data is still in the Data
-        Folder's survey export, a future Update Dashboard run will bring it back, so
-        fix or remove it there too if it shouldn't return.</p>
+        QoQ/YoY pool. Also removes the matching rows from the Data Folder's own Helper
+        and Survey exports in Box, so it doesn't come back on the next Update
+        Dashboard -- best-effort: if Box isn't reachable or the meeting has already
+        aged out of the current export, only the published data gets cleaned up.</p>
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
@@ -643,9 +644,8 @@
     if (!ids.length) return;
     if (!window.confirm("Permanently remove " + ids.length + " meeting" + (ids.length === 1 ? "" : "s") +
         " (" + ids.join(", ") + ") from the Feedback Log and both dashboards, then " +
-        "re-synthesize everything that's left? This does not touch Box -- if the same " +
-        "data is still in the Data Folder's survey export, a future Update Dashboard " +
-        "run will bring it back."))
+        "re-synthesize everything that's left? Also removes the matching rows from " +
+        "the Data Folder's Helper and Survey exports in Box, best-effort."))
       return;
     always(
       dispatchJob("remove_meetings", el("meetingsRemoveBtn"), el("meetingsRemoveState"), { survey_ids: ids }),

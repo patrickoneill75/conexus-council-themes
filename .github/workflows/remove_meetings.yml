@@ -3,9 +3,9 @@ name: Remove meetings
 # Triggered from the control panel's "Remove & refresh" button next to the meetings
 # table -- deletes one or more Survey IDs' data from the Feedback Log and both
 # published dashboards, then re-synthesizes every quarter still left (a removed
-# meeting can have been part of another quarter's QoQ/YoY pool). Does not touch Box:
-# if the same bad row is still in the Data Folder's Post-Meeting Survey export, a
-# future Update Dashboard run will pick it up again as new.
+# meeting can have been part of another quarter's QoQ/YoY pool). Also strips the
+# matching rows out of the Data Folder's own Helper and Survey exports in Box,
+# best-effort -- see scripts/remove_meetings.py.
 on:
   workflow_dispatch:
     inputs:
@@ -43,6 +43,8 @@ jobs:
         env:
           SURVEY_IDS: ${{ inputs.survey_ids }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
         run: python scripts/remove_meetings.py
 
       - name: Commit site and data

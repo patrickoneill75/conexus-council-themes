@@ -8,10 +8,12 @@ public/quant-dashboard.json. Then re-synthesizes current/QoQ/YoY for every quart
 still left in the Feedback Log -- the same full re-analysis scripts/setup_analysis.py
 does -- since a removed meeting can have been part of another quarter's QoQ/YoY pool.
 
-This never touches Box: if the same bad row is still in the Data Folder's
-Post-Meeting Survey export, a future Update Dashboard run will pick it up again as
-new (that's the whole "auto-detect what's not in the Feedback Log yet" mechanism).
-Fix or remove it there too if it shouldn't come back.
+Also strips the matching rows out of the Data Folder's own Council Meeting Helper and
+Post-Meeting Survey exports in Box, best-effort: without that, a future Update
+Dashboard run would just re-detect the same meeting as new and bring it right back,
+since "new" only ever means "not in data/feedback_log.json yet". This step is never
+fatal -- Box may not be reachable in every environment this script runs in, and the
+Feedback Log / dashboard cleanup above is what actually matters.
 
 Triggered from the control panel's "Remove & refresh" button, next to the meetings
 table.
@@ -19,13 +21,71 @@ table.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from themes import claude_client, config, feedback_log, publish, quant_publish  # noqa: E402
+from themes import (  # noqa: E402
+    box_store, claude_client, config, feedback_log, publish, quant_data, quant_publish,
+)
 from themes.tracker import quarters_before, rows_in  # noqa: E402
+
+_SURVEY_ID_RE = re.compile(r"^(\d{4})-(Q[1-4]) (.+)$")
+
+
+def _parse_targets(sids: set[str]) -> set[tuple[int, str, str]]:
+    """Survey IDs -> the raw (Year, Quarter, Region) tuples they were built from --
+    what quant_data.strip_meetings() needs to match against the Helper file's own
+    columns, which is where those three values originally came from."""
+    parsed = set()
+    for sid in sids:
+        m = _SURVEY_ID_RE.match(sid)
+        if m:
+            parsed.add((int(m.group(1)), m.group(2), m.group(3)))
+    return parsed
+
+
+def _strip_from_box(targets: set[str]) -> None:
+    if not box_store.enabled():
+        print("  Box is not configured (BOX_RELAY_URL/BOX_RELAY_SECRET) -- skipping "
+              "Box cleanup. The Feedback Log and dashboards are already clean.")
+        return
+    folder_id = box_store.data_folder_id()
+    if not folder_id:
+        print("  No Data Folder has been picked yet -- skipping Box cleanup.")
+        return
+
+    files = {f["name"]: f["id"] for f in box_store.list_folder(folder_id)}
+    helper_id = files.get(quant_data.HELPER_FILENAME)
+    survey_file_id = files.get(quant_data.SURVEY_FILENAME)
+    if not helper_id or not survey_file_id:
+        print(f"  '{quant_data.HELPER_FILENAME}' or '{quant_data.SURVEY_FILENAME}' not "
+              "found in the Data Folder -- skipping Box cleanup.")
+        return
+
+    key_targets = _parse_targets(targets)
+    if not key_targets:
+        print("  No parseable Survey IDs to remove from Box.")
+        return
+
+    helper_content = box_store.download(helper_id)
+    survey_content = box_store.download(survey_file_id)
+    new_helper, new_survey, removed_dates = quant_data.strip_meetings(
+        helper_content, survey_content, key_targets)
+
+    if not removed_dates:
+        print("  No matching rows found in the Data Folder's current exports -- "
+              "nothing to remove there (the meeting may have already aged out of the "
+              "export, or never made it into Box in the first place).")
+        return
+
+    box_store.upload_new_version(helper_id, quant_data.HELPER_FILENAME, new_helper)
+    box_store.upload_new_version(survey_file_id, quant_data.SURVEY_FILENAME, new_survey)
+    when = ", ".join(sorted(d.isoformat() for d in removed_dates))
+    print(f"  Box: removed {len(removed_dates)} meeting date(s) ({when}) from "
+          f"'{quant_data.HELPER_FILENAME}' and '{quant_data.SURVEY_FILENAME}'.")
 
 
 def main() -> int:
@@ -50,12 +110,18 @@ def main() -> int:
     publish.save(themes_data)
     print(f"  council-themes.json: removed {len(removed_themes)} quarter(s).")
 
-    quant_data = quant_publish.load()
-    removed_quant = [sid for sid in targets if sid in quant_data]
+    quant_dashboard = quant_publish.load()
+    removed_quant = [sid for sid in targets if sid in quant_dashboard]
     for sid in removed_quant:
-        del quant_data[sid]
-    quant_publish.save(quant_data)
+        del quant_dashboard[sid]
+    quant_publish.save(quant_dashboard)
     print(f"  quant-dashboard.json: removed {len(removed_quant)} quarter(s).")
+
+    print("Removing matching rows from Box, if reachable...")
+    try:
+        _strip_from_box(targets)
+    except Exception as e:
+        print(f"  ! Could not update Box: {e}", file=sys.stderr)
 
     if not log_rows:
         print("Feedback Log is now empty -- nothing left to re-synthesize.")

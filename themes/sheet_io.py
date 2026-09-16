@@ -39,3 +39,16 @@ def _pad(row: list, width: int) -> list:
     if len(row) < width:
         return row + [None] * (width - len(row))
     return row
+
+
+def write_csv(header: list[str], rows: list[list]) -> bytes:
+    """The inverse of read_rows() for a .csv file -- writing a filtered copy of an
+    export back out, e.g. after removing the rows for a meeting that's being deleted.
+    `newline=""` (per the csv module's own docs) stops csv.writer's own "\\r\\n" line
+    endings from being doubled up by StringIO."""
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow(["" if cell is None else cell for cell in row])
+    return buf.getvalue().encode("utf-8")
