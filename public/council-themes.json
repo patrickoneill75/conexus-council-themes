@@ -821,38 +821,38 @@
         "count": 6,
         "example": "Go above and beyond using AI in generic, discuss what is after AI",
         "subcategory": "Future Topic Requests",
-        "summary": "Want AI content taken further — real deployment examples, ROI, and what comes after AI"
+        "summary": "Want AI content taken further — real deployment cases, ROI, and what comes after AI"
       },
       {
         "category": "Logistics",
         "count": 4,
         "example": "Stay on time with agenda. All out of time left",
         "subcategory": "Agenda & Schedule",
-        "summary": "Keep the agenda on time and hold speakers to their slots; manage breaks better"
+        "summary": "Keep the agenda on time and hold speakers to their slots; better break structure"
       },
       {
         "category": "Content",
         "count": 5,
         "example": "More interested in AI adoption for increasing capacity of existing workforce — those jobs that we have a difficult job filling",
         "subcategory": "Training & Workforce Development",
-        "summary": "Workforce training and using AI to expand capacity of hard-to-fill roles"
+        "summary": "Workforce development, training and using AI to expand capacity of existing staff"
       },
       {
         "category": "Content",
-        "count": 5,
+        "count": 4,
         "example": "A lot of discussion around raw materials and lead times. What do we do?",
         "subcategory": "Future Topic Requests",
-        "summary": "Broader industry topics beyond AI: supply chain, raw materials/lead times, capital and infrastructure planning, manufacturing outlook"
+        "summary": "Broader operational topics beyond AI: supply chain, raw materials/lead times, capital and infrastructure planning, industry outlooks"
       },
       {
         "category": "Networking",
         "count": 3,
         "example": "Share business cards at beginning - maybe a box to drop them off so everyone can get more info on every other company",
         "subcategory": "Attendee Connections",
-        "summary": "Make it easier to connect — attendee lists by industry, business card exchange, and dedicated networking time"
+        "summary": "Make it easier to connect — attendee lists by industry and structured contact sharing"
       }
     ],
-    "generated": "2026-09-16T15:02:42+00:00",
+    "generated": "2026-09-16T15:14:07+00:00",
     "qoq": [],
     "sourceFile": "2026-Q3 Central (Post-Meeting Survey.csv)",
     "yoy": []
@@ -864,21 +864,21 @@
         "count": 3,
         "example": "Too much time spent on intros and the panel was cut short; low value in hearing people's bios at length.",
         "subcategory": "Agenda & Schedule",
-        "summary": "Cut intros short and give panels more time"
+        "summary": "Cut long intros and give panels more time"
       },
       {
         "category": "Content",
         "count": 2,
-        "example": "Companies giving the tour should help highlight new technologies, not just a general manufacturing tour.",
+        "example": "The panel answers were pretty predictable. Prep panelists and presenters with clear expectations.",
         "subcategory": "Presentation & Materials",
-        "summary": "Better prep for panelists and tour hosts so content goes beyond the generic"
+        "summary": "Prep panelists and tour hosts for more substantive, less generic content"
       },
       {
         "category": "Content",
         "count": 2,
         "example": "Especially if schools could collaborate and present what opportunities they have — Ivy Tech, Vincennes, Purdue, etc. More 2-year associates degree focused.",
         "subcategory": "Training & Workforce Development",
-        "summary": "Want workforce/training examples from near peers and local 2-year schools"
+        "summary": "Want workforce/training examples from near peers and local schools, including 2-year programs"
       },
       {
         "category": "Content",
@@ -892,10 +892,10 @@
         "count": 3,
         "example": "Have wifi access posted.",
         "subcategory": "Venue & Audio/Visual",
-        "summary": "Post wifi access; move the survey to digital"
+        "summary": "Post wifi access and modernize on-site logistics like the paper survey"
       }
     ],
-    "generated": "2026-09-16T15:02:55+00:00",
+    "generated": "2026-09-16T15:14:14+00:00",
     "qoq": [],
     "sourceFile": "2026-Q3 Southern (Post-Meeting Survey.csv)",
     "yoy": []
