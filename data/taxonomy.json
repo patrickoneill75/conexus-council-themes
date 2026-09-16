@@ -1,15 +1,72 @@
 {
+  "Agenda & Time Management": [
+    "Session length and pacing",
+    "Schedule adherence",
+    "Schedule and timing",
+    "Breaks"
+  ],
   "Content": [
     "Training & Workforce Development",
     "Future Topic Requests",
     "Presentation & Materials"
+  ],
+  "Content Relevance & Depth": [
+    "Small and midsized manufacturer applicability",
+    "Actionability and near-term relevance",
+    "Role and sector relevance",
+    "Real-world case studies",
+    "Topic requests"
   ],
   "Logistics": [
     "Agenda & Schedule",
     "Communications & Resources",
     "Venue & Audio/Visual"
   ],
+  "Meeting Logistics & AV": [
+    "Audio and sound",
+    "Slide design and legibility",
+    "Venue and connectivity"
+  ],
   "Networking": [
     "Attendee Connections"
+  ],
+  "Networking & Member Connection": [
+    "Attendee information",
+    "Facilitated introductions",
+    "Name badges and identification",
+    "Using the council network",
+    "Access to partners and agencies"
+  ],
+  "Post-Meeting Materials & Follow-Up": [
+    "Slides and presentations",
+    "Handouts and takeaways",
+    "Resource requests"
+  ],
+  "Pre-Meeting Communication & Materials": [
+    "Pre-reads and advance materials",
+    "Tour preparation info",
+    "Logistics instructions",
+    "Delivery reliability"
+  ],
+  "Session Format & Facilitation": [
+    "Q&A time",
+    "Q&A moderation",
+    "Small-group and roundtable discussion",
+    "Synthesis and takeaways"
+  ],
+  "Site Tours": [
+    "Tour content focus",
+    "Tour structure",
+    "Tour time"
+  ],
+  "Speakers & Panelists": [
+    "Delivery and engagement",
+    "Speaker preparation",
+    "Content depth",
+    "Vendor neutrality",
+    "Member and peer presenters"
+  ],
+  "Survey & Ratings Signals": [
+    "Session rating dip"
   ]
 }
