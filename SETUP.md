@@ -13,7 +13,7 @@ Everything below is done in a browser. There are no terminal steps.
 | Piece | Where it lives | What it does |
 | --- | --- | --- |
 | `public/index.html` | Worker static assets | The public dashboard. Power BI pages plus the Council Themes tab. No login. |
-| `public/admin.html` | Worker static assets | The control panel. Helper/Survey upload, Update Dashboard, and Refresh Dashboard/Themes/All on the main page; Box login and the Data Folder picker under Developer. |
+| `public/admin.html` | Worker static assets | The control panel. Helper/Survey upload and Update Dashboard on the main page; Box login, the Data Folder picker, and Refresh Dashboard/Themes/All under Developer. |
 | `src/worker.js` | Cloudflare Worker | `/api/*`. Holds the password, the GitHub token and the Box credentials. |
 | `scripts/update_dashboard.py` | GitHub Actions | Auto-detects every meeting in the Data Folder's Post-Meeting Survey export that isn't in `data/feedback_log.json` yet (resolving Year/Quarter/Region per meeting from the Council Meeting Helper export), extracts and publishes each one's themes with Claude, then rebuilds the quant dashboard. |
 | `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in `data/feedback_log.json`, no new survey involved — the one-time bootstrap (or a full redo). |
@@ -116,11 +116,11 @@ looking for `"configured": true`.
    kept current from the two upload cards on the main page), and `Content
    Categories.xlsx` (maintained directly in Box). Set this once — there's no need to
    revisit it quarterly.
-4. Click **Refresh Themes**. This synthesizes current/QoQ/YoY themes for every quarter
-   already sitting in `data/feedback_log.json` and publishes them, with no new survey
-   involved. Re-run it any time you want every quarter redone from scratch (e.g. after
-   a taxonomy change) — or **Refresh All** to also rebuild the quant dashboard in the
-   same run.
+4. Still under **Developer**, click **Refresh Themes**. This synthesizes current/QoQ/YoY
+   themes for every quarter already sitting in `data/feedback_log.json` and publishes
+   them, with no new survey involved. Re-run it any time you want every quarter redone
+   from scratch (e.g. after a taxonomy change) — or **Refresh All** to also rebuild the
+   quant dashboard in the same run.
 
 From here on, each new meeting: upload the latest exports via **Council Meeting Helper
 Upload** and **Post-Meeting Survey Upload** (each replaces the previous export

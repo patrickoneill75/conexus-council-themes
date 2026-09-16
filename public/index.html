@@ -411,6 +411,16 @@ const CONFIG = {
      "2026-Q3 Central") -> { current, qoq, yoy, generated, sourceFile }. */
   var SURVEY_ID_RE = /^(\d{4})-(Q[1-4]) (.+)$/;
 
+  /* The Council Meeting Helper's Region column has said "South" for some meetings and
+     "Southern" for others (Central/Northern/Southern is the standing convention -- see
+     SETUP.md), so a Survey ID's raw region isn't safe to show or filter on directly.
+     Collapsing "South" into "Southern" here, once, at parse time, is what keeps every
+     downstream use (the filter dropdown, matchesFilter, chart tooltips) from ever
+     splitting the same real region into two. */
+  function normalizeRegion(region) {
+    return String(region || "").trim().toLowerCase() === "south" ? "Southern" : region;
+  }
+
   function loadThemes(wrap) {
     var doc = wrap.querySelector("#doc");
     doc.innerHTML = '<div class="doc-inner"><p style="color:var(--text-muted)">Loading…</p></div>';
@@ -422,7 +432,7 @@ const CONFIG = {
           var m = SURVEY_ID_RE.exec(sid);
           if (!m) return null;
           var d = data[sid] || {};
-          return { sid: sid, year: m[1], quarter: m[2], region: m[3],
+          return { sid: sid, year: m[1], quarter: m[2], region: normalizeRegion(m[3]),
                     current: d.current || [], qoq: d.qoq || [], yoy: d.yoy || [],
                     generated: d.generated, sourceFile: d.sourceFile };
         }).filter(Boolean);
@@ -664,7 +674,7 @@ const CONFIG = {
           var m = SURVEY_ID_RE.exec(sid);
           if (!m) return null;
           var d = data[sid] || {};
-          return { sid: sid, year: Number(m[1]), quarter: m[2], region: m[3],
+          return { sid: sid, year: Number(m[1]), quarter: m[2], region: normalizeRegion(m[3]),
                     avgAttendees: d.avgAttendees, responses: d.responses,
                     responseRate: d.responseRate, byCategory: d.byCategory || {},
                     generated: d.generated, sourceFile: d.sourceFile };
