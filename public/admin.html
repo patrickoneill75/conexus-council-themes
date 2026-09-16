@@ -148,25 +148,6 @@
         <button class="primary" id="updateBtn" type="button" disabled>Update Dashboard</button>
       </div>
       <p class="small muted" id="updateState" style="margin:10px 0 0"></p>
-
-      <hr class="rule">
-
-      <p class="small" style="margin:0 0 4px"><b>Refresh</b></p>
-      <p class="small muted" style="margin:0 0 10px">Re-publish from what's already
-        been extracted — no new Claude extraction, and no auto-detecting new meetings.
-        <b>Refresh Dashboard</b> merges whatever's currently in the Data Folder into the
-        quant dashboard (use after editing something directly in Box; it only ever adds
-        or updates a meeting, never removes one).
-        <b>Refresh Themes</b> re-synthesizes every quarter already in the Feedback Log
-        (use after a taxonomy change, or to redo past quarters from scratch).
-        <b>Refresh All</b> does both.</p>
-      <div class="row">
-        <button id="refreshDashboardBtn" type="button" disabled>Refresh Dashboard</button>
-        <button id="refreshThemesBtn" type="button" disabled>Refresh Themes</button>
-        <button id="refreshAllBtn" type="button" disabled>Refresh All</button>
-      </div>
-      <p class="small muted" id="refreshDashboardState" style="margin:10px 0 0"></p>
-      <p class="small muted" id="refreshThemesState" style="margin:2px 0 0"></p>
     </div>
 
     <div class="card">
@@ -217,6 +198,25 @@
             <button id="dataFolderChooseBtn" type="button">Choose folder…</button>
           </div>
           <div id="dataFolderPicker" hidden class="picker"></div>
+        </div>
+
+        <div class="card" id="refreshCard">
+          <h3>Refresh</h3>
+          <p class="desc">Re-publish from what's already been extracted — no new Claude
+            extraction, and no auto-detecting new meetings.
+            <b>Refresh Dashboard</b> merges whatever's currently in the Data Folder into
+            the quant dashboard (use after editing something directly in Box; it only
+            ever adds or updates a meeting, never removes one).
+            <b>Refresh Themes</b> re-synthesizes every quarter already in the Feedback
+            Log (use after a taxonomy change, or to redo past quarters from scratch).
+            <b>Refresh All</b> does both.</p>
+          <div class="row">
+            <button id="refreshDashboardBtn" type="button" disabled>Refresh Dashboard</button>
+            <button id="refreshThemesBtn" type="button" disabled>Refresh Themes</button>
+            <button id="refreshAllBtn" type="button" disabled>Refresh All</button>
+          </div>
+          <p class="small muted" id="refreshDashboardState" style="margin:10px 0 0"></p>
+          <p class="small muted" id="refreshThemesState" style="margin:2px 0 0"></p>
         </div>
       </div>
     </details>
