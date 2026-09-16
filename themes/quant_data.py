@@ -1,11 +1,13 @@
 """Reading the three fixed-name files a dashboard run finds in the Data Folder:
-'Council Meeting Helper.csv', 'Post-Meeting Survey.csv', and 'Content
-Categories.xlsx'.
+'Council Meeting Helper.csv', 'Post-Meeting Survey.csv', and 'Content Categories'
+(.csv or .xlsx -- see CATEGORIES_FILENAMES).
 
 The Helper and Survey exports are cumulative — every fresh export from the survey
 tool contains every meeting/response ever collected, not just the newest — so each
 upload replaces the file in Box wholesale rather than merging. Content Categories is
-static/slow-changing and admin-maintained directly in Box.
+static/slow-changing and admin-maintained directly in Box, so unlike the other two its
+name isn't forced by an upload route -- whichever format the admin saves it as is
+whatever's actually in the Data Folder.
 """
 from __future__ import annotations
 
@@ -13,13 +15,11 @@ import csv
 import io
 from datetime import date
 
-from openpyxl import load_workbook
-
-from . import quant_extract
+from . import quant_extract, sheet_io
 
 HELPER_FILENAME = "Council Meeting Helper.csv"
 SURVEY_FILENAME = "Post-Meeting Survey.csv"
-CATEGORIES_FILENAME = "Content Categories.xlsx"
+CATEGORIES_FILENAMES = ("Content Categories.csv", "Content Categories.xlsx")
 
 # quant_extract.as_date() is the one canonical date parser both this module and
 # quant_extract's own unpivot() use -- keeping a second, separately-maintained format
@@ -92,21 +92,25 @@ def read_helper(content: bytes) -> dict[date, dict]:
     return out
 
 
-def read_categories(content: bytes) -> dict[str, str]:
+def read_categories(filename: str, content: bytes) -> dict[str, str]:
     """-> { Metric name ("Detailed Category" in the source file): Content Category }.
+    `filename` decides whether to read `content` as .csv or .xlsx (see sheet_io).
 
     A metric with no mapping here (the source file doesn't cover every possible
     "Panel N"/"Workshop N" number) is simply left out of byCategory downstream —
     matching the real model's relationship exactly rather than inventing a group.
     """
-    wb = load_workbook(io.BytesIO(content), data_only=True)
-    ws = wb.active
-    header = [str(c.value).strip() if c.value is not None else ""
-              for c in next(ws.iter_rows(max_row=1))]
-    detail_col = header.index("Detailed Category")
-    content_col = header.index("Content Category")
+    header, rows = sheet_io.read_rows(filename, content)
+    try:
+        detail_col = header.index("Detailed Category")
+        content_col = header.index("Content Category")
+    except ValueError:
+        raise ValueError(
+            f"'{filename}' doesn't have both a 'Detailed Category' and a 'Content "
+            f"Category' column. Its header reads: {header!r}."
+        ) from None
     out: dict[str, str] = {}
-    for raw in ws.iter_rows(min_row=2, values_only=True):
+    for raw in rows:
         if not any(raw):
             continue
         detail, content_cat = raw[detail_col], raw[content_col]

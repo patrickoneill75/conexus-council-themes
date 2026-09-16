@@ -102,7 +102,7 @@ def refresh() -> None:
     files = {f["name"]: f["id"] for f in box_store.list_folder(folder_id)}
     helper_id = files.get(quant_data.HELPER_FILENAME)
     survey_id_ = files.get(quant_data.SURVEY_FILENAME)
-    categories_id = files.get(quant_data.CATEGORIES_FILENAME)
+    categories_name = next((n for n in quant_data.CATEGORIES_FILENAMES if n in files), None)
     if not helper_id:
         print(f"ERROR: '{quant_data.HELPER_FILENAME}' not found in the Data Folder.",
               file=sys.stderr)
@@ -111,8 +111,8 @@ def refresh() -> None:
         print(f"ERROR: '{quant_data.SURVEY_FILENAME}' not found in the Data Folder.",
               file=sys.stderr)
         raise SystemExit(1)
-    if not categories_id:
-        print(f"ERROR: '{quant_data.CATEGORIES_FILENAME}' not found in the Data "
+    if not categories_name:
+        print(f"ERROR: none of {quant_data.CATEGORIES_FILENAMES!r} found in the Data "
               "Folder.", file=sys.stderr)
         raise SystemExit(1)
 
@@ -133,8 +133,8 @@ def refresh() -> None:
               "Meeting Date values.", file=sys.stderr)
         raise SystemExit(1)
 
-    print(f"Downloading {quant_data.CATEGORIES_FILENAME}...")
-    categories = quant_data.read_categories(box_store.download(categories_id))
+    print(f"Downloading {categories_name}...")
+    categories = quant_data.read_categories(categories_name, box_store.download(files[categories_name]))
     print(f"  {len(categories)} metric(s) mapped.")
 
     print(f"Downloading {quant_data.SURVEY_FILENAME}...")
