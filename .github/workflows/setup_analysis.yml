@@ -33,6 +33,10 @@ jobs:
         run: python scripts/setup_analysis.py
 
       - name: Commit site
+        # Runs even if the previous step failed: it publishes each quarter as it goes
+        # (real Claude calls, real cost), so a failure partway through a long re-analysis
+        # shouldn't discard whatever quarters already succeeded before it.
+        if: always()
         run: |
           git config user.name  "themes-bot"
           git config user.email "actions@github.com"
