@@ -25,21 +25,24 @@ const CONFIG = {
   // One entry per Power BI page, in the order you want the buttons to appear.
   // pageId is the ReportSection id from the address bar when you open that page in
   // app.powerbi.com — see the note each tab shows until you fill it in.
+  // "enabled: false" keeps a page's config (and its tab's content still buildable) but
+  // leaves it out of the tab bar -- flip it back to true (or drop the field) to bring a
+  // retired tab back instead of re-adding it from scratch.
   pages: [
-    { label: "Benchmarking",    pageId: "e2d4b56ae1d954057545" }
+    { label: "Benchmarking",    pageId: "e2d4b56ae1d954057545", enabled: false }
   ],
 
   themes: {
     enabled: true,
     label: "Council Themes",
-    blurb: "This quarter's top issues, and what's recurred since",
+    blurb: "",
     dataUrl: "/council-themes.json"
   },
 
   quant: {
     enabled: true,
-    label: "Claude Dashboard (beta)",
-    blurb: "Compare a benchmark period against a specific meeting, and track metrics over time — computed entirely from uploaded survey data",
+    label: "Survey Benchmarking",
+    blurb: "",
     dataUrl: "/quant-dashboard.json"
   }
 };
@@ -114,6 +117,7 @@ const CONFIG = {
              padding:16px 20px; border-bottom:1px solid var(--border); flex:none; }
   .field { display:flex; flex-direction:column; gap:5px; }
   .field[hidden] { display:none; }
+  .benchmark-field { background:var(--meeting-bg); border-radius:8px; padding:8px 12px; }
   .field label { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
                  color:var(--text-muted); font-weight:600; }
   .field select { font:inherit; font-size:13.5px; padding:7px 10px; min-width:140px;
@@ -271,18 +275,20 @@ const CONFIG = {
   })();
 
   /* ---------- tabs ---------- */
-  var tabs = CONFIG.pages.map(function (p, i) {
-    return { key: "p" + i, kind: "report", label: p.label, blurb: p.blurb || "",
-             pageId: p.pageId, slot: i + 1 };
-  });
+  var tabs = [];
+  if (CONFIG.quant && CONFIG.quant.enabled) {
+    tabs.push({ key: "quant", kind: "quant",
+                label: CONFIG.quant.label || "Survey Benchmarking", blurb: CONFIG.quant.blurb || "" });
+  }
   if (CONFIG.themes && CONFIG.themes.enabled) {
     tabs.push({ key: "themes", kind: "themes",
                 label: CONFIG.themes.label || "Themes", blurb: CONFIG.themes.blurb || "" });
   }
-  if (CONFIG.quant && CONFIG.quant.enabled) {
-    tabs.push({ key: "quant", kind: "quant",
-                label: CONFIG.quant.label || "Claude Dashboard (beta)", blurb: CONFIG.quant.blurb || "" });
-  }
+  CONFIG.pages.forEach(function (p, i) {
+    if (p.enabled === false) return;
+    tabs.push({ key: "p" + i, kind: "report", label: p.label, blurb: p.blurb || "",
+                pageId: p.pageId, slot: i + 1 });
+  });
   tabs.forEach(function (t) {
     t.slug = String(t.label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     var b = document.createElement("button");
@@ -618,15 +624,15 @@ const CONFIG = {
           '<h3 class="q-title">Meeting Comparison</h3>' +
           '<div class="compare-box">' +
             '<div class="compare-controls">' +
-              '<div class="field"><label for="q-meeting-year">Year</label><select id="q-meeting-year"></select></div>' +
-              '<div class="field"><label for="q-meeting-quarter">Quarter</label><select id="q-meeting-quarter"></select></div>' +
-              '<div class="field"><label for="q-meeting-region">Region</label><select id="q-meeting-region"></select></div>' +
-              '<div class="field"><label for="q-compare-mode">Compare to</label><select id="q-compare-mode">' +
+              '<div class="field benchmark-field"><label for="q-compare-mode">Benchmark period</label><select id="q-compare-mode">' +
                 '<option value="prev">Previous quarter</option>' +
                 '<option value="yoy">Same quarter last year</option>' +
                 '<option value="prevYear">Previous year</option>' +
                 '<option value="avg">All-time average</option>' +
               '</select></div>' +
+              '<div class="field"><label for="q-meeting-year">Year</label><select id="q-meeting-year"></select></div>' +
+              '<div class="field"><label for="q-meeting-quarter">Quarter</label><select id="q-meeting-quarter"></select></div>' +
+              '<div class="field"><label for="q-meeting-region">Region</label><select id="q-meeting-region"></select></div>' +
             '</div>' +
             '<p class="compare-note" id="q-compare-note"></p>' +
             '<div class="metric-grid" id="q-metric-cards"></div>' +
