@@ -84,6 +84,11 @@ def unpivot(filename: str, survey_bytes: bytes) -> list[dict]:
                 value = int(value)
             except (TypeError, ValueError):
                 continue
+            # These are 1-5 rating questions; a literal 0 is the export's way of saying
+            # the question wasn't answered (e.g. a meeting with no Workshop session), not
+            # a genuine bottom-of-scale rating. Treat it the same as blank.
+            if value == 0:
+                continue
             rows.append({
                 "meeting_date": meeting_date,
                 "organization": organization,
