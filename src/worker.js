@@ -548,19 +548,18 @@ async function handleApi(route, request, env) {
     if (!auth) {
       return json({ error: "Box is not connected. Open the control panel and log in with Box." }, 409);
     }
+    // data_folder_id and tracker_file_id are both nullable here on purpose, not a 409:
+    // Box being connected but no Data Folder picked yet is a normal pre-setup state, and
+    // the Python side (themes/box_store.py, themes/quant_publish.py) has its own graceful
+    // handling for "not configured yet" that this route shouldn't short-circuit by
+    // raising an error before the caller ever gets to check. tracker_file_id is only
+    // needed by the one-time Feedback Log migration script.
     const folder = await boxDataFolder(env);
-    if (!folder) {
-      return json({ error: "Set up the Data Folder first. Open the control panel." }, 409);
-    }
-    // tracker_file_id is nullable here on purpose: it's only needed by the one-time
-    // Feedback Log migration script, not by the normal update_dashboard/refresh_dashboard
-    // runs, which shouldn't fail just because a tracker was never picked (or the migration
-    // has already run and this route's tracker support has since been removed).
     const tracker = await boxTracker(env);
     return json({
       access_token: auth.token,
       expires_in: auth.expiresIn,
-      data_folder_id: folder.id,
+      data_folder_id: folder ? folder.id : null,
       tracker_file_id: tracker ? tracker.id : null,
     });
   }

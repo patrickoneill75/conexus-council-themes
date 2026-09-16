@@ -16,23 +16,22 @@ meeting group — so this module never needs to know about files or dates at all
 """
 from __future__ import annotations
 
-import re
-
 from .quant_extract import KNOWN_METRICS
 
-_DROP = re.compile(
-    r"^time$|ip address|unique id|\blocation\b|\bbrowser\b|name \(first\)|name \(last\)|"
-    r"^year$|^quarter$|^region$|^meeting date$|^organization name$",
-    re.IGNORECASE,
-)
-_DROP_EXACT = {m.lower() for m in KNOWN_METRICS}
+# Exact column-name matches only (case-insensitive) -- not a substring/word-boundary
+# match, since a future free-response question happening to contain one of these words
+# (e.g. "What location would you prefer?") would otherwise be silently dropped too.
+_DROP_EXACT = {m.lower() for m in KNOWN_METRICS} | {
+    "time", "ip address", "unique id", "location", "browser",
+    "name (first)", "name (last)", "year", "quarter", "region",
+    "meeting date", "organization name",
+}
 
 
 def response_rows(header: list[str], rows: list[list]) -> list[dict]:
     """Every response, as {question: answer}, blank answers and metadata/rating columns
     dropped."""
-    keep = [i for i, h in enumerate(header)
-            if h and not _DROP.search(h) and h.lower() not in _DROP_EXACT]
+    keep = [i for i, h in enumerate(header) if h and h.lower() not in _DROP_EXACT]
 
     out = []
     for raw in rows:
