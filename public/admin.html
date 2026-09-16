@@ -151,14 +151,21 @@
 
       <hr class="rule">
 
-      <p class="small" style="margin:0 0 4px"><b>Refresh Dashboard</b></p>
-      <p class="small muted" style="margin:0 0 10px">Rebuilds just the quant dashboard
-        from whatever's currently in the Data Folder — no new upload needed. Use this
-        after editing or deleting something directly in Box.</p>
+      <p class="small" style="margin:0 0 4px"><b>Refresh</b></p>
+      <p class="small muted" style="margin:0 0 10px">Re-publish from what's already
+        been extracted — no new Claude extraction, and no auto-detecting new meetings.
+        <b>Refresh Dashboard</b> rebuilds the quant dashboard from whatever's currently
+        in the Data Folder (use after editing or deleting something directly in Box).
+        <b>Refresh Themes</b> re-synthesizes every quarter already in the Feedback Log
+        (use after a taxonomy change, or to redo past quarters from scratch).
+        <b>Refresh All</b> does both.</p>
       <div class="row">
-        <button id="refreshBtn" type="button" disabled>Refresh Dashboard</button>
+        <button id="refreshDashboardBtn" type="button" disabled>Refresh Dashboard</button>
+        <button id="refreshThemesBtn" type="button" disabled>Refresh Themes</button>
+        <button id="refreshAllBtn" type="button" disabled>Refresh All</button>
       </div>
-      <p class="small muted" id="refreshState" style="margin:10px 0 0"></p>
+      <p class="small muted" id="refreshDashboardState" style="margin:10px 0 0"></p>
+      <p class="small muted" id="refreshThemesState" style="margin:2px 0 0"></p>
     </div>
 
     <div class="card">
@@ -208,17 +215,6 @@
             <button id="dataFolderChooseBtn" type="button">Choose folder…</button>
           </div>
           <div id="dataFolderPicker" hidden class="picker"></div>
-        </div>
-
-        <div class="card">
-          <h3>Full re-analysis</h3>
-          <p class="desc">Re-synthesizes every quarter already in the Feedback Log from
-            scratch — no new survey involved. Use this any time the taxonomy changes
-            enough to warrant redoing past quarters.</p>
-          <div class="row">
-            <button id="setupBtn" type="button" disabled>Run full re-analysis</button>
-          </div>
-          <p class="small muted" id="setupState" style="margin:10px 0 0"></p>
         </div>
       </div>
     </details>
@@ -329,8 +325,7 @@
       el("boxDisconnected").hidden = boxConnected;
       el("boxConnected").hidden = !boxConnected;
       el("dataFolderName").textContent = dataFolder ? (dataFolder.name || dataFolder.id) : "(none selected)";
-      el("refreshBtn").disabled = !dataFolder;
-      el("setupBtn").disabled = false;
+      updateRefreshButtons();
       if (pendingBoxNotice) {
         el("boxNotice").textContent = pendingBoxNotice;
         pendingBoxNotice = null;
@@ -465,7 +460,7 @@
   bindUpload("helperFile", "helperUploadBtn", "helperUploadState", "helper", "helper");
   bindUpload("surveyFile", "surveyUploadBtn", "surveyUploadState", "survey", "survey");
 
-  /* ---------- update dashboard / full re-analysis ---------- */
+  /* ---------- update dashboard / refresh ---------- */
   function updateAnalysisReadiness() {
     var readyEl = el("analysisReady"), updateBtn = el("updateBtn");
     if (!dataFolder) {
@@ -477,10 +472,19 @@
     updateBtn.disabled = false;
   }
 
+  // Refresh Themes needs no Box setup at all (it only reads the Feedback Log already
+  // in the repo), so it's always enabled once signed in; the other two touch the Data
+  // Folder, so they need one picked first.
+  function updateRefreshButtons() {
+    el("refreshDashboardBtn").disabled = !dataFolder;
+    el("refreshThemesBtn").disabled = false;
+    el("refreshAllBtn").disabled = !dataFolder;
+  }
+
   function runJob(job, button, stateEl) {
     button.disabled = true;
     stateEl.innerHTML = '<span class="spin"></span>Starting…';
-    api("run", { method: "POST", body: JSON.stringify({ job: job }) })
+    return api("run", { method: "POST", body: JSON.stringify({ job: job }) })
       .then(function () {
         stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
         // GitHub takes a moment to register the run before the API reports it.
@@ -489,21 +493,35 @@
       .catch(function (e) {
         stateEl.textContent = "Could not start: " + e.message;
       })
-      .then(function () { button.disabled = false; updateAnalysisReadiness(); });
+      .then(function () { button.disabled = false; });
   }
 
-  el("refreshBtn").addEventListener("click", function () {
-    runJob("refresh_dashboard", el("refreshBtn"), el("refreshState"));
+  el("updateBtn").addEventListener("click", function () {
+    runJob("update_dashboard", el("updateBtn"), el("updateState")).then(updateAnalysisReadiness);
   });
 
-  el("updateBtn").addEventListener("click", function () {
-    runJob("update_dashboard", el("updateBtn"), el("updateState"));
+  el("refreshDashboardBtn").addEventListener("click", function () {
+    runJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState")).then(updateRefreshButtons);
   });
-  el("setupBtn").addEventListener("click", function () {
+
+  el("refreshThemesBtn").addEventListener("click", function () {
     if (!window.confirm("Re-synthesize every quarter already in the Feedback Log? " +
                          "This replaces the published top issues / QoQ / YoY for all of them."))
       return;
-    runJob("setup", el("setupBtn"), el("setupState"));
+    runJob("setup", el("refreshThemesBtn"), el("refreshThemesState")).then(updateRefreshButtons);
+  });
+
+  el("refreshAllBtn").addEventListener("click", function () {
+    if (!window.confirm("Re-synthesize every quarter already in the Feedback Log, and " +
+                         "rebuild the quant dashboard? This replaces every published " +
+                         "top issues / QoQ / YoY and every quant figure."))
+      return;
+    // Same "themes-analyze" concurrency group as every other run, so these two queue
+    // one after the other on GitHub's side rather than racing to commit public/.
+    el("refreshAllBtn").disabled = true;
+    runJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState"))
+      .then(function () { return runJob("setup", el("refreshThemesBtn"), el("refreshThemesState")); })
+      .then(updateRefreshButtons);
   });
 
   /* ---------- status ---------- */
@@ -533,9 +551,11 @@
       el("updateState").innerHTML = u.text +
         (u.url ? ' · <a href="' + u.url + '" target="_blank" rel="noopener">log</a>' : "");
       var r = runLabel(body.workflows && body.workflows.refresh_dashboard);
-      el("refreshState").innerHTML = r.text + (r.url ? ' · <a href="' + r.url + '" target="_blank" rel="noopener">log</a>' : "");
+      el("refreshDashboardState").innerHTML = "Refresh Dashboard: " + r.text +
+        (r.url ? ' · <a href="' + r.url + '" target="_blank" rel="noopener">log</a>' : "");
       var s = runLabel(body.workflows && body.workflows.setup);
-      el("setupState").innerHTML = s.text + (s.url ? ' · <a href="' + s.url + '" target="_blank" rel="noopener">log</a>' : "");
+      el("refreshThemesState").innerHTML = "Refresh Themes: " + s.text +
+        (s.url ? ' · <a href="' + s.url + '" target="_blank" rel="noopener">log</a>' : "");
 
       var banners = "";
       if (!keys.length) {
