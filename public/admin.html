@@ -166,6 +166,18 @@
         <button class="primary" id="updateBtn" type="button" disabled>Update Dashboard</button>
       </div>
       <p class="small muted" id="updateState" style="margin:10px 0 0"></p>
+
+      <hr class="rule">
+
+      <p class="small" style="margin:0 0 4px"><b>Refresh Dashboard</b></p>
+      <p class="small muted" style="margin:0 0 10px">Rebuilds the quant dashboard from
+        whatever's currently in Box — no new survey needed. Use this after adding,
+        editing, or deleting files directly in Box, in either the Quant Data Folder or
+        the New Survey Directory.</p>
+      <div class="row">
+        <button id="refreshBtn" type="button" disabled>Refresh Dashboard</button>
+      </div>
+      <p class="small muted" id="refreshState" style="margin:10px 0 0"></p>
     </div>
 
     <div class="card">
@@ -366,6 +378,7 @@
       el("trackerName").textContent = tracker ? (tracker.name || tracker.id) : "(none selected)";
       el("uploadFolderName").textContent = uploadFolder ? (uploadFolder.name || uploadFolder.id) : "(none selected)";
       el("quantFolderName").textContent = quantFolder ? (quantFolder.name || quantFolder.id) : "(none selected)";
+      el("refreshBtn").disabled = !quantFolder;
       if (pendingBoxNotice) {
         el("boxNotice").textContent = pendingBoxNotice;
         pendingBoxNotice = null;
@@ -588,6 +601,10 @@
       .then(function () { button.disabled = false; updateAnalysisReadiness(); });
   }
 
+  el("refreshBtn").addEventListener("click", function () {
+    runJob("refresh_dashboard", el("refreshBtn"), el("refreshState"), null);
+  });
+
   el("updateBtn").addEventListener("click", function () {
     if (!stagedUpload) return;
     runJob("update_dashboard", el("updateBtn"), el("updateState"), {
@@ -628,6 +645,8 @@
       var u = runLabel(body.workflows && body.workflows.update_dashboard);
       el("updateState").innerHTML = u.text +
         (u.url ? ' · <a href="' + u.url + '" target="_blank" rel="noopener">log</a>' : "");
+      var r = runLabel(body.workflows && body.workflows.refresh_dashboard);
+      el("refreshState").innerHTML = r.text + (r.url ? ' · <a href="' + r.url + '" target="_blank" rel="noopener">log</a>' : "");
       var s = runLabel(body.workflows && body.workflows.setup);
       el("setupState").innerHTML = s.text + (s.url ? ' · <a href="' + s.url + '" target="_blank" rel="noopener">log</a>' : "");
 

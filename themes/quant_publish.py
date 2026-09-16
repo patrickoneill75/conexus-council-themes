@@ -1,18 +1,19 @@
 """Grouping unpivoted survey rows by meeting and writing public/quant-dashboard.json.
 
 Every run replaces the file wholesale — see quant_extract.py and quant_data.py for why:
-the source is "everything currently in the Quant Data Folder," not a running log, so
-there is nothing to merge. A meeting with no Council Meeting Helper row is skipped
-rather than published half-resolved, since Year/Quarter/Region only ever come from
-that lookup (confirmed with the user — the survey export itself never carries them).
+the source is "everything currently in Box," not a running log, so there is nothing to
+merge. A meeting with no Council Meeting Helper row is skipped rather than published
+half-resolved, since Year/Quarter/Region only ever come from that lookup (confirmed
+with the user — the survey export itself never carries them).
 """
 from __future__ import annotations
 
 import json
+import sys
 from collections import defaultdict
 from datetime import date, datetime, timezone
 
-from . import config
+from . import box_store, config, quant_data, quant_extract
 from .tracker import survey_id
 
 
@@ -74,3 +75,65 @@ def save(data: dict) -> None:
     config.QUANT_DASHBOARD_JSON.write_text(
         json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
     )
+
+
+def refresh() -> None:
+    """Rebuild the whole quant dashboard from whatever's currently in Box: the Quant
+    Data Folder's two reference files, and every survey file in the New Survey
+    Directory. No new upload needed -- used both as the second half of a normal
+    Update Dashboard run, and on its own from the control panel's "Refresh Dashboard"
+    button, e.g. after adding, editing, or deleting files directly in Box.
+
+    A no-op (prints why, returns) if no Quant Data Folder has been picked yet -- that's
+    a normal, not-yet-configured state, not an error.
+    """
+    folder_id = box_store.quant_folder_id()
+    if not folder_id:
+        print("Skipping quant dashboard update: no Quant Data Folder has been picked "
+              "yet on the control panel.")
+        return
+
+    print(f"Listing the Quant Data Folder ({folder_id}) for reference files...")
+    quant_files = {f["name"]: f["id"] for f in box_store.list_folder(folder_id)}
+    helper_id = quant_files.get(quant_data.HELPER_FILENAME)
+    categories_id = quant_files.get(quant_data.CATEGORIES_FILENAME)
+    if not helper_id:
+        print(f"ERROR: '{quant_data.HELPER_FILENAME}' not found in the Quant Data "
+              "Folder.", file=sys.stderr)
+        raise SystemExit(1)
+    if not categories_id:
+        print(f"ERROR: '{quant_data.CATEGORIES_FILENAME}' not found in the Quant Data "
+              "Folder.", file=sys.stderr)
+        raise SystemExit(1)
+
+    print(f"Downloading {quant_data.HELPER_FILENAME}...")
+    helper = quant_data.read_helper(box_store.download(helper_id))
+    print(f"  {len(helper)} meeting(s) in the helper.")
+
+    print(f"Downloading {quant_data.CATEGORIES_FILENAME}...")
+    categories = quant_data.read_categories(box_store.download(categories_id))
+    print(f"  {len(categories)} metric(s) mapped.")
+
+    print("Listing the New Survey Directory for survey files...")
+    survey_files = box_store.list_folder(box_store.upload_folder_id())
+    survey_names = [f["name"] for f in survey_files
+                    if f["name"].lower().endswith((".xlsx", ".csv"))
+                    and not f["name"].startswith("~$")]
+    print(f"Found {len(survey_names)} survey file(s): {', '.join(survey_names) or '(none)'}")
+    by_name = {f["name"]: f["id"] for f in survey_files}
+
+    all_rows: list[dict] = []
+    source_files: dict = {}
+    for name in survey_names:
+        print(f"  Reading {name}...")
+        content = box_store.download(by_name[name])
+        rows = quant_extract.unpivot(name, content)
+        print(f"    {len(rows)} row(s).")
+        all_rows.extend(rows)
+        for row in rows:
+            source_files[row["meeting_date"]] = name
+
+    print("Building the quant dashboard...")
+    data = build(all_rows, helper, categories, source_files)
+    save(data)
+    print(f"Published {len(data)} meeting(s) to {config.QUANT_DASHBOARD_JSON}.")

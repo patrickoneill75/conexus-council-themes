@@ -17,8 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from themes import box_store, claude_client, config, publish, quant_data, quant_extract  # noqa: E402
-from themes import quant_publish, survey_extract  # noqa: E402
+from themes import box_store, claude_client, config, publish, quant_publish, survey_extract  # noqa: E402
 from themes.tracker import Tracker, quarters_before, rows_in, survey_id as make_survey_id  # noqa: E402
 
 
@@ -66,59 +65,6 @@ def update_themes(survey_file_id: str, survey_file_name: str, year: int, quarter
           f"{len(result['qoq'])} QoQ, {len(result['yoy'])} YoY.")
 
 
-def update_quant() -> None:
-    folder_id = box_store.quant_folder_id()
-    if not folder_id:
-        print("Skipping quant dashboard update: no Quant Data Folder has been picked "
-              "yet on the control panel.")
-        return
-
-    print(f"Listing the Quant Data Folder ({folder_id}) for reference files...")
-    quant_files = {f["name"]: f["id"] for f in box_store.list_folder(folder_id)}
-    helper_id = quant_files.get(quant_data.HELPER_FILENAME)
-    categories_id = quant_files.get(quant_data.CATEGORIES_FILENAME)
-    if not helper_id:
-        print(f"ERROR: '{quant_data.HELPER_FILENAME}' not found in the Quant Data "
-              "Folder.", file=sys.stderr)
-        raise SystemExit(1)
-    if not categories_id:
-        print(f"ERROR: '{quant_data.CATEGORIES_FILENAME}' not found in the Quant Data "
-              "Folder.", file=sys.stderr)
-        raise SystemExit(1)
-
-    print(f"Downloading {quant_data.HELPER_FILENAME}...")
-    helper = quant_data.read_helper(box_store.download(helper_id))
-    print(f"  {len(helper)} meeting(s) in the helper.")
-
-    print(f"Downloading {quant_data.CATEGORIES_FILENAME}...")
-    categories = quant_data.read_categories(box_store.download(categories_id))
-    print(f"  {len(categories)} metric(s) mapped.")
-
-    print("Listing the New Survey Directory for survey files...")
-    survey_files = box_store.list_folder(box_store.upload_folder_id())
-    survey_names = [f["name"] for f in survey_files
-                    if f["name"].lower().endswith((".xlsx", ".csv"))
-                    and not f["name"].startswith("~$")]
-    print(f"Found {len(survey_names)} survey file(s): {', '.join(survey_names) or '(none)'}")
-    by_name = {f["name"]: f["id"] for f in survey_files}
-
-    all_rows: list[dict] = []
-    source_files: dict = {}
-    for name in survey_names:
-        print(f"  Reading {name}...")
-        content = box_store.download(by_name[name])
-        rows = quant_extract.unpivot(name, content)
-        print(f"    {len(rows)} row(s).")
-        all_rows.extend(rows)
-        for row in rows:
-            source_files[row["meeting_date"]] = name
-
-    print("Building the quant dashboard...")
-    data = quant_publish.build(all_rows, helper, categories, source_files)
-    quant_publish.save(data)
-    print(f"Published {len(data)} meeting(s) to {config.QUANT_DASHBOARD_JSON}.")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--survey-file-id", required=True)
@@ -138,7 +84,7 @@ def main() -> int:
         return 1
 
     update_themes(args.survey_file_id, args.survey_file_name, args.year, args.quarter, args.region)
-    update_quant()
+    quant_publish.refresh()
     return 0
 
 

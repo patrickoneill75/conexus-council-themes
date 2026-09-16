@@ -302,22 +302,23 @@ async function handleApi(route, request, env) {
       if (response.ok) quant = await response.json();
     } catch (e) { /* nothing published yet */ }
 
-    let updateDashboard = { runs: [] }, setupRun = { runs: [] };
+    let updateDashboard = { runs: [] }, setupRun = { runs: [] }, refreshRun = { runs: [] };
     if (env.GITHUB_TOKEN && env.GITHUB_REPO) {
-      [updateDashboard, setupRun] = await Promise.all([
+      [updateDashboard, setupRun, refreshRun] = await Promise.all([
         workflowRuns(env, "update_dashboard.yml"),
         workflowRuns(env, "setup_analysis.yml"),
+        workflowRuns(env, "refresh_dashboard.yml"),
       ]);
     }
     return json({
       themes, quant,
-      workflows: { update_dashboard: updateDashboard, setup: setupRun },
+      workflows: { update_dashboard: updateDashboard, setup: setupRun, refresh_dashboard: refreshRun },
     });
   }
 
   // ---- POST /api/run -----------------------------------------------------------------
   // { job: "update_dashboard", inputs: { survey_file_id, survey_file_name, year, quarter,
-  //   region } } or { job: "setup" }
+  //   region } } or { job: "setup" } or { job: "refresh_dashboard" }
   if (route === "run" && method === "POST") {
     const denied = await requireAuth(request, env);
     if (denied) return denied;
@@ -332,6 +333,7 @@ async function handleApi(route, request, env) {
     // Allowlist: never interpolate caller input into the workflow path.
     const workflow = {
       update_dashboard: "update_dashboard.yml", setup: "setup_analysis.yml",
+      refresh_dashboard: "refresh_dashboard.yml",
     }[job];
     if (!workflow) return json({ error: "Unknown job" }, 400);
 
