@@ -50,6 +50,19 @@ def read_helper(content: bytes) -> dict[date, dict]:
     """
     text = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
+    fieldnames = {(f or "").strip().lower() for f in (reader.fieldnames or [])}
+    if not fieldnames & {"meeting date", "year", "quarter", "region"}:
+        # None of the columns this whole function depends on are present at all -- almost
+        # always means the uploaded file isn't really a Helper export (wrong file picked,
+        # or a spreadsheet saved in some other format and just renamed to .csv on the way
+        # in). Silently returning {} here is how that turns into every meeting being
+        # skipped downstream with no clue why -- fail loudly instead.
+        raise ValueError(
+            f"'{HELPER_FILENAME}' doesn't look like a Council Meeting Helper export -- "
+            "none of its expected columns (Meeting Date, Year, Quarter, Region) were "
+            f"found. Its header reads: {sorted(f for f in (reader.fieldnames or []) if f)!r}. "
+            "Check the uploaded file is really a .csv export from the Helper form."
+        )
     out: dict[date, dict] = {}
     for row in reader:
         meeting_date = parse_date(row.get("Meeting Date", ""))

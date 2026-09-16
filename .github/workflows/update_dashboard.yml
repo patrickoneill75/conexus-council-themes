@@ -41,7 +41,12 @@ jobs:
         run: |
           git config user.name  "themes-bot"
           git config user.email "actions@github.com"
-          git add public/ data/
+          # data/ doesn't exist until the Feedback Log migration has run once (or this
+          # run itself creates it) -- `git add` on a path that doesn't exist on disk at
+          # all is a hard error that aborts the whole command, unlike a path that exists
+          # but has nothing new in it, so this can't be a plain `git add public/ data/`.
+          git add public/
+          if [ -d data ]; then git add data/; fi
           if git diff --staged --quiet; then
             echo "Nothing changed."
           else
