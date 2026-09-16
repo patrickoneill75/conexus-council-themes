@@ -821,38 +821,38 @@
         "count": 6,
         "example": "Go above and beyond using AI in generic, discuss what is after AI",
         "subcategory": "Future Topic Requests",
-        "summary": "Want AI content taken further — real deployment cases, ROI, and what comes after AI"
+        "summary": "Want AI content taken further — real deployment examples, ROI, and what comes after AI"
       },
       {
         "category": "Logistics",
         "count": 4,
         "example": "Stay on time with agenda. All out of time left",
         "subcategory": "Agenda & Schedule",
-        "summary": "Keep the agenda on time and hold speakers to their slots; better break structure"
+        "summary": "Keep the agenda on time and hold speakers to their slots; manage breaks better"
       },
       {
         "category": "Content",
         "count": 5,
         "example": "More interested in AI adoption for increasing capacity of existing workforce — those jobs that we have a difficult job filling",
         "subcategory": "Training & Workforce Development",
-        "summary": "Workforce development, training and using AI to expand capacity of existing staff"
+        "summary": "Workforce development and training, including using AI to boost capacity of hard-to-fill roles"
       },
       {
         "category": "Content",
         "count": 4,
-        "example": "A lot of discussion around raw materials and lead times. What do we do?",
+        "example": "AI in supply chain/logistics, not just manufacturing",
         "subcategory": "Future Topic Requests",
-        "summary": "Broader operational topics beyond AI: supply chain, raw materials/lead times, capital and infrastructure planning, industry outlooks"
+        "summary": "Broaden topics beyond manufacturing AI — supply chain, raw materials/lead times, capital and utility infrastructure planning, industry outlooks"
       },
       {
         "category": "Networking",
-        "count": 3,
-        "example": "Share business cards at beginning - maybe a box to drop them off so everyone can get more info on every other company",
+        "count": 2,
+        "example": "List attendees by industry",
         "subcategory": "Attendee Connections",
-        "summary": "Make it easier to connect — attendee lists by industry and structured contact sharing"
+        "summary": "Make it easier to connect — attendee lists by industry and structured business card exchange"
       }
     ],
-    "generated": "2026-09-16T15:14:07+00:00",
+    "generated": "2026-09-16T15:34:18+00:00",
     "qoq": [],
     "sourceFile": "2026-Q3 Central (Post-Meeting Survey.csv)",
     "yoy": []
@@ -864,38 +864,38 @@
         "count": 3,
         "example": "Too much time spent on intros and the panel was cut short; low value in hearing people's bios at length.",
         "subcategory": "Agenda & Schedule",
-        "summary": "Cut long intros and give panels more time"
-      },
-      {
-        "category": "Content",
-        "count": 2,
-        "example": "The panel answers were pretty predictable. Prep panelists and presenters with clear expectations.",
-        "subcategory": "Presentation & Materials",
-        "summary": "Prep panelists and tour hosts for more substantive, less generic content"
-      },
-      {
-        "category": "Content",
-        "count": 2,
-        "example": "Especially if schools could collaborate and present what opportunities they have — Ivy Tech, Vincennes, Purdue, etc. More 2-year associates degree focused.",
-        "subcategory": "Training & Workforce Development",
-        "summary": "Want workforce/training examples from near peers and local schools, including 2-year programs"
+        "summary": "Trim intros and give panels more time"
       },
       {
         "category": "Content",
         "count": 2,
         "example": "Continue AI. It would be helpful to show live use cases.",
         "subcategory": "Future Topic Requests",
-        "summary": "More AI with live use cases, and more focus on small/midsized manufacturers"
+        "summary": "More AI content with live use cases, and focus on small/midsized manufacturers"
+      },
+      {
+        "category": "Content",
+        "count": 2,
+        "example": "Especially if schools could collaborate and present what opportunities they have — Ivy Tech, Vincennes, Purdue, etc. More 2-year associates degree focused.",
+        "subcategory": "Training & Workforce Development",
+        "summary": "Showcase workforce training from near-peer companies and 2-year schools"
+      },
+      {
+        "category": "Content",
+        "count": 2,
+        "example": "Companies giving the tour should help highlight new technologies, not just a general manufacturing tour.",
+        "subcategory": "Presentation & Materials",
+        "summary": "Prep panelists and tour hosts to deliver less predictable, more technology-focused content"
       },
       {
         "category": "Logistics",
-        "count": 3,
+        "count": 2,
         "example": "Have wifi access posted.",
         "subcategory": "Venue & Audio/Visual",
-        "summary": "Post wifi access and modernize on-site logistics like the paper survey"
+        "summary": "Post wifi access info on site"
       }
     ],
-    "generated": "2026-09-16T15:14:14+00:00",
+    "generated": "2026-09-16T15:34:23+00:00",
     "qoq": [],
     "sourceFile": "2026-Q3 Southern (Post-Meeting Survey.csv)",
     "yoy": []
