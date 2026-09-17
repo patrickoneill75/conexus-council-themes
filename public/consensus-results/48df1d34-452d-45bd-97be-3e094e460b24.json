@@ -1,151 +1,157 @@
 {
-  "generatedAt": "2026-09-17T13:37:01+00:00",
+  "generatedAt": "2026-09-17T13:39:38+00:00",
   "questions": [
     {
       "consensus": [],
       "id": "q1-d947dc41",
       "needsMoreInfo": [
-        "This is a name-collection field with no thematic content to analyze."
+        "This is a simple identification question with no thematic content to analyze; no follow-up needed."
       ],
-      "responseCount": 3,
+      "responseCount": 4,
       "text": "What is your first and last name?",
       "themes": []
     },
     {
-      "consensus": [],
+      "consensus": [
+        "All respondents provided a clear company name with no ambiguity."
+      ],
       "id": "q2-9aaeb0f7",
       "needsMoreInfo": [
-        "Unclear what specific role Hoss Brothers LLC plays (carrier, 3PL, broker, etc.) -- needs confirmation.",
-        "Only two respondents so far; too few to identify company-type patterns for agenda planning."
+        "Unclear what specific industry segment Hoss Brothers LLC and Spot Inc. operate in (carrier, 3PL, logistics, etc.)",
+        "No information yet on company size or region within Indiana.",
+        "Need to confirm respondent's role/title at each company for tailoring later questions."
       ],
-      "responseCount": 2,
+      "responseCount": 3,
       "text": "What is the name of your company?",
       "themes": [
         {
-          "deepDive": "With only two respondents identified so far, the sample spans very different vantage points on trucking issues -- one as a shipper/manufacturer relying on freight services, and one as a likely carrier or logistics provider. This diversity is useful for the agenda but too small a sample to generalize industry-wide priorities from company identity alone.",
+          "deepDive": "The three named companies suggest the committee draws from distinct segments of the supply chain rather than a single industry cluster. This diversity is useful for shaping a trucking-focused agenda, since perspectives will differ between a shipper (manufacturer) and carriers/logistics providers. No further detail is available yet on company size, region, or specific role of each respondent within their organization.",
           "details": [
-            "Cook Medical is a large medical device manufacturer.",
-            "Hoss Brothers LLC appears to be a smaller, likely family-run trucking or logistics company."
+            "Cook Medical represents manufacturing/medical devices.",
+            "Hoss Brothers LLC and Spot Inc. likely represent carrier/logistics or trucking-related operations.",
+            "This spread reflects the intended cross-section of the freight advisory committee."
           ],
-          "summary": "Respondents represent distinct segments of the freight ecosystem: a large manufacturer and a smaller carrier/logistics operator."
+          "summary": "Respondents represent a mix of industries across the freight ecosystem."
         }
       ]
     },
     {
       "consensus": [
-        "All three respondents are grappling with root-cause, still-unresolved problems rather than solved challenges they can showcase.",
-        "None of the three challenges are primarily about driver shortages or regulation in the traditional trucking-industry sense -- they span fleet economics, infrastructure/safety, and sustainability."
+        "Trucking cost pressure is widely felt, whether as a shipper deciding on a fleet or a carrier/broker managing margins.",
+        "Driver labor (availability and wage cost) is repeatedly cited as a root driver of trucking economics challenges."
       ],
       "id": "q2-2566928f",
       "needsMoreInfo": [
-        "Respondent 1: no detail yet on what ROI threshold or alternative options (leasing, dedicated carriage, 3PL) they've considered.",
-        "Respondent 2: unclear whether the cardboard/reverse logistics issue is driven by cost, regulation, customer demand, or internal sustainability goals -- 'alignment' remains vague.",
-        "Respondent 3: unclear how widespread this truck parking safety issue is beyond the one named corridor, or whether it reflects a broader statewide truck parking shortage.",
-        "No respondent has yet identified a named peer or expert willing to speak on their topic as a panelist."
+        "No detail yet on what ROI threshold or specific capital costs would make an in-house fleet viable for the manufacturer.",
+        "Unclear whether the shipper-carrier rate mismatch is a widespread market pattern among committee members or specific to Respondent 4's lanes.",
+        "The truck parking safety issue lacks data on frequency, incident history, or whether other regional members experience it too.",
+        "Reverse logistics sustainability barrier (supplier capability vs. regulation vs. supply chain design) is not yet pinned down.",
+        "No representation yet from a trucking company or driver-side perspective on labor shortage root causes beyond wages."
       ],
-      "responseCount": 3,
+      "responseCount": 4,
       "text": "What are your biggest challenges around trucking right now? What problems are you trying to solve?",
       "themes": [
         {
-          "deepDive": "This respondent is weighing a build-vs-buy decision for freight capacity, and framed it explicitly as an ROI problem rather than an operational one. When pushed on whether labor or capital was the bigger blocker, they clarified ROI is the deciding factor -- suggesting capital and labor costs both feed into a return calculation that manufacturers outside the trucking industry struggle to model. This points to a need for panelists who can speak to fleet cost/benefit analysis or alternatives (dedicated contract carriage, 3PL partnerships) for shippers without in-house trucking expertise.",
+          "deepDive": "Two distinct decision-makers are hitting the same underlying wall from different sides of the transaction: a shipper/manufacturer can't make fleet ownership pencil out because labor and capital costs erode ROI, while a carrier/broker can't pass through rising driver-wage-driven costs to shippers. Both point to structural labor cost inflation (not just cyclical shortage) as the root cause, with the ELD mandate cited as a specific historical trigger for wage escalation. This suggests the agenda could pair a 'make vs. buy fleet' discussion with a rate/margin discussion, since they're two symptoms of the same labor cost root cause. No respondent offered a solution yet -- both are still characterizing the problem.",
           "details": [
-            "Capital equipment costs and a persistent driver/labor shortage are the two named cost drivers.",
-            "ROI justification, not labor shortage alone, is described as the primary decision barrier.",
-            "The concern centers on whether an in-house fleet fits a manufacturer's core competency."
+            "A manufacturer weighing an in-house fleet can't justify the ROI given high equipment capital costs plus an ongoing driver labor shortage.",
+            "A broker/carrier respondent says carrier buy rates have risen 'exponentially' since the pandemic while sell rates to shippers have stayed flat, compressing margins on dedicated lanes.",
+            "Driver wages are named as the primary long-term cost driver, traced back to the 2018/2019 ELD mandate, with fuel as a shorter-term factor."
           ],
-          "summary": "Fleet economics are a make-or-break question for manufacturers considering in-house trucking."
+          "summary": "Trucking cost economics are being squeezed from both sides, driven largely by driver wages and labor availability."
         },
         {
-          "deepDive": "The respondent was careful to distinguish this from a direct operational problem today, framing it instead as a latent risk -- comparable to a vehicle sitting in a highway emergency lane -- that could affect their operations if their fleet grows. This suggests a broader truck parking shortage issue (drivers stopping in unsafe, informal locations because designated parking is unavailable), which is a known statewide freight issue but here surfaced through a very localized, specific example.",
+          "deepDive": "This respondent frames the issue partly as a future risk ('one day Hoss Brothers may have a powerful enough fleet to be impacted') rather than a current operational pain point, distinguishing it from the other three respondents' immediate business problems. It's a narrow, hyper-local infrastructure/safety issue rather than an industry-wide trend, so it may need corroboration from other members or INDOT/MPO data on truck parking capacity before treating it as a broader agenda theme.",
           "details": [
-            "Specific location named: English Ave and Brookville Road, between Arlington Road and I-465 on the east side of Indianapolis.",
-            "Wide trucks parking near (not blocking) travel lanes narrow the right-of-way, compounding existing speeding issues.",
-            "Concern is currently community/safety-focused rather than an active operational disruption for the respondent's own fleet."
+            "One respondent flagged dangerous semi-truck parking along specific Indianapolis roads (English Ave/Brookville Rd near I-465) narrowing lanes and creating safety hazards.",
+            "The concern is currently more community/safety-driven than operational, since their own fleet isn't yet large enough to be directly affected.",
+            "Trucks are described as parking adjacent to travel lanes (not blocking them outright), similar to a vehicle sitting in a highway emergency lane."
           ],
-          "summary": "Roadside semi-truck parking is creating a safety hazard in narrow, congested corridors near Indianapolis."
+          "summary": "Truck parking -- both safety-related roadside parking and its ripple effects -- is a live infrastructure concern."
         },
         {
-          "deepDive": "Unlike the other two responses, this challenge isn't about trucking capacity or safety but about the packaging and materials side of reverse logistics -- an adjacent freight concern. When pressed on what's blocking alignment (supply chain complexity, supplier capability, regulation), the respondent gave a general answer about building a 'sustainable' supply chain, indicating the problem is still loosely defined and may need further scoping before it's actionable for an agenda item.",
+          "deepDive": "This response stands apart from the trucking-cost and infrastructure themes, suggesting reverse logistics sustainability may be a peripheral topic rather than a core trucking-agenda item. The respondent wasn't able to pinpoint whether the barrier is supplier capability, regulatory pressure, or supply chain design, leaving the root cause largely uncharacterized. This gap suggests a need for direct follow-up or a peer speaker from Cook Medical to unpack what 'aligning cost and sustainability' actually requires operationally.",
           "details": [
-            "Focus is on reducing cardboard usage in return-shipment handling.",
-            "Respondent describes the core challenge as needing environmental impact and cost/complexity goals to 'align.'",
-            "Root cause traced to broader supply chain design, not a specific regulatory or supplier constraint."
+            "One respondent's challenge is reducing cardboard usage in reverse logistics rather than trucking capacity or cost.",
+            "They describe difficulty aligning environmental/waste goals with cost and complexity of handling returns.",
+            "The root blocker remains vague -- described only as making the supply chain 'work in a sustainable way.'"
           ],
-          "summary": "Reverse logistics and packaging waste reduction are creating tension between sustainability and cost/complexity."
+          "summary": "Sustainability and packaging waste are emerging concerns in reverse logistics, distinct from core trucking issues."
         }
       ]
     },
     {
       "consensus": [
-        "Each respondent points to a different leading organization, with no overlap, indicating a wide, fragmented landscape of examples rather than one clear leader.",
-        "All three examples involve organizations tackling a structural or systemic problem (profitability, waste, infrastructure) rather than incremental tweaks."
+        "Respondents can each point to at least one specific named organization or model they view as a leader.",
+        "Leadership examples span very different problems (fleet profitability, reverse logistics, safety infrastructure, 3PL margins), showing no single shared definition of 'leading the way.'"
       ],
       "id": "q3-0664b211",
       "needsMoreInfo": [
-        "No direct contact or confirmation that IRG Transport, VW, or the tactical urbanism team would be willing/available to speak.",
-        "Unclear how IRG Transport's fleet spinout actually achieves profitability -- respondent could describe the outcome but not the mechanics.",
-        "Details on VW's pallet reuse process (refurbishing vs. straight reuse, logistics of the return shipping) are still vague.",
-        "The scope and maturity of the tactical urbanism/truck-parking pipeline is unclear -- is this a formal program or ad hoc effort?",
-        "Respondent 3's initial confusion ('leading the way on what?') suggests the question may need more framing/context for some members."
+        "No detail on IRG Transport's actual financial or operational mechanics for making a spun-off fleet profitable.",
+        "Unclear what specific technology, policy, or process changes tactical urbanism teams are using that could translate to industry truck parking solutions.",
+        "Not clear whether large 3PLs' advantage (TQL, Coyote) is replicable by mid-size players or is purely a function of scale/tenure.",
+        "No detail on how VW's pallet reuse process actually works operationally (refurbishing vs. simple reuse).",
+        "One respondent (Hoss Brothers) admits limited knowledge of the tactical urbanism solution, so its relevance/fit for the committee is unconfirmed."
       ],
-      "responseCount": 3,
+      "responseCount": 4,
       "text": "Do you know of others in the industry who are leading the way?",
       "themes": [
         {
-          "deepDive": "This example resonates because it addresses a structural question many manufacturer-shippers face: whether to keep trucking as an internal cost or convert it into a revenue-generating unit. The respondent's follow-up answers focused entirely on the profitability angle, suggesting the committee's manufacturer members care less about the operational mechanics of the fleet and more about the business model behind it. This could be a strong panel topic pairing a manufacturer with a captive fleet against traditional carriers.",
+          "deepDive": "This example points to a broader trend of shippers vertically integrating transportation rather than relying solely on outside carriers or 3PLs. It's presented as a model worth studying for the committee because it directly tackles the profitability question that many manufacturers struggle with when running private fleets. Only one respondent raised this, but it's a concrete, named example with a clear operational rationale.",
           "details": [
-            "IRG Transport, a food processing company, spun out its own fleet into a self-sustaining, separate business.",
-            "The core interest is solving how manufacturers make in-house transportation profitable rather than just a cost center."
+            "IRG Transport, a food processing company, spun off a self-sustaining fleet as a complementary business.",
+            "Respondent framed the core question as 'how do you make transportation profitable as a manufacturer.'"
           ],
-          "summary": "Spinning manufacturing fleets into standalone, profitable transport businesses is seen as an emerging model worth studying."
+          "summary": "Manufacturers spinning up their own logistics/fleet operations to solve profitability challenges."
         },
         {
-          "deepDive": "Unlike the fleet-spinout example, this theme is less about profitability and more about waste/cardboard reduction and circular supply chain practices. The respondent's own stated goals (reverse logistics, cardboard reduction) suggest this is a live pain point, not just idle curiosity. A panelist from VW or a similar reuse program could directly address a gap the committee has, making this a strong candidate for a peer-education session.",
+          "deepDive": "The respondent frames this less as an innovation and more as a structural advantage of scale and tenure -- larger 3PLs can afford to prune underperforming carriers because they have depth of options. This raises a tension for smaller 3PLs on the committee: is the answer better technology, or is it simply that scale is a moat that's hard to replicate? The response suggests scale/relationships matter more than tech in this respondent's view.",
           "details": [
-            "VW ships used pallets back and reuses them in a closed loop.",
-            "The respondent explicitly said 'I wish we could figure that out,' signaling unmet demand for peer learning on this exact practice."
+            "Named examples include TQL and Coyote as larger 3PLs coping better with margin squeeze.",
+            "Their advantage comes from a bigger, longer-established carrier network, letting them be selective about who stays in-network.",
+            "This is described as an industry-wide 3PL problem, not unique to one company."
           ],
-          "summary": "Reverse logistics innovation, like closed-loop pallet reuse, is viewed as an interesting sustainability model but one respondents haven't cracked themselves."
+          "summary": "Scale gives large 3PLs an edge in managing carrier relationships and margin pressure."
         },
         {
-          "deepDive": "This theme surfaces a potential structural gap rather than a proven best practice: there's no clear pipeline connecting industry-reported traffic/parking problems to the quick-build urbanism teams solving them. The respondent frames this as an opportunity rather than a solution -- suggesting the committee could play a convening role by inviting DPW/INDOT quick-build staff to explain their process and how industry could feed them problem reports. This is less mature than the other two themes and would benefit from a speaker who can clarify scope and industry relevance.",
+          "deepDive": "This is a smaller-scale but concrete example of circular-economy thinking in freight operations. It's less about safety or margins and more about waste reduction and packaging reuse -- a distinct concern from the trucking-capacity and profitability themes raised by other respondents. It suggests appetite for a session on reverse logistics best practices.",
           "details": [
-            "DPW, INDOT, and grassroots teams are doing 'quick-build tactical urbanism' on Indianapolis's east side.",
-            "The respondent admits limited knowledge of the work and unclear applicability to their own company (Hoss Brothers)."
+            "VW is cited for shipping used pallets back and reusing them.",
+            "The respondent explicitly wants to figure out how to do this themselves, tying it to their own cardboard/reverse logistics goals."
           ],
-          "summary": "Local public-private tactical urbanism efforts are addressing truck parking and safety, but the connection to industry is informal and underdeveloped."
+          "summary": "Reverse logistics innovation, like pallet reuse programs, is seen as an aspirational model others want to replicate."
         }
       ]
     },
     {
       "consensus": [
-        "No respondent has a personal innovative trucking project or success story to formally present."
+        "Most members do not have their own innovative trucking project or success story ready to present."
       ],
       "id": "q4-be38f656",
       "needsMoreInfo": [
-        "Whether INDOT has an official proposal or timeline for the rest-stop-to-truck-parking conversion idea worth a full presentation.",
-        "Whether any respondent's organization, despite saying 'no', might still have relevant but under-recognized work worth a lighter-touch panel spot.",
-        "Respondent 1's confusion suggests possible survey design issue -- unclear if their 'no' answers reflect genuine lack of content or fatigue with the survey."
+        "Need to identify the specific INDOT staff involved in the rest-stop-to-truck-parking concept to invite as a speaker.",
+        "Unclear whether any respondents might have relevant stories if prompted with more specific topic examples.",
+        "Respondent 1's confusion ('Are you still asking questions?') suggests survey fatigue or unclear question flow that may have cut off a fuller answer on priority topics."
       ],
-      "responseCount": 3,
+      "responseCount": 4,
       "text": "Do you have an innovative project or a success story around trucking that you would like to share at the next meeting?",
       "themes": [
         {
-          "deepDive": "This suggests the panel-building effort for this meeting will need to rely on outreach beyond this initial survey group, or on staff/INDOT to source speakers directly rather than crowdsourcing from the committee itself. Respondent 1's confusion at the follow-up question ('Are you still asking questions?') may also indicate survey fatigue or unclear question sequencing, which is worth noting for future survey design.",
+          "deepDive": "This suggests the agenda for the trucking meeting will likely need to be built primarily from INDOT and staff-sourced content or targeted outreach rather than committee-volunteered stories. It may be worth following up individually with these respondents once more specific topics are set, since a generic ask didn't surface anything.",
           "details": [
-            "Two of three respondents answered simply 'no' or 'I don't think so'.",
-            "No one offered a referral to an outside speaker either."
+            "3 of 4 respondents answered simply 'No' or 'I don't think so'.",
+            "None of these respondents could name a colleague or contact to speak instead."
           ],
-          "summary": "Most respondents have no innovative project or success story of their own to present."
+          "summary": "Most respondents have no innovative project or success story to share."
         },
         {
-          "deepDive": "This ties directly to the chronic truck parking shortage issue common in freight advisory discussions, making it a strong candidate agenda item even though it's secondhand information rather than a first-party success story. Since it originated with INDOT, the meeting organizers may want to loop in INDOT staff directly to present or validate the concept rather than relying on the respondent to lead it. This could also serve as a segue into a broader truck parking capacity conversation for the agenda.",
+          "deepDive": "This is the one substantive, actionable lead from the question and could become a panel topic or agenda item, potentially with an INDOT representative invited to elaborate. Since it's described as something the respondent 'heard' rather than owns, the meeting organizers should identify the actual INDOT staff involved to invite as a speaker rather than relying on the respondent to present.",
           "details": [
-            "The idea reportedly originated from INDOT staff conversations, not the respondent's own project.",
-            "Concept: reduce the number of passenger rest stops to fewer 'flagship' high-volume/border locations, and convert freed-up stops to truck parking.",
-            "Respondent flagged it as 'interesting' and potentially fun to discuss, not a formal proposal."
+            "The idea references INDOT internally discussing converting some traditional rest stops into truck parking.",
+            "The concept pairs this with consolidating passenger car service into fewer 'flagship' high-volume/border rest stops.",
+            "Respondent flagged it as something that could be interesting to bring to the committee."
           ],
-          "summary": "One respondent surfaced a concrete, timely idea worth bringing to the full committee: converting passenger rest stops into truck parking."
+          "summary": "One respondent surfaced a concrete, ready-to-discuss idea: converting passenger rest stops into truck parking."
         }
       ]
     }
