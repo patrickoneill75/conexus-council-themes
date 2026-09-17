@@ -282,15 +282,20 @@ From **Consensus** → **New survey**:
   question's own thread) and uses its own judgement on whether another follow-up would
   actually add value, stopping early rather than padding out to the maximum. No
   per-question flag to configure this — it's inferred from context every time.
+  - **Claude Analyze** — Yes/No, required on every question, defaults to Yes. For a
+    simple field like name or company, set it to No: the batch analysis skips that
+    question entirely (no Claude call, no tokens spent on it) and its raw answers show
+    up instead as a plain table on the results page — see below.
   - **Personalize this question** — optional, and only offered on the second question
-    onward. Point one question at an earlier one, and its wording gets lightly rewritten
-    using everything the respondent said there (including any follow-ups) before it's
-    shown — e.g. "Do you know others leading the way?" becomes "...leading the way in
-    reverse logistics?" once an earlier question established that as the challenge. Falls
-    back to the question's own static text if the source question wasn't reached, Claude
-    is unavailable, or the rewrite call fails — this is wording polish, never something
-    that can block a respondent's progress through the survey. Reordering or removing the
-    source question automatically clears the reference if it's no longer valid.
+    onward. Check any number of earlier questions, and this question's wording gets
+    lightly rewritten using everything the respondent said on all of them (including
+    any follow-ups) before it's shown — e.g. "Do you know others leading the way?"
+    becomes "...leading the way in reverse logistics?" once an earlier answer
+    established that as the challenge. Falls back to the question's own static text if
+    none of the checked questions were reached yet, Claude is unavailable, or the
+    rewrite call fails — this is wording polish, never something that can block a
+    respondent's progress through the survey. Reordering or removing a checked source
+    question automatically drops it from the selection if it's no longer valid.
 - **Responses folder** — the Box folder responses are saved to, as one CSV per survey.
 
 Saving gives you a respondent link (`/consensus/respond.html?survey=<id>`) — share that
@@ -304,7 +309,13 @@ Once responses have come in, **Analyze** (back on the survey list) kicks off
 same file from whatever's in the responses CSV at that point, so it's safe to run again
 after more responses come in. While it runs, the survey row shows a live progress bar
 (which question of how many it's currently synthesizing), not just the GitHub Actions
-run's start time.
+run's start time. That progress count only reflects Claude Analyze: Yes questions --
+the No ones aren't part of the run's synthesis work.
+
+If any questions are set to Claude Analyze: No, the results page opens with a
+**Respondent summary** table above the themed sections -- one row per respondent, one
+column per such question, exactly as answered. It's cropped to 3 rows with a fade and a
+"Show all" button once there's more than that to show.
 
 ### Cost
 

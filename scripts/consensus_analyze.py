@@ -96,9 +96,16 @@ def main() -> int:
     analyzed_response_count = _count_responses(header, rows)
     by_question = _group_by_question(header, rows)
 
-    total_questions = len(survey["questions"])
+    # claudeAnalyze:false questions (e.g. name, company) skip Claude entirely -- no
+    # point spending tokens synthesizing themes out of short factual answers meant to
+    # just be read as a plain table. They still show up in the results page, just as
+    # raw answers in a summary table instead of a themed section.
+    analyzed_questions = [q for q in survey["questions"] if q.get("claudeAnalyze", True)]
+    summary_questions = [q for q in survey["questions"] if not q.get("claudeAnalyze", True)]
+
+    total_questions = len(analyzed_questions)
     questions_out = []
-    for i, question in enumerate(survey["questions"]):
+    for i, question in enumerate(analyzed_questions):
         relay.report_progress(survey_id, i + 1, total_questions, question["text"])
         respondents = by_question.get(question["id"], {})
         threads = []
@@ -123,11 +130,25 @@ def main() -> int:
         print(f"  {len(result['themes'])} theme(s), {len(result['consensus'])} consensus "
               f"bullet(s), {len(result['needsMoreInfo'])} needs-more-info bullet(s).")
 
+    summary_columns = [{"id": q["id"], "text": q["text"]} for q in summary_questions]
+    summary_rows: dict[str, dict[str, str]] = {}
+    for question in summary_questions:
+        print(f"Summarizing {question['text']!r} (not sent to Claude)...")
+        respondents = by_question.get(question["id"], {})
+        for rid, turns in respondents.items():
+            turns.sort(key=lambda t: t[0])
+            first_answer = turns[0][2] if turns else ""
+            summary_rows.setdefault(rid, {})[question["id"]] = first_answer
+
     output = {
         "surveyId": survey_id,
         "surveyName": survey["name"],
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "questions": questions_out,
+        "summary": {
+            "columns": summary_columns,
+            "rows": [{"responseId": rid, "answers": answers} for rid, answers in summary_rows.items()],
+        },
     }
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     config.results_json(survey_id).write_text(
