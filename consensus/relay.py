@@ -45,10 +45,11 @@ def get_survey(survey_id: str) -> dict:
 
 
 @_retry
-def mark_analyzed(survey_id: str) -> None:
+def mark_analyzed(survey_id: str, analyzed_response_count: int) -> None:
     response = requests.post(
         f"{_worker_origin()}/api/consensus/relay/survey/{survey_id}/mark-analyzed",
         headers=_headers(), timeout=30,
+        json={"analyzedResponseCount": analyzed_response_count},
     )
     response.raise_for_status()
 

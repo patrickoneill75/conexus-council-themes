@@ -102,6 +102,7 @@ function buildSurvey(id, body, existing) {
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now,
     analyzedAt: existing ? existing.analyzedAt : null,
+    analyzedResponseCount: existing ? (existing.analyzedResponseCount || 0) : 0,
   };
 }
 
@@ -341,11 +342,19 @@ export async function handleConsensusApi(route, request, env) {
       if (!survey) return json({ error: "Survey not found" }, 404);
       return json(survey);
     }
-    // POST relay/survey/<id>/mark-analyzed
+    // POST relay/survey/<id>/mark-analyzed { analyzedResponseCount }
     if (parts[1] === "survey" && parts.length === 4 && parts[3] === "mark-analyzed" && method === "POST") {
       const survey = await getSurvey(env, parts[2]);
       if (!survey) return json({ error: "Survey not found" }, 404);
+      let body = {};
+      try { body = await request.json(); } catch (e) { /* older caller, no body -- fall back below */ }
       survey.analyzedAt = new Date().toISOString();
+      // How many of the survey's responses this run actually analyzed -- lets the admin
+      // page show "X of Y analyzed" instead of a stale Analyzed/Not-analyzed toggle that
+      // never reflected new responses collected after the last run.
+      survey.analyzedResponseCount = Number.isFinite(Number(body.analyzedResponseCount))
+        ? Math.max(0, Number(body.analyzedResponseCount) | 0)
+        : (survey.responseCount || 0);
       await saveSurvey(env, survey);
       await env.BOX_KV.delete(`${PROGRESS_PREFIX}${parts[2]}`);
       return json({ ok: true });
@@ -476,6 +485,7 @@ export async function handleConsensusApi(route, request, env) {
       id: s.id, name: s.name, questionCount: s.questions.length,
       responseCount: s.responseCount, boxFolderName: s.boxFolderName,
       createdAt: s.createdAt, analyzedAt: s.analyzedAt,
+      analyzedResponseCount: s.analyzedResponseCount || 0,
     })).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     return json({ surveys: summaries });
   }

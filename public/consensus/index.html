@@ -204,11 +204,17 @@
 
   /* ---------- list view ---------- */
 
+  // Reads out how many of the survey's current responses have actually been analyzed,
+  // instead of a binary Analyzed/Not-analyzed toggle -- that toggle never changed back
+  // once new responses came in after the last analysis run, so it kept claiming
+  // "Analyzed" even when there was unanalyzed data sitting in the CSV.
   function statusPill(survey) {
-    if (survey.analyzedAt) return '<span class="pill done">Analyzed</span>';
-    if (survey.responseCount) return '<span class="pill pending">' + survey.responseCount + ' response' +
-      (survey.responseCount === 1 ? "" : "s") + ' -- ready to analyze</span>';
-    return '<span class="pill nodata">No responses yet</span>';
+    var total = survey.responseCount || 0;
+    if (!total) return '<span class="pill nodata">No responses yet</span>';
+    var analyzed = Math.min(survey.analyzedResponseCount || 0, total);
+    var cls = analyzed >= total ? "done" : "pending";
+    return '<span class="pill ' + cls + '">' + analyzed + ' of ' + total + ' response' +
+      (total === 1 ? "" : "s") + ' analyzed</span>';
   }
 
   function loadSurveys() {
