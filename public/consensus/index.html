@@ -85,6 +85,17 @@
   .progress-track { width:100%; height:6px; border-radius:999px; background:var(--wash); overflow:hidden; }
   .progress-fill { height:100%; width:0; background:var(--accent); transition:width .3s ease; }
   .progress-label { font-size:11px; color:var(--text-muted); margin-top:3px; }
+  /* Shown from the instant Analyze is clicked, before any real per-question progress
+     exists -- GitHub Actions needs ~15-30s of its own runner startup (checkout, Python
+     setup, pip install) before the script even begins, and the bar shouldn't just sit
+     hidden and look broken for that whole stretch. */
+  .progress-wrap.indeterminate .progress-fill {
+    width:35%; transition:none; animation:progress-indeterminate 1.1s ease-in-out infinite;
+  }
+  @keyframes progress-indeterminate {
+    0% { margin-left:-35%; }
+    100% { margin-left:100%; }
+  }
   .msg { font-size:12.5px; margin:10px 0 0; }
   .msg.err { color:var(--bad); }
   .msg.ok { color:var(--good); }
@@ -264,10 +275,17 @@
         btn.addEventListener("click", function () {
           btn.disabled = true; btn.textContent = "Starting…";
           var progressEl = el("progress-" + btn.dataset.id);
-          if (progressEl) { progressEl.hidden = true; updateProgressBar(progressEl, null); }
+          // Show the (indeterminate) bar right on click, before the dispatch call has
+          // even returned -- the whole point is not making the admin wait to see
+          // anything happen.
+          if (progressEl) updateProgressBar(progressEl, null);
           api("surveys/" + btn.dataset.id + "/analyze", { method: "POST" })
             .then(function () { pollAnalyzeStatus(btn.dataset.id, btn); })
-            .catch(function (e) { window.alert(e.message); btn.disabled = false; btn.textContent = "Analyze"; });
+            .catch(function (e) {
+              window.alert(e.message);
+              btn.disabled = false; btn.textContent = "Analyze";
+              if (progressEl) progressEl.hidden = true; // dispatch failed -- nothing is actually running
+            });
         });
       });
     });
@@ -276,16 +294,24 @@
   // Reflects scripts/consensus_analyze.py's own per-question progress reports
   // (POST relay/survey/<id>/progress -> GET surveys/<id>/progress), not just the
   // GitHub Actions run's start/stop state -- that's what actually shows movement
-  // while a run is in flight, rather than just a start time.
+  // while a run is in flight, rather than just a start time. Before that per-question
+  // data exists yet (see the .indeterminate CSS above), this still shows the bar --
+  // just animating in place with an explanatory label -- rather than hiding it, so
+  // there's visible feedback right from the click instead of a silent 15-30s gap.
   function updateProgressBar(el, progress) {
     if (!el) return;
-    if (!progress || !progress.total) { el.hidden = true; return; }
     el.hidden = false;
-    var pct = Math.max(0, Math.min(100, Math.round((progress.current / progress.total) * 100)));
-    el.querySelector(".progress-fill").style.width = pct + "%";
-    el.querySelector(".progress-label").textContent =
-      "Analyzing question " + progress.current + " of " + progress.total +
-      (progress.label ? ": " + progress.label : "");
+    if (progress && progress.total) {
+      el.classList.remove("indeterminate");
+      var pct = Math.max(0, Math.min(100, Math.round((progress.current / progress.total) * 100)));
+      el.querySelector(".progress-fill").style.width = pct + "%";
+      el.querySelector(".progress-label").textContent =
+        "Analyzing question " + progress.current + " of " + progress.total +
+        (progress.label ? ": " + progress.label : "");
+    } else {
+      el.classList.add("indeterminate");
+      el.querySelector(".progress-label").textContent = "Starting analysis on GitHub Actions…";
+    }
   }
 
   // GitHub takes a moment to register a dispatched run, so the first couple of checks

@@ -314,7 +314,11 @@ same file from whatever's in the responses CSV at that point, so it's safe to ru
 after more responses come in. While it runs, the survey row shows a live progress bar
 (which question of how many it's currently synthesizing), not just the GitHub Actions
 run's start time. That progress count only reflects Claude Analyze: Yes questions --
-the No ones aren't part of the run's synthesis work.
+the No ones aren't part of the run's synthesis work. The bar appears the instant you
+click Analyze, animating in an indeterminate "Starting analysis on GitHub Actions…"
+state before switching to real per-question progress -- GitHub Actions needs its own
+15-30s to spin up a runner (checkout, Python setup, pip install) before the script
+even starts, and the bar shouldn't sit hidden and look broken for that whole stretch.
 
 If any questions are set to Claude Analyze: No, the results page opens with a
 **Respondent summary** table above the themed sections -- one row per respondent, one
