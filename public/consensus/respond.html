@@ -88,12 +88,19 @@
 
   if (!surveyId) { showNotice("No survey specified."); return; }
 
+  // .messages is a flex:1 sibling of .composer, so hiding/showing the composer (or the
+  // answer textarea growing to a second line) changes .messages' own visible height --
+  // scrolling has to happen AFTER that, or the newest bubble ends up hidden behind the
+  // composer instead of above it. Every place that changes either has to call this again.
+  function scrollToBottom() {
+    el("messages").scrollTop = el("messages").scrollHeight;
+  }
   function addBubble(kind, text) {
     var b = document.createElement("div");
     b.className = "bubble " + kind;
     b.textContent = text;
     el("messages").appendChild(b);
-    el("messages").scrollTop = el("messages").scrollHeight;
+    scrollToBottom();
     return b;
   }
   function addTyping() {
@@ -101,7 +108,7 @@
     b.className = "bubble typing";
     b.textContent = "…";
     el("messages").appendChild(b);
-    el("messages").scrollTop = el("messages").scrollHeight;
+    scrollToBottom();
     return b;
   }
 
@@ -117,7 +124,12 @@
     el("answerInput").disabled = false;
     el("sendBtn").disabled = false;
     el("answerInput").value = "";
+    el("answerInput").style.height = "auto";
     el("answerInput").focus();
+    // The composer was just un-hidden, shrinking .messages -- addBubble()'s scroll
+    // above ran while it was still hidden, so this question would otherwise end up
+    // partly hidden behind the composer instead of fully visible above it.
+    scrollToBottom();
   }
 
   function startQuestion(index) {
@@ -179,6 +191,7 @@
         typing.remove();
         addBubble("bot", "Sorry, something went wrong (" + e.message + "). Please try answering again.");
         el("composer").hidden = false;
+        scrollToBottom(); // same as askCurrentPrompt() -- un-hiding the composer shrinks .messages
         el("answerInput").disabled = false;
         el("sendBtn").disabled = false;
       });
@@ -191,6 +204,7 @@
   el("answerInput").addEventListener("input", function () {
     el("answerInput").style.height = "auto";
     el("answerInput").style.height = Math.min(140, el("answerInput").scrollHeight) + "px";
+    scrollToBottom(); // growing the textarea shrinks .messages the same way showing the composer does
   });
 
   fetch("/api/consensus/public/" + encodeURIComponent(surveyId))
