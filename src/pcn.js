@@ -18,12 +18,22 @@
  * except here there's exactly one such folder for the whole app, not one per record.
  *
  * Storage: BOX_KV under a "pcn:" prefix.
- *   pcn:config -> JSON { folderId, folderName } -- the chosen Box data folder.
+ *   pcn:config  -> JSON { folderId, folderName } -- the chosen Box data folder.
+ *   pcn:network -> JSON, the latest connection network pcn/pipeline/derive computed
+ *     (see relay/network below) -- what public/pcn/network.html renders.
+ *
+ * Relay: POST relay/network is how the Python pipeline (running in GitHub Actions,
+ * no browser session) publishes a freshly derived network here, authenticated the
+ * same shared-secret way (x-pipeline-key: BOX_RELAY_SECRET) as worker.js's own
+ * GET /api/box/pipeline-token and src/consensus.js's relay/* routes -- see
+ * pcn/relay.py. Checked before requireBetaAuth below, since GitHub Actions has no
+ * beta-account session to present.
  */
 
 import { requireBetaAuth } from "./beta_auth.js";
 
 const CONFIG_KEY = "pcn:config";
+const NETWORK_KEY = "pcn:network";
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 const TEST_FILE_NAME = "pcn-connection-test.json";
@@ -111,6 +121,20 @@ export async function handlePcnApi(route, request, env) {
   if (!env.BOX_KV) return json({ error: "BOX_KV binding is missing -- see SETUP.md." }, 500);
   const method = request.method.toUpperCase();
 
+  // ---- Relay (GitHub Actions -> Worker, shared-secret auth) -- checked before
+  // requireBetaAuth below, since a pipeline run has no beta-account session. ----
+  if (route === "relay/network" && method === "POST") {
+    const key = request.headers.get("x-pipeline-key") || "";
+    if (!env.BOX_RELAY_SECRET || key !== env.BOX_RELAY_SECRET) {
+      return json({ error: "Not authorized" }, 401);
+    }
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    const stored = { network: body, derivedAt: new Date().toISOString() };
+    await env.BOX_KV.put(NETWORK_KEY, JSON.stringify(stored));
+    return json({ ok: true });
+  }
+
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
 
@@ -186,6 +210,15 @@ export async function handlePcnApi(route, request, env) {
     } catch (e) {
       return json({ error: e.message || "Box round-trip failed." }, 502);
     }
+  }
+
+  // GET network -> { network, derivedAt } | { network: null, derivedAt: null } --
+  // what public/pcn/network.html renders. Published only by relay/network above
+  // (the pipeline run), never computed on the fly here -- deriving it is real work
+  // (a fresh pass over the whole ledger), not something to redo on every page load.
+  if (route === "network" && method === "GET") {
+    const raw = await env.BOX_KV.get(NETWORK_KEY);
+    return json(raw ? JSON.parse(raw) : { network: null, derivedAt: null });
   }
 
   return json({ error: "Not found" }, 404);

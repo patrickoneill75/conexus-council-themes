@@ -3,11 +3,13 @@ name: PCN Issue Map -- fixture pipeline test
 # Manually triggered from the Actions tab. Runs ingest + normalize + extract + match +
 # derive against the committed synthetic fixtures (pcn/fixtures/) and uploads each
 # stage's JSON output as a downloadable artifact, so the pipeline can be inspected
-# without a local Python setup. Touches Box not at all -- ingest/normalize/match/
-# derive need no secrets; extract makes real (cents-per-meeting) Claude calls using
-# the same ANTHROPIC_API_KEY repository secret the Council Survey Dashboard already
-# uses (see pcn/config.py), and match's residual-adjudication stage may too, if it's
-# ever reached for these two small fixtures.
+# without a local Python setup. The derive step also publishes its network to the
+# Worker (relay/network, shared-secret auth -- see pcn/relay.py) so
+# public/pcn/network.html has something real to render; every other step touches
+# Box not at all. extract makes real (cents-per-meeting) Claude calls using the same
+# ANTHROPIC_API_KEY repository secret the Council Survey Dashboard already uses (see
+# pcn/config.py), and match's residual-adjudication stage may too, if it's ever
+# reached for these two small fixtures.
 on:
   workflow_dispatch:
 
@@ -69,10 +71,14 @@ jobs:
           python -m pcn.pipeline.cli review list /tmp/pcn-out/ledger.json \
             /tmp/pcn-out/resolutions.json
 
-      - name: Derive the connection network and print its graph metrics
+      - name: Derive the connection network, publish it, and print its graph metrics
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
         run: |
           python -m pcn.pipeline.cli derive /tmp/pcn-out/ledger.json \
-            /tmp/pcn-out/resolutions.json /tmp/pcn-out/network.json
+            /tmp/pcn-out/resolutions.json /tmp/pcn-out/network.json \
+            --issues /tmp/pcn-out/issues.json --publish
           python - <<'EOF'
           import json
           network = json.load(open("/tmp/pcn-out/network.json"))

@@ -397,14 +397,26 @@ implementation carried), and feedback loops via `networkx.simple_cycles` (capped
 counts aren't comparable across input types (a transcript yields far more assertions
 than notes of identical substance), so nothing here sums them together.
 
+The `derive` stage's `--publish` flag pushes the network to this Worker via
+`POST relay/network` (shared-secret `x-pipeline-key: BOX_RELAY_SECRET` auth, same
+mechanism as `GET /api/box/pipeline-token` and Consensus's own relay routes — see
+`pcn/relay.py`), stored in `BOX_KV` and served back by `GET network` (beta-account
+gated) for **PCN Issue Map**'s **View network** page (linked from its control panel)
+to render: an interactive force-directed graph (D3, loaded from a CDN — the one
+external script this app uses) with node size by centrality, node color by role,
+edge color by sign (green positive / red negative / gray contested), and a dashed
+edge where dispersion swamps the mean (members disagree). Click a node or connection
+for its detail — definition, degree, supporting-assertion counts.
+
 Run the whole pipeline manually against the committed synthetic fixtures
 (`pcn/fixtures/`) via the **PCN Issue Map -- fixture pipeline test** GitHub Actions
 workflow (Actions tab → Run workflow); it uploads each stage's JSON output, including
 the resulting ledger/issues/resolutions/network and the review queue's printed order,
-as a downloadable artifact. No real PCN meeting data exists in this repo — the
-fixtures are made up, matching the design doc's own worked example (a staffing → overtime →
-turnover loop). The ledger itself isn't wired up to live in this app's Box data
-folder yet — that lands once there's an actual admin-triggered run over uploaded
+as a downloadable artifact, and publishes the derived network so the network view has
+something real (if synthetic) to show. No real PCN meeting data exists in this repo —
+the fixtures are made up, matching the design doc's own worked example (a staffing →
+overtime → turnover loop). The ledger itself isn't wired up to live in this app's Box
+data folder yet — that lands once there's an actual admin-triggered run over uploaded
 meeting files, rather than just this fixture smoke test.
 
 ---
@@ -448,6 +460,11 @@ meeting files, rather than just this fixture smoke test.
   writes to the one Box folder that survey's admin already configured. The admin routes
   (create/edit a survey, trigger analysis) require a signed-in `/beta` account, same as
   the rest of the platform.
+- **PCN Issue Map's network view is the one page in this repo that loads an external
+  script** (D3, from a CDN) — needed for the force-directed graph layout; every other
+  page here is hand-rolled with no third-party JS. It's a static, widely-used
+  visualization library with no data collection of its own; nothing it renders is
+  fetched from anywhere but this Worker's own `GET /api/pcn/network`.
 
 ---
 

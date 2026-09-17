@@ -105,12 +105,17 @@ def _cmd_review_reject(args: argparse.Namespace) -> None:
 def _cmd_derive(args: argparse.Namespace) -> None:
     ledger_rows = ledger.load(Path(args.ledger))
     resolutions = resolutions_store.load(Path(args.resolutions))
-    network = derive_network(ledger_rows, resolutions)
+    issues = issues_store.load(Path(args.issues)) if args.issues else []
+    network = derive_network(ledger_rows, resolutions, issues)
     Path(args.output).write_text(json.dumps(network, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
         f"Derived {len(network['nodes'])} nodes, {len(network['edges'])} edges, "
         f"{len(network['graph']['feedback_loops'])} feedback loops -> {args.output}"
     )
+    if args.publish:
+        from .. import relay
+        relay.publish_network(network)
+        print("Published network to the Worker (relay/network).")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -173,6 +178,9 @@ def main(argv: list[str] | None = None) -> None:
     derive_parser.add_argument("ledger")
     derive_parser.add_argument("resolutions")
     derive_parser.add_argument("output")
+    derive_parser.add_argument("--issues", default=None, help="Issue store, for human-readable node labels.")
+    derive_parser.add_argument("--publish", action="store_true",
+                                help="Also push the derived network to the Worker (relay/network).")
     derive_parser.set_defaults(func=_cmd_derive)
 
     args = parser.parse_args(argv)

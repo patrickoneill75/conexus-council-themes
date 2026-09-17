@@ -55,7 +55,8 @@ def _hierarchy_index(graph: nx.DiGraph) -> float | None:
     return (12 / (n**3 - n)) * variance_sum
 
 
-def derive_network(ledger_rows: list[dict], resolutions: dict) -> dict:
+def derive_network(ledger_rows: list[dict], resolutions: dict, issues: list | None = None) -> dict:
+    issues_by_id = {issue.id: issue for issue in (issues or [])}
     assertions = _included(ledger_rows)
 
     edge_assertions: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -98,8 +99,11 @@ def derive_network(ledger_rows: list[dict], resolutions: dict) -> dict:
     for issue_id in graph.nodes:
         out_degree = graph.out_degree(issue_id)
         in_degree = graph.in_degree(issue_id)
+        issue = issues_by_id.get(issue_id)
         nodes.append({
             "issue_id": issue_id,
+            "label": issue.canonical_label if issue else issue_id,
+            "definition": issue.definition if issue else None,
             "out_degree": out_degree,
             "in_degree": in_degree,
             "centrality": out_degree + in_degree,
