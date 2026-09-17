@@ -31,11 +31,11 @@
          display:flex; flex-direction:column; }
   .wrap { max-width:640px; margin:0 auto; width:100%; flex:1; display:flex; flex-direction:column;
           min-height:100vh; }
-  header { padding:16px 20px 14px; border-bottom:1px solid var(--border); }
-  .brand-row { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
-  .brand-logo { height:26px; width:auto; display:block; background:#fff; border-radius:6px; padding:3px 7px; }
+  header { padding:16px 20px 14px; border-bottom:1px solid var(--border); text-align:left; }
   .brand-name { font-family:"Poppins", system-ui, sans-serif; font-weight:800; font-size:21px;
                 color:var(--accent); letter-spacing:.01em; }
+  .brand-sub { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase;
+               letter-spacing:.05em; margin:2px 0 8px; }
   h1 { font-size:15px; font-weight:400; margin:0; color:var(--text-secondary); letter-spacing:-0.005em; }
   .messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
   .bubble { max-width:82%; padding:11px 14px; border-radius:14px; font-size:14.5px; white-space:pre-wrap; }
@@ -59,10 +59,8 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand-row">
-      <img class="brand-logo" src="/consensus/conexus-logo.jpg" alt="Conexus Indiana">
-      <span class="brand-name">Consensus</span>
-    </div>
+    <div class="brand-name">Consensus</div>
+    <div class="brand-sub">Conexus Indiana</div>
     <h1 id="surveyTitle">Loading…</h1>
   </header>
   <div class="messages" id="messages"></div>
