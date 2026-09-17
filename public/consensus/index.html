@@ -382,6 +382,11 @@
       '<button type="button" class="small ghost remove-q-btn" data-index="' + i + '">Remove</button>' +
       "</div></div>" +
       '<label>Question text</label><textarea class="q-text"></textarea>' +
+      '<label>Follow-up questions</label>' +
+      '<div class="followup-field"><input type="number" class="q-followups" min="0" max="5" value="0">' +
+      '<span class="msg muted">how many Claude should generate, 0-5</span></div>' +
+      '<label>Context for follow-ups</label>' +
+      '<textarea class="q-context" placeholder="Guidance for the follow-up question(s) -- optional"></textarea>' +
       '<label>Claude Analyze</label>' +
       '<select class="q-claude-analyze">' +
       '<option value="yes">Yes -- synthesize themes for this question</option>' +
@@ -390,11 +395,6 @@
       '<span class="msg muted">For simple fields like name or company -- "No" skips this question ' +
       'entirely during analysis (no Claude tokens spent on it) and lists its answers in a plain ' +
       'table on the results page instead.</span>' +
-      '<label>Follow-up questions</label>' +
-      '<div class="followup-field"><input type="number" class="q-followups" min="0" max="5" value="0">' +
-      '<span class="msg muted">how many Claude should generate, 0-5</span></div>' +
-      '<label>Context for follow-ups</label>' +
-      '<textarea class="q-context" placeholder="Guidance for the follow-up question(s) -- optional"></textarea>' +
       personalizeField +
       "</div>";
   }
