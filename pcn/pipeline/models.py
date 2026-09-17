@@ -92,3 +92,27 @@ class Assertion:
 
 def new_assertion_id() -> str:
     return uuid.uuid4().hex
+
+
+@dataclass
+class Issue:
+    """A canonical issue node -- what pcn/pipeline/match resolves an Assertion's raw
+    from_issue_label/to_issue_label strings onto. `definition` starts empty and is
+    filled in by a human on first review-queue confirmation (see pcn/pipeline/review.py)
+    -- that's the design doc's "reviewing doubles as codebook-building," and is what
+    the adjudication stage of the matching cascade shows a model for its 5 nearest
+    candidates, rather than a bare label.
+    """
+    id: str
+    canonical_label: str
+    aliases: list[str] = field(default_factory=list)
+    definition: str | None = None
+    embedding: list[float] | None = None
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def new_issue_id() -> str:
+    return uuid.uuid4().hex

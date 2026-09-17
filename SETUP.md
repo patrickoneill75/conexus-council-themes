@@ -365,19 +365,29 @@ parent heading context) for notes; `pcn/pipeline/extract` calls Claude (Haiku by
 default, escalating a specific segment to Sonnet only when two independent extraction
 passes disagree on it) to turn those Segments into `Assertion`s appended to the
 assertion ledger (`pcn/pipeline/ledger.py`) — see `pcn/CODING_PROTOCOL.md` for the
-five coding rules the extraction prompt follows. Only `extract` makes model calls or
-costs anything; `ingest`/`normalize` are plain Python. Extraction reuses this
-project's own `ANTHROPIC_API_KEY` repository secret rather than a dedicated key —
-volume here is cents per meeting.
+five coding rules the extraction prompt follows; `pcn/pipeline/match` resolves each
+Assertion's raw `from_issue_label`/`to_issue_label` text onto a canonical `Issue` via
+a four-stage cascade (exact alias match → rapidfuzz fuzzy match → embedding
+nearest-neighbor → residual Haiku adjudication over just the 5 nearest candidates),
+recording the result separately in a resolutions file rather than editing the ledger;
+`pcn/pipeline/review` orders unreviewed assertions (cross-run disagreement → escalated
+→ new-issue-creating → everything else) and lets a human confirm/reject one — the
+`--from-definition`/`--to-definition` flags on `review confirm` are how an issue's
+one-line definition gets written the first time it's confirmed, which is what the
+adjudication stage shows a model for its candidates from then on. Only `extract` and
+match's adjudication stage make model calls; everything else is plain Python/rapidfuzz/
+local embeddings. All of it reuses this project's own `ANTHROPIC_API_KEY` repository
+secret rather than a dedicated key — volume here is cents per meeting.
 
-Run all three manually against the committed synthetic fixtures (`pcn/fixtures/`) via
-the **PCN Issue Map -- fixture pipeline test** GitHub Actions workflow (Actions tab →
-Run workflow); it uploads each stage's JSON output, including the resulting ledger,
-as a downloadable artifact. No real PCN meeting data exists in this repo — the
-fixtures are made up, matching the design doc's own worked example (a staffing →
-overtime → turnover loop). The ledger itself isn't wired up to live in this app's Box
-data folder yet — that lands once there's an actual admin-triggered run over
-uploaded meeting files, rather than just this fixture smoke test.
+Run the whole pipeline manually against the committed synthetic fixtures
+(`pcn/fixtures/`) via the **PCN Issue Map -- fixture pipeline test** GitHub Actions
+workflow (Actions tab → Run workflow); it uploads each stage's JSON output, including
+the resulting ledger/issues/resolutions and the review queue's printed order, as a
+downloadable artifact. No real PCN meeting data exists in this repo — the fixtures
+are made up, matching the design doc's own worked example (a staffing → overtime →
+turnover loop). The ledger itself isn't wired up to live in this app's Box data
+folder yet — that lands once there's an actual admin-triggered run over uploaded
+meeting files, rather than just this fixture smoke test.
 
 ---
 

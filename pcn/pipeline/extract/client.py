@@ -22,7 +22,9 @@ _retry = retry(
 )
 
 
-def _get_client() -> anthropic.Anthropic:
+def get_client() -> anthropic.Anthropic:
+    """Shared Anthropic client, reused by pcn/pipeline/match/adjudicate.py too --
+    same API key, no reason for a second client instance."""
     global _client
     if _client is None:
         _client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
@@ -31,7 +33,7 @@ def _get_client() -> anthropic.Anthropic:
 
 @_retry
 def extract(system: str, user: str, model: str) -> list[dict]:
-    response = _get_client().messages.create(
+    response = get_client().messages.create(
         model=model,
         max_tokens=8000,
         temperature=1,  # nonzero -- see run.py's two-pass docstring for why this matters

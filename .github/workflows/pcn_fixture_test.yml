@@ -1,11 +1,13 @@
 name: PCN Issue Map -- fixture pipeline test
 
-# Manually triggered from the Actions tab. Runs ingest + normalize + extract against
-# the committed synthetic fixtures (pcn/fixtures/) and uploads each stage's JSON
-# output as a downloadable artifact, so the pipeline can be inspected without a local
-# Python setup. Touches Box not at all -- ingest/normalize need no secrets at all;
-# extract makes real (cents-per-meeting) Claude calls using the same ANTHROPIC_API_KEY
-# repository secret the Council Survey Dashboard already uses (see pcn/config.py).
+# Manually triggered from the Actions tab. Runs ingest + normalize + extract + match
+# against the committed synthetic fixtures (pcn/fixtures/) and uploads each stage's
+# JSON output as a downloadable artifact, so the pipeline can be inspected without a
+# local Python setup. Touches Box not at all -- ingest/normalize/match need no
+# secrets; extract makes real (cents-per-meeting) Claude calls using the same
+# ANTHROPIC_API_KEY repository secret the Council Survey Dashboard already uses (see
+# pcn/config.py), and match's residual-adjudication stage may too, if it's ever
+# reached for these two small fixtures.
 on:
   workflow_dispatch:
 
@@ -57,6 +59,15 @@ jobs:
             /tmp/pcn-out/ledger.json
           python -m pcn.pipeline.cli extract /tmp/pcn-out/notes.normalized.json \
             /tmp/pcn-out/ledger.json
+
+      - name: Resolve issue labels and print the review queue
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -m pcn.pipeline.cli match /tmp/pcn-out/ledger.json \
+            /tmp/pcn-out/issues.json /tmp/pcn-out/resolutions.json
+          python -m pcn.pipeline.cli review list /tmp/pcn-out/ledger.json \
+            /tmp/pcn-out/resolutions.json
 
       - uses: actions/upload-artifact@v4
         with:
