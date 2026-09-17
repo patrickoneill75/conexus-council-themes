@@ -314,10 +314,16 @@
   var questions = [];
   var chosenFolder = { id: null, name: null };
 
-  function questionRowHtml(i) {
+  function questionRowHtml(i, total) {
     return '<div class="question-card" data-index="' + i + '">' +
       '<div class="row top"><span class="qnum">Question ' + (i + 1) + '</span>' +
-      '<button type="button" class="small ghost remove-q-btn" data-index="' + i + '">Remove</button></div>' +
+      '<div class="row" style="gap:4px">' +
+      '<button type="button" class="small ghost move-up-btn" data-index="' + i + '"' +
+      (i === 0 ? " disabled" : "") + ' title="Move up" aria-label="Move question up">&uarr;</button>' +
+      '<button type="button" class="small ghost move-down-btn" data-index="' + i + '"' +
+      (i === total - 1 ? " disabled" : "") + ' title="Move down" aria-label="Move question down">&darr;</button>' +
+      '<button type="button" class="small ghost remove-q-btn" data-index="' + i + '">Remove</button>' +
+      "</div></div>" +
       '<label>Question text</label><textarea class="q-text"></textarea>' +
       '<label>Follow-up questions</label>' +
       '<div class="followup-field"><input type="number" class="q-followups" min="0" max="5" value="0">' +
@@ -328,19 +334,54 @@
   }
 
   function renderQuestions() {
-    el("questionsList").innerHTML = questions.map(function (q, i) { return questionRowHtml(i); }).join("");
+    el("questionsList").innerHTML = questions.map(function (q, i) { return questionRowHtml(i, questions.length); }).join("");
     var cards = el("questionsList").querySelectorAll(".question-card");
     cards.forEach(function (card, i) {
       card.querySelector(".q-text").value = questions[i].text;
       card.querySelector(".q-followups").value = questions[i].followUps;
       card.querySelector(".q-context").value = questions[i].context;
     });
+    Array.prototype.forEach.call(el("questionsList").querySelectorAll(".move-up-btn"), function (btn) {
+      btn.addEventListener("click", function () { moveQuestion(Number(btn.dataset.index), -1); });
+    });
+    Array.prototype.forEach.call(el("questionsList").querySelectorAll(".move-down-btn"), function (btn) {
+      btn.addEventListener("click", function () { moveQuestion(Number(btn.dataset.index), 1); });
+    });
     Array.prototype.forEach.call(el("questionsList").querySelectorAll(".remove-q-btn"), function (btn) {
       btn.addEventListener("click", function () {
+        questions = syncFromDom();
         questions.splice(Number(btn.dataset.index), 1);
         renderQuestions();
       });
     });
+  }
+
+  // Reads every card's current field values back into `questions`, in DOM order,
+  // without trimming or dropping blanks -- unlike collectQuestions() below, this
+  // preserves whatever's mid-edit in every OTHER card exactly as typed, so
+  // reordering or removing one question never loses someone else's unsaved edits.
+  function syncFromDom() {
+    var cards = el("questionsList").querySelectorAll(".question-card");
+    var synced = [];
+    cards.forEach(function (card, i) {
+      synced.push({
+        id: questions[i] ? questions[i].id : undefined,
+        text: card.querySelector(".q-text").value,
+        followUps: Number(card.querySelector(".q-followups").value) || 0,
+        context: card.querySelector(".q-context").value,
+      });
+    });
+    return synced;
+  }
+
+  function moveQuestion(index, direction) {
+    questions = syncFromDom();
+    var target = index + direction;
+    if (target < 0 || target >= questions.length) return;
+    var moved = questions[index];
+    questions[index] = questions[target];
+    questions[target] = moved;
+    renderQuestions();
   }
 
   function collectQuestions() {
