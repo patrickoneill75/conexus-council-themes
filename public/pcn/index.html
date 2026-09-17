@@ -72,6 +72,7 @@
     <div class="who">
       <span id="whoami"></span>
       <a class="link" href="/pcn/network.html">View network &rarr;</a>
+      <a class="link" href="/pcn/timeline.html">Change over time &rarr;</a>
       <a class="link" href="/beta/index.html">&larr; Mini App Platform</a>
       <button type="button" class="link" id="signOutBtn">Sign out</button>
     </div>
@@ -104,12 +105,15 @@
     <h3>What's built so far</h3>
     <p class="desc" style="margin:0">The Worker, control panel, and Box round-trip
       (above), plus the full ingest &rarr; normalize &rarr; extract &rarr; match &rarr;
-      review &rarr; derive Python pipeline (<code>pcn/pipeline/</code>) -- runnable
-      against committed synthetic fixtures via the "PCN Issue Map -- fixture pipeline
-      test" GitHub Actions workflow, which also publishes a derived network for the
-      <a class="link" href="/pcn/network.html">network view</a> to render. Not yet
-      built: an admin-triggered run against real, uploaded meeting files (today's
-      pipeline runs only exist for fixtures) and the change-over-time view.</p>
+      review &rarr; derive &rarr; timeline Python pipeline (<code>pcn/pipeline/</code>)
+      -- the design doc's complete 8-step build order -- runnable against committed
+      synthetic fixtures via the "PCN Issue Map -- fixture pipeline test" GitHub
+      Actions workflow, which publishes a derived network and timeline for the
+      <a class="link" href="/pcn/network.html">network view</a> and
+      <a class="link" href="/pcn/timeline.html">change-over-time view</a> to render.
+      Not yet built: an admin-triggered run against real, uploaded meeting files --
+      today's pipeline runs only exist for fixtures, since no real PCN meeting data
+      has been processed yet.</p>
   </div>
 </div>
 

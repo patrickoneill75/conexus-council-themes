@@ -25,4 +25,5 @@ def normalize(raw: RawDocument) -> NormalizedDocument:
         source_filename=raw.source_filename,
         notetaker=raw.notetaker,
         segments=segments,
+        meeting_date=raw.meeting_date,
     )

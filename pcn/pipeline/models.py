@@ -29,6 +29,7 @@ class RawDocument:
     input_format: str  # "vtt" | "srt" | "txt" | "docx" | "md"
     source_filename: str
     raw_text: str
+    meeting_date: str | None = None  # ISO date; when the meeting happened, for pcn/pipeline/timeline.py
     notetaker: str | None = None  # notes only; always None for a transcript
 
     def to_dict(self) -> dict:
@@ -54,6 +55,7 @@ class NormalizedDocument:
     source_filename: str
     notetaker: str | None
     segments: list[Segment]
+    meeting_date: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -62,6 +64,7 @@ class NormalizedDocument:
             "input_format": self.input_format,
             "source_filename": self.source_filename,
             "notetaker": self.notetaker,
+            "meeting_date": self.meeting_date,
             "segments": [s.to_dict() for s in self.segments],
         }
 
@@ -86,6 +89,7 @@ class Assertion:
     model_used: str
     agreement: bool | None  # True/False once two-pass reconciled; None if escalated (single-pass tie-break)
     notetaker: str | None = None  # notes only, copied from the source NormalizedDocument
+    meeting_date: str | None = None  # ISO date, copied from the source NormalizedDocument
     status: str = "unreviewed"  # unreviewed | confirmed | rejected -- see the design doc's review queue
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 

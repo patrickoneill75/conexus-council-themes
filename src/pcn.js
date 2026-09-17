@@ -1,8 +1,10 @@
 /**
  * PCN Issue Map: turns PCN meeting notes/transcripts into an accumulating, evidence-
  * traceable map of how members believe their problems connect, mounted under
- * /api/pcn/*. See the design doc for the full build (this file only covers build
- * step 1: Worker + control panel login + a Box round-trip, no extraction yet).
+ * /api/pcn/*. This file is just the Worker side (control panel login, Box round-trip,
+ * and the relay + read routes the pipeline's derived output flows through) -- the
+ * actual extraction/matching/derivation pipeline is Python, in pcn/pipeline/ (see
+ * the design doc and pcn/CODING_PROTOCOL.md for the full build).
  *
  * Admin routes reuse the Mini App Platform's own admin accounts (see
  * src/beta_auth.js's requireBetaAuth), same as src/consensus.js -- no separate
@@ -18,22 +20,26 @@
  * except here there's exactly one such folder for the whole app, not one per record.
  *
  * Storage: BOX_KV under a "pcn:" prefix.
- *   pcn:config  -> JSON { folderId, folderName } -- the chosen Box data folder.
- *   pcn:network -> JSON, the latest connection network pcn/pipeline/derive computed
+ *   pcn:config   -> JSON { folderId, folderName } -- the chosen Box data folder.
+ *   pcn:network  -> JSON, the latest connection network pcn/pipeline/derive computed
  *     (see relay/network below) -- what public/pcn/network.html renders.
+ *   pcn:timeline -> JSON, the latest change-over-time breakdown
+ *     pcn/pipeline/timeline computed (see relay/timeline below) -- what
+ *     public/pcn/timeline.html renders.
  *
- * Relay: POST relay/network is how the Python pipeline (running in GitHub Actions,
- * no browser session) publishes a freshly derived network here, authenticated the
- * same shared-secret way (x-pipeline-key: BOX_RELAY_SECRET) as worker.js's own
- * GET /api/box/pipeline-token and src/consensus.js's relay/* routes -- see
- * pcn/relay.py. Checked before requireBetaAuth below, since GitHub Actions has no
- * beta-account session to present.
+ * Relay: POST relay/network and POST relay/timeline are how the Python pipeline
+ * (running in GitHub Actions, no browser session) publishes its derived output here,
+ * authenticated the same shared-secret way (x-pipeline-key: BOX_RELAY_SECRET) as
+ * worker.js's own GET /api/box/pipeline-token and src/consensus.js's relay/* routes
+ * -- see pcn/relay.py. Checked before requireBetaAuth below, since GitHub Actions has
+ * no beta-account session to present.
  */
 
 import { requireBetaAuth } from "./beta_auth.js";
 
 const CONFIG_KEY = "pcn:config";
 const NETWORK_KEY = "pcn:network";
+const TIMELINE_KEY = "pcn:timeline";
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 const TEST_FILE_NAME = "pcn-connection-test.json";
@@ -123,16 +129,22 @@ export async function handlePcnApi(route, request, env) {
 
   // ---- Relay (GitHub Actions -> Worker, shared-secret auth) -- checked before
   // requireBetaAuth below, since a pipeline run has no beta-account session. ----
-  if (route === "relay/network" && method === "POST") {
+  if (route.startsWith("relay/") && method === "POST") {
     const key = request.headers.get("x-pipeline-key") || "";
     if (!env.BOX_RELAY_SECRET || key !== env.BOX_RELAY_SECRET) {
       return json({ error: "Not authorized" }, 401);
     }
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    const stored = { network: body, derivedAt: new Date().toISOString() };
-    await env.BOX_KV.put(NETWORK_KEY, JSON.stringify(stored));
-    return json({ ok: true });
+    if (route === "relay/network") {
+      await env.BOX_KV.put(NETWORK_KEY, JSON.stringify({ network: body, derivedAt: new Date().toISOString() }));
+      return json({ ok: true });
+    }
+    if (route === "relay/timeline") {
+      await env.BOX_KV.put(TIMELINE_KEY, JSON.stringify({ timeline: body, derivedAt: new Date().toISOString() }));
+      return json({ ok: true });
+    }
+    return json({ error: "Not found" }, 404);
   }
 
   const auth = await requireBetaAuth(request, env);
@@ -219,6 +231,14 @@ export async function handlePcnApi(route, request, env) {
   if (route === "network" && method === "GET") {
     const raw = await env.BOX_KV.get(NETWORK_KEY);
     return json(raw ? JSON.parse(raw) : { network: null, derivedAt: null });
+  }
+
+  // GET timeline -> { timeline, derivedAt } | { timeline: null, derivedAt: null } --
+  // what public/pcn/timeline.html renders. Same publish-only-via-relay shape as
+  // GET network above.
+  if (route === "timeline" && method === "GET") {
+    const raw = await env.BOX_KV.get(TIMELINE_KEY);
+    return json(raw ? JSON.parse(raw) : { timeline: null, derivedAt: null });
   }
 
   return json({ error: "Not found" }, 404);

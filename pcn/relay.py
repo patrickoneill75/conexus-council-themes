@@ -36,3 +36,12 @@ def publish_network(network: dict) -> None:
         headers=_headers(), timeout=30, json=network,
     )
     response.raise_for_status()
+
+
+@_retry
+def publish_timeline(timeline: dict) -> None:
+    response = requests.post(
+        f"{_worker_origin()}/api/pcn/relay/timeline",
+        headers=_headers(), timeout=30, json=timeline,
+    )
+    response.raise_for_status()

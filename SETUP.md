@@ -408,16 +408,33 @@ edge color by sign (green positive / red negative / gray contested), and a dashe
 edge where dispersion swamps the mean (members disagree). Click a node or connection
 for its detail — definition, degree, supporting-assertion counts.
 
+`pcn/pipeline/timeline` answers "what changed since last time": it buckets the
+ledger's assertions by quarter using each one's `meeting_date` (set via `ingest
+--meeting-date YYYY-MM-DD` — an assertion with none is excluded from every period,
+never guessed at) and derives the network as of each quarter's cumulative cutoff.
+Since the map only ever accumulates evidence, "change" mostly means which
+connections are newly evidenced in a quarter, and which existing connections just
+became **contested** — a connection that used to look settled getting a
+contradicting assertion from a later meeting. It does not mean connections
+disappearing (only rejecting an assertion in review does that). Published the same
+way as the network (`--publish` → `POST relay/timeline` → `GET timeline`), rendered
+by **PCN Issue Map**'s **Change over time** page as a simple trend chart (issue/
+connection counts by quarter) plus a per-quarter table of what's new or newly
+contested.
+
 Run the whole pipeline manually against the committed synthetic fixtures
-(`pcn/fixtures/`) via the **PCN Issue Map -- fixture pipeline test** GitHub Actions
-workflow (Actions tab → Run workflow); it uploads each stage's JSON output, including
-the resulting ledger/issues/resolutions/network and the review queue's printed order,
-as a downloadable artifact, and publishes the derived network so the network view has
-something real (if synthetic) to show. No real PCN meeting data exists in this repo —
-the fixtures are made up, matching the design doc's own worked example (a staffing →
-overtime → turnover loop). The ledger itself isn't wired up to live in this app's Box
-data folder yet — that lands once there's an actual admin-triggered run over uploaded
-meeting files, rather than just this fixture smoke test.
+(`pcn/fixtures/`, ingested with meeting dates two quarters apart) via the
+**PCN Issue Map -- fixture pipeline test** GitHub Actions workflow (Actions tab →
+Run workflow); it uploads each stage's JSON output, including the resulting
+ledger/issues/resolutions/network/timeline and the review queue's printed order, as a
+downloadable artifact, and publishes the derived network and timeline so both views
+have something real (if synthetic) to show. No real PCN meeting data exists in this
+repo — the fixtures are made up, matching the design doc's own worked example (a
+staffing → overtime → turnover loop). The ledger itself isn't wired up to live in
+this app's Box data folder yet — that lands once there's an actual admin-triggered
+run over uploaded meeting files, rather than just this fixture smoke test. This
+completes the design doc's 8-step build order (Sections 1–19); everything from here
+is refinement, not a missing stage.
 
 ---
 

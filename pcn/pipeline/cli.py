@@ -13,6 +13,7 @@ from pathlib import Path
 from . import issues as issues_store
 from . import ledger, resolutions as resolutions_store, review
 from .derive import derive_network
+from .timeline import derive_timeline
 from .extract import extract_document
 from .ingest import ingest as run_ingest
 from .match import resolve_ledger
@@ -21,7 +22,7 @@ from .normalize import normalize as run_normalize
 
 
 def _cmd_ingest(args: argparse.Namespace) -> None:
-    doc = run_ingest(Path(args.input), args.input_type, args.meeting_id, args.notetaker)
+    doc = run_ingest(Path(args.input), args.input_type, args.meeting_id, args.notetaker, args.meeting_date)
     Path(args.output).write_text(json.dumps(doc.to_dict(), indent=2), encoding="utf-8")
     print(f"Ingested {args.input} -> {args.output} ({doc.input_type}/{doc.input_format})")
 
@@ -118,6 +119,22 @@ def _cmd_derive(args: argparse.Namespace) -> None:
         print("Published network to the Worker (relay/network).")
 
 
+def _cmd_timeline(args: argparse.Namespace) -> None:
+    ledger_rows = ledger.load(Path(args.ledger))
+    resolutions = resolutions_store.load(Path(args.resolutions))
+    issues = issues_store.load(Path(args.issues)) if args.issues else []
+    timeline = derive_timeline(ledger_rows, resolutions, issues)
+    Path(args.output).write_text(json.dumps(timeline, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(
+        f"Derived {len(timeline['periods'])} periods ({timeline['undated_assertion_count']} "
+        f"undated assertions excluded) -> {args.output}"
+    )
+    if args.publish:
+        from .. import relay
+        relay.publish_timeline(timeline)
+        print("Published timeline to the Worker (relay/timeline).")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="pcn-pipeline")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -128,6 +145,8 @@ def main(argv: list[str] | None = None) -> None:
     ingest_parser.add_argument("--input-type", dest="input_type", required=True, choices=["transcript", "notes"])
     ingest_parser.add_argument("--meeting-id", dest="meeting_id", required=True)
     ingest_parser.add_argument("--notetaker", dest="notetaker", default=None)
+    ingest_parser.add_argument("--meeting-date", dest="meeting_date", default=None,
+                                help="ISO date (YYYY-MM-DD) the meeting happened, for the timeline view.")
     ingest_parser.set_defaults(func=_cmd_ingest)
 
     normalize_parser = subparsers.add_parser("normalize", help="Turn a RawDocument into a NormalizedDocument.")
@@ -182,6 +201,17 @@ def main(argv: list[str] | None = None) -> None:
     derive_parser.add_argument("--publish", action="store_true",
                                 help="Also push the derived network to the Worker (relay/network).")
     derive_parser.set_defaults(func=_cmd_derive)
+
+    timeline_parser = subparsers.add_parser(
+        "timeline", help="Bucket the ledger by quarter and derive each cumulative cutoff's network."
+    )
+    timeline_parser.add_argument("ledger")
+    timeline_parser.add_argument("resolutions")
+    timeline_parser.add_argument("output")
+    timeline_parser.add_argument("--issues", default=None, help="Issue store, for human-readable labels.")
+    timeline_parser.add_argument("--publish", action="store_true",
+                                  help="Also push the derived timeline to the Worker (relay/timeline).")
+    timeline_parser.set_defaults(func=_cmd_timeline)
 
     args = parser.parse_args(argv)
     args.func(args)

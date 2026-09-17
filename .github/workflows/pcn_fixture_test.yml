@@ -1,15 +1,15 @@
 name: PCN Issue Map -- fixture pipeline test
 
 # Manually triggered from the Actions tab. Runs ingest + normalize + extract + match +
-# derive against the committed synthetic fixtures (pcn/fixtures/) and uploads each
-# stage's JSON output as a downloadable artifact, so the pipeline can be inspected
-# without a local Python setup. The derive step also publishes its network to the
-# Worker (relay/network, shared-secret auth -- see pcn/relay.py) so
-# public/pcn/network.html has something real to render; every other step touches
-# Box not at all. extract makes real (cents-per-meeting) Claude calls using the same
-# ANTHROPIC_API_KEY repository secret the Council Survey Dashboard already uses (see
-# pcn/config.py), and match's residual-adjudication stage may too, if it's ever
-# reached for these two small fixtures.
+# derive + timeline against the committed synthetic fixtures (pcn/fixtures/) and
+# uploads each stage's JSON output as a downloadable artifact, so the pipeline can be
+# inspected without a local Python setup. derive/timeline also publish to the Worker
+# (relay/network, relay/timeline -- shared-secret auth, see pcn/relay.py) so
+# public/pcn/network.html and timeline.html have something real to render; every
+# other step touches Box not at all. extract makes real (cents-per-meeting) Claude
+# calls using the same ANTHROPIC_API_KEY repository secret the Council Survey
+# Dashboard already uses (see pcn/config.py), and match's residual-adjudication stage
+# may too, if it's ever reached for these two small fixtures.
 on:
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
           mkdir -p /tmp/pcn-out
           python -m pcn.pipeline.cli ingest pcn/fixtures/sample_transcript.vtt \
             /tmp/pcn-out/transcript.raw.json \
-            --input-type transcript --meeting-id fixture-transcript-001
+            --input-type transcript --meeting-id fixture-transcript-001 --meeting-date 2026-06-15
           python -m pcn.pipeline.cli normalize /tmp/pcn-out/transcript.raw.json \
             /tmp/pcn-out/transcript.normalized.json
 
@@ -40,7 +40,8 @@ jobs:
         run: |
           python -m pcn.pipeline.cli ingest pcn/fixtures/sample_notes.md \
             /tmp/pcn-out/notes.raw.json \
-            --input-type notes --meeting-id fixture-notes-001 --notetaker "J. Alvarez"
+            --input-type notes --meeting-id fixture-notes-001 --notetaker "J. Alvarez" \
+            --meeting-date 2026-08-01
           python -m pcn.pipeline.cli normalize /tmp/pcn-out/notes.raw.json \
             /tmp/pcn-out/notes.normalized.json
 
@@ -85,6 +86,16 @@ jobs:
           print(json.dumps(network["graph"], indent=2))
           print(json.dumps(network["input_type_breadth"], indent=2))
           EOF
+
+      - name: Derive the change-over-time breakdown and publish it
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: |
+          python -m pcn.pipeline.cli timeline /tmp/pcn-out/ledger.json \
+            /tmp/pcn-out/resolutions.json /tmp/pcn-out/timeline.json \
+            --issues /tmp/pcn-out/issues.json --publish
+          cat /tmp/pcn-out/timeline.json
 
       - uses: actions/upload-artifact@v4
         with:
