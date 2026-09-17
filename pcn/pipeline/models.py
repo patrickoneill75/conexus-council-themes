@@ -74,6 +74,8 @@ MODALITIES = ("asserted", "hypothetical", "reported", "negated")
 class Assertion:
     id: str
     meeting_id: str
+    input_type: str  # "transcript" | "notes" -- copied from the source NormalizedDocument so
+                      # this row is self-contained; see the design doc's cross-input-type guard
     segment_index: int
     speaker: str | None
     from_issue_label: str
@@ -83,6 +85,7 @@ class Assertion:
     quote: str  # verbatim source text supporting the assertion
     model_used: str
     agreement: bool | None  # True/False once two-pass reconciled; None if escalated (single-pass tie-break)
+    notetaker: str | None = None  # notes only, copied from the source NormalizedDocument
     status: str = "unreviewed"  # unreviewed | confirmed | rejected -- see the design doc's review queue
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 

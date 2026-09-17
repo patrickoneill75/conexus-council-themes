@@ -1,8 +1,8 @@
 """Command-line entry point for the PCN Issue Map pipeline -- one subcommand per
 build stage (design doc section 15), so a stage's output can be inspected in
 isolation without wiring the whole pipeline together end to end. `ingest`,
-`normalize`, `extract`, `match`, and `review` are built so far; a later step adds
-`derive`. Used directly by .github/workflows/pcn_fixture_test.yml.
+`normalize`, `extract`, `match`, `review`, and `derive` are built so far. Used
+directly by .github/workflows/pcn_fixture_test.yml.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import issues as issues_store
 from . import ledger, resolutions as resolutions_store, review
+from .derive import derive_network
 from .extract import extract_document
 from .ingest import ingest as run_ingest
 from .match import resolve_ledger
@@ -101,6 +102,17 @@ def _cmd_review_reject(args: argparse.Namespace) -> None:
     print(f"Rejected {args.assertion_id}")
 
 
+def _cmd_derive(args: argparse.Namespace) -> None:
+    ledger_rows = ledger.load(Path(args.ledger))
+    resolutions = resolutions_store.load(Path(args.resolutions))
+    network = derive_network(ledger_rows, resolutions)
+    Path(args.output).write_text(json.dumps(network, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(
+        f"Derived {len(network['nodes'])} nodes, {len(network['edges'])} edges, "
+        f"{len(network['graph']['feedback_loops'])} feedback loops -> {args.output}"
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="pcn-pipeline")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -154,6 +166,14 @@ def main(argv: list[str] | None = None) -> None:
     review_reject_parser.add_argument("ledger")
     review_reject_parser.add_argument("assertion_id")
     review_reject_parser.set_defaults(func=_cmd_review_reject)
+
+    derive_parser = subparsers.add_parser(
+        "derive", help="Recompute the connection network fresh from the ledger + resolutions."
+    )
+    derive_parser.add_argument("ledger")
+    derive_parser.add_argument("resolutions")
+    derive_parser.add_argument("output")
+    derive_parser.set_defaults(func=_cmd_derive)
 
     args = parser.parse_args(argv)
     args.func(args)

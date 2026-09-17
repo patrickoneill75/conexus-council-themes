@@ -52,8 +52,10 @@ def _to_assertions(meeting_id: str, doc: NormalizedDocument, raw_list: list[dict
         out.append(Assertion(
             id=new_assertion_id(),
             meeting_id=meeting_id,
+            input_type=doc.input_type,
             segment_index=raw.get("segment_index"),
             speaker=segment.speaker if segment else None,
+            notetaker=doc.notetaker,
             from_issue_label=str(raw.get("from_issue", "")).strip(),
             to_issue_label=str(raw.get("to_issue", "")).strip(),
             weight=float(raw.get("weight", 0.0)),

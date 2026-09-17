@@ -379,12 +379,30 @@ match's adjudication stage make model calls; everything else is plain Python/rap
 local embeddings. All of it reuses this project's own `ANTHROPIC_API_KEY` repository
 secret rather than a dedicated key — volume here is cents per meeting.
 
+`pcn/pipeline/derive` recomputes the connection network fresh from the ledger +
+resolutions every run (a pure function, via networkx) — non-rejected assertions
+sharing a resolved (from, to) issue pair become one edge, carrying a mean signed
+weight, a **dispersion** (population stdev of that edge's weights, so a contested
+connection — some members say positive, some negative — is visibly different from
+an uncontested one, rather than both washing out to the same near-zero mean), a
+per-modality breakdown, and its supporting assertion ids for evidence traceability.
+Nodes get out-/in-degree, centrality, and a role (`driver`: affects things, nothing
+affects it; `outcome`: something cared about, not itself influenceable; `ordinary`: a
+candidate program — both). Graph-level: density, a hierarchy index (MacDonald's, as
+used by Özesmi & Özesmi 2004 for FCM structural analysis — **not independently
+verified against the primary source**, same caveat the design doc's own reference
+implementation carried), and feedback loops via `networkx.simple_cycles` (capped at
+6 nodes). `input_type_breadth` reports assertion/speaker/meeting/notetaker counts
+**separately per transcript vs. notes** rather than pooling them — raw assertion
+counts aren't comparable across input types (a transcript yields far more assertions
+than notes of identical substance), so nothing here sums them together.
+
 Run the whole pipeline manually against the committed synthetic fixtures
 (`pcn/fixtures/`) via the **PCN Issue Map -- fixture pipeline test** GitHub Actions
 workflow (Actions tab → Run workflow); it uploads each stage's JSON output, including
-the resulting ledger/issues/resolutions and the review queue's printed order, as a
-downloadable artifact. No real PCN meeting data exists in this repo — the fixtures
-are made up, matching the design doc's own worked example (a staffing → overtime →
+the resulting ledger/issues/resolutions/network and the review queue's printed order,
+as a downloadable artifact. No real PCN meeting data exists in this repo — the
+fixtures are made up, matching the design doc's own worked example (a staffing → overtime →
 turnover loop). The ledger itself isn't wired up to live in this app's Box data
 folder yet — that lands once there's an actual admin-triggered run over uploaded
 meeting files, rather than just this fixture smoke test.
