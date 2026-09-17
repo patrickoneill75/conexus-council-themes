@@ -41,6 +41,7 @@
 import { requireBetaAuth } from "./beta_auth.js";
 
 const SURVEY_PREFIX = "consensus:survey:";
+const PROGRESS_PREFIX = "consensus:progress:";
 const MAX_FOLLOW_UPS = 5; // guards against an admin fat-fingering a huge number and
                            // creating a runaway-length, runaway-cost chat.
 const FOLLOWUP_MODEL = "claude-haiku-4-5"; // cheapest current model -- generating one
@@ -197,29 +198,51 @@ async function appendResponsesToBox(env, survey, csvChunk) {
 
 /* ---------- Claude (follow-up question generation) ---------- */
 
-async function generateFollowUp(env, survey, question, priorAnswers) {
+async function generateFollowUp(env, survey, question, priorAnswers, completedQuestions) {
   const transcript = priorAnswers.map((t, i) =>
     `${i === 0 ? "Question" : "Follow-up " + i}: ${t.prompt}\nAnswer: ${t.answer}`
   ).join("\n\n");
+  const earlier = (completedQuestions || []).map((q) =>
+    `Question: ${q.questionText}\n` + (q.turns || []).map((t) =>
+      `${t.turn === 0 ? "Answer" : "Follow-up " + t.turn + " answer"}: ${t.answer}`
+    ).join("\n")
+  ).join("\n\n");
   const system =
-    "You write ONE short, natural follow-up question for a survey chatbot. Given the " +
-    "survey's objective and audience, the question being explored, any guidance the " +
-    "survey author gave for follow-ups, and what the respondent has said so far, ask " +
-    "the single most useful next question to get a more specific, concrete answer. " +
-    "Conversational tone, one sentence, no preamble, no numbering.";
+    "You run a survey chatbot's follow-up questioning, one question at a time, up to a " +
+    "maximum number of follow-ups the survey author set for the current question. Given " +
+    "the survey's objective and audience, everything the respondent has already said " +
+    "earlier in this survey, the question being explored now, any guidance the survey " +
+    "author gave for follow-ups on it, and the conversation so far on this question, use " +
+    "your judgement to decide whether one more follow-up would genuinely add value. " +
+    "Ask one only if the respondent's answer leaves real room for a more specific, " +
+    "concrete detail worth capturing -- for example, a closed or already-complete answer " +
+    "(a flat \"no\", or a \"yes\" that leaves nothing more to explore) needs no follow-up " +
+    "even if the maximum hasn't been reached. Never ask about something already covered " +
+    "by an earlier question in this survey. When you do ask, keep it conversational, one " +
+    "sentence, no preamble, no numbering.";
   const user =
     `Survey objective: ${survey.objective || "(none given)"}\n` +
     `Audience: ${survey.audience || "(none given)"}\n` +
-    `Question being explored: ${question.text}\n` +
+    (earlier ? `Already covered earlier in this survey:\n${earlier}\n\n` : "") +
+    `Question being explored now: ${question.text}\n` +
     `Author's guidance for follow-ups on this question: ${question.context || "(none given)"}\n\n` +
-    `Conversation so far:\n${transcript}`;
+    `Conversation so far on this question:\n${transcript}`;
   const tool = {
     name: "ask_follow_up",
-    description: "Record the single follow-up question to ask next.",
+    description: "Decide whether to ask one more follow-up question, and if so, what it is.",
     input_schema: {
       type: "object",
-      properties: { followUpQuestion: { type: "string" } },
-      required: ["followUpQuestion"],
+      properties: {
+        needsFollowUp: {
+          type: "boolean",
+          description: "True only if one more follow-up would genuinely add value.",
+        },
+        followUpQuestion: {
+          type: "string",
+          description: "The follow-up question, if needsFollowUp is true. Empty string otherwise.",
+        },
+      },
+      required: ["needsFollowUp", "followUpQuestion"],
       additionalProperties: false,
     },
   };
@@ -245,8 +268,9 @@ async function generateFollowUp(env, survey, question, priorAnswers) {
   }
   const body = await response.json();
   const toolUse = (body.content || []).find((b) => b.type === "tool_use");
-  if (!toolUse) throw new Error("Claude did not return a follow-up question.");
-  return String(toolUse.input.followUpQuestion || "").trim();
+  if (!toolUse) throw new Error("Claude did not return a follow-up decision.");
+  if (!toolUse.input.needsFollowUp) return null;
+  return String(toolUse.input.followUpQuestion || "").trim() || null;
 }
 
 /* ---------- GitHub Actions dispatch (analysis) -- same shape as worker.js's own
@@ -317,6 +341,20 @@ export async function handleConsensusApi(route, request, env) {
       if (!survey) return json({ error: "Survey not found" }, 404);
       survey.analyzedAt = new Date().toISOString();
       await saveSurvey(env, survey);
+      await env.BOX_KV.delete(`${PROGRESS_PREFIX}${parts[2]}`);
+      return json({ ok: true });
+    }
+    // POST relay/survey/<id>/progress { current, total, label }
+    if (parts[1] === "survey" && parts.length === 4 && parts[3] === "progress" && method === "POST") {
+      let body = {};
+      try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+      const progress = {
+        current: Math.max(0, Number(body.current) || 0),
+        total: Math.max(0, Number(body.total) || 0),
+        label: String(body.label || "").trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      await env.BOX_KV.put(`${PROGRESS_PREFIX}${parts[2]}`, JSON.stringify(progress));
       return json({ ok: true });
     }
     return json({ error: "Not found" }, 404);
@@ -334,10 +372,13 @@ export async function handleConsensusApi(route, request, env) {
     });
   }
 
-  // POST followup { surveyId, questionId, priorAnswers: [{prompt, answer}, ...] }
-  // -> { done: true } once every follow-up for this question has been asked, else
-  // { followUp, turn }. Follow-up count and per-question context are read from the
-  // stored survey, never trusted from the client.
+  // POST followup { surveyId, questionId, priorAnswers: [{prompt, answer}, ...],
+  //                  completed: [{questionId, questionText, turns}, ...] }
+  // -> { done: true } once this question's follow-up ceiling is hit OR Claude judges
+  // the topic closed, else { followUp, turn }. Follow-up count and per-question
+  // context are read from the stored survey, never trusted from the client; `completed`
+  // (this respondent's already-finished questions in the same survey) is client-tracked
+  // state used only as extra context, not trusted for anything else.
   if (route === "followup" && method === "POST") {
     if (!env.consensus_claude_api) {
       return json({ error: "The Consensus mini app's Claude key isn't set up yet "
@@ -350,10 +391,14 @@ export async function handleConsensusApi(route, request, env) {
     const question = survey.questions.find((q) => q.id === body.questionId);
     if (!question) return json({ error: "Question not found" }, 404);
     const priorAnswers = Array.isArray(body.priorAnswers) ? body.priorAnswers : [];
+    const completed = Array.isArray(body.completed) ? body.completed : [];
     const followUpsGivenSoFar = Math.max(0, priorAnswers.length - 1);
+    // The admin-configured number is a ceiling, not a target -- below it, Claude's own
+    // judgement (in generateFollowUp) decides whether another follow-up is warranted.
     if (followUpsGivenSoFar >= question.followUps) return json({ done: true });
     try {
-      const followUp = await generateFollowUp(env, survey, question, priorAnswers);
+      const followUp = await generateFollowUp(env, survey, question, priorAnswers, completed);
+      if (!followUp) return json({ done: true });
       return json({ followUp, turn: followUpsGivenSoFar + 1 });
     } catch (e) {
       return json({ error: e.message || "Could not generate a follow-up question." }, 502);
@@ -476,6 +521,16 @@ export async function handleConsensusApi(route, request, env) {
   if (parts[0] === "surveys" && parts.length === 3 && parts[2] === "analyze-status" && method === "GET") {
     if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return json({ runs: [] });
     return json(await analysisRuns(env));
+  }
+
+  // GET surveys/<id>/progress -- the actual per-question progress reported by
+  // scripts/consensus_analyze.py as it runs, via POST relay/survey/<id>/progress
+  // above. Separate from analyze-status (GitHub Actions run-level state) since a run
+  // can be "Running" for its whole duration with no visibility into which question
+  // it's on -- this is what closes that gap.
+  if (parts[0] === "surveys" && parts.length === 3 && parts[2] === "progress" && method === "GET") {
+    const raw = await env.BOX_KV.get(`${PROGRESS_PREFIX}${parts[1]}`);
+    return json(raw ? JSON.parse(raw) : {});
   }
 
   return json({ error: "Not found" }, 404);

@@ -85,8 +85,10 @@ def main() -> int:
     header, rows = sheet_io.read_rows(survey["responsesFileName"], content)
     by_question = _group_by_question(header, rows)
 
+    total_questions = len(survey["questions"])
     questions_out = []
-    for question in survey["questions"]:
+    for i, question in enumerate(survey["questions"]):
+        relay.report_progress(survey_id, i + 1, total_questions, question["text"])
         respondents = by_question.get(question["id"], {})
         threads = []
         for rid, turns in respondents.items():

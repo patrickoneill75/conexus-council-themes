@@ -51,3 +51,23 @@ def mark_analyzed(survey_id: str) -> None:
         headers=_headers(), timeout=30,
     )
     response.raise_for_status()
+
+
+def report_progress(survey_id: str, current: int, total: int, label: str) -> None:
+    # Best-effort status for the admin page's progress bar -- a failure here (even
+    # after retries) should never abort the analysis run itself, so unlike the other
+    # relay calls this one swallows its own errors.
+    try:
+        _report_progress(survey_id, current, total, label)
+    except requests.RequestException as exc:
+        print(f"  (could not report progress: {exc})")
+
+
+@_retry
+def _report_progress(survey_id: str, current: int, total: int, label: str) -> None:
+    response = requests.post(
+        f"{_worker_origin()}/api/consensus/relay/survey/{survey_id}/progress",
+        headers=_headers(), timeout=30,
+        json={"current": current, "total": total, "label": label},
+    )
+    response.raise_for_status()
