@@ -184,6 +184,13 @@ async function requireAuth(request, env) {
   return payload;
 }
 
+/* Exported so other mini apps built on this platform (e.g. src/consensus.js) can gate
+   their own admin routes with the same accounts, without each mini app inventing its
+   own login system. Returns { email, username } or null -- never throws. */
+export async function requireBetaAuth(request, env) {
+  return requireAuth(request, env);
+}
+
 /* ---------- storage ---------- */
 
 async function getAllowlist(env) {

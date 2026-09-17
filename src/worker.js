@@ -1,4 +1,5 @@
 import { handleBetaApi } from "./beta_auth.js";
+import { handleConsensusApi } from "./consensus.js";
 
 /**
  * Worker entry point: serves the public dashboard and the control-panel API.
@@ -8,8 +9,9 @@ import { handleBetaApi } from "./beta_auth.js";
  * the control password, the GitHub token and the Box credentials out of the browser.
  *
  * /api/beta/* is the mini-app platform's own routes (multi-user admin accounts for the
- * /beta portal) -- see src/beta_auth.js for that whole surface; everything below this
- * point is the original Council Survey Dashboard's API, untouched by it.
+ * /beta portal) -- see src/beta_auth.js for that whole surface. /api/consensus/* is the
+ * Consensus mini app (see src/consensus.js). Everything below this point is the
+ * original Council Survey Dashboard's API, untouched by either.
  *
  * Routes:
  *   GET  /api/config-check                  -> which variables are set (unauthenticated)
@@ -232,6 +234,14 @@ async function handleApi(route, request, env) {
   // for the /beta portal, independent of this file's own CONTROL_PASSWORD gate below.
   if (route === "beta" || route.startsWith("beta/")) {
     return handleBetaApi(route.slice("beta".length).replace(/^\/+/, ""), request, env);
+  }
+
+  // ---- /api/consensus/* ----------------------------------------------------------------
+  // Delegated entirely to consensus.js -- the Consensus mini app. Admin routes there
+  // check the same beta accounts via requireBetaAuth(); respondent-facing routes are
+  // public.
+  if (route === "consensus" || route.startsWith("consensus/")) {
+    return handleConsensusApi(route.slice("consensus".length).replace(/^\/+/, ""), request, env);
   }
 
   // ---- GET /api/config-check ---------------------------------------------------------
