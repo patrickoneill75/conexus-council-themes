@@ -269,9 +269,13 @@ extra to sign in to — and the same Box connection as the Council Survey Dashbo
 
 From **Consensus** → **New survey**:
 
-- **Survey context** — objective and audience. Given to Claude alongside every
-  question, so follow-ups (and later, the analysis) stay grounded in what the survey is
-  actually for.
+- **Survey context** — objective, audience, and general guidance. All three are given to
+  Claude alongside every question, so follow-ups (and later, the analysis) stay grounded
+  in what the survey is actually for. General guidance is the one that applies across
+  every question, including ones with 0 follow-ups of their own — use it for instructions
+  like "take the respondent's earlier answer about their industry into account for later
+  questions." A question's own context box (below) only ever shapes that one question's
+  own follow-ups.
 - **Questions** — each one has its own follow-up count (0-5) and its own context box for
   guiding what those follow-ups should probe for. That count is a ceiling, not a target:
   Claude sees the whole survey so far (every earlier question's answers, plus this
