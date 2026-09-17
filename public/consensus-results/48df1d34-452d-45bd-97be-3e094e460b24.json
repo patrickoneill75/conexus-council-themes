@@ -1,91 +1,144 @@
 {
-  "generatedAt": "2026-09-17T12:00:01+00:00",
+  "generatedAt": "2026-09-17T13:10:44+00:00",
   "questions": [
     {
       "consensus": [],
       "id": "q1-d947dc41",
       "needsMoreInfo": [
-        "Only one respondent (Patrick O'Neill) provided a name so far; insufficient data to identify themes across the group."
+        "This is a name-collection question with no thematic content to analyze; no dashboard themes apply here."
       ],
-      "responseCount": 1,
+      "responseCount": 3,
       "text": "What is your first and last name?",
       "themes": []
     },
     {
+      "consensus": [],
+      "id": "q2-9aaeb0f7",
+      "needsMoreInfo": [
+        "Only 2 company names given (Cook Medical, Hoss Brothers LLC) -- too little data to identify a theme; need more responses and context on each company's role in the freight/trucking ecosystem."
+      ],
+      "responseCount": 2,
+      "text": "What is the name of your company?",
+      "themes": []
+    },
+    {
       "consensus": [
-        "Single respondent so no cross-respondent consensus yet; within this response, ROI justification is clearly identified as the top barrier over labor shortage alone."
+        "All three respondents are grappling with decisions shaped by cost/ROI tradeoffs rather than a single dominant industry-wide pain point.",
+        "Each concern is highly specific to the respondent's own operational context (fleet decision, parking location, packaging) rather than reflecting a shared systemic issue."
       ],
       "id": "q2-2566928f",
       "needsMoreInfo": [
-        "Only one respondent so far -- need more manufacturers/shippers to see if private fleet vs. outsourcing is a widespread question.",
-        "No detail on what ROI threshold or timeframe the respondent considers 'justifiable.'",
-        "Unclear what specific capital costs are most concerning (trucks, trailers, maintenance, insurance, etc.).",
-        "No detail on scale of operations (how many trucks/routes they'd need) which affects ROI calculations.",
-        "Would help to know if they've already explored partnering with 3PLs or dedicated carriers as an alternative to a private fleet."
+        "Unclear how widespread the truck parking safety issue is beyond the one cited Indianapolis location -- is this a statewide pattern or isolated?",
+        "No detail yet on what's driving the reverse logistics/cardboard alignment problem (cost, supplier capability, regulation, or internal process).",
+        "Missing benchmark data or peer examples that could help the manufacturer evaluate private fleet ROI (e.g., typical driver costs, utilization rates).",
+        "Unclear whether any respondent has already engaged with local authorities or INDOT on the parking safety concern.",
+        "Not clear if reverse logistics/packaging fits the intended scope of a 'trucking' agenda or should be treated as a separate topic."
       ],
-      "responseCount": 1,
+      "responseCount": 3,
       "text": "What are your biggest challenges around trucking right now? What problems are you trying to solve?",
       "themes": [
         {
-          "deepDive": "This is fundamentally a build-vs-buy question for a company whose core competency is manufacturing, not logistics. The respondent hasn't reached a conclusion and is still gathering information on costs and feasibility. This could be a good agenda topic: bringing in manufacturers or 3PLs who have already made this decision to share their ROI analysis frameworks.",
+          "deepDive": "The respondent's core competency is manufacturing, not logistics, so they lack internal expertise to confidently model fleet economics. Capital costs and labor shortage are intertwined inputs into the ROI calculation rather than separate issues -- the labor shortage raises operating cost uncertainty, which itself undermines the ROI case. This suggests the committee could help by providing frameworks or peer benchmarks for make-vs-buy fleet decisions, and by clarifying current driver market conditions and costs.",
           "details": [
-            "The respondent is a manufacturer weighing whether trucking should be a core competency or stay outsourced.",
-            "The decision hinges on whether a private fleet can generate a justifiable ROI."
+            "Equipment purchase costs are a major upfront barrier to entry.",
+            "Industry-wide labor/driver shortage compounds the uncertainty around running an in-house fleet.",
+            "When forced to rank, ROI justification -- not labor -- is cited as the number one blocker."
           ],
-          "summary": "Deciding whether to build an in-house private fleet versus relying on third-party carriers is a live strategic question."
+          "summary": "Manufacturers weighing private fleets are stuck on an ROI equation strained by high capital costs and a persistent driver shortage."
         },
         {
-          "deepDive": "The respondent frames capital cost and labor shortage as two intertwined barriers, but when pressed, identified overall ROI justification as the number one barrier -- capital cost is a major component of that calculation rather than a standalone issue.",
+          "deepDive": "This is a single, localized infrastructure/enforcement issue rather than a widespread industry pattern in this response set, but it points to a broader theme of inadequate truck parking capacity forcing informal, unsafe parking near residential and narrow-road areas. The respondent frames it as a latent risk -- not yet hitting their bottom line, but a matter of time before it affects an expanding fleet. This could tie into a broader statewide conversation about truck parking shortages, which is a common freight advisory topic.",
           "details": [
-            "Upfront equipment costs are a key input into the ROI calculation.",
-            "These costs compound with uncertainty from the labor shortage, making the business case harder to close."
+            "Specific location cited: English Ave and Brookville Road, between Arlington Road and I-465 on Indianapolis's east side.",
+            "Trucks aren't blocking lanes outright but are parked close enough to narrow the right-of-way, similar to a stalled vehicle in an emergency lane.",
+            "Concern is currently more community/safety-driven than an operational problem for the respondent's own fleet today, but seen as a future risk as their fleet grows."
           ],
-          "summary": "Capital costs of acquiring trucking equipment are a major barrier to justifying a private fleet."
+          "summary": "Truck parking in narrow, unsigned areas near neighborhoods is creating a growing safety hazard."
         },
         {
-          "deepDive": "While labor shortage was raised as a concern, the respondent clarified it is secondary to the overall ROI question -- it's one input that makes ROI harder to justify, not an independent blocker on its own.",
+          "deepDive": "This response is only loosely related to trucking/motor carrier operations and instead centers on packaging and reverse logistics sustainability -- it may be an outlier relative to the meeting's core trucking focus. The respondent hasn't yet pinpointed whether the blocker is supplier capability, cost structures, regulatory pressure, or internal alignment between sustainability and logistics teams. This suggests a need for a follow-up conversation to diagnose the specific bottleneck before it could inform an agenda item.",
           "details": [
-            "Respondent cites industry-wide driver shortage as a known risk factor.",
-            "Labor availability adds uncertainty to long-term ROI projections even if capital costs were solved."
+            "Focus is on reducing cardboard usage in returns processing.",
+            "The core tension is aligning environmental/waste-reduction goals with cost and operational complexity.",
+            "No clear root cause identified yet -- respondent points broadly to making the supply chain 'work in a sustainable way' without specifying supplier, regulatory, or process barriers."
           ],
-          "summary": "Driver labor shortage is compounding the difficulty of justifying a private fleet investment."
+          "summary": "A shipper is trying to reconcile sustainability goals with the cost and complexity of reverse logistics packaging."
         }
       ]
     },
     {
-      "consensus": [],
+      "consensus": [
+        "Each respondent could name a specific leader or initiative once the question was anchored to their own pain point (fleet profitability, reverse logistics, parking/safety)."
+      ],
       "id": "q3-0664b211",
       "needsMoreInfo": [
-        "Only one response was received, so it's unclear how broadly this example resonates with other committee members.",
-        "No detail on IRG Transport's scale, geography, or how their fleet spin-off was operationally executed.",
-        "Unclear whether IRG Transport would be willing to send a speaker, or who the right contact would be.",
-        "No other named leaders or examples were offered, leaving a gap in identifying additional panelist candidates."
+        "No direct contact or spokesperson identified yet for IRG Transport, VW's pallet program, or the tactical urbanism team.",
+        "Unclear whether IRG Transport's fleet spin-off model is generalizable beyond food processing/manufacturing.",
+        "Details on how VW's pallet reuse process actually works (logistics, cost, condition standards) are missing.",
+        "The tactical urbanism initiative's connection to trucking-specific issues (vs. general residential traffic) needs clarification.",
+        "Respondent 3's proposed 'pipeline' concept between industry and quick-build teams is an idea, not yet a working example -- needs vetting for feasibility."
       ],
-      "responseCount": 1,
+      "responseCount": 3,
       "text": "Do you know of others in the industry who are leading the way?",
       "themes": [
         {
-          "deepDive": "This is a single but specific example that speaks to a broader question many manufacturers face: whether to outsource logistics or bring it in-house. IRG's approach of spinning off a fleet as its own profit center offers a potential case study for the committee on vertical integration in freight. With only one respondent citing this, more input is needed to see if this model is seen as replicable or unique to IRG's scale and industry. The respondent's framing suggests this could be a strong panelist topic: turning transportation from cost center to revenue driver.",
+          "deepDive": "The respondent specifically flags the core challenge this model addresses: how does a manufacturer make transportation profitable rather than just a cost of doing business? This suggests appetite for a panelist who can speak to the mechanics of spinning off an internal fleet into a standalone, revenue-generating entity -- financials, governance, and how it stays 'complementary' to the parent business rather than a distraction.",
           "details": [
-            "IRG Transport is a food processing company that created its own trucking fleet.",
-            "The fleet operates as a separate, self-sustaining business that complements the parent company.",
-            "This model directly addresses how manufacturers can make transportation profitable rather than just a cost center."
+            "IRG Transport, a food processing company, created a self-sustaining, separate freight business that complements its core operations.",
+            "Cited as a model for how manufacturers can make transportation profitable rather than a cost center."
           ],
-          "summary": "One respondent points to IRG Transport as a leader for spinning off a self-sustaining fleet from its core manufacturing business."
+          "summary": "Manufacturers spinning off their own fleets to solve trucking profitability and capacity problems."
+        },
+        {
+          "deepDive": "This is a single example but paired with a genuine expressed need -- the respondent explicitly wishes they could replicate VW's pallet reuse process, signaling real demand for a peer-education session on reverse logistics/circular packaging rather than just a curiosity mention. It's narrower in scope than the fleet-profitability theme but represents a concrete, actionable ask for the agenda.",
+          "details": [
+            "VW is highlighted for shipping used pallets back and reusing them.",
+            "The respondent admits their own company hasn't figured out a similar reuse system and wants to."
+          ],
+          "summary": "Circular/reverse logistics for pallets is seen as an underexploited efficiency win."
+        },
+        {
+          "deepDive": "Unlike the other two themes, this one centers on public infrastructure and government-community collaboration rather than a private company's internal innovation. The respondent's uncertainty ('leading the way on what?') suggests the question needed narrowing to trucking-specific safety/parking issues before a relevant answer emerged -- once anchored to that context, they pointed to a specific geographic initiative. This could be a bridge topic connecting INDOT/MPO representatives with carriers who experience parking and safety pain points firsthand.",
+          "details": [
+            "DPW, INDOT, and community teams doing 'quick-build' tactical urbanism on Indianapolis's east side are cited as leaders.",
+            "The respondent sees an opportunity to build a more efficient, advertised pipeline connecting industry-reported traffic/parking issues to these quick-build teams.",
+            "Respondent acknowledges limited personal knowledge of the specifics, framing this as a lead worth further investigation rather than a fully formed case study."
+          ],
+          "summary": "Public-private tactical urbanism partnerships are addressing truck parking and safety infrastructure gaps."
         }
       ]
     },
     {
-      "consensus": [],
+      "consensus": [
+        "No respondent volunteered to personally present a project or success story."
+      ],
       "id": "q4-be38f656",
       "needsMoreInfo": [
-        "Only one response received, and it had no project, story, or speaker suggestion to share -- too little data to identify themes.",
-        "Respondent did not answer what trucking topics matter most to their organization, leaving a key gap for agenda-setting.",
-        "Need more responses from other committee members to gather panelist candidates and topic priorities."
+        "Whether Respondent 3's INDOT rest-stop/truck-parking concept has an actual INDOT owner who could speak to it directly.",
+        "Respondent 1's confusion ('Are you still asking questions?') suggests their answer on priority topics may be incomplete or unreliable.",
+        "No speaker leads were generated from this batch, so it's unclear if outreach beyond the survey is needed to fill the panelist slot."
       ],
-      "responseCount": 1,
+      "responseCount": 3,
       "text": "Do you have an innovative project or a success story around trucking that you would like to share at the next meeting?",
-      "themes": []
+      "themes": [
+        {
+          "deepDive": "This suggests the panel may need to source speakers through other channels, such as direct outreach or INDOT's own network, rather than relying on this survey to surface volunteers. The lack of response could reflect genuine absence of a story, or simply the framing/timing of the survey didn't prompt recall of relevant work.",
+          "details": [
+            "Two of three respondents answered simply 'no' or 'I don't think so.'",
+            "No one in this small sample offered to speak or nominated a network contact as a speaker."
+          ],
+          "summary": "Most respondents have no innovative trucking project or success story to share."
+        },
+        {
+          "deepDive": "This isn't the respondent's own project but a secondhand concept from INDOT, so it may need direct follow-up with INDOT staff to develop into a full panel topic rather than relying on this respondent to present it. It directly ties to the known truck parking shortage issue and could be a strong agenda anchor if INDOT can send someone to speak firsthand.",
+          "details": [
+            "Idea involves shifting some traditional rest stops to truck parking while consolidating passenger stops into fewer 'flagship' locations at high-volume/border areas.",
+            "Framed as something heard informally from INDOT staff, not a fully vetted project.",
+            "Respondent flagged it as 'interesting' and potentially fun to share with the committee."
+          ],
+          "summary": "One respondent surfaced a promising INDOT concept worth featuring: converting passenger rest stops into truck parking."
+        }
+      ]
     }
   ],
   "surveyId": "48df1d34-452d-45bd-97be-3e094e460b24",
