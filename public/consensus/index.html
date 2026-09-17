@@ -64,12 +64,23 @@
                           letter-spacing:.04em; text-transform:uppercase; }
   .followup-field { display:flex; align-items:center; gap:8px; }
   .followup-field input { width:70px; }
-  .check-list { border:1px solid var(--border); border-radius:8px; padding:4px 10px; background:var(--page); }
-  .check-row { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13px;
+  .check-row { display:flex; align-items:center; gap:8px; padding:8px 10px; font-size:13px;
                cursor:pointer; font-weight:normal; text-transform:none; letter-spacing:normal;
                color:var(--text-primary); margin:0; }
+  .check-row:hover { background:var(--wash); }
   .check-row + .check-row { border-top:1px solid var(--border); }
   .check-row input { width:auto; margin:0; flex:0 0 auto; }
+  .ms-dropdown { position:relative; }
+  .ms-trigger { width:100%; font:inherit; padding:9px 11px; border-radius:8px; border:1px solid var(--border);
+                background:var(--page); color:var(--text-primary); cursor:pointer;
+                display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; }
+  .ms-trigger:hover { background:var(--wash); }
+  .ms-chev { font-size:11px; color:var(--text-muted); transition:transform .15s; flex:0 0 auto; }
+  .ms-dropdown.open .ms-chev { transform:rotate(180deg); }
+  .ms-panel { display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:5;
+              background:var(--surface-1); border:1px solid var(--border); border-radius:8px;
+              max-height:220px; overflow-y:auto; box-shadow:0 8px 20px rgba(0,0,0,.14); }
+  .ms-dropdown.open .ms-panel { display:block; }
   .progress-wrap { margin-top:6px; max-width:180px; }
   .progress-track { width:100%; height:6px; border-radius:999px; background:var(--wash); overflow:hidden; }
   .progress-fill { height:100%; width:0; background:var(--accent); transition:width .3s ease; }
@@ -333,18 +344,28 @@
     return s.length > n ? s.slice(0, n - 1) + "…" : s;
   }
 
+  function personalizeLabel(count) {
+    if (!count) return "Don't personalize";
+    return count + " question" + (count === 1 ? "" : "s") + " selected";
+  }
+
   function questionRowHtml(i, allQuestions) {
     var total = allQuestions.length;
     var earlier = allQuestions.slice(0, i);
+    var checkedCount = (allQuestions[i].personalizeFrom || []).length;
     var personalizeField = earlier.length ? (
       '<label>Personalize this question</label>' +
-      '<div class="check-list">' +
+      '<div class="ms-dropdown">' +
+      '<button type="button" class="ms-trigger"><span class="ms-trigger-label">' +
+      esc(personalizeLabel(checkedCount)) + '</span><span class="ms-chev">&#9662;</span></button>' +
+      '<div class="ms-panel">' +
       earlier.map(function (q, j) {
         var cid = "pf-" + i + "-" + j;
         return '<label class="check-row" for="' + cid + '">' +
           '<input type="checkbox" class="q-personalize-from" id="' + cid + '" value="' + esc(q.id) + '">' +
           'Question ' + (j + 1) + ': ' + esc(truncate(q.text, 50)) + '</label>';
       }).join("") +
+      '</div>' +
       '</div>' +
       '<span class="msg muted">Rewrites this question\'s wording using everything the respondent said ' +
       'on the checked question(s), including their follow-ups -- e.g. "leading the way" becomes ' +
@@ -405,7 +426,34 @@
         renderQuestions();
       });
     });
+    Array.prototype.forEach.call(el("questionsList").querySelectorAll(".ms-dropdown"), function (dropdown) {
+      var trigger = dropdown.querySelector(".ms-trigger");
+      var panel = dropdown.querySelector(".ms-panel");
+      var label = dropdown.querySelector(".ms-trigger-label");
+      trigger.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var wasOpen = dropdown.classList.contains("open");
+        closeAllPersonalizeDropdowns();
+        if (!wasOpen) dropdown.classList.add("open");
+      });
+      // Clicking a checkbox (or its label) inside the panel bubbles up like any other
+      // click -- without this, the document-level listener below would close the
+      // dropdown after every single check, defeating "check all that apply."
+      panel.addEventListener("click", function (e) { e.stopPropagation(); });
+      Array.prototype.forEach.call(dropdown.querySelectorAll(".q-personalize-from"), function (box) {
+        box.addEventListener("change", function () {
+          label.textContent = personalizeLabel(dropdown.querySelectorAll(".q-personalize-from:checked").length);
+        });
+      });
+    });
   }
+
+  function closeAllPersonalizeDropdowns() {
+    Array.prototype.forEach.call(el("questionsList").querySelectorAll(".ms-dropdown.open"), function (d) {
+      d.classList.remove("open");
+    });
+  }
+  document.addEventListener("click", closeAllPersonalizeDropdowns);
 
   // A question's personalizeFrom entries only make sense pointing at something
   // strictly earlier in the CURRENT order -- after a reorder or removal, drop any
