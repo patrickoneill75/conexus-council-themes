@@ -273,7 +273,11 @@ From **Consensus** → **New survey**:
   question, so follow-ups (and later, the analysis) stay grounded in what the survey is
   actually for.
 - **Questions** — each one has its own follow-up count (0-5) and its own context box for
-  guiding what those follow-ups should probe for.
+  guiding what those follow-ups should probe for. That count is a ceiling, not a target:
+  Claude sees the whole survey so far (every earlier question's answers, plus this
+  question's own thread) and uses its own judgement on whether another follow-up would
+  actually add value, stopping early rather than padding out to the maximum. No
+  per-question flag to configure this — it's inferred from context every time.
 - **Responses folder** — the Box folder responses are saved to, as one CSV per survey.
 
 Saving gives you a respondent link (`/consensus/respond.html?survey=<id>`) — share that
@@ -283,7 +287,9 @@ Once responses have come in, **Analyze** (back on the survey list) kicks off
 `consensus_analyze.yml`, which publishes `public/consensus-results/<id>.json` — open
 **Results** next to that survey once it's done. Re-running **Analyze** re-publishes the
 same file from whatever's in the responses CSV at that point, so it's safe to run again
-after more responses come in.
+after more responses come in. While it runs, the survey row shows a live progress bar
+(which question of how many it's currently synthesizing), not just the GitHub Actions
+run's start time.
 
 ### Cost
 

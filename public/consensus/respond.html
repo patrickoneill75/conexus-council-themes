@@ -145,6 +145,7 @@
       body: JSON.stringify({
         surveyId: surveyId, questionId: currentQuestion.id,
         priorAnswers: currentTurns.map(function (t) { return { prompt: t.prompt, answer: t.answer }; }),
+        completed: allResponses,
       }),
     }).then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error); return b; }); })
       .then(function (data) {

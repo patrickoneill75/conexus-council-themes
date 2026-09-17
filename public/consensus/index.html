@@ -64,6 +64,10 @@
                           letter-spacing:.04em; text-transform:uppercase; }
   .followup-field { display:flex; align-items:center; gap:8px; }
   .followup-field input { width:70px; }
+  .progress-wrap { margin-top:6px; max-width:180px; }
+  .progress-track { width:100%; height:6px; border-radius:999px; background:var(--wash); overflow:hidden; }
+  .progress-fill { height:100%; width:0; background:var(--accent); transition:width .3s ease; }
+  .progress-label { font-size:11px; color:var(--text-muted); margin-top:3px; }
   .msg { font-size:12.5px; margin:10px 0 0; }
   .msg.err { color:var(--bad); }
   .msg.ok { color:var(--good); }
@@ -222,7 +226,11 @@
           "<td>" + s.questionCount + "</td>" +
           "<td>" + s.responseCount + "</td>" +
           "<td>" + statusPill(s) + "</td>" +
-          "<td>" + actions + "</td></tr>";
+          "<td>" + actions +
+          '<div class="progress-wrap" id="progress-' + esc(s.id) + '" hidden>' +
+          '<div class="progress-track"><div class="progress-fill"></div></div>' +
+          '<div class="progress-label"></div></div>' +
+          "</td></tr>";
       }).join("");
       Array.prototype.forEach.call(el("surveyRows").querySelectorAll(".edit-btn"), function (btn) {
         btn.addEventListener("click", function () { openBuilder(btn.dataset.id); });
@@ -230,6 +238,8 @@
       Array.prototype.forEach.call(el("surveyRows").querySelectorAll(".analyze-btn"), function (btn) {
         btn.addEventListener("click", function () {
           btn.disabled = true; btn.textContent = "Starting…";
+          var progressEl = el("progress-" + btn.dataset.id);
+          if (progressEl) { progressEl.hidden = true; updateProgressBar(progressEl, null); }
           api("surveys/" + btn.dataset.id + "/analyze", { method: "POST" })
             .then(function () { pollAnalyzeStatus(btn.dataset.id, btn); })
             .catch(function (e) { window.alert(e.message); btn.disabled = false; btn.textContent = "Analyze"; });
@@ -238,27 +248,54 @@
     });
   }
 
+  // Reflects scripts/consensus_analyze.py's own per-question progress reports
+  // (POST relay/survey/<id>/progress -> GET surveys/<id>/progress), not just the
+  // GitHub Actions run's start/stop state -- that's what actually shows movement
+  // while a run is in flight, rather than just a start time.
+  function updateProgressBar(el, progress) {
+    if (!el) return;
+    if (!progress || !progress.total) { el.hidden = true; return; }
+    el.hidden = false;
+    var pct = Math.max(0, Math.min(100, Math.round((progress.current / progress.total) * 100)));
+    el.querySelector(".progress-fill").style.width = pct + "%";
+    el.querySelector(".progress-label").textContent =
+      "Analyzing question " + progress.current + " of " + progress.total +
+      (progress.label ? ": " + progress.label : "");
+  }
+
   // GitHub takes a moment to register a dispatched run, so the first couple of checks
   // often still show the previous (or no) run -- that's expected, not a bug, and this
-  // keeps checking rather than giving up. Same "Running since HH:MM" / outcome wording
-  // as the Council Survey Dashboard's admin.html uses for its own workflow buttons.
+  // keeps checking rather than giving up. Same "Running since HH:MM" wording as the
+  // Council Survey Dashboard's admin.html uses for its own workflow buttons, now paired
+  // with a live progress bar sourced from the script's own progress reports.
   function pollAnalyzeStatus(id, btn) {
     var attempts = 0;
+    var progressEl = el("progress-" + id);
     (function check() {
       attempts += 1;
-      api("surveys/" + id + "/analyze-status").then(function (body) {
+      Promise.all([
+        api("surveys/" + id + "/analyze-status"),
+        api("surveys/" + id + "/progress").catch(function () { return {}; }),
+      ]).then(function (results) {
+        var body = results[0], progress = results[1];
         var run = (body.runs || [])[0];
+        updateProgressBar(progressEl, progress);
         if (!run) { btn.textContent = "Queued…"; }
         else if (run.status !== "completed") {
-          btn.textContent = "Running since " + new Date(run.started_at).toLocaleTimeString("en-US");
+          btn.textContent = progress && progress.total ? "Analyzing…"
+            : "Running since " + new Date(run.started_at).toLocaleTimeString("en-US");
         } else {
           btn.textContent = run.conclusion === "success" ? "Succeeded" : "Failed";
+          if (progressEl) progressEl.hidden = true;
           loadSurveys();
           return;
         }
-        if (attempts < 15) setTimeout(check, 4000);
+        // 180 attempts * 4s = 12 minutes -- generous enough that a multi-question
+        // analysis run (now visibly making progress via the bar above) isn't cut off
+        // right when watching it matters most.
+        if (attempts < 180) setTimeout(check, 4000);
         else loadSurveys();
-      }).catch(function () { if (attempts < 15) setTimeout(check, 4000); else loadSurveys(); });
+      }).catch(function () { if (attempts < 180) setTimeout(check, 4000); else loadSurveys(); });
     })();
   }
 
