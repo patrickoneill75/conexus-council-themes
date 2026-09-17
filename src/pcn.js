@@ -8,29 +8,22 @@
  * src/beta_auth.js's requireBetaAuth), same as src/consensus.js -- no separate
  * control-panel password.
  *
- * Box: this mini app talks to Box with its OWN service account via Client
- * Credentials Grant (CCG), NOT the existing user-delegated OAuth connection the
- * Council Survey Dashboard and Consensus share. That's a deliberate choice in the
- * design doc -- the IT request for a dedicated folder + CCG service account scoped
- * to file read/write only is far more likely to be approved than broadening the
- * scope of the existing shared, user-delegated Box app. Nothing here reads or
- * writes env.BOX_KV's "box:tokens" key or reuses worker.js's OAuth helpers; it's a
- * fully independent credential, cached under its own KV key.
+ * Box: this mini app uses the SAME shared, user-delegated Box connection every other
+ * tool in this repo uses (see worker.js's box/authorize-url, box/callback, box/status)
+ * -- not a separate service account. An earlier draft of this file used its own
+ * Client Credentials Grant credentials; that was a mistake (needless duplicate setup
+ * for something the existing connection already covers fine) and has been reverted.
+ * Like Consensus's per-survey responses folder, PCN Issue Map has the admin pick ONE
+ * data folder through a folder browser -- stored in KV, not a hardcoded secret --
+ * except here there's exactly one such folder for the whole app, not one per record.
  *
- * Secrets (Cloudflare Worker secrets AND GitHub Actions secrets -- both sides need
- * them, since the Worker reads finished data directly and GitHub Actions does the
- * actual processing read-modify-write cycle):
- *   PCN_BOX_CLIENT_ID, PCN_BOX_CLIENT_SECRET, PCN_BOX_ENTERPRISE_ID -- the CCG
- *     service account credentials.
- *   PCN_BOX_FOLDER_ID -- the one dedicated Box folder (data file at its root, a
- *     subfolder for raw source documents). Provisioned once via IT request; not
- *     admin-choosable through a folder picker the way Consensus's per-survey
- *     responses folder is, since the design calls for exactly one fixed folder.
+ * Storage: BOX_KV under a "pcn:" prefix.
+ *   pcn:config -> JSON { folderId, folderName } -- the chosen Box data folder.
  */
 
 import { requireBetaAuth } from "./beta_auth.js";
 
-const BOX_TOKEN_KEY = "pcn:box-token";
+const CONFIG_KEY = "pcn:config";
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 const TEST_FILE_NAME = "pcn-connection-test.json";
@@ -42,50 +35,41 @@ function json(body, status = 200) {
   });
 }
 
-function boxCredentialsConfigured(env) {
-  return !!(env.PCN_BOX_CLIENT_ID && env.PCN_BOX_CLIENT_SECRET && env.PCN_BOX_ENTERPRISE_ID);
+async function getConfig(env) {
+  const raw = await env.BOX_KV.get(CONFIG_KEY);
+  return raw ? JSON.parse(raw) : { folderId: null, folderName: null };
+}
+async function saveConfig(env, config) {
+  await env.BOX_KV.put(CONFIG_KEY, JSON.stringify(config));
 }
 
-/* ---------- Box (Client Credentials Grant -- see module docstring) ---------- */
+/* ---------- Box (reuses the existing shared connection -- see box/status, box/folders,
+   box/pipeline-token in worker.js; this module talks to the Box API directly with the
+   same access-token helper shape rather than importing worker.js internals, to keep
+   the two files independent -- same pattern src/consensus.js already uses) ---------- */
 
-async function fetchFreshToken(env) {
+async function boxAccessToken(env) {
+  const tokens = env.BOX_KV ? await env.BOX_KV.get("box:tokens") : null;
+  if (!tokens) return null;
+  const parsed = JSON.parse(tokens);
+  const age = Math.floor(Date.now() / 1000) - parsed.obtained_at;
+  const remaining = parsed.expires_in - age;
+  if (remaining > 120) return parsed.access_token;
   const response = await fetch("https://api.box.com/oauth2/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: env.PCN_BOX_CLIENT_ID,
-      client_secret: env.PCN_BOX_CLIENT_SECRET,
-      box_subject_type: "enterprise",
-      box_subject_id: env.PCN_BOX_ENTERPRISE_ID,
+      client_id: env.BOX_CLIENT_ID, client_secret: env.BOX_CLIENT_SECRET,
+      grant_type: "refresh_token", refresh_token: parsed.refresh_token,
     }),
   });
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Box refused the token request (${response.status}): ${detail.slice(0, 300)}`);
-  }
-  return response.json();
-}
-
-// CCG tokens are fetched fresh (no refresh token involved, unlike the existing
-// 3-legged OAuth flow) but still worth caching briefly -- same shape/reasoning as
-// consensus.js's boxAccessToken, just a different grant type underneath.
-async function pcnBoxAccessToken(env) {
-  if (!boxCredentialsConfigured(env)) return null;
-  const cached = env.BOX_KV ? await env.BOX_KV.get(BOX_TOKEN_KEY) : null;
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    const age = Math.floor(Date.now() / 1000) - parsed.obtained_at;
-    if (parsed.expires_in - age > 120) return parsed.access_token;
-  }
-  const fresh = await fetchFreshToken(env);
-  if (env.BOX_KV) {
-    await env.BOX_KV.put(BOX_TOKEN_KEY, JSON.stringify({
-      access_token: fresh.access_token,
-      obtained_at: Math.floor(Date.now() / 1000),
-      expires_in: fresh.expires_in || 3600,
-    }));
-  }
+  if (!response.ok) return null;
+  const body = await response.json();
+  const fresh = {
+    access_token: body.access_token, refresh_token: body.refresh_token,
+    obtained_at: Math.floor(Date.now() / 1000), expires_in: body.expires_in || 3600,
+  };
+  await env.BOX_KV.put("box:tokens", JSON.stringify(fresh));
   return fresh.access_token;
 }
 
@@ -130,42 +114,69 @@ export async function handlePcnApi(route, request, env) {
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
 
-  // GET box/status -> whether the CCG credentials and folder are configured, and (if
-  // so) whether they actually work -- fetches the folder's own name as the check.
-  if (route === "box/status" && method === "GET") {
-    if (!boxCredentialsConfigured(env) || !env.PCN_BOX_FOLDER_ID) {
-      return json({ configured: false });
+  // GET box/folders?id=0 -- same folder-picker copy Consensus's survey builder has,
+  // gated by requireBetaAuth like everything else admin-side in this file rather than
+  // worker.js's own CONTROL_PASSWORD session.
+  if (route === "box/folders" && method === "GET") {
+    const token = await boxAccessToken(env);
+    if (!token) return json({ error: "Box is not connected yet." }, 409);
+    const id = new URL(request.url).searchParams.get("id") || "0";
+    const headers = { authorization: `Bearer ${token}` };
+    const [infoRes, itemsRes] = await Promise.all([
+      fetch(`${BOX_API}/folders/${id}?fields=name,path_collection`, { headers }),
+      fetch(`${BOX_API}/folders/${id}/items?fields=name,type&limit=1000`, { headers }),
+    ]);
+    if (!infoRes.ok || !itemsRes.ok) {
+      return json({ error: `Box API error (${infoRes.status}/${itemsRes.status})` }, 502);
     }
-    try {
-      const token = await pcnBoxAccessToken(env);
-      const headers = { authorization: `Bearer ${token}` };
-      const response = await fetch(`${BOX_API}/folders/${env.PCN_BOX_FOLDER_ID}?fields=name`, { headers });
-      if (!response.ok) throw new Error(`Box API error (${response.status})`);
-      const folder = await response.json();
-      return json({ configured: true, connected: true, folderName: folder.name });
-    } catch (e) {
-      return json({ configured: true, connected: false, error: e.message });
-    }
+    const info = await infoRes.json();
+    const items = await itemsRes.json();
+    const breadcrumb = [...((info.path_collection && info.path_collection.entries) || [])
+      .map((e) => ({ id: e.id, name: e.name })), { id, name: info.name }];
+    const folders = (items.entries || []).filter((e) => e.type === "folder")
+      .map((e) => ({ id: e.id, name: e.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return json({ id, name: info.name, breadcrumb, folders });
   }
 
-  // POST box/test -> writes a trivial test file to the dedicated folder, reads it
+  // GET config -> { folderId, folderName }
+  if (route === "config" && method === "GET") {
+    return json(await getConfig(env));
+  }
+
+  // POST config { folderId, folderName }
+  if (route === "config" && method === "POST") {
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    if (!body.folderId) return json({ error: "Pick a folder first." }, 400);
+    const config = { folderId: String(body.folderId), folderName: String(body.folderName || "") };
+    await saveConfig(env, config);
+    return json({ ok: true, ...config });
+  }
+
+  // GET box/status -> whether the shared Box connection is live, and whether a PCN
+  // data folder has been chosen yet.
+  if (route === "box/status" && method === "GET") {
+    const token = await boxAccessToken(env);
+    if (!token) return json({ connected: false });
+    const config = await getConfig(env);
+    return json({ connected: true, folderId: config.folderId, folderName: config.folderName });
+  }
+
+  // POST box/test -> writes a trivial test file to the chosen data folder, reads it
   // straight back, and confirms the round-trip -- exactly build step 1's bar, nothing
   // about extraction or the real data model yet.
   if (route === "box/test" && method === "POST") {
-    if (!boxCredentialsConfigured(env)) {
-      return json({ error: "Box credentials aren't set up yet (PCN_BOX_CLIENT_ID / " +
-        "PCN_BOX_CLIENT_SECRET / PCN_BOX_ENTERPRISE_ID) -- see SETUP.md." }, 500);
-    }
-    if (!env.PCN_BOX_FOLDER_ID) {
-      return json({ error: "PCN_BOX_FOLDER_ID isn't set yet -- see SETUP.md." }, 500);
-    }
+    const token = await boxAccessToken(env);
+    if (!token) return json({ error: "Box is not connected yet -- open the control panel and log in with Box." }, 409);
+    const config = await getConfig(env);
+    if (!config.folderId) return json({ error: "Pick a PCN data folder first." }, 409);
     try {
-      const token = await pcnBoxAccessToken(env);
       const headers = { authorization: `Bearer ${token}` };
       const payload = { ok: true, writtenAt: new Date().toISOString(), by: auth.email };
-      const existing = await findFileInFolder(headers, env.PCN_BOX_FOLDER_ID, TEST_FILE_NAME);
+      const existing = await findFileInFolder(headers, config.folderId, TEST_FILE_NAME);
       const uploaded = await uploadTextFile(
-        headers, env.PCN_BOX_FOLDER_ID, TEST_FILE_NAME,
+        headers, config.folderId, TEST_FILE_NAME,
         JSON.stringify(payload, null, 2), existing ? existing.id : null
       );
       // Box's upload API returns the same {entries: [...]} shape whether this created

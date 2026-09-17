@@ -37,6 +37,7 @@
   button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
            padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.small { padding:6px 11px; font-size:12.5px; }
   button:disabled { opacity:.5; cursor:not-allowed; }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
@@ -48,6 +49,14 @@
   .msg.err { color:var(--bad); }
   .msg.ok { color:var(--good); }
   .msg.muted { color:var(--text-muted); }
+  .folder-row { display:flex; align-items:center; justify-content:space-between;
+                padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .folder-row:hover { background:var(--wash); }
+  .folder-row .enter { font-size:12px; color:var(--accent); }
+  .crumb { cursor:pointer; color:var(--accent); }
+  .crumb:hover { text-decoration:underline; }
+  .crumb-sep { color:var(--text-muted); margin:0 4px; }
+  .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
   pre { background:var(--wash); border-radius:8px; padding:10px 12px; font-size:12px;
         overflow-x:auto; margin:10px 0 0; }
   [hidden] { display:none !important; }
@@ -69,15 +78,24 @@
 
   <div class="card">
     <h3>Box connection</h3>
-    <p class="desc">This mini app uses its own Box service account (Client Credentials
-      Grant), separate from the Council Survey Dashboard and Consensus's shared
-      user-delegated connection -- see SETUP.md for how the credentials get set up.</p>
+    <p class="desc">Uses the same Box connection every other tool here shares -- log in
+      with Box from admin.html's Developer section if this says not connected.</p>
     <div class="row">
       <span id="statusPill"><span class="pill warn">Checking…</span></span>
       <button type="button" id="refreshStatusBtn">Refresh</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Data folder</h3>
+    <p class="desc">The one Box folder this app reads and writes -- its data file at
+      the root, plus a subfolder for raw source documents kept for audit.</p>
+    <p style="margin:0 0 10px">Currently: <b id="folderName">(none selected)</b></p>
+    <div class="row">
+      <button type="button" id="chooseFolderBtn">Choose folder…</button>
       <button type="button" class="primary" id="testBtn">Test Box round-trip</button>
     </div>
-    <p class="msg" id="statusMsg"></p>
+    <div id="folderPicker" hidden class="picker"></div>
     <pre id="testResult" hidden></pre>
   </div>
 
@@ -97,6 +115,10 @@
   try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
   if (!token) { window.location.href = "/beta/login.html"; return; }
 
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
   function signOut() {
     try { sessionStorage.removeItem("beta-token"); } catch (e) {}
     window.location.href = "/beta/login.html";
@@ -124,27 +146,15 @@
   function loadStatus() {
     el("statusPill").innerHTML = '<span class="pill warn">Checking…</span>';
     return api("box/status").then(function (status) {
-      if (!status.configured) {
-        el("statusPill").innerHTML = '<span class="pill bad">Not configured</span>';
-        el("statusMsg").className = "msg muted";
-        el("statusMsg").textContent = "PCN_BOX_CLIENT_ID / PCN_BOX_CLIENT_SECRET / " +
-          "PCN_BOX_ENTERPRISE_ID / PCN_BOX_FOLDER_ID haven't been set as Cloudflare " +
-          "secrets yet -- see SETUP.md.";
-        return;
-      }
       if (!status.connected) {
-        el("statusPill").innerHTML = '<span class="pill bad">Connection failed</span>';
-        el("statusMsg").className = "msg err";
-        el("statusMsg").textContent = status.error || "Could not reach Box.";
+        el("statusPill").innerHTML = '<span class="pill bad">Not connected</span>';
+        el("folderName").textContent = "(none selected)";
         return;
       }
       el("statusPill").innerHTML = '<span class="pill good">Connected</span>';
-      el("statusMsg").className = "msg muted";
-      el("statusMsg").textContent = "Folder: " + status.folderName;
+      el("folderName").textContent = status.folderName || "(none selected)";
     }).catch(function (e) {
       el("statusPill").innerHTML = '<span class="pill bad">Error</span>';
-      el("statusMsg").className = "msg err";
-      el("statusMsg").textContent = e.message;
     });
   }
 
@@ -159,7 +169,6 @@
       el("testResult").textContent = JSON.stringify(result, null, 2);
       el("testBtn").disabled = false;
       el("testBtn").textContent = "Test Box round-trip";
-      loadStatus();
     }).catch(function (e) {
       el("testResult").hidden = false;
       el("testResult").textContent = "Error: " + e.message;
@@ -167,6 +176,48 @@
       el("testBtn").textContent = "Test Box round-trip";
     });
   });
+
+  /* ---------- Box folder picker (same shape as Consensus's) ---------- */
+  function openPicker(folderId) {
+    el("folderPicker").hidden = false;
+    el("folderPicker").innerHTML = '<p class="msg muted">Loading…</p>';
+    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
+      var html = '<div class="msg" style="margin-bottom:8px" id="pickerCrumb"></div>' +
+        '<div id="pickerList" style="max-height:240px;overflow-y:auto"></div>' +
+        '<div class="row" style="margin-top:12px">' +
+        '<button class="primary small" type="button" id="pickerUseBtn">Use this folder</button>' +
+        '<button class="small" type="button" id="pickerCancelBtn">Cancel</button></div>';
+      el("folderPicker").innerHTML = html;
+      var crumbEl = el("pickerCrumb"), listEl = el("pickerList");
+      crumbEl.innerHTML = data.breadcrumb.map(function (c, i) {
+        var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
+        return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' + esc(c.name || "All Files") + "</span>";
+      }).join("");
+      Array.prototype.forEach.call(crumbEl.querySelectorAll(".crumb"), function (node) {
+        node.addEventListener("click", function () { openPicker(node.dataset.id); });
+      });
+      listEl.innerHTML = data.folders.length ? data.folders.map(function (f) {
+        return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>📁 ' + esc(f.name) +
+          '</span><span class="enter">Open &rarr;</span></div>';
+      }).join("") : '<p class="msg muted">No subfolders here -- "Use this folder" picks this one.</p>';
+      Array.prototype.forEach.call(listEl.querySelectorAll(".folder-row"), function (row) {
+        row.addEventListener("click", function () { openPicker(row.dataset.id); });
+      });
+      el("pickerUseBtn").addEventListener("click", function () {
+        var crumbs = crumbEl.querySelectorAll(".crumb");
+        var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : data.name;
+        api("config", { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
+          .then(function () {
+            el("folderName").textContent = name;
+            el("folderPicker").hidden = true;
+          }).catch(function (e) { window.alert(e.message); });
+      });
+      el("pickerCancelBtn").addEventListener("click", function () { el("folderPicker").hidden = true; });
+    }).catch(function (e) {
+      el("folderPicker").innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
+    });
+  }
+  el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
 
   loadStatus();
 })();
