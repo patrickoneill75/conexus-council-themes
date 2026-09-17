@@ -23,6 +23,8 @@ Everything below is done in a browser. There are no terminal steps.
 | `public/consensus/` | Worker static assets | Consensus: survey builder + results (`index.html`, `results.html`, beta-account gated) and the public respondent chat (`respond.html`, no login). See **9 · Consensus** below. |
 | `src/consensus.js` | Cloudflare Worker | `/api/consensus/*`. Survey CRUD, the live follow-up-question chat, response storage in Box, and triggering the batch analysis -- gates its admin routes with the same beta accounts via `requireBetaAuth`. |
 | `scripts/consensus_analyze.py` | GitHub Actions | Synthesizes a survey's collected responses (out of Box) into prioritized themes per question with Claude, and publishes `public/consensus-results/<id>.json`. Triggered from the Consensus admin page's "Analyze" button. |
+| `public/pcn/` | Worker static assets | PCN Issue Map: the control panel (`index.html`, beta-account gated). See **10 · PCN Issue Map** below. |
+| `src/pcn.js` | Cloudflare Worker | `/api/pcn/*`. Beta-account gated like Consensus, but talks to Box with its own separate Client Credentials Grant service account rather than the Box connection every other tool here shares. |
 
 ---
 
@@ -337,6 +339,54 @@ want to change either.
 
 ---
 
+## 10 · PCN Issue Map
+
+Turns PCN meeting notes/transcripts into an accumulating, evidence-traceable map of how
+members believe their problems connect (Axelrod-style causal mapping / fuzzy cognitive
+maps — see the design doc for the full method and reasoning). **This is an early,
+in-progress build** — right now it's just the Worker, the control panel login, and a
+Box connection test, with no extraction pipeline yet. It'll grow in stages; this section
+will grow with it.
+
+### Why its Box connection is different from everything else here
+
+Every other tool in this repo shares one Box connection: a single app, user-delegated
+(you log in with your own Box account, and the app can reach whatever you can reach).
+PCN Issue Map deliberately does **not** join that connection. Instead it uses its own
+service account with **Client Credentials Grant (CCG)** authentication, scoped to one
+dedicated folder it can read and write — nothing else. That's a real tradeoff, not just
+extra setup: a CCG service account scoped to one folder is a narrow, low-risk IT
+request that tends to get approved quickly, where broadening the existing shared app's
+scope (or asking for AI, Sign, or app-user-management scopes it doesn't need) tends not
+to.
+
+To set it up, ask your Box admin for:
+- **One dedicated folder** — a data file at its root plus a subfolder for raw source
+  documents kept for audit, nothing else in it.
+- **A service account using Client Credentials Grant**, scoped to file read/write in
+  that one folder only.
+
+That request gives you a **Client ID**, **Client Secret**, and **Enterprise ID**. Set
+all three, plus the dedicated folder's ID, as secrets in **both** places — Cloudflare
+Worker secrets (so the control panel can read/test the connection directly) and GitHub
+Actions repository secrets (so a processing run can do its actual work) — never in a
+code file:
+
+| Secret | Where | What |
+| --- | --- | --- |
+| `PCN_BOX_CLIENT_ID` | Cloudflare + GitHub | The CCG service account's Client ID. |
+| `PCN_BOX_CLIENT_SECRET` | Cloudflare + GitHub | The CCG service account's Client Secret. |
+| `PCN_BOX_ENTERPRISE_ID` | Cloudflare + GitHub | Your Box Enterprise ID (CCG authenticates as the enterprise, not a person). |
+| `PCN_BOX_FOLDER_ID` | Cloudflare + GitHub | The dedicated folder's ID. Not admin-choosable through a folder picker the way Consensus's per-survey responses folder is — the design calls for exactly one fixed folder, set up once. |
+
+Once those are set and pushed via **Set Cloudflare secrets**, open **PCN Issue Map**'s
+control panel from the Mini App Platform grid and click **Test Box round-trip** — it
+writes a small JSON file to the dedicated folder and reads it straight back, confirming
+the whole chain (Worker → CCG token exchange → Box) works before any real processing
+logic exists.
+
+---
+
 ## Notes for a security review
 
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
@@ -344,6 +394,10 @@ want to change either.
   with enterprise-wide reach. It has both read and write scope (shared with conexus-mcm,
   which needs write) — this project uses write only to replace the two export files in
   the configured Data Folder; it never touches anything else in your Box account.
+  **PCN Issue Map is the one exception**: it uses its own separate Client Credentials
+  Grant service account, deliberately scoped to file read/write in one dedicated folder
+  only, rather than joining this shared user-delegated app or broadening its scope — see
+  **10 · PCN Issue Map**.
 - **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
   run sends a new meeting's free-text answers (organization name and rating numbers
   included, but never the respondent's name — those columns are stripped before the
@@ -397,3 +451,5 @@ want to change either.
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |
 | Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |
+| PCN Issue Map's Box status says "Not configured" | `PCN_BOX_CLIENT_ID` / `PCN_BOX_CLIENT_SECRET` / `PCN_BOX_ENTERPRISE_ID` / `PCN_BOX_FOLDER_ID` haven't been set as Cloudflare secrets yet, or the Set Cloudflare secrets workflow hasn't run since they were added. See step 10. |
+| PCN Issue Map's "Test Box round-trip" fails | The CCG service account's scope doesn't cover `PCN_BOX_FOLDER_ID`, or the folder ID itself is wrong — double check both against what Box actually granted. |

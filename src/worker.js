@@ -1,5 +1,6 @@
 import { handleBetaApi } from "./beta_auth.js";
 import { handleConsensusApi } from "./consensus.js";
+import { handlePcnApi } from "./pcn.js";
 
 /**
  * Worker entry point: serves the public dashboard and the control-panel API.
@@ -242,6 +243,15 @@ async function handleApi(route, request, env) {
   // public.
   if (route === "consensus" || route.startsWith("consensus/")) {
     return handleConsensusApi(route.slice("consensus".length).replace(/^\/+/, ""), request, env);
+  }
+
+  // ---- /api/pcn/* ----------------------------------------------------------------------
+  // Delegated entirely to pcn.js -- the PCN Issue Map mini app. Also beta-account
+  // gated, but talks to Box with its own separate Client Credentials Grant service
+  // account rather than this file's user-delegated OAuth connection -- see pcn.js's
+  // module docstring for why.
+  if (route === "pcn" || route.startsWith("pcn/")) {
+    return handlePcnApi(route.slice("pcn".length).replace(/^\/+/, ""), request, env);
   }
 
   // ---- GET /api/config-check ---------------------------------------------------------
