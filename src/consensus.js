@@ -42,6 +42,7 @@ import { requireBetaAuth } from "./beta_auth.js";
 
 const SURVEY_PREFIX = "consensus:survey:";
 const PROGRESS_PREFIX = "consensus:progress:";
+const DISPATCH_PREFIX = "consensus:dispatch:";
 const MAX_FOLLOW_UPS = 5; // guards against an admin fat-fingering a huge number and
                            // creating a runaway-length, runaway-cost chat.
 const FOLLOWUP_MODEL = "claude-haiku-4-5"; // cheapest current model -- generating one
@@ -76,12 +77,23 @@ async function saveSurvey(env, survey) {
 /* ---------- request body helpers ---------- */
 
 function cleanQuestions(raw) {
-  return (Array.isArray(raw) ? raw : []).map((q, i) => ({
+  const cleaned = (Array.isArray(raw) ? raw : []).map((q, i) => ({
     id: (q && q.id) || `q${i + 1}-${crypto.randomUUID().slice(0, 8)}`,
     text: String((q && q.text) || "").trim(),
     followUps: Math.max(0, Math.min(MAX_FOLLOW_UPS, Number((q && q.followUps) || 0) | 0)),
     context: String((q && q.context) || "").trim(),
+    personalizeFrom: (q && q.personalizeFrom) ? String(q.personalizeFrom) : null,
   })).filter((q) => q.text);
+  // personalizeFrom must point at a DIFFERENT question that comes strictly earlier in
+  // this same (post-filter, final-id) list -- never trust the client's ordering or ids
+  // as-is, since ids can be stale from before a reorder/removal and a forward or
+  // self-reference would have nothing to personalize from at respond-time anyway.
+  cleaned.forEach((q, i) => {
+    if (!q.personalizeFrom) return;
+    const valid = cleaned.slice(0, i).some((earlier) => earlier.id === q.personalizeFrom);
+    if (!valid) q.personalizeFrom = null;
+  });
+  return cleaned;
 }
 
 function buildSurvey(id, body, existing) {
@@ -280,6 +292,69 @@ async function generateFollowUp(env, survey, question, priorAnswers, completedQu
   return String(toolUse.input.followUpQuestion || "").trim() || null;
 }
 
+// Rewrites ONE question's own wording (not a follow-up) so it references a specific
+// detail from a DIFFERENT, earlier question the admin explicitly picked -- e.g. "Do you
+// know others in the industry leading the way [in reverse logistics]?" once an earlier
+// question established the respondent's answer was about reverse logistics. `source` is
+// that earlier question's full thread as this respondent actually answered it, including
+// any follow-up turns (the personalization is meant to draw on everything they said on
+// that topic, not just their first answer to it).
+async function personalizeQuestion(env, survey, question, source) {
+  const thread = (source.turns || []).map((t) =>
+    `${t.turn === 0 ? "Answer" : "Follow-up " + t.turn + " answer"}: ${t.answer}`
+  ).join("\n");
+  const system =
+    "You lightly rewrite ONE survey question's wording so it naturally references a " +
+    "specific detail the respondent already gave earlier in this survey, instead of " +
+    "asking generically. Keep the question's original meaning and intent completely " +
+    "intact -- change only enough wording to weave in the specific detail. One " +
+    "sentence, conversational, no preamble, no quotation marks. If nothing in the " +
+    "earlier answer is specific enough to reference naturally, return the original " +
+    "question text unchanged rather than forcing it.";
+  const user =
+    `Survey objective: ${survey.objective || "(none given)"}\n` +
+    `Audience: ${survey.audience || "(none given)"}\n` +
+    (survey.generalGuidance ? `General guidance for this whole survey: ${survey.generalGuidance}\n` : "") +
+    `\nOriginal question to rewrite: ${question.text}\n\n` +
+    `Respondent's earlier answer(s) to "${source.questionText}":\n${thread}\n\n` +
+    "Rewrite the original question above to reference the specific detail from that " +
+    "earlier answer.";
+  const tool = {
+    name: "personalize_question",
+    description: "Record the personalized rewrite of the question.",
+    input_schema: {
+      type: "object",
+      properties: { personalizedText: { type: "string" } },
+      required: ["personalizedText"],
+      additionalProperties: false,
+    },
+  };
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.consensus_claude_api,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: FOLLOWUP_MODEL,
+      max_tokens: 300,
+      system,
+      messages: [{ role: "user", content: user }],
+      tools: [tool],
+      tool_choice: { type: "tool", name: "personalize_question" },
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Claude API error (${response.status}): ${detail.slice(0, 300)}`);
+  }
+  const body = await response.json();
+  const toolUse = (body.content || []).find((b) => b.type === "tool_use");
+  const text = toolUse && String(toolUse.input.personalizedText || "").trim();
+  return text || question.text;
+}
+
 /* ---------- GitHub Actions dispatch (analysis) -- same shape as worker.js's own
    POST /api/run, kept local here rather than imported since worker.js doesn't export
    its dispatch helper and this is the only other place that needs it. ---------- */
@@ -310,17 +385,30 @@ async function dispatchAnalysis(env, surveyId) {
   }
 }
 
-async function analysisRuns(env) {
-  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/consensus_analyze.yml/runs?per_page=3`;
+// consensus_analyze.yml is one shared workflow used to analyze EVERY survey (survey_id
+// is just a dispatch input, not part of the workflow's identity), so the most recent run
+// of it is not necessarily the one just dispatched for THIS survey -- it could easily be
+// an already-completed run from analyzing this survey (or a different one) earlier. Without
+// filtering, the status poll would see that stale "completed" run on its very first check
+// and immediately report done, before the real new run even registers with GitHub -- which
+// is exactly why the progress bar never appeared to do anything. `sinceIso`, stored per
+// survey right before dispatch (see the `analyze` route below), lets us ignore every run
+// that isn't newer than the dispatch that's actually being polled for.
+async function analysisRuns(env, sinceIso) {
+  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/consensus_analyze.yml/runs?per_page=10`;
   const response = await fetch(url, { headers: githubHeaders(env) });
   if (!response.ok) return { runs: [] };
   const body = await response.json();
-  return {
-    runs: (body.workflow_runs || []).map((r) => ({
-      status: r.status, conclusion: r.conclusion,
-      started_at: r.run_started_at, updated_at: r.updated_at, url: r.html_url,
-    })),
-  };
+  let runs = (body.workflow_runs || []).map((r) => ({
+    status: r.status, conclusion: r.conclusion,
+    started_at: r.run_started_at, created_at: r.created_at, updated_at: r.updated_at, url: r.html_url,
+  }));
+  if (sinceIso) {
+    const sinceMs = Date.parse(sinceIso) - 5000; // small buffer for clock skew
+    runs = runs.filter((r) => Date.parse(r.created_at) >= sinceMs)
+      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  }
+  return { runs };
 }
 
 /* ---------- routes ---------- */
@@ -417,6 +505,34 @@ export async function handleConsensusApi(route, request, env) {
       return json({ followUp, turn: followUpsGivenSoFar + 1 });
     } catch (e) {
       return json({ error: e.message || "Could not generate a follow-up question." }, 502);
+    }
+  }
+
+  // POST personalize { surveyId, questionId, completed: [{questionId, questionText, turns}, ...] }
+  // -> { text } -- the wording to actually show for this question. If the question
+  // isn't set up to personalize from another one, or its source question hasn't been
+  // answered yet in `completed`, or the Claude key isn't configured, or the rewrite
+  // call itself fails, this ALWAYS falls back to the question's own static text rather
+  // than erroring -- personalized wording is a nicety, never something that should be
+  // able to block a respondent from moving through the survey.
+  if (route === "personalize" && method === "POST") {
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    const survey = await getSurvey(env, body.surveyId);
+    if (!survey) return json({ error: "Survey not found" }, 404);
+    const question = survey.questions.find((q) => q.id === body.questionId);
+    if (!question) return json({ error: "Question not found" }, 404);
+    if (!question.personalizeFrom || !env.consensus_claude_api) {
+      return json({ text: question.text });
+    }
+    const completed = Array.isArray(body.completed) ? body.completed : [];
+    const source = completed.find((c) => c.questionId === question.personalizeFrom);
+    if (!source) return json({ text: question.text });
+    try {
+      const text = await personalizeQuestion(env, survey, question, source);
+      return json({ text });
+    } catch (e) {
+      return json({ text: question.text });
     }
   }
 
@@ -526,6 +642,9 @@ export async function handleConsensusApi(route, request, env) {
     if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) {
       return json({ error: "GitHub is not connected yet (see SETUP.md)." }, 500);
     }
+    // Stored BEFORE dispatching so analyze-status below can tell this run apart from a
+    // stale already-completed run of the shared workflow -- see analysisRuns() above.
+    await env.BOX_KV.put(`${DISPATCH_PREFIX}${survey.id}`, new Date().toISOString());
     try {
       await dispatchAnalysis(env, survey.id);
     } catch (e) {
@@ -536,7 +655,8 @@ export async function handleConsensusApi(route, request, env) {
 
   if (parts[0] === "surveys" && parts.length === 3 && parts[2] === "analyze-status" && method === "GET") {
     if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return json({ runs: [] });
-    return json(await analysisRuns(env));
+    const since = await env.BOX_KV.get(`${DISPATCH_PREFIX}${parts[1]}`);
+    return json(await analysisRuns(env, since));
   }
 
   // GET surveys/<id>/progress -- the actual per-question progress reported by

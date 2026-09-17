@@ -282,10 +282,21 @@ From **Consensus** → **New survey**:
   question's own thread) and uses its own judgement on whether another follow-up would
   actually add value, stopping early rather than padding out to the maximum. No
   per-question flag to configure this — it's inferred from context every time.
+  - **Personalize this question** — optional, and only offered on the second question
+    onward. Point one question at an earlier one, and its wording gets lightly rewritten
+    using everything the respondent said there (including any follow-ups) before it's
+    shown — e.g. "Do you know others leading the way?" becomes "...leading the way in
+    reverse logistics?" once an earlier question established that as the challenge. Falls
+    back to the question's own static text if the source question wasn't reached, Claude
+    is unavailable, or the rewrite call fails — this is wording polish, never something
+    that can block a respondent's progress through the survey. Reordering or removing the
+    source question automatically clears the reference if it's no longer valid.
 - **Responses folder** — the Box folder responses are saved to, as one CSV per survey.
 
 Saving gives you a respondent link (`/consensus/respond.html?survey=<id>`) — share that
-however you'd share any survey link. It's public, no sign-in, by design.
+however you'd share any survey link. It's public, no sign-in, by design. Every question
+(personalized or not) has a brief, consistent pause before it appears — an instantly
+displayed question felt jarring next to a follow-up, which always has some natural delay.
 
 Once responses have come in, **Analyze** (back on the survey list) kicks off
 `consensus_analyze.yml`, which publishes `public/consensus-results/<id>.json` — open

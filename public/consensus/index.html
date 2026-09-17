@@ -37,7 +37,7 @@
   label { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
           color:var(--text-muted); font-weight:600; margin:12px 0 6px; }
   label:first-of-type { margin-top:0; }
-  input[type=text], input[type=number], input[type=email], textarea {
+  input[type=text], input[type=number], input[type=email], textarea, select {
     width:100%; font:inherit; padding:9px 11px; border-radius:8px;
     border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
   textarea { resize:vertical; min-height:52px; }
@@ -322,7 +322,25 @@
   var questions = [];
   var chosenFolder = { id: null, name: null };
 
-  function questionRowHtml(i, total) {
+  function truncate(s, n) {
+    s = String(s || "");
+    return s.length > n ? s.slice(0, n - 1) + "…" : s;
+  }
+
+  function questionRowHtml(i, allQuestions) {
+    var total = allQuestions.length;
+    var earlier = allQuestions.slice(0, i);
+    var personalizeField = earlier.length ? (
+      '<label>Personalize this question</label>' +
+      '<select class="q-personalize-from"><option value="">Don\'t personalize</option>' +
+      earlier.map(function (q, j) {
+        return '<option value="' + esc(q.id) + '">Question ' + (j + 1) + ': ' + esc(truncate(q.text, 50)) + '</option>';
+      }).join("") +
+      '</select>' +
+      '<span class="msg muted">Rewrites this question\'s wording using everything the respondent ' +
+      'said on the selected question, including its follow-ups -- e.g. "leading the way" becomes ' +
+      '"leading the way in reverse logistics" once an earlier answer named that as the challenge.</span>'
+    ) : "";
     return '<div class="question-card" data-index="' + i + '">' +
       '<div class="row top"><span class="qnum">Question ' + (i + 1) + '</span>' +
       '<div class="row" style="gap:4px">' +
@@ -338,16 +356,19 @@
       '<span class="msg muted">how many Claude should generate, 0-5</span></div>' +
       '<label>Context for follow-ups</label>' +
       '<textarea class="q-context" placeholder="Guidance for the follow-up question(s) -- optional"></textarea>' +
+      personalizeField +
       "</div>";
   }
 
   function renderQuestions() {
-    el("questionsList").innerHTML = questions.map(function (q, i) { return questionRowHtml(i, questions.length); }).join("");
+    el("questionsList").innerHTML = questions.map(function (q, i) { return questionRowHtml(i, questions); }).join("");
     var cards = el("questionsList").querySelectorAll(".question-card");
     cards.forEach(function (card, i) {
       card.querySelector(".q-text").value = questions[i].text;
       card.querySelector(".q-followups").value = questions[i].followUps;
       card.querySelector(".q-context").value = questions[i].context;
+      var pf = card.querySelector(".q-personalize-from");
+      if (pf) pf.value = questions[i].personalizeFrom || "";
     });
     Array.prototype.forEach.call(el("questionsList").querySelectorAll(".move-up-btn"), function (btn) {
       btn.addEventListener("click", function () { moveQuestion(Number(btn.dataset.index), -1); });
@@ -359,8 +380,21 @@
       btn.addEventListener("click", function () {
         questions = syncFromDom();
         questions.splice(Number(btn.dataset.index), 1);
+        revalidatePersonalization(questions);
         renderQuestions();
       });
+    });
+  }
+
+  // A question's personalizeFrom only makes sense pointing at something strictly
+  // earlier in the CURRENT order -- after a reorder or removal, clear any reference
+  // that no longer qualifies (points at something removed, or now at/after itself)
+  // rather than silently saving something that could never resolve at respond-time.
+  function revalidatePersonalization(list) {
+    list.forEach(function (q, i) {
+      if (!q.personalizeFrom) return;
+      var stillValid = list.slice(0, i).some(function (earlier) { return earlier.id === q.personalizeFrom; });
+      if (!stillValid) q.personalizeFrom = "";
     });
   }
 
@@ -372,11 +406,13 @@
     var cards = el("questionsList").querySelectorAll(".question-card");
     var synced = [];
     cards.forEach(function (card, i) {
+      var pf = card.querySelector(".q-personalize-from");
       synced.push({
         id: questions[i] ? questions[i].id : undefined,
         text: card.querySelector(".q-text").value,
         followUps: Number(card.querySelector(".q-followups").value) || 0,
         context: card.querySelector(".q-context").value,
+        personalizeFrom: pf ? pf.value : "",
       });
     });
     return synced;
@@ -389,6 +425,7 @@
     var moved = questions[index];
     questions[index] = questions[target];
     questions[target] = moved;
+    revalidatePersonalization(questions);
     renderQuestions();
   }
 
@@ -396,11 +433,13 @@
     var cards = el("questionsList").querySelectorAll(".question-card");
     var out = [];
     cards.forEach(function (card, i) {
+      var pf = card.querySelector(".q-personalize-from");
       out.push({
         id: questions[i] ? questions[i].id : undefined,
         text: card.querySelector(".q-text").value.trim(),
         followUps: Number(card.querySelector(".q-followups").value) || 0,
         context: card.querySelector(".q-context").value.trim(),
+        personalizeFrom: pf ? pf.value : "",
       });
     });
     return out.filter(function (q) { return q.text; });
@@ -408,13 +447,13 @@
 
   el("addQuestionBtn").addEventListener("click", function () {
     questions = collectQuestions();
-    questions.push({ text: "", followUps: 0, context: "" });
+    questions.push({ id: crypto.randomUUID(), text: "", followUps: 0, context: "", personalizeFrom: "" });
     renderQuestions();
   });
 
   function resetBuilder() {
     editingId = null;
-    questions = [{ text: "", followUps: 0, context: "" }];
+    questions = [{ id: crypto.randomUUID(), text: "", followUps: 0, context: "", personalizeFrom: "" }];
     chosenFolder = { id: null, name: null };
     el("surveyName").value = "";
     el("surveyObjective").value = "";
@@ -439,7 +478,8 @@
       el("surveyAudience").value = survey.audience;
       el("surveyGeneralGuidance").value = survey.generalGuidance || "";
       questions = survey.questions.map(function (q) {
-        return { id: q.id, text: q.text, followUps: q.followUps, context: q.context };
+        return { id: q.id, text: q.text, followUps: q.followUps, context: q.context,
+                 personalizeFrom: q.personalizeFrom || "" };
       });
       chosenFolder = { id: survey.boxFolderId, name: survey.boxFolderName };
       el("folderName").textContent = chosenFolder.name || "(none selected)";
