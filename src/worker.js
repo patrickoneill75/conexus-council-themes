@@ -247,9 +247,9 @@ async function handleApi(route, request, env) {
 
   // ---- /api/pcn/* ----------------------------------------------------------------------
   // Delegated entirely to pcn.js -- the PCN Issue Map mini app. Also beta-account
-  // gated, but talks to Box with its own separate Client Credentials Grant service
-  // account rather than this file's user-delegated OAuth connection -- see pcn.js's
-  // module docstring for why.
+  // gated, and shares this file's same user-delegated Box OAuth connection (see
+  // box/authorize-url, box/callback, box/status above) like every other mini app --
+  // see pcn.js's module docstring.
   if (route === "pcn" || route.startsWith("pcn/")) {
     return handlePcnApi(route.slice("pcn".length).replace(/^\/+/, ""), request, env);
   }

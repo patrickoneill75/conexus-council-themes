@@ -344,9 +344,7 @@ want to change either.
 Turns PCN meeting notes/transcripts into an accumulating, evidence-traceable map of how
 members believe their problems connect (Axelrod-style causal mapping / fuzzy cognitive
 maps — see the design doc for the full method and reasoning). **This is an early,
-in-progress build** — right now it's just the Worker, the control panel login, and a
-Box connection test, with no extraction pipeline yet. It'll grow in stages; this section
-will grow with it.
+in-progress build.** It'll grow in stages; this section will grow with it.
 
 Its Box access is the **same shared, user-delegated connection** every other tool here
 uses — nothing new to set up. If the control panel says "Not connected," log in with
@@ -357,7 +355,21 @@ Open **PCN Issue Map**'s control panel from the Mini App Platform grid, click
 subfolder for raw source documents kept for audit — same idea as the Data Folder the
 Council app uses, just its own separate folder), then **Test Box round-trip** — it
 writes a small JSON file there and reads it straight back, confirming the connection
-works before any real processing logic exists.
+works.
+
+**Ingestion + normalization pipeline** (`pcn/pipeline/`, Python, no Box access, no
+model calls): `pcn/pipeline/ingest` reads a source file (`.vtt`/`.srt`/`.txt` for
+transcripts, `.md`/`.txt`/`.docx` for either) into a `RawDocument`; `pcn/pipeline/
+normalize` turns that into a `NormalizedDocument` of `Segment`s — speaker turns for a
+transcript, heading/bullet units (with inherited parent heading context) for notes.
+`pcn/CODING_PROTOCOL.md` is the coding protocol the later extraction stage follows —
+worth reading even at this stage, since Segment structure (heading_path in
+particular) exists to support it. Run manually against the committed synthetic
+fixtures (`pcn/fixtures/`) via the **PCN Issue Map -- fixture pipeline test** GitHub
+Actions workflow (Actions tab → Run workflow); it uploads each stage's JSON output as
+a downloadable artifact. No real PCN meeting data exists in this repo — the fixtures
+are made up, matching the design doc's own worked example (a staffing → overtime →
+turnover loop).
 
 ---
 

@@ -1,0 +1,55 @@
+name: PCN Issue Map -- fixture pipeline test
+
+# Manually triggered from the Actions tab. Runs the ingest + normalize stages against
+# the committed synthetic fixtures (pcn/fixtures/) and uploads each stage's JSON
+# output as a downloadable artifact, so the pipeline can be inspected without a local
+# Python setup. Touches Box not at all -- per the design doc, PCN-3 (ingestion and
+# normalization) should be fully testable against fixtures alone; no secrets needed.
+on:
+  workflow_dispatch:
+
+jobs:
+  fixture-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Ingest + normalize the transcript fixture
+        run: |
+          mkdir -p /tmp/pcn-out
+          python -m pcn.pipeline.cli ingest pcn/fixtures/sample_transcript.vtt \
+            /tmp/pcn-out/transcript.raw.json \
+            --input-type transcript --meeting-id fixture-transcript-001
+          python -m pcn.pipeline.cli normalize /tmp/pcn-out/transcript.raw.json \
+            /tmp/pcn-out/transcript.normalized.json
+
+      - name: Ingest + normalize the notes fixture
+        run: |
+          python -m pcn.pipeline.cli ingest pcn/fixtures/sample_notes.md \
+            /tmp/pcn-out/notes.raw.json \
+            --input-type notes --meeting-id fixture-notes-001 --notetaker "J. Alvarez"
+          python -m pcn.pipeline.cli normalize /tmp/pcn-out/notes.raw.json \
+            /tmp/pcn-out/notes.normalized.json
+
+      - name: Print normalized segment counts
+        run: |
+          python - <<'EOF'
+          import json
+          for name in ("transcript", "notes"):
+              doc = json.load(open(f"/tmp/pcn-out/{name}.normalized.json"))
+              print(f"{name}: {len(doc['segments'])} segments")
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pcn-fixture-pipeline-output
+          path: /tmp/pcn-out/*.json
+          retention-days: 14
