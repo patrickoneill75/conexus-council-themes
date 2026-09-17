@@ -357,19 +357,27 @@ Council app uses, just its own separate folder), then **Test Box round-trip** �
 writes a small JSON file there and reads it straight back, confirming the connection
 works.
 
-**Ingestion + normalization pipeline** (`pcn/pipeline/`, Python, no Box access, no
-model calls): `pcn/pipeline/ingest` reads a source file (`.vtt`/`.srt`/`.txt` for
-transcripts, `.md`/`.txt`/`.docx` for either) into a `RawDocument`; `pcn/pipeline/
-normalize` turns that into a `NormalizedDocument` of `Segment`s — speaker turns for a
-transcript, heading/bullet units (with inherited parent heading context) for notes.
-`pcn/CODING_PROTOCOL.md` is the coding protocol the later extraction stage follows —
-worth reading even at this stage, since Segment structure (heading_path in
-particular) exists to support it. Run manually against the committed synthetic
-fixtures (`pcn/fixtures/`) via the **PCN Issue Map -- fixture pipeline test** GitHub
-Actions workflow (Actions tab → Run workflow); it uploads each stage's JSON output as
-a downloadable artifact. No real PCN meeting data exists in this repo — the fixtures
-are made up, matching the design doc's own worked example (a staffing → overtime →
-turnover loop).
+**Pipeline** (`pcn/pipeline/`, Python): `pcn/pipeline/ingest` reads a source file
+(`.vtt`/`.srt`/`.txt` for transcripts, `.md`/`.txt`/`.docx` for either) into a
+`RawDocument`; `pcn/pipeline/normalize` turns that into a `NormalizedDocument` of
+`Segment`s — speaker turns for a transcript, heading/bullet units (with inherited
+parent heading context) for notes; `pcn/pipeline/extract` calls Claude (Haiku by
+default, escalating a specific segment to Sonnet only when two independent extraction
+passes disagree on it) to turn those Segments into `Assertion`s appended to the
+assertion ledger (`pcn/pipeline/ledger.py`) — see `pcn/CODING_PROTOCOL.md` for the
+five coding rules the extraction prompt follows. Only `extract` makes model calls or
+costs anything; `ingest`/`normalize` are plain Python. Extraction reuses this
+project's own `ANTHROPIC_API_KEY` repository secret rather than a dedicated key —
+volume here is cents per meeting.
+
+Run all three manually against the committed synthetic fixtures (`pcn/fixtures/`) via
+the **PCN Issue Map -- fixture pipeline test** GitHub Actions workflow (Actions tab →
+Run workflow); it uploads each stage's JSON output, including the resulting ledger,
+as a downloadable artifact. No real PCN meeting data exists in this repo — the
+fixtures are made up, matching the design doc's own worked example (a staffing →
+overtime → turnover loop). The ledger itself isn't wired up to live in this app's Box
+data folder yet — that lands once there's an actual admin-triggered run over
+uploaded meeting files, rather than just this fixture smoke test.
 
 ---
 

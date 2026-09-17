@@ -1,10 +1,11 @@
 name: PCN Issue Map -- fixture pipeline test
 
-# Manually triggered from the Actions tab. Runs the ingest + normalize stages against
+# Manually triggered from the Actions tab. Runs ingest + normalize + extract against
 # the committed synthetic fixtures (pcn/fixtures/) and uploads each stage's JSON
 # output as a downloadable artifact, so the pipeline can be inspected without a local
-# Python setup. Touches Box not at all -- per the design doc, PCN-3 (ingestion and
-# normalization) should be fully testable against fixtures alone; no secrets needed.
+# Python setup. Touches Box not at all -- ingest/normalize need no secrets at all;
+# extract makes real (cents-per-meeting) Claude calls using the same ANTHROPIC_API_KEY
+# repository secret the Council Survey Dashboard already uses (see pcn/config.py).
 on:
   workflow_dispatch:
 
@@ -47,6 +48,15 @@ jobs:
               doc = json.load(open(f"/tmp/pcn-out/{name}.normalized.json"))
               print(f"{name}: {len(doc['segments'])} segments")
           EOF
+
+      - name: Extract assertions from both fixtures into a fresh ledger
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -m pcn.pipeline.cli extract /tmp/pcn-out/transcript.normalized.json \
+            /tmp/pcn-out/ledger.json
+          python -m pcn.pipeline.cli extract /tmp/pcn-out/notes.normalized.json \
+            /tmp/pcn-out/ledger.json
 
       - uses: actions/upload-artifact@v4
         with:

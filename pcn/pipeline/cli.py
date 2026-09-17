@@ -1,8 +1,8 @@
 """Command-line entry point for the PCN Issue Map pipeline -- one subcommand per
 build stage (design doc section 15), so a stage's output can be inspected in
-isolation without wiring the whole pipeline together end to end. `ingest` and
-`normalize` are this build step's stages; later steps add `extract`, `match`,
-`derive`. Used directly by .github/workflows/pcn_fixture_test.yml.
+isolation without wiring the whole pipeline together end to end. `ingest`,
+`normalize`, and `extract` are built so far; later steps add `match`, `derive`. Used
+directly by .github/workflows/pcn_fixture_test.yml.
 """
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ import argparse
 import json
 from pathlib import Path
 
+from . import ledger
+from .extract import extract_document
 from .ingest import ingest as run_ingest
-from .models import RawDocument
+from .models import NormalizedDocument, RawDocument, Segment
 from .normalize import normalize as run_normalize
 
 
@@ -26,6 +28,21 @@ def _cmd_normalize(args: argparse.Namespace) -> None:
     normalized = run_normalize(raw)
     Path(args.output).write_text(json.dumps(normalized.to_dict(), indent=2), encoding="utf-8")
     print(f"Normalized {args.input} -> {args.output} ({len(normalized.segments)} segments)")
+
+
+def _cmd_extract(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    doc = NormalizedDocument(**{**payload, "segments": [Segment(**s) for s in payload["segments"]]})
+    assertions = extract_document(doc)
+    rows = ledger.append(Path(args.ledger), [a.to_dict() for a in assertions])
+    agreed = sum(1 for a in assertions if a.agreement is True)
+    disagreed = sum(1 for a in assertions if a.agreement is False)
+    escalated = sum(1 for a in assertions if a.agreement is None)
+    print(
+        f"Extracted {len(assertions)} assertions from {args.input} -> {args.ledger} "
+        f"({agreed} agreed, {disagreed} disagreed-but-kept, {escalated} escalated to Sonnet; "
+        f"ledger now has {len(rows)} assertions total)"
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -44,6 +61,13 @@ def main(argv: list[str] | None = None) -> None:
     normalize_parser.add_argument("input")
     normalize_parser.add_argument("output")
     normalize_parser.set_defaults(func=_cmd_normalize)
+
+    extract_parser = subparsers.add_parser(
+        "extract", help="Extract Assertions from a NormalizedDocument and append them to the ledger."
+    )
+    extract_parser.add_argument("input")
+    extract_parser.add_argument("ledger")
+    extract_parser.set_defaults(func=_cmd_extract)
 
     args = parser.parse_args(argv)
     args.func(args)
