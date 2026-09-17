@@ -302,6 +302,10 @@ Saving gives you a respondent link (`/consensus/respond.html?survey=<id>`) — s
 however you'd share any survey link. It's public, no sign-in, by design. Every question
 (personalized or not) has a brief, consistent pause before it appears — an instantly
 displayed question felt jarring next to a follow-up, which always has some natural delay.
+A progress bar above the chat shows "Question X of Y", advancing one step per base
+question completed — follow-ups don't move it, since the model decides on the fly how
+many (if any) a question gets, so there's no fixed number of sub-steps to show partial
+credit for.
 
 Once responses have come in, **Analyze** (back on the survey list) kicks off
 `consensus_analyze.yml`, which publishes `public/consensus-results/<id>.json` — open
