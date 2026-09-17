@@ -115,10 +115,18 @@
   var survey = null;
   var qIndex = 0;
   var currentQuestion = null;
+  var currentQuestionDisplayedText = ""; // what was actually shown for the current
+    // question -- its static text, or a personalized rewrite of it (see startQuestion())
   var currentTurns = []; // this question's [{turn, prompt, answer}] so far
   var allResponses = []; // completed questions' {questionId, questionText, turns}
 
+  // An instantly-appearing question felt jarring next to a follow-up, which always has
+  // some natural network delay -- this puts every question through the same minimum
+  // "thinking" pause so the pacing feels consistent throughout the chat.
+  var MIN_QUESTION_DELAY_MS = 1500;
+
   function askCurrentPrompt(promptText) {
+    currentQuestionDisplayedText = promptText;
     addBubble("bot", promptText);
     el("composer").hidden = false;
     el("answerInput").disabled = false;
@@ -137,7 +145,26 @@
     qIndex = index;
     currentQuestion = survey.questions[index];
     currentTurns = [];
-    askCurrentPrompt(currentQuestion.text);
+
+    var typing = addTyping();
+    var delay = new Promise(function (resolve) { setTimeout(resolve, MIN_QUESTION_DELAY_MS); });
+    // Always calls /personalize, even for a question with no personalization set up --
+    // the Worker answers those instantly with the static text (no Claude call), and
+    // that quick round trip is harmless since it's hidden inside the delay above
+    // anyway. Falls back to the known static text on any error, same as the Worker's
+    // own fail-open behavior -- personalized wording is a nicety, never something that
+    // should be able to block a respondent from moving through the survey.
+    var personalize = fetch("/api/consensus/personalize", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ surveyId: surveyId, questionId: currentQuestion.id, completed: allResponses }),
+    }).then(function (r) { return r.json(); })
+      .then(function (data) { return (data && data.text) || currentQuestion.text; })
+      .catch(function () { return currentQuestion.text; });
+
+    Promise.all([personalize, delay]).then(function (results) {
+      typing.remove();
+      askCurrentPrompt(results[0]);
+    });
   }
 
   function finish() {
@@ -162,7 +189,7 @@
     if (!answer) return;
     addBubble("user", answer);
     el("composer").hidden = true;
-    var prompt = currentTurns.length ? currentTurns[currentTurns.length - 1].nextPrompt : currentQuestion.text;
+    var prompt = currentTurns.length ? currentTurns[currentTurns.length - 1].nextPrompt : currentQuestionDisplayedText;
     currentTurns.push({ turn: currentTurns.length, prompt: prompt, answer: answer });
 
     var typing = addTyping();
@@ -178,7 +205,7 @@
         typing.remove();
         if (data.done) {
           allResponses.push({
-            questionId: currentQuestion.id, questionText: currentQuestion.text,
+            questionId: currentQuestion.id, questionText: currentQuestionDisplayedText,
             turns: currentTurns.map(function (t) { return { turn: t.turn, prompt: t.prompt, answer: t.answer }; }),
           });
           startQuestion(qIndex + 1);
