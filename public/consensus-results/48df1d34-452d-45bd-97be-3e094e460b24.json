@@ -1,0 +1,108 @@
+{
+  "generatedAt": "2026-09-17T11:59:04+00:00",
+  "questions": [
+    {
+      "consensus": [],
+      "id": "q1-d947dc41",
+      "needsMoreInfo": [
+        "Only one response received (Patrick O'Neill); not enough data to identify themes or patterns for this identification question."
+      ],
+      "responseCount": 1,
+      "text": "What is your first and last name?",
+      "themes": []
+    },
+    {
+      "consensus": [
+        "Only one respondent answered this question, so no cross-respondent consensus can be established yet."
+      ],
+      "id": "q2-2566928f",
+      "needsMoreInfo": [
+        "Only one response received -- need more respondents to determine if the build-vs-buy fleet decision is a widely shared challenge.",
+        "Unclear what specific ROI thresholds or financial models the respondent is using to evaluate fleet ownership.",
+        "No detail on how severe the labor shortage impact is operationally (e.g., specific roles, regions, or wage pressures).",
+        "Not clear whether other manufacturers face the same core-competency gap or if this is unique to this respondent's business.",
+        "No information on timeline or urgency driving this fleet decision."
+      ],
+      "responseCount": 1,
+      "text": "What are your biggest challenges around trucking right now? What problems are you trying to solve?",
+      "themes": [
+        {
+          "deepDive": "This is a single respondent's answer, so it can't yet be validated as a broader theme, but it points to a decision framework that likely resonates with other manufacturers who lack trucking as a core competency. The tension is between control/reliability of owning a fleet versus the financial and operational risk of entering an unfamiliar business line. This could be a valuable agenda topic: a panel of manufacturers or 3PLs who have made this build-vs-buy decision and can share their ROI models and lessons learned.",
+          "details": [
+            "The core question is a build-vs-buy decision: invest in owned trucking capacity or stay reliant on outside carriers.",
+            "This is driven by uncertainty in the current carrier market, not just internal preference.",
+            "The respondent frames this as an active, unresolved strategic decision."
+          ],
+          "summary": "Manufacturers are weighing whether to build an in-house private fleet versus relying on third-party carriers."
+        },
+        {
+          "deepDive": "The respondent explicitly deprioritized labor shortage relative to capital cost and ROI uncertainty, suggesting that for non-trucking companies considering fleet ownership, financial modeling and cost justification may be a bigger pain point than workforce availability. This nuance is important for agenda-setting: sessions on private fleet economics, financing options, or ROI benchmarking may be more valuable than general labor-shortage discussions for this segment of manufacturers.",
+          "details": [
+            "Capital costs of purchasing trucks/equipment are cited as a concrete, quantifiable barrier.",
+            "When asked to weigh capital costs against labor shortage, the respondent ranked ROI/capital costs as the number one concern.",
+            "The concern is rooted in lack of core competency in trucking, making it harder to model returns confidently."
+          ],
+          "summary": "ROI justification is the dominant barrier, driven by high capital costs for equipment."
+        },
+        {
+          "deepDive": "While only one data point, this flags that even companies outside the core trucking industry are aware of and factoring in driver shortages when making strategic decisions -- suggesting the labor shortage's ripple effects extend to shipper/manufacturer decision-making, not just carrier operations.",
+          "details": [
+            "Respondent cites labor shortage as a known industry condition affecting the fleet decision.",
+            "It compounds uncertainty but was ranked below capital/ROI concerns in this case."
+          ],
+          "summary": "The industry-wide truck driver labor shortage is acknowledged as a secondary but real complicating factor."
+        }
+      ]
+    },
+    {
+      "consensus": [
+        "Only one respondent answered, so no cross-respondent consensus can be established."
+      ],
+      "id": "q3-0664b211",
+      "needsMoreInfo": [
+        "Need details on how IRG Transport actually achieves profitability (pricing, utilization, backhauls, etc.).",
+        "Unclear if IRG Transport would be willing/available to speak as a panelist.",
+        "No other companies or leaders were named -- more responses needed to identify additional candidates.",
+        "Unclear how widely applicable this manufacturer-fleet-spinout model is to other members' operations."
+      ],
+      "responseCount": 1,
+      "text": "Do you know of others in the industry who are leading the way?",
+      "themes": [
+        {
+          "deepDive": "With only one respondent, this is a single data point rather than a broad trend, but it directly addresses a core pain point: manufacturers struggling to make private fleets financially viable. IRG Transport's approach of spinning the fleet into its own business unit is a concrete, potentially replicable structure. This could be a strong panelist candidate to speak specifically to the operational and financial mechanics of that spin-out. More detail is needed on how they achieved profitability (rate structures, backhaul strategy, utilization, etc.).",
+          "details": [
+            "IRG Transport, a food processing company, spun off its own trucking fleet into a self-sustaining, separate business.",
+            "The model complements the parent manufacturing business while operating independently.",
+            "Suggested as a case study for how manufacturers can run profitable in-house transportation."
+          ],
+          "summary": "A manufacturer-spun-out fleet model is cited as a leading example worth studying."
+        }
+      ]
+    },
+    {
+      "consensus": [],
+      "id": "q4-be38f656",
+      "needsMoreInfo": [
+        "Only one response received, insufficient to identify themes or gauge broader interest.",
+        "No indication of what trucking topics matter most to this respondent's organization.",
+        "Unclear whether the respondent's disengagement reflects survey design issues or lack of interest in the topic.",
+        "No speaker leads or success stories surfaced from this respondent -- need outreach to other members for panelist candidates."
+      ],
+      "responseCount": 1,
+      "text": "Do you have an innovative project or a success story around trucking that you would like to share at the next meeting?",
+      "themes": [
+        {
+          "deepDive": "With only one response and no content offered, it's not possible to identify substantive themes from this question. The respondent's final answer ('Are you still asking questions?') suggests possible survey fatigue or confusion about the format rather than a genuine topic contribution. This limits the usefulness of this question's data for agenda-setting purposes.",
+          "details": [
+            "Answered 'no' to having a project/story.",
+            "Answered 'no' to knowing a potential speaker.",
+            "Did not provide substantive input on priority topics."
+          ],
+          "summary": "The single respondent had no innovative project, success story, or speaker referral to share."
+        }
+      ]
+    }
+  ],
+  "surveyId": "48df1d34-452d-45bd-97be-3e094e460b24",
+  "surveyName": "Indiana FAC Trucking Survey"
+}
