@@ -77,21 +77,33 @@ async function saveSurvey(env, survey) {
 /* ---------- request body helpers ---------- */
 
 function cleanQuestions(raw) {
-  const cleaned = (Array.isArray(raw) ? raw : []).map((q, i) => ({
-    id: (q && q.id) || `q${i + 1}-${crypto.randomUUID().slice(0, 8)}`,
-    text: String((q && q.text) || "").trim(),
-    followUps: Math.max(0, Math.min(MAX_FOLLOW_UPS, Number((q && q.followUps) || 0) | 0)),
-    context: String((q && q.context) || "").trim(),
-    personalizeFrom: (q && q.personalizeFrom) ? String(q.personalizeFrom) : null,
-  })).filter((q) => q.text);
-  // personalizeFrom must point at a DIFFERENT question that comes strictly earlier in
-  // this same (post-filter, final-id) list -- never trust the client's ordering or ids
-  // as-is, since ids can be stale from before a reorder/removal and a forward or
-  // self-reference would have nothing to personalize from at respond-time anyway.
+  const cleaned = (Array.isArray(raw) ? raw : []).map((q, i) => {
+    // personalizeFrom used to be a single id (string|null) -- accept that shape too so
+    // any survey saved before it became multi-select still loads correctly.
+    const rawPersonalize = q && q.personalizeFrom;
+    const personalizeList = Array.isArray(rawPersonalize) ? rawPersonalize
+      : (rawPersonalize ? [rawPersonalize] : []);
+    return {
+      id: (q && q.id) || `q${i + 1}-${crypto.randomUUID().slice(0, 8)}`,
+      text: String((q && q.text) || "").trim(),
+      followUps: Math.max(0, Math.min(MAX_FOLLOW_UPS, Number((q && q.followUps) || 0) | 0)),
+      context: String((q && q.context) || "").trim(),
+      personalizeFrom: [...new Set(personalizeList.map(String).filter(Boolean))],
+      // Whether the batch analysis should spend Claude tokens synthesizing themes for
+      // this question, or just list its raw answers in the results page's summary
+      // table -- defaults to true so a survey saved before this existed keeps
+      // analyzing everything, same as it always did.
+      claudeAnalyze: !(q && q.claudeAnalyze === false),
+    };
+  }).filter((q) => q.text);
+  // Every id in personalizeFrom must point at a DIFFERENT question that comes strictly
+  // earlier in this same (post-filter, final-id) list -- never trust the client's
+  // ordering or ids as-is, since ids can be stale from before a reorder/removal and a
+  // forward or self-reference would have nothing to personalize from at respond-time.
   cleaned.forEach((q, i) => {
-    if (!q.personalizeFrom) return;
-    const valid = cleaned.slice(0, i).some((earlier) => earlier.id === q.personalizeFrom);
-    if (!valid) q.personalizeFrom = null;
+    if (!q.personalizeFrom.length) return;
+    const earlierIds = new Set(cleaned.slice(0, i).map((earlier) => earlier.id));
+    q.personalizeFrom = q.personalizeFrom.filter((id) => earlierIds.has(id));
   });
   return cleaned;
 }
@@ -292,33 +304,36 @@ async function generateFollowUp(env, survey, question, priorAnswers, completedQu
   return String(toolUse.input.followUpQuestion || "").trim() || null;
 }
 
-// Rewrites ONE question's own wording (not a follow-up) so it references a specific
-// detail from a DIFFERENT, earlier question the admin explicitly picked -- e.g. "Do you
-// know others in the industry leading the way [in reverse logistics]?" once an earlier
-// question established the respondent's answer was about reverse logistics. `source` is
-// that earlier question's full thread as this respondent actually answered it, including
-// any follow-up turns (the personalization is meant to draw on everything they said on
-// that topic, not just their first answer to it).
-async function personalizeQuestion(env, survey, question, source) {
-  const thread = (source.turns || []).map((t) =>
-    `${t.turn === 0 ? "Answer" : "Follow-up " + t.turn + " answer"}: ${t.answer}`
-  ).join("\n");
+// Rewrites ONE question's own wording (not a follow-up) so it references specific
+// details from one or more DIFFERENT, earlier questions the admin explicitly picked --
+// e.g. "Do you know others in the industry leading the way [in reverse logistics]?"
+// once an earlier question established the respondent's answer was about reverse
+// logistics. `sources` are those earlier questions' full threads as this respondent
+// actually answered them, including any follow-up turns (the personalization is meant
+// to draw on everything they said on each topic, not just their first answer to it).
+async function personalizeQuestion(env, survey, question, sources) {
+  const sourcesText = sources.map((source) => {
+    const thread = (source.turns || []).map((t) =>
+      `${t.turn === 0 ? "Answer" : "Follow-up " + t.turn + " answer"}: ${t.answer}`
+    ).join("\n");
+    return `Respondent's earlier answer(s) to "${source.questionText}":\n${thread}`;
+  }).join("\n\n");
   const system =
-    "You lightly rewrite ONE survey question's wording so it naturally references a " +
-    "specific detail the respondent already gave earlier in this survey, instead of " +
+    "You lightly rewrite ONE survey question's wording so it naturally references " +
+    "specific details the respondent already gave earlier in this survey, instead of " +
     "asking generically. Keep the question's original meaning and intent completely " +
-    "intact -- change only enough wording to weave in the specific detail. One " +
+    "intact -- change only enough wording to weave in the specific detail(s). One " +
     "sentence, conversational, no preamble, no quotation marks. If nothing in the " +
-    "earlier answer is specific enough to reference naturally, return the original " +
+    "earlier answer(s) is specific enough to reference naturally, return the original " +
     "question text unchanged rather than forcing it.";
   const user =
     `Survey objective: ${survey.objective || "(none given)"}\n` +
     `Audience: ${survey.audience || "(none given)"}\n` +
     (survey.generalGuidance ? `General guidance for this whole survey: ${survey.generalGuidance}\n` : "") +
     `\nOriginal question to rewrite: ${question.text}\n\n` +
-    `Respondent's earlier answer(s) to "${source.questionText}":\n${thread}\n\n` +
-    "Rewrite the original question above to reference the specific detail from that " +
-    "earlier answer.";
+    `${sourcesText}\n\n` +
+    "Rewrite the original question above to reference the specific detail(s) from " +
+    "those earlier answer(s).";
   const tool = {
     name: "personalize_question",
     description: "Record the personalized rewrite of the question.",
@@ -510,11 +525,11 @@ export async function handleConsensusApi(route, request, env) {
 
   // POST personalize { surveyId, questionId, completed: [{questionId, questionText, turns}, ...] }
   // -> { text } -- the wording to actually show for this question. If the question
-  // isn't set up to personalize from another one, or its source question hasn't been
-  // answered yet in `completed`, or the Claude key isn't configured, or the rewrite
-  // call itself fails, this ALWAYS falls back to the question's own static text rather
-  // than erroring -- personalized wording is a nicety, never something that should be
-  // able to block a respondent from moving through the survey.
+  // isn't set up to personalize from anything, or none of its source questions have
+  // been answered yet in `completed`, or the Claude key isn't configured, or the
+  // rewrite call itself fails, this ALWAYS falls back to the question's own static
+  // text rather than erroring -- personalized wording is a nicety, never something
+  // that should be able to block a respondent from moving through the survey.
   if (route === "personalize" && method === "POST") {
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
@@ -522,14 +537,22 @@ export async function handleConsensusApi(route, request, env) {
     if (!survey) return json({ error: "Survey not found" }, 404);
     const question = survey.questions.find((q) => q.id === body.questionId);
     if (!question) return json({ error: "Question not found" }, 404);
-    if (!question.personalizeFrom || !env.consensus_claude_api) {
+    // personalizeFrom is normalized to an array on every save (see cleanQuestions()),
+    // but a survey saved before it became multi-select -- and never re-saved since --
+    // could still be sitting in KV with the old single-id shape, so tolerate that here
+    // too rather than silently dropping its personalization until someone re-saves it.
+    const personalizeFrom = Array.isArray(question.personalizeFrom) ? question.personalizeFrom
+      : (question.personalizeFrom ? [question.personalizeFrom] : []);
+    if (!personalizeFrom.length || !env.consensus_claude_api) {
       return json({ text: question.text });
     }
     const completed = Array.isArray(body.completed) ? body.completed : [];
-    const source = completed.find((c) => c.questionId === question.personalizeFrom);
-    if (!source) return json({ text: question.text });
+    const sources = personalizeFrom
+      .map((qid) => completed.find((c) => c.questionId === qid))
+      .filter(Boolean);
+    if (!sources.length) return json({ text: question.text });
     try {
-      const text = await personalizeQuestion(env, survey, question, source);
+      const text = await personalizeQuestion(env, survey, question, sources);
       return json({ text });
     } catch (e) {
       return json({ text: question.text });
