@@ -127,6 +127,8 @@
       <textarea id="surveyObjective" placeholder="What are you trying to learn?"></textarea>
       <label for="surveyAudience">Audience</label>
       <textarea id="surveyAudience" placeholder="Who is answering this?"></textarea>
+      <label for="surveyGeneralGuidance">General guidance</label>
+      <textarea id="surveyGeneralGuidance" placeholder="Guidance that applies to every question's follow-ups -- e.g. &quot;take the respondent's earlier answer about their industry into account.&quot; Unlike a question's own context box, this reaches Claude on every question, including ones with 0 follow-ups of their own."></textarea>
     </div>
 
     <div class="card">
@@ -411,6 +413,7 @@
     el("surveyName").value = "";
     el("surveyObjective").value = "";
     el("surveyAudience").value = "";
+    el("surveyGeneralGuidance").value = "";
     el("folderName").textContent = "(none selected)";
     el("saveMsg").textContent = "";
     el("respondLinkBox").hidden = true;
@@ -428,6 +431,7 @@
       el("surveyName").value = survey.name;
       el("surveyObjective").value = survey.objective;
       el("surveyAudience").value = survey.audience;
+      el("surveyGeneralGuidance").value = survey.generalGuidance || "";
       questions = survey.questions.map(function (q) {
         return { id: q.id, text: q.text, followUps: q.followUps, context: q.context };
       });
@@ -461,6 +465,7 @@
       name: el("surveyName").value.trim(),
       objective: el("surveyObjective").value.trim(),
       audience: el("surveyAudience").value.trim(),
+      generalGuidance: el("surveyGeneralGuidance").value.trim(),
       questions: collectQuestions(),
       boxFolderId: chosenFolder.id,
       boxFolderName: chosenFolder.name,

@@ -95,7 +95,9 @@ def analyze_question(survey: dict, question: dict, threads: list[list[dict]]) ->
         "dashboard.\n\n"
         f"Survey objective: {survey.get('objective') or '(none given)'}\n"
         f"Audience: {survey.get('audience') or '(none given)'}\n"
-        f"Question: {question.get('text', '')}\n"
+        + (f"General guidance for this whole survey: {survey['generalGuidance']}\n"
+           if survey.get("generalGuidance") else "")
+        + f"Question: {question.get('text', '')}\n"
         f"Author's guidance for this question: {question.get('context') or '(none given)'}\n\n"
         "Identify at most 3 themes, ranked most important / most-supported first. For "
         "each theme:\n"

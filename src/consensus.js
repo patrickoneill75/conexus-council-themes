@@ -92,6 +92,7 @@ function buildSurvey(id, body, existing) {
     name,
     objective: String(body.objective || "").trim(),
     audience: String(body.audience || "").trim(),
+    generalGuidance: String(body.generalGuidance || "").trim(),
     questions: cleanQuestions(body.questions),
     boxFolderId: body.boxFolderId ? String(body.boxFolderId) : (existing ? existing.boxFolderId : null),
     boxFolderName: body.boxFolderName ? String(body.boxFolderName) : (existing ? existing.boxFolderName : null),
@@ -210,19 +211,24 @@ async function generateFollowUp(env, survey, question, priorAnswers, completedQu
   const system =
     "You run a survey chatbot's follow-up questioning, one question at a time, up to a " +
     "maximum number of follow-ups the survey author set for the current question. Given " +
-    "the survey's objective and audience, everything the respondent has already said " +
-    "earlier in this survey, the question being explored now, any guidance the survey " +
-    "author gave for follow-ups on it, and the conversation so far on this question, use " +
-    "your judgement to decide whether one more follow-up would genuinely add value. " +
-    "Ask one only if the respondent's answer leaves real room for a more specific, " +
-    "concrete detail worth capturing -- for example, a closed or already-complete answer " +
-    "(a flat \"no\", or a \"yes\" that leaves nothing more to explore) needs no follow-up " +
-    "even if the maximum hasn't been reached. Never ask about something already covered " +
-    "by an earlier question in this survey. When you do ask, keep it conversational, one " +
-    "sentence, no preamble, no numbering.";
+    "the survey's objective and audience, any general guidance the survey author gave for " +
+    "the whole survey, everything the respondent has already said earlier in this survey, " +
+    "the question being explored now, any guidance the author gave for follow-ups on this " +
+    "specific question, and the conversation so far on this question, use your judgement " +
+    "to decide whether one more follow-up would genuinely add value. Ask one only if the " +
+    "respondent's answer leaves real room for a more specific, concrete detail worth " +
+    "capturing -- for example, a closed or already-complete answer (a flat \"no\", or a " +
+    "\"yes\" that leaves nothing more to explore) needs no follow-up even if the maximum " +
+    "hasn't been reached. Never ask about something already covered by an earlier question " +
+    "in this survey. When you do ask, keep it conversational, one sentence, no preamble, no " +
+    "numbering.";
   const user =
     `Survey objective: ${survey.objective || "(none given)"}\n` +
     `Audience: ${survey.audience || "(none given)"}\n` +
+    // Applies across every question, unlike a per-question context box -- this is how
+    // guidance like "take earlier answers about X into account for later questions"
+    // actually reaches the model, including on questions with 0 follow-ups of their own.
+    (survey.generalGuidance ? `General guidance for this whole survey: ${survey.generalGuidance}\n` : "") +
     (earlier ? `Already covered earlier in this survey:\n${earlier}\n\n` : "") +
     `Question being explored now: ${question.text}\n` +
     `Author's guidance for follow-ups on this question: ${question.context || "(none given)"}\n\n` +
