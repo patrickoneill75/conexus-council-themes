@@ -25,6 +25,16 @@ from consensus import analyze, config, relay  # noqa: E402
 from themes import box_store, sheet_io  # noqa: E402
 
 
+def _count_responses(header: list[str], rows: list[list]) -> int:
+    # Distinct Response IDs across the whole CSV, survey-wide -- not per-question -- so
+    # the admin page can show "X of Y responses analyzed" against survey["responseCount"].
+    col = {name.strip().lower(): i for i, name in enumerate(header)}
+    idx = col.get("response id")
+    if idx is None:
+        return 0
+    return len({str(row[idx]) for row in rows if any(row) and row[idx]})
+
+
 def _group_by_question(header: list[str], rows: list[list]) -> dict[str, dict[str, list[tuple]]]:
     col = {name.strip().lower(): i for i, name in enumerate(header)}
     needed = ["response id", "question id", "turn", "prompt", "answer"]
@@ -83,6 +93,7 @@ def main() -> int:
     print("Downloading and parsing responses...")
     content = box_store.download(file_id)
     header, rows = sheet_io.read_rows(survey["responsesFileName"], content)
+    analyzed_response_count = _count_responses(header, rows)
     by_question = _group_by_question(header, rows)
 
     total_questions = len(survey["questions"])
@@ -125,8 +136,8 @@ def main() -> int:
     )
     print(f"Published {config.results_json(survey_id)}.")
 
-    relay.mark_analyzed(survey_id)
-    print("Marked the survey analyzed.")
+    relay.mark_analyzed(survey_id, analyzed_response_count)
+    print(f"Marked the survey analyzed ({analyzed_response_count} response(s)).")
     return 0
 
 
