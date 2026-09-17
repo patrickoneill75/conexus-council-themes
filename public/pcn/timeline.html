@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCN Issue Map — Change over time</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:32px 20px 64px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
+           flex-wrap:wrap; margin-bottom:18px; }
+  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
+  .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
+  a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
+                         font:inherit; cursor:pointer; text-decoration:none; }
+  a.link:hover, button.link:hover { text-decoration:underline; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  .card h3 { margin:0 0 4px; font-size:15px; }
+  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
+  .msg { font-size:12.5px; margin:10px 0 0; }
+  .msg.muted { color:var(--text-muted); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--text-secondary); font-weight:600; font-size:11.5px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; }
+  .tag.new { background:rgba(12,163,12,.12); color:var(--good); }
+  .tag.contested { background:rgba(208,59,59,.12); color:var(--bad); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>PCN Issue Map — Change over time</h1>
+      <p class="sub">How the connection network has accumulated, quarter by quarter.</p>
+    </div>
+    <div class="who">
+      <span id="whoami"></span>
+      <a class="link" href="/pcn/network.html">Network view</a>
+      <a class="link" href="/pcn/index.html">&larr; Control panel</a>
+      <button type="button" class="link" id="signOutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <div id="emptyState" class="card" hidden>
+    <h3>No timeline derived yet</h3>
+    <p class="desc">Run the pipeline's <code>timeline --publish</code> step (or the fixture
+      pipeline test workflow) to compute and publish one. Requires assertions with a
+      <code>meeting_date</code> -- pass <code>--meeting-date</code> to <code>ingest</code>.</p>
+  </div>
+
+  <div id="content" hidden>
+    <div class="card">
+      <h3>Network size and structure by quarter</h3>
+      <p class="desc" id="undatedMsg"></p>
+      <svg id="trendSvg" width="860" height="240"></svg>
+      <div class="msg muted" id="legendMsg"></div>
+    </div>
+
+    <div class="card">
+      <h3>What changed each quarter</h3>
+      <p class="desc">New connections are evidence appearing for the first time --
+        the map only ever accumulates, so nothing here shows connections
+        disappearing. "Newly contested" means a connection that used to look settled
+        now has members on both sides of the sign.</p>
+      <div id="periodTable"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  if (!token) { window.location.href = "/beta/login.html"; return; }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function signOut() {
+    try { sessionStorage.removeItem("beta-token"); } catch (e) {}
+    window.location.href = "/beta/login.html";
+  }
+  el("signOutBtn").addEventListener("click", signOut);
+
+  function api(path) {
+    return fetch("/api/pcn/" + path, { headers: { authorization: "Bearer " + token } })
+      .then(function (r) {
+        if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+        return r.json().then(function (body) {
+          if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+          return body;
+        });
+      });
+  }
+
+  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
+    .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
+    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .catch(signOut);
+
+  function drawTrend(periods) {
+    var svg = el("trendSvg");
+    var width = +svg.getAttribute("width"), height = +svg.getAttribute("height");
+    var padding = { top: 16, right: 32, bottom: 28, left: 32 };
+    var plotW = width - padding.left - padding.right, plotH = height - padding.top - padding.bottom;
+    var maxCount = Math.max(1, Math.max.apply(null, periods.map(function (p) { return Math.max(p.node_count, p.edge_count); })));
+    var x = function (i) { return padding.left + (periods.length <= 1 ? 0 : i / (periods.length - 1) * plotW); };
+    var y = function (v) { return padding.top + plotH - (v / maxCount) * plotH; };
+
+    function path(key) {
+      return periods.map(function (p, i) { return (i === 0 ? "M" : "L") + x(i) + "," + y(p[key]); }).join(" ");
+    }
+    function line(key, color) {
+      return '<path d="' + path(key) + '" fill="none" stroke="' + color + '" stroke-width="2"></path>' +
+        periods.map(function (p, i) {
+          return '<circle cx="' + x(i) + '" cy="' + y(p[key]) + '" r="3.5" fill="' + color + '"></circle>';
+        }).join("");
+    }
+    var axisLabels = periods.map(function (p, i) {
+      return '<text x="' + x(i) + '" y="' + (height - 6) + '" font-size="10" fill="var(--text-muted)" text-anchor="middle">' + esc(p.period) + "</text>";
+    }).join("");
+
+    svg.innerHTML =
+      '<line x1="' + padding.left + '" y1="' + (padding.top + plotH) + '" x2="' + (padding.left + plotW) +
+      '" y2="' + (padding.top + plotH) + '" stroke="var(--border)"></line>' +
+      line("node_count", "var(--accent)") + line("edge_count", "var(--good)") + axisLabels;
+  }
+
+  function renderPeriodTable(periods) {
+    if (!periods.length) { el("periodTable").innerHTML = '<p class="msg muted">No periods yet.</p>'; return; }
+    var rows = periods.map(function (p) {
+      var newTags = (p.new_connections || []).map(function (c) {
+        return '<span class="tag new">' + esc(c.from_issue_id) + " &rarr; " + esc(c.to_issue_id) + "</span>";
+      }).join("") || '<span class="msg muted">none</span>';
+      var contestedTags = (p.newly_contested_connections || []).map(function (c) {
+        return '<span class="tag contested">' + esc(c.from_issue_id) + " &rarr; " + esc(c.to_issue_id) + "</span>";
+      }).join("") || '<span class="msg muted">none</span>';
+      return "<tr><td><b>" + esc(p.period) + "</b></td><td>" + p.node_count + "</td><td>" + p.edge_count +
+        "</td><td>" + (p.density == null ? "--" : p.density.toFixed(2)) + "</td><td>" + newTags + "</td><td>" + contestedTags + "</td></tr>";
+    }).join("");
+    el("periodTable").innerHTML =
+      "<table><thead><tr><th>Quarter</th><th>Issues</th><th>Connections</th><th>Density</th>" +
+      "<th>New connections</th><th>Newly contested</th></tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+
+  api("timeline").then(function (result) {
+    var timeline = result.timeline;
+    if (!timeline || !timeline.periods || !timeline.periods.length) {
+      el("emptyState").hidden = false;
+      el("content").hidden = true;
+      return;
+    }
+    el("content").hidden = false;
+    el("legendMsg").innerHTML = '<span style="color:var(--accent)">&#9679;</span> issues &nbsp; ' +
+      '<span style="color:var(--good)">&#9679;</span> connections &nbsp; derived ' + new Date(result.derivedAt).toLocaleString();
+    el("undatedMsg").textContent = timeline.undated_assertion_count
+      ? timeline.undated_assertion_count + " assertion(s) have no meeting date and are excluded from every period."
+      : "Every assertion in the ledger has a meeting date.";
+    drawTrend(timeline.periods);
+    renderPeriodTable(timeline.periods);
+  }).catch(function (e) {
+    el("emptyState").hidden = false;
+    el("emptyState").querySelector("p").textContent = "Error: " + e.message;
+  });
+})();
+</script>
+</body>
+</html>

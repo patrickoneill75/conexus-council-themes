@@ -23,6 +23,8 @@ Everything below is done in a browser. There are no terminal steps.
 | `public/consensus/` | Worker static assets | Consensus: survey builder + results (`index.html`, `results.html`, beta-account gated) and the public respondent chat (`respond.html`, no login). See **9 · Consensus** below. |
 | `src/consensus.js` | Cloudflare Worker | `/api/consensus/*`. Survey CRUD, the live follow-up-question chat, response storage in Box, and triggering the batch analysis -- gates its admin routes with the same beta accounts via `requireBetaAuth`. |
 | `scripts/consensus_analyze.py` | GitHub Actions | Synthesizes a survey's collected responses (out of Box) into prioritized themes per question with Claude, and publishes `public/consensus-results/<id>.json`. Triggered from the Consensus admin page's "Analyze" button. |
+| `public/pcn/` | Worker static assets | PCN Issue Map: the control panel (`index.html`, beta-account gated). See **10 · PCN Issue Map** below. |
+| `src/pcn.js` | Cloudflare Worker | `/api/pcn/*`. Beta-account gated like Consensus, and shares the same Box connection every other tool here uses -- picks its own one data folder the same way Consensus picks a responses folder per survey. |
 
 ---
 
@@ -337,13 +339,113 @@ want to change either.
 
 ---
 
+## 10 · PCN Issue Map
+
+Turns PCN meeting notes/transcripts into an accumulating, evidence-traceable map of how
+members believe their problems connect (Axelrod-style causal mapping / fuzzy cognitive
+maps — see the design doc for the full method and reasoning). **This is an early,
+in-progress build.** It'll grow in stages; this section will grow with it.
+
+Its Box access is the **same shared, user-delegated connection** every other tool here
+uses — nothing new to set up. If the control panel says "Not connected," log in with
+Box from `admin.html`'s Developer section, same as you would for anything else.
+
+Open **PCN Issue Map**'s control panel from the Mini App Platform grid, click
+**Choose folder…** to pick this app's one data folder (a data file at its root, plus a
+subfolder for raw source documents kept for audit — same idea as the Data Folder the
+Council app uses, just its own separate folder), then **Test Box round-trip** — it
+writes a small JSON file there and reads it straight back, confirming the connection
+works.
+
+**Pipeline** (`pcn/pipeline/`, Python): `pcn/pipeline/ingest` reads a source file
+(`.vtt`/`.srt`/`.txt` for transcripts, `.md`/`.txt`/`.docx` for either) into a
+`RawDocument`; `pcn/pipeline/normalize` turns that into a `NormalizedDocument` of
+`Segment`s — speaker turns for a transcript, heading/bullet units (with inherited
+parent heading context) for notes; `pcn/pipeline/extract` calls Claude (Haiku by
+default, escalating a specific segment to Sonnet only when two independent extraction
+passes disagree on it) to turn those Segments into `Assertion`s appended to the
+assertion ledger (`pcn/pipeline/ledger.py`) — see `pcn/CODING_PROTOCOL.md` for the
+five coding rules the extraction prompt follows; `pcn/pipeline/match` resolves each
+Assertion's raw `from_issue_label`/`to_issue_label` text onto a canonical `Issue` via
+a four-stage cascade (exact alias match → rapidfuzz fuzzy match → embedding
+nearest-neighbor → residual Haiku adjudication over just the 5 nearest candidates),
+recording the result separately in a resolutions file rather than editing the ledger;
+`pcn/pipeline/review` orders unreviewed assertions (cross-run disagreement → escalated
+→ new-issue-creating → everything else) and lets a human confirm/reject one — the
+`--from-definition`/`--to-definition` flags on `review confirm` are how an issue's
+one-line definition gets written the first time it's confirmed, which is what the
+adjudication stage shows a model for its candidates from then on. Only `extract` and
+match's adjudication stage make model calls; everything else is plain Python/rapidfuzz/
+local embeddings. All of it reuses this project's own `ANTHROPIC_API_KEY` repository
+secret rather than a dedicated key — volume here is cents per meeting.
+
+`pcn/pipeline/derive` recomputes the connection network fresh from the ledger +
+resolutions every run (a pure function, via networkx) — non-rejected assertions
+sharing a resolved (from, to) issue pair become one edge, carrying a mean signed
+weight, a **dispersion** (population stdev of that edge's weights, so a contested
+connection — some members say positive, some negative — is visibly different from
+an uncontested one, rather than both washing out to the same near-zero mean), a
+per-modality breakdown, and its supporting assertion ids for evidence traceability.
+Nodes get out-/in-degree, centrality, and a role (`driver`: affects things, nothing
+affects it; `outcome`: something cared about, not itself influenceable; `ordinary`: a
+candidate program — both). Graph-level: density, a hierarchy index (MacDonald's, as
+used by Özesmi & Özesmi 2004 for FCM structural analysis — **not independently
+verified against the primary source**, same caveat the design doc's own reference
+implementation carried), and feedback loops via `networkx.simple_cycles` (capped at
+6 nodes). `input_type_breadth` reports assertion/speaker/meeting/notetaker counts
+**separately per transcript vs. notes** rather than pooling them — raw assertion
+counts aren't comparable across input types (a transcript yields far more assertions
+than notes of identical substance), so nothing here sums them together.
+
+The `derive` stage's `--publish` flag pushes the network to this Worker via
+`POST relay/network` (shared-secret `x-pipeline-key: BOX_RELAY_SECRET` auth, same
+mechanism as `GET /api/box/pipeline-token` and Consensus's own relay routes — see
+`pcn/relay.py`), stored in `BOX_KV` and served back by `GET network` (beta-account
+gated) for **PCN Issue Map**'s **View network** page (linked from its control panel)
+to render: an interactive force-directed graph (D3, loaded from a CDN — the one
+external script this app uses) with node size by centrality, node color by role,
+edge color by sign (green positive / red negative / gray contested), and a dashed
+edge where dispersion swamps the mean (members disagree). Click a node or connection
+for its detail — definition, degree, supporting-assertion counts.
+
+`pcn/pipeline/timeline` answers "what changed since last time": it buckets the
+ledger's assertions by quarter using each one's `meeting_date` (set via `ingest
+--meeting-date YYYY-MM-DD` — an assertion with none is excluded from every period,
+never guessed at) and derives the network as of each quarter's cumulative cutoff.
+Since the map only ever accumulates evidence, "change" mostly means which
+connections are newly evidenced in a quarter, and which existing connections just
+became **contested** — a connection that used to look settled getting a
+contradicting assertion from a later meeting. It does not mean connections
+disappearing (only rejecting an assertion in review does that). Published the same
+way as the network (`--publish` → `POST relay/timeline` → `GET timeline`), rendered
+by **PCN Issue Map**'s **Change over time** page as a simple trend chart (issue/
+connection counts by quarter) plus a per-quarter table of what's new or newly
+contested.
+
+Run the whole pipeline manually against the committed synthetic fixtures
+(`pcn/fixtures/`, ingested with meeting dates two quarters apart) via the
+**PCN Issue Map -- fixture pipeline test** GitHub Actions workflow (Actions tab →
+Run workflow); it uploads each stage's JSON output, including the resulting
+ledger/issues/resolutions/network/timeline and the review queue's printed order, as a
+downloadable artifact, and publishes the derived network and timeline so both views
+have something real (if synthetic) to show. No real PCN meeting data exists in this
+repo — the fixtures are made up, matching the design doc's own worked example (a
+staffing → overtime → turnover loop). The ledger itself isn't wired up to live in
+this app's Box data folder yet — that lands once there's an actual admin-triggered
+run over uploaded meeting files, rather than just this fixture smoke test. This
+completes the design doc's 8-step build order (Sections 1–19); everything from here
+is refinement, not a missing stage.
+
+---
+
 ## Notes for a security review
 
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
   exactly what your own account can reach and nothing else. There is no service account
   with enterprise-wide reach. It has both read and write scope (shared with conexus-mcm,
   which needs write) — this project uses write only to replace the two export files in
-  the configured Data Folder; it never touches anything else in your Box account.
+  the configured Data Folder, plus (for PCN Issue Map) its own separate data folder;
+  neither touches anything else in your Box account.
 - **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
   run sends a new meeting's free-text answers (organization name and rating numbers
   included, but never the respondent's name — those columns are stripped before the
@@ -375,6 +477,11 @@ want to change either.
   writes to the one Box folder that survey's admin already configured. The admin routes
   (create/edit a survey, trigger analysis) require a signed-in `/beta` account, same as
   the rest of the platform.
+- **PCN Issue Map's network view is the one page in this repo that loads an external
+  script** (D3, from a CDN) — needed for the force-directed graph layout; every other
+  page here is hand-rolled with no third-party JS. It's a static, widely-used
+  visualization library with no data collection of its own; nothing it renders is
+  fetched from anywhere but this Worker's own `GET /api/pcn/network`.
 
 ---
 
@@ -397,3 +504,5 @@ want to change either.
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |
 | Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |
+| PCN Issue Map's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as the Council app's own "Box is not connected": open `admin.html`'s Developer section and log in. |
+| PCN Issue Map's "Test Box round-trip" fails | No data folder has been chosen yet (**Choose folder…** in its control panel), or the Box connection expired — try logging in with Box again. |

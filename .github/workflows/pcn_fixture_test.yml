@@ -1,0 +1,104 @@
+name: PCN Issue Map -- fixture pipeline test
+
+# Manually triggered from the Actions tab. Runs ingest + normalize + extract + match +
+# derive + timeline against the committed synthetic fixtures (pcn/fixtures/) and
+# uploads each stage's JSON output as a downloadable artifact, so the pipeline can be
+# inspected without a local Python setup. derive/timeline also publish to the Worker
+# (relay/network, relay/timeline -- shared-secret auth, see pcn/relay.py) so
+# public/pcn/network.html and timeline.html have something real to render; every
+# other step touches Box not at all. extract makes real (cents-per-meeting) Claude
+# calls using the same ANTHROPIC_API_KEY repository secret the Council Survey
+# Dashboard already uses (see pcn/config.py), and match's residual-adjudication stage
+# may too, if it's ever reached for these two small fixtures.
+on:
+  workflow_dispatch:
+
+jobs:
+  fixture-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Ingest + normalize the transcript fixture
+        run: |
+          mkdir -p /tmp/pcn-out
+          python -m pcn.pipeline.cli ingest pcn/fixtures/sample_transcript.vtt \
+            /tmp/pcn-out/transcript.raw.json \
+            --input-type transcript --meeting-id fixture-transcript-001 --meeting-date 2026-06-15
+          python -m pcn.pipeline.cli normalize /tmp/pcn-out/transcript.raw.json \
+            /tmp/pcn-out/transcript.normalized.json
+
+      - name: Ingest + normalize the notes fixture
+        run: |
+          python -m pcn.pipeline.cli ingest pcn/fixtures/sample_notes.md \
+            /tmp/pcn-out/notes.raw.json \
+            --input-type notes --meeting-id fixture-notes-001 --notetaker "J. Alvarez" \
+            --meeting-date 2026-08-01
+          python -m pcn.pipeline.cli normalize /tmp/pcn-out/notes.raw.json \
+            /tmp/pcn-out/notes.normalized.json
+
+      - name: Print normalized segment counts
+        run: |
+          python - <<'EOF'
+          import json
+          for name in ("transcript", "notes"):
+              doc = json.load(open(f"/tmp/pcn-out/{name}.normalized.json"))
+              print(f"{name}: {len(doc['segments'])} segments")
+          EOF
+
+      - name: Extract assertions from both fixtures into a fresh ledger
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -m pcn.pipeline.cli extract /tmp/pcn-out/transcript.normalized.json \
+            /tmp/pcn-out/ledger.json
+          python -m pcn.pipeline.cli extract /tmp/pcn-out/notes.normalized.json \
+            /tmp/pcn-out/ledger.json
+
+      - name: Resolve issue labels and print the review queue
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -m pcn.pipeline.cli match /tmp/pcn-out/ledger.json \
+            /tmp/pcn-out/issues.json /tmp/pcn-out/resolutions.json
+          python -m pcn.pipeline.cli review list /tmp/pcn-out/ledger.json \
+            /tmp/pcn-out/resolutions.json
+
+      - name: Derive the connection network, publish it, and print its graph metrics
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: |
+          python -m pcn.pipeline.cli derive /tmp/pcn-out/ledger.json \
+            /tmp/pcn-out/resolutions.json /tmp/pcn-out/network.json \
+            --issues /tmp/pcn-out/issues.json --publish
+          python - <<'EOF'
+          import json
+          network = json.load(open("/tmp/pcn-out/network.json"))
+          print(json.dumps(network["graph"], indent=2))
+          print(json.dumps(network["input_type_breadth"], indent=2))
+          EOF
+
+      - name: Derive the change-over-time breakdown and publish it
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: |
+          python -m pcn.pipeline.cli timeline /tmp/pcn-out/ledger.json \
+            /tmp/pcn-out/resolutions.json /tmp/pcn-out/timeline.json \
+            --issues /tmp/pcn-out/issues.json --publish
+          cat /tmp/pcn-out/timeline.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pcn-fixture-pipeline-output
+          path: /tmp/pcn-out/*.json
+          retention-days: 14

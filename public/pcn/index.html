@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCN Issue Map — Mini App Platform</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:720px; margin:0 auto; padding:32px 20px 64px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
+           flex-wrap:wrap; margin-bottom:22px; }
+  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
+  .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
+  a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
+                         font:inherit; cursor:pointer; text-decoration:none; }
+  a.link:hover, button.link:hover { text-decoration:underline; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  .card h3 { margin:0 0 4px; font-size:15px; }
+  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.small { padding:6px 11px; font-size:12.5px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
+          border-radius:999px; border:1px solid transparent; white-space:nowrap; }
+  .pill.good { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
+  .pill.warn { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
+  .pill.bad { background:rgba(208,59,59,.12); color:var(--bad); border-color:rgba(208,59,59,.3); }
+  .msg { font-size:12.5px; margin:10px 0 0; }
+  .msg.err { color:var(--bad); }
+  .msg.ok { color:var(--good); }
+  .msg.muted { color:var(--text-muted); }
+  .folder-row { display:flex; align-items:center; justify-content:space-between;
+                padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .folder-row:hover { background:var(--wash); }
+  .folder-row .enter { font-size:12px; color:var(--accent); }
+  .crumb { cursor:pointer; color:var(--accent); }
+  .crumb:hover { text-decoration:underline; }
+  .crumb-sep { color:var(--text-muted); margin:0 4px; }
+  .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
+  pre { background:var(--wash); border-radius:8px; padding:10px 12px; font-size:12px;
+        overflow-x:auto; margin:10px 0 0; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>PCN Issue Map</h1>
+      <p class="sub">Causal-map extraction from PCN meeting notes and transcripts.</p>
+    </div>
+    <div class="who">
+      <span id="whoami"></span>
+      <a class="link" href="/pcn/network.html">View network &rarr;</a>
+      <a class="link" href="/pcn/timeline.html">Change over time &rarr;</a>
+      <a class="link" href="/beta/index.html">&larr; Mini App Platform</a>
+      <button type="button" class="link" id="signOutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <h3>Box connection</h3>
+    <p class="desc">Uses the same Box connection every other tool here shares -- log in
+      with Box from admin.html's Developer section if this says not connected.</p>
+    <div class="row">
+      <span id="statusPill"><span class="pill warn">Checking…</span></span>
+      <button type="button" id="refreshStatusBtn">Refresh</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Data folder</h3>
+    <p class="desc">The one Box folder this app reads and writes -- its data file at
+      the root, plus a subfolder for raw source documents kept for audit.</p>
+    <p style="margin:0 0 10px">Currently: <b id="folderName">(none selected)</b></p>
+    <div class="row">
+      <button type="button" id="chooseFolderBtn">Choose folder…</button>
+      <button type="button" class="primary" id="testBtn">Test Box round-trip</button>
+    </div>
+    <div id="folderPicker" hidden class="picker"></div>
+    <pre id="testResult" hidden></pre>
+  </div>
+
+  <div class="card">
+    <h3>What's built so far</h3>
+    <p class="desc" style="margin:0">The Worker, control panel, and Box round-trip
+      (above), plus the full ingest &rarr; normalize &rarr; extract &rarr; match &rarr;
+      review &rarr; derive &rarr; timeline Python pipeline (<code>pcn/pipeline/</code>)
+      -- the design doc's complete 8-step build order -- runnable against committed
+      synthetic fixtures via the "PCN Issue Map -- fixture pipeline test" GitHub
+      Actions workflow, which publishes a derived network and timeline for the
+      <a class="link" href="/pcn/network.html">network view</a> and
+      <a class="link" href="/pcn/timeline.html">change-over-time view</a> to render.
+      Not yet built: an admin-triggered run against real, uploaded meeting files --
+      today's pipeline runs only exist for fixtures, since no real PCN meeting data
+      has been processed yet.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  if (!token) { window.location.href = "/beta/login.html"; return; }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function signOut() {
+    try { sessionStorage.removeItem("beta-token"); } catch (e) {}
+    window.location.href = "/beta/login.html";
+  }
+  el("signOutBtn").addEventListener("click", signOut);
+
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign({ "content-type": "application/json", authorization: "Bearer " + token },
+      options.headers || {});
+    return fetch("/api/pcn/" + path, options).then(function (r) {
+      if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+        return body;
+      });
+    });
+  }
+
+  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
+    .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
+    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .catch(signOut);
+
+  function loadStatus() {
+    el("statusPill").innerHTML = '<span class="pill warn">Checking…</span>';
+    return api("box/status").then(function (status) {
+      if (!status.connected) {
+        el("statusPill").innerHTML = '<span class="pill bad">Not connected</span>';
+        el("folderName").textContent = "(none selected)";
+        return;
+      }
+      el("statusPill").innerHTML = '<span class="pill good">Connected</span>';
+      el("folderName").textContent = status.folderName || "(none selected)";
+    }).catch(function (e) {
+      el("statusPill").innerHTML = '<span class="pill bad">Error</span>';
+    });
+  }
+
+  el("refreshStatusBtn").addEventListener("click", loadStatus);
+
+  el("testBtn").addEventListener("click", function () {
+    el("testBtn").disabled = true;
+    el("testBtn").textContent = "Testing…";
+    el("testResult").hidden = true;
+    api("box/test", { method: "POST" }).then(function (result) {
+      el("testResult").hidden = false;
+      el("testResult").textContent = JSON.stringify(result, null, 2);
+      el("testBtn").disabled = false;
+      el("testBtn").textContent = "Test Box round-trip";
+    }).catch(function (e) {
+      el("testResult").hidden = false;
+      el("testResult").textContent = "Error: " + e.message;
+      el("testBtn").disabled = false;
+      el("testBtn").textContent = "Test Box round-trip";
+    });
+  });
+
+  /* ---------- Box folder picker (same shape as Consensus's) ---------- */
+  function openPicker(folderId) {
+    el("folderPicker").hidden = false;
+    el("folderPicker").innerHTML = '<p class="msg muted">Loading…</p>';
+    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
+      var html = '<div class="msg" style="margin-bottom:8px" id="pickerCrumb"></div>' +
+        '<div id="pickerList" style="max-height:240px;overflow-y:auto"></div>' +
+        '<div class="row" style="margin-top:12px">' +
+        '<button class="primary small" type="button" id="pickerUseBtn">Use this folder</button>' +
+        '<button class="small" type="button" id="pickerCancelBtn">Cancel</button></div>';
+      el("folderPicker").innerHTML = html;
+      var crumbEl = el("pickerCrumb"), listEl = el("pickerList");
+      crumbEl.innerHTML = data.breadcrumb.map(function (c, i) {
+        var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
+        return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' + esc(c.name || "All Files") + "</span>";
+      }).join("");
+      Array.prototype.forEach.call(crumbEl.querySelectorAll(".crumb"), function (node) {
+        node.addEventListener("click", function () { openPicker(node.dataset.id); });
+      });
+      listEl.innerHTML = data.folders.length ? data.folders.map(function (f) {
+        return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>📁 ' + esc(f.name) +
+          '</span><span class="enter">Open &rarr;</span></div>';
+      }).join("") : '<p class="msg muted">No subfolders here -- "Use this folder" picks this one.</p>';
+      Array.prototype.forEach.call(listEl.querySelectorAll(".folder-row"), function (row) {
+        row.addEventListener("click", function () { openPicker(row.dataset.id); });
+      });
+      el("pickerUseBtn").addEventListener("click", function () {
+        var crumbs = crumbEl.querySelectorAll(".crumb");
+        var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : data.name;
+        api("config", { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
+          .then(function () {
+            el("folderName").textContent = name;
+            el("folderPicker").hidden = true;
+          }).catch(function (e) { window.alert(e.message); });
+      });
+      el("pickerCancelBtn").addEventListener("click", function () { el("folderPicker").hidden = true; });
+    }).catch(function (e) {
+      el("folderPicker").innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
+    });
+  }
+  el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
+
+  loadStatus();
+})();
+</script>
+</body>
+</html>
