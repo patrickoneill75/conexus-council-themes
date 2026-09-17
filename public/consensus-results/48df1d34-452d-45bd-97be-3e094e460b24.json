@@ -1,107 +1,139 @@
 {
-  "generatedAt": "2026-09-17T14:57:07+00:00",
+  "generatedAt": "2026-09-17T15:04:25+00:00",
   "questions": [
     {
       "consensus": [
-        "Cost pressures (fuel, labor, tariffs) are widely felt as squeezing margins across manufacturers, carriers, and brokers.",
-        "Driver/CDL labor shortage is repeatedly cited as a root cause of delays and a barrier to fleet investment.",
-        "Delays and unpredictability in freight movement (whether from congestion, ports, or staffing) are a shared operational pain point."
+        "Costs (fuel, wages, tariffs) are widely seen as rising and squeezing margins across the supply chain.",
+        "Labor and driver/CDL shortages are recognized as a root cause behind delays and cost pressure, even by respondents whose primary concern is something else.",
+        "Delays and unpredictability in freight movement (whether from staffing, congestion, or port bottlenecks) are a shared operational pain point."
       ],
       "id": "q2-2566928f",
       "needsMoreInfo": [
-        "No respondent proposed concrete solutions or interventions to the rate/cost misalignment between shippers and carriers.",
-        "Unclear whether the CDL/driver shortage is due to training capacity, licensing bottlenecks, pay, or industry image—root cause not fully characterized.",
-        "Port congestion is only linked to the Port of Chicago by one respondent; unclear how widespread this specific bottleneck is among other members.",
-        "The truck parking safety concern (Respondent 3) is speculative/future-facing rather than a current documented incident, so scope and urgency are unclear.",
-        "Reverse logistics/cardboard sustainability concern (Respondent 2) is not well characterized as a 'trucking' challenge and lacks detail on regulatory vs. cost drivers."
+        "Whether the driver/CDL shortage is truly a supply-side (training/pipeline) issue or also a retention/quality-of-job issue -- respondents mostly framed it as supply.",
+        "How widespread the truck parking safety issue on English Ave/Brookville Road is versus an isolated local complaint -- worth checking with INDOT or local planning agencies.",
+        "Specifics on which cost driver (fuel, wages, tariffs) respondents view as most fixable via policy versus purely market-driven.",
+        "More detail needed on the reverse logistics/cardboard sustainability challenge -- unclear if this is a trucking-agenda-relevant topic or a separate packaging/supply chain issue.",
+        "Whether congestion complaints are tied to specific corridors/times or a general perception -- not enough detail to pinpoint infrastructure fixes."
       ],
       "responseCount": 8,
       "text": "What are your biggest challenges around trucking right now? What problems are you trying to solve?",
       "themes": [
         {
-          "deepDive": "Two sides of the same cost story emerge: brokers/carriers (Respondent 4) see the rate spread between what shippers pay and what carriers demand as unsustainable, while manufacturers (Respondent 6) see the same pressures (fuel, labor, tariffs) as an external cost shock they must pass through or absorb. Respondent 4 pinpoints the ELD mandate as a historical root cause of driver wage inflation, suggesting a regulatory origin to today's cost pressure. This isn't just about pricing power—it's a structural misalignment between shipper expectations and actual carrier operating costs. No respondent proposed a solution, only characterized the squeeze.",
+          "deepDive": "The cost pressure isn't attributed to one single cause but a stack of compounding factors—regulatory (ELD, tariffs), labor market (wages), and macro (fuel)—that respondents struggle to disentangle. There's an interesting tension: a manufacturer is weighing standing up its own private fleet partly to escape this cost volatility, but is blocked by uncertain ROI, showing the cost problem and the labor problem are intertwined rather than separate. Carriers/brokers feel squeezed from both directions—unable to raise shipper rates while carrier costs climb—suggesting a rate-setting or margin-compression story that could be a strong panel topic (e.g., a broker and a shipper debating rate dynamics).",
           "details": [
-            "Since the pandemic, carrier rates to buy loads have risen far faster than what shippers pay carriers, compressing dedicated-lane profits.",
-            "Fuel, driver wages, and tariffs are converging to raise raw material and shipping costs, forcing manufacturers to raise prices and risk losing customers.",
-            "Driver wage growth is traced back to the ELD mandate (2018/2019) as a root structural cause."
+            "A carrier/broker respondent says post-pandemic carrier prices have risen exponentially while shipper-side buy rates stayed flat, eroding profit on dedicated lanes.",
+            "Driver wages (linked back to the 2018/2019 ELD mandate) and fuel are cited as the main cost drivers, with tariffs adding further pressure.",
+            "A manufacturer described a 'convergence' of tariffs, fuel, and labor costs raising raw material and shipping costs, forcing tough pass-through-to-customer decisions."
           ],
-          "summary": "Rising costs across the trucking supply chain—fuel, labor, tariffs, and carrier rates—are squeezing margins for shippers, manufacturers, and carriers alike."
+          "summary": "Rising costs across the trucking supply chain—driver wages, fuel, tariffs, and freight rates—are squeezing margins for shippers, carriers, and manufacturers alike."
         },
         {
-          "deepDive": "The labor shortage shows up in different guises: as an investment barrier (Respondent 1), an operational delay cause (Respondent 5), and a direct workforce-development problem (Respondent 8). Respondent 8 explicitly separates the issue from employer branding—it's a supply-side pipeline problem for CDL holders in Indiana broadly, not just recruiting for one company. This suggests the root cause is upstream (training/licensing pipeline, industry attractiveness) rather than individual employer practices, pointing to a systemic workforce development gap that could be an agenda focus alongside cost pressures.",
+          "deepDive": "This theme surfaces from multiple angles: it's a direct top-of-mind concern (Respondent 8), a contributing cost driver (Respondent 4's driver wage inflation), a decision-blocking factor (Respondent 1's fleet ROI calculus), and a downstream cause of service failures (Respondent 5's delayed parts). Respondents don't agree on how to solve it, but they agree the pipeline of new CDL holders is too thin. This could anchor an agenda segment on workforce pipelines, CDL training programs, or apprenticeship models with a workforce-focused panelist as peer educator.",
           "details": [
-            "Manufacturers cite the labor shortage as a key reason they hesitate to build an in-house fleet, undermining ROI justification.",
-            "Delayed parts shipments are attributed to carrier short-staffing, specifically driver availability.",
-            "One respondent frames it plainly as insufficient statewide CDL supply, not just difficulty attracting people to a specific company."
+            "One respondent directly named workforce development, specifically CDL supply, as their top challenge, saying it's a statewide/industry supply issue rather than a company-specific recruiting problem.",
+            "A manufacturer weighing a private fleet cited the labor shortage as a real barrier, though secondary to ROI concerns.",
+            "A shipper reported carrier-side delays blamed on 'short staffing,' pointing to driver availability as a root cause of unreliable delivery."
           ],
-          "summary": "A persistent driver and CDL-holder shortage is the root cause behind delays, capacity constraints, and reluctance to invest in fleets."
+          "summary": "A persistent driver and CDL-holder shortage is the root cause behind delays, staffing gaps, and hesitancy to invest in private fleets."
         },
         {
-          "deepDive": "This theme spans multiple distinct bottleneck types: general highway congestion (Respondent 7), port-side processing/volume bottlenecks (Respondent 5), and inadequate/unsafe truck parking infrastructure (Respondent 3). While these are different physical locations and causes, they share a common thread of infrastructure capacity not keeping pace with freight volume, resulting in unpredictable timing and safety risk. Respondent 3's concern is more forward-looking/community-safety oriented rather than a current operational pain point, while Respondents 5 and 7 describe active, felt delays.",
+          "deepDive": "This theme spans three distinct scales—regional highway congestion, hyper-local unsafe truck parking, and a major port bottleneck—suggesting infrastructure and capacity constraints show up wherever freight touches a pinch point. The truck parking issue is notable because the respondent admits it doesn't yet affect their own operations, but sees it as a community/safety issue that could become operational as their fleet grows, hinting the committee may want to address truck parking policy proactively rather than reactively. There isn't yet enough detail to know if congestion is viewed as an Indiana-specific infrastructure gap or a nationwide/port-driven issue outside INDOT's control.",
           "details": [
-            "One respondent describes highway congestion directly slowing shipments and hurting fleet/driver productivity ('time is money').",
-            "Port congestion, specifically at the Port of Chicago, is cited as a root cause of delayed parts even when carriers have adequate staff.",
-            "A separate but related concern flags dangerous semi-truck parking on narrow Indianapolis roads as a safety/community risk tied to inadequate truck parking infrastructure."
+            "One respondent flagged general highway congestion directly delaying shipments and hurting fleet productivity ('time is money').",
+            "Another pointed to a specific local safety hazard: semi trucks parking along narrow roads near I-465 in Indianapolis, creating community and safety risk even if not yet an operational issue for their own fleet.",
+            "A manufacturer's inbound delays were traced to port congestion (Port of Chicago), showing the bottleneck problem extends beyond Indiana roads to broader network chokepoints."
           ],
-          "summary": "Congestion and infrastructure bottlenecks—on highways and at ports—are creating unpredictable delays that ripple through supply chains."
-        }
-      ]
-    },
-    {
-      "consensus": [],
-      "id": "q3-0664b211",
-      "needsMoreInfo": [],
-      "responseCount": 8,
-      "text": "Do you know of others in the industry who are leading the way?",
-      "themes": [
-        {
-          "deepDive": "",
-          "details": [],
-          "summary": "placeholder"
+          "summary": "Congestion, capacity crunches, and infrastructure bottlenecks are slowing freight movement and creating safety concerns."
         }
       ]
     },
     {
       "consensus": [
-        "Majority of respondents currently have no innovation story ready to present.",
-        "The two positive examples both center on AI/automation applied to trucking logistics."
+        "Respondents generally can point to at least one company or agency they view as ahead of the pack.",
+        "Awareness of *what* leaders are doing is shallow -- most answers are secondhand impressions, not verified detail.",
+        "No respondent provided a full name-and-email contact as requested; at best a vague offer to find one."
+      ],
+      "id": "q3-0664b211",
+      "needsMoreInfo": [
+        "No concrete contact info (name/email) was collected for any named company -- follow-up outreach is needed.",
+        "Unclear whether IRG Transport, VW, Harry's Wands, TQL/Coyote, or Action Shipping would be willing/available to speak on a panel.",
+        "Details behind 'automation,' 'secret sauce' recruiting, and tactical urbanism practices remain unverified and need direct confirmation from those organizations.",
+        "No clear leader was identified for the Chicago port bottleneck/driver availability problem -- may need an outside expert or INDOT-led session.",
+        "Unclear how representative these named companies are (e.g., are TQL/Coyote genuinely innovative or just larger/older) -- warrants direct vetting before featuring them."
+      ],
+      "responseCount": 8,
+      "text": "Do you know of others in the industry who are leading the way?",
+      "themes": [
+        {
+          "deepDive": "The pattern suggests committee members hear about innovators second-hand or through industry reputation rather than direct relationships, which limits the survey's ability to recruit panelists directly. IRG Transport and VW's pallet program are the two most concretely described examples, tied to real operational specifics (a manufacturer spinning off a profitable fleet; pallets shipped back and reused). The 3PL and automation examples are more abstract, naming a category of solution (scale, automation) rather than a specific tactic. This gap between naming a leader and knowing how to reach them is itself useful for the committee -- it points to a need for the committee/INDOT to do outreach legwork rather than rely on member introductions.",
+          "details": [
+            "Named leaders include IRG Transport (in-house fleet spinoff), VW (pallet reverse logistics), TQL and Coyote (3PL scale advantages), Harry's Wands (automation), and Action Shipping (CDL recruitment).",
+            "Most respondents could describe the general idea but not the mechanics -- e.g. 'secret sauce' for Action Shipping's recruiting, or 'I'm not super knowledgeable' about tactical urbanism.",
+            "Only one respondent offered even an indirect contact lead ('I know a guy' at Action Shipping); none supplied a name and email as requested."
+          ],
+          "summary": "Respondents can name specific companies doing something innovative, but rarely know the details or have a contact to follow up with."
+        },
+        {
+          "deepDive": "There's an implicit divide between structural/financial fixes (fleet spinoffs, 3PL scale, network size) and operational/technology fixes (automation, pallet reuse). Respondent 5 flags that for some problems -- like driver availability and the Chicago port bottleneck -- no one is seen as managing it well, suggesting the 'leading the way' framing breaks down for the hardest, most systemic issues. This suggests the committee agenda could split into 'good practices to replicate' vs. 'unsolved problems needing outside intervention.'",
+          "details": [
+            "Themes raised include profitability of owning a fleet as a manufacturer, 3PL margin compression between shippers and carriers, and cost pressures from tariffs, fuel, and labor.",
+            "Automation (Harry's Wands) is seen as a lever specifically to cut labor costs.",
+            "Scale and a larger carrier network are seen as what let bigger 3PLs cope better than smaller ones."
+          ],
+          "summary": "The problems people want 'leaders' to solve cluster around making trucking/logistics economically sustainable amid cost and capacity pressure."
+        },
+        {
+          "deepDive": "This is a smaller but distinct theme: not all 'leadership' is coming from within trucking/logistics companies themselves -- some of it is municipal/infrastructure innovation (tactical urbanism) that intersects with freight concerns like parking. Respondent 3's answer suggests an opportunity for the committee to build a formal feedback pipeline between industry and city quick-build teams, rather than just treating this as a company-vs-company benchmarking exercise.",
+          "details": [
+            "Respondent 3 points to DPW, INDOT, and tactical urbanism teams in Indianapolis addressing truck parking/safety in residential areas.",
+            "Respondent 8 highlights a private carrier (Action Shipping) as a CDL recruitment leader, but with no visibility into method.",
+            "Suggests both public agencies and individual carriers are seen as relevant sources of solutions, not just large logistics firms."
+          ],
+          "summary": "Several respondents flagged infrastructure and workforce/safety issues -- like truck parking and CDL recruitment -- as areas where public-sector or non-carrier actors are the ones innovating."
+        }
+      ]
+    },
+    {
+      "consensus": [
+        "Majority (5 of 8) have no innovative project or success story to share right now.",
+        "No respondent offered a referral to an outside speaker when asked."
       ],
       "id": "q4-be38f656",
       "needsMoreInfo": [
-        "Whether the AI-in-TMS and AI-routing stories are mature/detailed enough for a full panel presentation.",
-        "No alternative speaker names were surfaced despite multiple 'no' answers -- unclear if members simply don't know anyone or weren't asked directly.",
-        "The INDOT rest-stop/truck-parking concept needs confirmation from INDOT itself before being placed on the agenda.",
-        "Unclear whether cost-saving AI routing tools address other member priorities like driver shortage or safety."
+        "Whether Respondent 5's AI-in-TMS story is developed enough for a full panelist slot or just a brief mention.",
+        "Whether Respondent 8's AI routing tool has any driver-side benefits worth exploring, since they only confirmed cost savings.",
+        "Whether the INDOT rest-stop-to-truck-parking concept (Respondent 3) is an active project INDOT would present themselves, or just an informal idea.",
+        "Whether Respondent 1's confusion signals a need to shorten or clarify the survey for future distributions."
       ],
       "responseCount": 8,
       "text": "Do you have an innovative project or a success story around trucking that you would like to share at the next meeting?",
       "themes": [
         {
-          "deepDive": "This suggests the panelist pipeline can't rely solely on this survey question -- direct outreach or targeted follow-up may be needed to fill the trucking innovation panel. It also may indicate that many committee members see trucking innovation as outside their day-to-day focus or haven't formalized a story worth presenting yet.",
+          "deepDive": "The bulk of respondents did not have a story to volunteer, which means the agenda will likely need to be built more from the two or three who did respond, plus proactive outreach (e.g., to INDOT) rather than relying on volunteered content. Respondent 1's confusion ('Are you still asking questions?') hints the survey flow may feel long for people with nothing to add.",
           "details": [
-            "5 of 8 respondents (companies like Wand Experts, Conexus Indiana, and others) answered plainly no.",
-            "One respondent also couldn't name a peer to invite as a speaker.",
-            "No follow-up material was offered beyond the 'no' response."
+            "5 of 8 respondents answered simply 'No' or 'Not right now'.",
+            "One respondent (Respondent 1) also had no speaker referral and seemed confused by continued follow-up questions.",
+            "This suggests limited organic supply of ready-made panelists from a broad ask."
           ],
           "summary": "Most respondents have no project or success story to present."
         },
         {
-          "deepDive": "These two stories point to a natural panel theme: how AI and automation are being applied practically in trucking/logistics operations today. Dunn-Rite's follow-up clarified the AI's benefit was cost reduction, not driver attraction/retention, which is a useful nuance for framing the panel discussion (efficiency vs. workforce impact). Worth probing more to see if these are stage-ready case studies or still early pilots.",
+          "deepDive": "Two independent respondents point to AI adoption in trucking operations, suggesting this could be a strong panel topic pairing a TMS-focused speaker with a routing-automation speaker. Notably, when probed on driver attraction/retention benefits, Respondent 8 redirected to cost savings, suggesting the primary value proposition is efficiency/cost rather than workforce impact -- worth clarifying on stage. This distinction (cost vs. labor benefits) could itself be a useful panel discussion point.",
           "details": [
-            "One respondent implemented AI within their Transportation Management System (TMS).",
-            "Dunn-Rite Shipping built an AI tool that automates routing and has made operations cheaper.",
-            "Both examples center on cost/efficiency gains rather than driver retention or safety."
+            "Respondent 5 has implemented AI within their Transportation Management System (TMS).",
+            "Respondent 8 (Dunn-Rite Shipping) uses AI to automate routing, primarily to cut costs.",
+            "Both are concrete, specific technology applications rather than general interest."
           ],
-          "summary": "AI-driven logistics and routing tools are the standout innovation stories being offered."
+          "summary": "AI-driven routing and TMS automation is emerging as a real, shared trucking innovation theme."
         },
         {
-          "deepDive": "This is less a peer success story and more a policy/infrastructure topic that could be pitched to INDOT itself as a panel or update item, rather than sourced from a committee member. It highlights truck parking shortages as a live issue INDOT is exploring solutions for, which could be a separate agenda thread from the trucking innovation panel.",
+          "deepDive": "This isn't a respondent's own success story but a relayed idea from INDOT staff, indicating the committee itself might want to invite INDOT directly to present on this rest-stop/truck-parking concept rather than treating Respondent 3 as the primary speaker. It ties into the broader truck parking shortage issue likely relevant to the wider trucking agenda. Worth confirming with INDOT whether this is an active initiative or just informal discussion.",
           "details": [
-            "Comes from secondhand knowledge of INDOT discussions, not the respondent's own initiative.",
-            "Focuses on converting smaller rest stops to truck parking while consolidating passenger stops into fewer 'flagship' locations.",
-            "Framed as 'interesting' and potentially fun to share, not a confirmed success story."
+            "Respondent 3 relayed an INDOT concept: converting some passenger rest stops into truck parking.",
+            "The idea includes consolidating passenger stops into fewer 'flagship' locations at high-volume/border areas.",
+            "Respondent flagged it as secondhand ('heard comments from INDOT folks') rather than their own project."
           ],
-          "summary": "A potential INDOT-driven infrastructure idea -- converting rest stops to truck parking -- surfaced as a share-worthy concept, not a personal project."
+          "summary": "A policy-level idea about repurposing rest stops for truck parking surfaced as a notable, non-participant-driven success story."
         }
       ]
     }
