@@ -43,9 +43,10 @@ RAW_FILING_DIR = WORK_DIR / "raw_filings"   # not committed; re-fetchable from S
 CACHE_DIR = WORK_DIR / "cache"
 
 # The mini app's own subtree under public/, served by this repo's single Cloudflare
-# Worker alongside Council Themes/Quant/PCN/Consensus (see mcm.site). public/mcm/index.html
-# (the control panel) is hand-maintained and never overwritten by a publish run;
-# everything else under public/mcm/ is generated.
+# Worker alongside Council Themes/Quant/PCN/Consensus (see mcm.site).
+# public/mcm/control-panel/index.html is hand-maintained and never overwritten by a
+# publish run; everything directly under public/mcm/ (including the generated
+# index.html this pipeline writes) is generated.
 SITE_PUBLIC_DIR = REPO_ROOT / "public" / "mcm"
 
 FILINGS_CSV = DATA_DIR / "filings.csv"

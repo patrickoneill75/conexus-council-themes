@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Council Themes &amp; Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>html { visibility: hidden; }</style>
+<script src="/tier-gate.js" data-app="council-data"></script>
+
+<!-- =====================================================================
+     CONFIG — the only part you edit by hand. Box and the themes content
+     are all handled in the control panel at /council-data/control-panel/index.html.
+     ===================================================================== -->
+<script>
+const CONFIG = {
+  title:    "Council Meeting Survey Dashboard",
+  subtitle: "Conexus Indiana",
+
+  // The "Publish to web" link, exactly as Power BI gave it to you.
+  //
+  // Use the ?r=... one. Do NOT use the reportEmbed?reportId=...&autoAuth=true link —
+  // that is "Embed for your organization", which makes every viewer sign in to Power BI
+  // with a Conexus account. Anyone outside Conexus just hits a login wall.
+  reportUrl: "https://app.powerbi.com/view?r=eyJrIjoiNmQ1ODgxMDctMThjZi00YTU3LWI1MTktMjhhMTJhZWFkMmYxIiwidCI6ImRmZTUzZWJhLWE1ZjEtNGUxMi1hMTg2LWIyNTE1NzhiMzY0MyIsImMiOjN9",
+
+  // One entry per Power BI page, in the order you want the buttons to appear.
+  // pageId is the ReportSection id from the address bar when you open that page in
+  // app.powerbi.com — see the note each tab shows until you fill it in.
+  // "enabled: false" keeps a page's config (and its tab's content still buildable) but
+  // leaves it out of the tab bar -- flip it back to true (or drop the field) to bring a
+  // retired tab back instead of re-adding it from scratch.
+  pages: [
+    { label: "Benchmarking",    pageId: "e2d4b56ae1d954057545", enabled: false }
+  ],
+
+  themes: {
+    enabled: true,
+    label: "Council Themes",
+    blurb: "",
+    dataUrl: "/council-themes.json"
+  },
+
+  quant: {
+    enabled: true,
+    label: "Survey Benchmarking",
+    blurb: "",
+    dataUrl: "/quant-dashboard.json"
+  }
+};
+</script>
+
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#006300; --bad:#d03b3b;
+    --bench-bg:#e6e5df; --meeting-bg:rgba(42,120,214,.14); --meeting-select-bg:#eef4fb;
+    --bench-text:#2666b6;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
+    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:#1b2430;
+    --bench-text:#3379ce;
+  } }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
+    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:#1b2430;
+    --bench-text:#3379ce;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+         display:flex; flex-direction:column; }
+
+  header { padding:18px 20px 0; flex:none; }
+  .head-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; }
+  .head-tools { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:7px 13px; background:var(--surface-1); color:var(--text-primary); font-size:12.5px; }
+  button:hover { background:var(--wash); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* Page navigation — the whole point of this wrapper. One segmented control, so the
+     pages read as a set of choices rather than a menu you have to go looking for. */
+  .cutswitch { display:inline-flex; border:1px solid var(--border); border-radius:9px;
+               overflow:hidden; background:var(--surface-1); flex-wrap:wrap; }
+  .cutswitch button { font:inherit; font-size:13.5px; font-weight:550; padding:9px 18px;
+                      border:0; border-radius:0; background:transparent; color:var(--text-secondary); }
+  .cutswitch button + button { border-left:1px solid var(--border); }
+  .cutswitch button:hover { background:var(--wash); color:var(--text-primary); }
+  .cutswitch button[aria-pressed="true"] { background:var(--accent); color:#fff; font-weight:600; }
+  .cutswitch button[aria-pressed="true"]:hover { background:var(--accent); }
+
+  main { flex:1; min-height:0; display:flex; flex-direction:column; padding:14px 20px 20px; }
+  .blurb { color:var(--text-secondary); font-size:12.5px; margin:0 0 10px; min-height:18px; }
+  .stage { flex:1; min-height:0; position:relative; background:var(--surface-1);
+           overflow:hidden; }
+  .panel { position:absolute; inset:0; display:none; overflow-y:auto; overflow-x:hidden; }
+  .panel.active { display:block; }
+  /* The Power BI canvas is 1920x1455. Sizing the frame to that ratio at the stage's
+     full width — rather than squeezing it into the stage's height — is what stops
+     Power BI's own embed from cramming the report into a small box with its own
+     internal scrollbars; the page scrolls instead. */
+  .panel iframe { width:100%; aspect-ratio:1920/1455; height:auto;
+                  border:0; display:block; }
+  .loading { position:absolute; inset:0; display:grid; place-items:center;
+             color:var(--text-muted); font-size:13px; pointer-events:none; }
+
+  /* themes */
+  .pickers { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+             padding:16px 20px; border-bottom:1px solid var(--border); flex:none; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field[hidden] { display:none; }
+  /* .meeting-fields wraps Year/Quarter/Region as one continuous box -- same shape as
+     .benchmark-field (so their selects line up on the same baseline under
+     align-items:flex-end) but a neutral wash instead of the blue tint, to keep the
+     meeting picker reading as its own group distinct from the benchmark field. */
+  .benchmark-field, .meeting-fields { border-radius:8px; padding:8px 12px; }
+  .benchmark-field { background:var(--meeting-bg); }
+  .meeting-fields { background:var(--wash); display:flex; gap:14px; align-items:flex-end; }
+  .field label { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+                 color:var(--text-muted); font-weight:600; }
+  /* appearance:none + a hand-drawn chevron, rather than the browser's own select
+     chrome, is what makes background-color below the actual, faithful color shown --
+     several browsers' native select styling layers its own shading/gradient on top of
+     a plain `background`, which is exactly what made the benchmark select below look
+     more saturated than its own color value. */
+  .field select { font:inherit; font-size:13.5px; padding:7px 30px 7px 10px; min-width:140px;
+                  border:1px solid var(--border); border-radius:8px;
+                  background-color:var(--page); color:var(--text-primary);
+                  appearance:none; -webkit-appearance:none; -moz-appearance:none;
+                  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23898781' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+                  background-repeat:no-repeat; background-position:right 10px center; background-size:14px; }
+  .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  /* Same relationship as Year/Quarter/Region's plain white select sitting on the grey
+     .meeting-fields box: an off-white select on a more saturated box. Here it's an
+     off-white blue instead of plain white, so the "this one is the benchmark" cue still
+     carries down into the control itself. A solid color, not a low-alpha tint of
+     --meeting-bg -- an overlay that subtle read as barely different from the box behind
+     it. background-color only, so the chevron's own background-image above survives. */
+  .benchmark-field select { background-color:var(--meeting-select-bg); }
+  .stamp { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center; }
+
+  /* .doc is the scroll container and spans the full stage width, so its scrollbar sits
+     at the true right edge of the page rather than hugging the centered content. The
+     content itself is centered by .doc-inner, one level in. */
+  .doc { padding:26px 30px 60px; overflow-y:auto; flex:1; }
+  .doc-inner { width:100%; max-width:760px; margin:0 auto; }
+  .meeting { font-size:19px; font-weight:650; margin:0 0 3px; letter-spacing:-0.015em; }
+  .meeting-sub { color:var(--text-muted); font-size:12.5px; margin:0 0 26px; }
+  .doc section { margin:0 0 30px; }
+  .doc h3 { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+            color:var(--accent); margin:0 0 12px; padding-bottom:7px;
+            border-bottom:1px solid var(--border); }
+  .doc .empty { color:var(--text-muted); font-size:13px; margin:0; }
+  .theme-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
+  .theme-item { border:1px solid var(--border); border-radius:10px; padding:13px 16px;
+                background:var(--surface-1); }
+  .theme-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+                margin-bottom:5px; }
+  .theme-summary { font-weight:600; font-size:14px; }
+  .theme-count { font-size:11.5px; color:var(--text-muted); white-space:nowrap; flex:none; }
+  .theme-tag { font-size:11px; color:var(--text-muted); margin-bottom:8px; }
+  .theme-example { margin:0; font-size:12.5px; color:var(--text-secondary); font-style:italic;
+                    border-left:2px solid var(--border); padding-left:10px; }
+
+  /* quant dashboard */
+  .q-title { font-size:15px; font-weight:700; margin:26px 0 12px; letter-spacing:-0.01em; }
+  .q-title:first-child { margin-top:0; }
+  .compare-box { border:1px solid var(--border); border-radius:12px; padding:18px 20px 20px;
+                 background:var(--bench-bg); margin-bottom:8px; }
+  .compare-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px; }
+  .compare-note { font-size:12px; color:var(--text-muted); margin:0 0 14px; }
+  .metric-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+  .metric-card { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+                 background:var(--surface-1); }
+  .metric-label { font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+                  color:var(--text-muted); margin-bottom:8px; }
+  .metric-primary-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .metric-primary { font-size:23px; font-weight:700; letter-spacing:-0.01em; }
+  .metric-delta { font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:999px;
+                  display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
+  .metric-delta.up { background:rgba(12,163,12,.14); color:var(--good); }
+  .metric-delta.down { background:rgba(208,59,59,.13); color:var(--bad); }
+  .metric-delta.flat { background:var(--wash); color:var(--text-muted); }
+  .metric-benchmark { font-size:11.5px; color:var(--text-muted); }
+  /* Same family of blue as the Benchmark period field, carried down into every card
+     that's actually showing a benchmark value -- one visual cue for "benchmark"
+     everywhere it shows up on the tab. A touch darker than --accent (its own token,
+     --bench-text) since a whole line of body text reads better a shade less bright
+     than a button or a link. */
+  .metric-benchmark.has-value, .metric-benchmark.has-value b { color:var(--bench-text); }
+  .metric-benchmark.has-value b { font-weight:600; }
+  .time-controls { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
+  .date-inputs { display:flex; gap:7px; align-items:center; }
+  .date-inputs input[type=date] { font:inherit; font-size:12.5px; padding:6px 8px; border-radius:7px;
+    border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  .date-inputs span { color:var(--text-muted); }
+  .range-wrap { position:relative; height:22px; width:220px; margin-top:8px; }
+  .range-track { position:absolute; left:0; right:0; top:9px; height:4px; border-radius:2px; background:var(--grid); }
+  .range-fill { position:absolute; top:9px; height:4px; border-radius:2px; background:var(--accent); }
+  .range-wrap input[type=range] { position:absolute; left:0; top:0; width:100%; height:22px; margin:0;
+    -webkit-appearance:none; appearance:none; background:transparent; pointer-events:none; }
+  .range-wrap input[type=range]::-webkit-slider-runnable-track { background:transparent; height:22px; }
+  .range-wrap input[type=range]::-moz-range-track { background:transparent; height:22px; border:0; }
+  .range-wrap input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none;
+    width:14px; height:14px; margin-top:4px; border-radius:50%; background:var(--accent);
+    border:2px solid var(--surface-1); box-shadow:0 0 0 1px var(--border); cursor:pointer; pointer-events:auto; }
+  .range-wrap input[type=range]::-moz-range-thumb { width:14px; height:14px; border-radius:50%;
+    background:var(--accent); border:2px solid var(--surface-1); box-shadow:0 0 0 1px var(--border);
+    cursor:pointer; pointer-events:auto; }
+  .time-pair { display:flex; gap:18px; align-items:stretch; margin-bottom:24px; flex-wrap:wrap; }
+  .time-card { flex:0 0 190px; border:1px solid var(--border); border-radius:10px;
+               background:var(--meeting-bg); padding:16px 18px; display:flex; flex-direction:column;
+               justify-content:center; }
+  .time-chart { flex:1; min-width:280px; border:1px solid var(--border); border-radius:10px;
+                background:var(--surface-1); padding:14px 16px; }
+  .chart-title { font-size:12px; font-weight:600; margin:0 0 10px; color:var(--text-secondary); }
+  .chart-svg { width:100%; height:auto; overflow:visible; }
+  .chart-tooltip { position:absolute; transform:translate(-50%,-100%) translateY(-10px);
+    background:var(--text-primary); color:var(--page); font-size:11.5px; padding:7px 10px;
+    border-radius:7px; pointer-events:none; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.2); z-index:5; }
+  .chart-tooltip-head { font-weight:700; margin-bottom:2px; }
+  .chart-tooltip-row { opacity:.85; }
+
+  .notice { margin:24px 30px; padding:18px 20px; max-width:700px; border:1px solid var(--border);
+            border-left:3px solid var(--accent); border-radius:10px; background:var(--wash);
+            font-size:13.5px; }
+  .notice h3 { margin:0 0 8px; font-size:14px; border:0; padding:0;
+               text-transform:none; letter-spacing:0; color:var(--text-primary); }
+  .notice ol { margin:8px 0 0; padding-left:20px; }
+  .notice li { margin-bottom:7px; padding-left:0; }
+  .notice li::before { display:none; }
+  code { background:var(--wash); border:1px solid var(--border); border-radius:5px;
+         padding:1px 5px; font-size:12.5px; }
+  a { color:var(--accent); }
+
+  @media (max-width:640px) {
+    header { padding:14px 12px 0; } main { padding:12px; }
+    .cutswitch { width:100%; } .cutswitch button { flex:1 1 auto; padding:9px 12px; }
+    .doc { padding:20px; } .pickers { padding:12px; }
+    .field { flex:1 1 130px; } .field select { width:100%; min-width:0; }
+    .range-wrap { width:100%; }
+    .time-card { flex:1 1 100%; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-row">
+    <h1 id="title"></h1>
+    <span class="sub" id="subtitle"></span>
+    <div class="head-tools">
+      <button id="linkBtn" type="button" title="Copy a link that opens on this page">Copy link</button>
+      <button id="fullBtn" type="button">Full screen</button>
+      <button id="themeBtn" type="button">Dark mode</button>
+    </div>
+  </div>
+  <div class="cutswitch" id="nav" role="group" aria-label="Dashboard pages"></div>
+</header>
+
+<main>
+  <p class="blurb" id="blurb"></p>
+  <div class="stage" id="stage"></div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var nav = el("nav"), stage = el("stage"), blurb = el("blurb");
+
+  el("title").textContent = CONFIG.title || "Dashboard";
+  el("subtitle").textContent = CONFIG.subtitle || "";
+
+  /* ---------- theme ---------- */
+  (function theme() {
+    var saved = null;
+    try { saved = localStorage.getItem("themes-theme"); } catch (e) {}
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+    function isDark() {
+      var set = document.documentElement.getAttribute("data-theme");
+      if (set) return set === "dark";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    function label() { el("themeBtn").textContent = isDark() ? "Light mode" : "Dark mode"; }
+    label();
+    el("themeBtn").addEventListener("click", function () {
+      var next = isDark() ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("themes-theme", next); } catch (e) {}
+      label();
+    });
+  })();
+
+  /* ---------- tabs ---------- */
+  var tabs = [];
+  if (CONFIG.quant && CONFIG.quant.enabled) {
+    tabs.push({ key: "quant", kind: "quant",
+                label: CONFIG.quant.label || "Survey Benchmarking", blurb: CONFIG.quant.blurb || "" });
+  }
+  if (CONFIG.themes && CONFIG.themes.enabled) {
+    tabs.push({ key: "themes", kind: "themes",
+                label: CONFIG.themes.label || "Themes", blurb: CONFIG.themes.blurb || "" });
+  }
+  CONFIG.pages.forEach(function (p, i) {
+    if (p.enabled === false) return;
+    tabs.push({ key: "p" + i, kind: "report", label: p.label, blurb: p.blurb || "",
+                pageId: p.pageId, slot: i + 1 });
+  });
+  tabs.forEach(function (t) {
+    t.slug = String(t.label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = t.label;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", function () { show(t.key, true); });
+    t.button = b;
+    nav.appendChild(b);
+  });
+
+  function reportSrc(pageId) {
+    var base = CONFIG.reportUrl.trim();
+    var join = base.indexOf("?") === -1 ? "?" : "&";
+    return base + join + "pageName=" + encodeURIComponent(pageId) +
+      "&navContentPaneEnabled=false&filterPaneEnabled=false";
+  }
+
+  /* Each report page gets its own frame, created the first time you open that tab and
+     then kept alive — so the first click loads and every click after is instant. */
+  function mount(t) {
+    if (t.panel) return t.panel;
+    var panel = document.createElement("div");
+    panel.className = "panel";
+    if (t.kind === "report") {
+      if (!t.pageId || /^PASTE_PAGE_ID/.test(t.pageId)) {
+        panel.innerHTML = setupNotice(t);
+      } else {
+        var load = document.createElement("div");
+        load.className = "loading";
+        load.textContent = "Loading " + t.label + "…";
+        var f = document.createElement("iframe");
+        f.src = reportSrc(t.pageId); f.title = t.label; f.allowFullscreen = true;
+        f.addEventListener("load", function () { load.remove(); });
+        panel.appendChild(load); panel.appendChild(f);
+      }
+    } else if (t.kind === "themes") {
+      panel.appendChild(buildThemes());
+    } else {
+      panel.appendChild(buildQuant());
+    }
+    stage.appendChild(panel);
+    t.panel = panel;
+    return panel;
+  }
+
+  /* Shown in place of the report until its page id is filled in. It names the exact
+     placeholder to replace, because with several pages "paste the id" is ambiguous and
+     pasting the right id into the wrong slot looks like the report is broken. */
+  function setupNotice(t) {
+    return '<div class="notice"><h3>' + t.label + " isn't wired up yet</h3>" +
+      "<p>Open <code>public/index.html</code> in GitHub's web editor and replace " +
+      "<code>PASTE_PAGE_ID_" + t.slot + "</code> — the one on the <b>" + t.label +
+      "</b> line — with this page's id.</p><ol>" +
+      "<li>Open the report in <b>app.powerbi.com</b>, not the shared view link.</li>" +
+      "<li>Click <b>" + t.label + "</b> in Power BI's own page list.</li>" +
+      "<li>The address bar reads <code>.../reports/&lt;report id&gt;/<b>ReportSection…</b>" +
+      "?experience=power-bi</code>. Copy the <code>ReportSection…</code> piece — everything " +
+      "after the last slash and before the <code>?</code>.</li>" +
+      "<li>Paste it in, commit, and this tab loads.</li></ol></div>";
+  }
+
+  var current = null;
+  function show(key, pushHash) {
+    var t = null;
+    tabs.forEach(function (x) { if (x.key === key) t = x; });
+    if (!t) t = tabs[0];
+    if (!t) return;
+    mount(t);
+    tabs.forEach(function (x) {
+      var on = x === t;
+      x.button.setAttribute("aria-pressed", on ? "true" : "false");
+      if (x.panel) x.panel.classList.toggle("active", on);
+    });
+    blurb.textContent = t.blurb || "";
+    current = t;
+    if (pushHash) history.replaceState(null, "", "#" + t.slug);
+  }
+
+  nav.addEventListener("keydown", function (e) {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    var i = tabs.indexOf(current);
+    if (i < 0) return;
+    e.preventDefault();
+    var n = (i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    show(tabs[n].key, true);
+    tabs[n].button.focus();
+  });
+
+  el("linkBtn").addEventListener("click", function () {
+    var btn = this;
+    var url = location.href.split("#")[0] + "#" + (current ? current.slug : "");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(function () { btn.textContent = "Copied"; })
+        .catch(function () { btn.textContent = "Copy failed"; });
+    }
+    setTimeout(function () { btn.textContent = "Copy link"; }, 1600);
+  });
+
+  el("fullBtn").addEventListener("click", function () {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (stage.requestFullscreen) stage.requestFullscreen();
+  });
+  document.addEventListener("fullscreenchange", function () {
+    el("fullBtn").textContent = document.fullscreenElement ? "Exit full screen" : "Full screen";
+  });
+
+  /* =================== council themes =================== */
+  var themeDocs = [];
+
+  function buildThemes() {
+    var wrap = document.createElement("div");
+    wrap.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column";
+    wrap.innerHTML =
+      '<div class="pickers">' +
+        '<div class="field"><label for="f-year">Year</label><select id="f-year"></select></div>' +
+        '<div class="field"><label for="f-qtr">Quarter</label><select id="f-qtr"></select></div>' +
+        '<div class="field"><label for="f-reg">Region</label><select id="f-reg"></select></div>' +
+        '<div class="stamp" id="stamp"></div>' +
+      '</div><div class="doc" id="doc"></div>';
+    loadThemes(wrap);
+    return wrap;
+  }
+
+  /* council-themes.json is keyed by Survey ID ("{year}-{quarter} {region}", e.g.
+     "2026-Q3 Central") -> { current, qoq, yoy, generated, sourceFile }. */
+  var SURVEY_ID_RE = /^(\d{4})-(Q[1-4]) (.+)$/;
+
+  /* The Council Meeting Helper's Region column has said "South" for some meetings and
+     "Southern" for others (Central/Northern/Southern is the standing convention -- see
+     SETUP.md), so a Survey ID's raw region isn't safe to show or filter on directly.
+     Collapsing "South" into "Southern" here, once, at parse time, is what keeps every
+     downstream use (the filter dropdown, matchesFilter, chart tooltips) from ever
+     splitting the same real region into two. */
+  function normalizeRegion(region) {
+    return String(region || "").trim().toLowerCase() === "south" ? "Southern" : region;
+  }
+
+  function loadThemes(wrap) {
+    var doc = wrap.querySelector("#doc");
+    doc.innerHTML = '<div class="doc-inner"><p style="color:var(--text-muted)">Loading…</p></div>';
+    fetch(CONFIG.themes.dataUrl + "?t=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (data) {
+        themeDocs = Object.keys(data || {}).map(function (sid) {
+          var m = SURVEY_ID_RE.exec(sid);
+          if (!m) return null;
+          var d = data[sid] || {};
+          return { sid: sid, year: m[1], quarter: m[2], region: normalizeRegion(m[3]),
+                    current: d.current || [], qoq: d.qoq || [], yoy: d.yoy || [],
+                    generated: d.generated, sourceFile: d.sourceFile };
+        }).filter(Boolean);
+
+        if (!themeDocs.length) {
+          wrap.querySelector(".pickers").style.display = "none";
+          doc.innerHTML = '<div class="doc-inner"><div class="notice" style="margin:0">' +
+            "<h3>Nothing published yet</h3>" +
+            '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
+            "Data Folder, upload the Council Meeting Helper and Post-Meeting Survey files, then " +
+            "click <b>Update Dashboard</b> — or run <b>Run full re-analysis</b> to publish " +
+            "whatever history is already in the Feedback Log.</p></div></div>";
+          return;
+        }
+        wrap.querySelector(".pickers").style.display = "";
+        wirePickers(wrap);
+      });
+  }
+
+  function wirePickers(wrap) {
+    var yEl = wrap.querySelector("#f-year"), qEl = wrap.querySelector("#f-qtr"),
+        rEl = wrap.querySelector("#f-reg");
+    function uniq(a) { var seen = {}, out = []; a.forEach(function (v) {
+      if (!seen[v]) { seen[v] = 1; out.push(v); } }); return out; }
+    function fill(sel, vals, keep) {
+      sel.innerHTML = "";
+      vals.forEach(function (v) {
+        var o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o);
+      });
+      if (keep && vals.indexOf(keep) >= 0) sel.value = keep;
+    }
+    var years = uniq(themeDocs.map(function (d) { return d.year; })).sort().reverse();
+    function refreshQ() {
+      fill(qEl, uniq(themeDocs.filter(function (d) { return d.year === yEl.value; })
+        .map(function (d) { return d.quarter; })).sort().reverse(), qEl.value);
+    }
+    function refreshR() {
+      fill(rEl, uniq(themeDocs.filter(function (d) {
+        return d.year === yEl.value && d.quarter === qEl.value;
+      }).map(function (d) { return d.region; })).sort(), rEl.value);
+    }
+    function render() {
+      var hit = null;
+      themeDocs.forEach(function (d) {
+        if (d.year === yEl.value && d.quarter === qEl.value && d.region === rEl.value) hit = d;
+      });
+      var gd = hit && hit.generated ? new Date(hit.generated) : null;
+      wrap.querySelector("#stamp").textContent = gd && !isNaN(gd) ?
+        "Published " + gd.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "";
+      renderMeeting(wrap.querySelector("#doc"), hit);
+    }
+    fill(yEl, years); refreshQ(); refreshR(); render();
+    yEl.addEventListener("change", function () { refreshQ(); refreshR(); render(); });
+    qEl.addEventListener("change", function () { refreshR(); render(); });
+    rEl.addEventListener("change", render);
+  }
+
+  var THEME_SECTIONS = [
+    { key: "current", title: "This quarter's top issues", empty: "No issues surfaced this quarter." },
+    { key: "qoq", title: "Recurring since last quarter", empty: "Nothing recurred from last quarter." },
+    { key: "yoy", title: "Recurring over the last year", empty: "Nothing recurred over the last year." }
+  ];
+
+  /* Builds DOM nodes and sets textContent, so nothing Claude wrote into a theme is
+     ever interpreted as markup. */
+  function renderMeeting(doc, hit) {
+    doc.textContent = "";
+    var inner = document.createElement("div");
+    inner.className = "doc-inner";
+    doc.appendChild(inner);
+
+    if (!hit) {
+      var none = document.createElement("p");
+      none.style.color = "var(--text-muted)";
+      none.textContent = "No themes published for that meeting yet.";
+      inner.appendChild(none);
+      return;
+    }
+    var h = document.createElement("p");
+    h.className = "meeting";
+    h.textContent = hit.year + " " + hit.quarter + " " + hit.region + " Council Meeting";
+    inner.appendChild(h);
+
+    var sub = document.createElement("p");
+    sub.className = "meeting-sub";
+    sub.textContent = "Themes from the " + hit.quarter + " " + hit.year + " meeting" +
+      (hit.sourceFile ? " · " + hit.sourceFile : "");
+    inner.appendChild(sub);
+
+    THEME_SECTIONS.forEach(function (sec) {
+      var items = hit[sec.key] || [];
+      var section = document.createElement("section");
+      var t = document.createElement("h3");
+      t.textContent = sec.title;
+      section.appendChild(t);
+
+      if (!items.length) {
+        var p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = sec.empty;
+        section.appendChild(p);
+      } else {
+        var list = document.createElement("ul");
+        list.className = "theme-list";
+        items.forEach(function (item) {
+          var li = document.createElement("li");
+          li.className = "theme-item";
+
+          var head = document.createElement("div");
+          head.className = "theme-head";
+          var summary = document.createElement("span");
+          summary.className = "theme-summary";
+          summary.textContent = item.summary || "";
+          head.appendChild(summary);
+          if (item.count) {
+            var count = document.createElement("span");
+            count.className = "theme-count";
+            count.textContent = item.count + (item.count === 1 ? " mention" : " mentions");
+            head.appendChild(count);
+          }
+          li.appendChild(head);
+
+          if (item.category || item.subcategory) {
+            var tag = document.createElement("div");
+            tag.className = "theme-tag";
+            tag.textContent = [item.category, item.subcategory].filter(Boolean).join(" / ");
+            li.appendChild(tag);
+          }
+          if (item.example) {
+            var ex = document.createElement("blockquote");
+            ex.className = "theme-example";
+            ex.textContent = item.example;
+            li.appendChild(ex);
+          }
+          list.appendChild(li);
+        });
+        section.appendChild(list);
+      }
+      inner.appendChild(section);
+    });
+    doc.scrollTop = 0;
+  }
+
+  /* =================== claude dashboard (beta) =================== */
+  var quantDocs = [];
+  var QUARTER_ORDER = ["Q1", "Q2", "Q3", "Q4"];
+  var CATEGORY_ORDER = ["Overall value", "Meeting logistics", "Presentation", "Panel", "Prepared", "Workshop"];
+  var FILTER_ALL = "All";
+
+  function quarterTotal(d) { return d.year * 4 + QUARTER_ORDER.indexOf(d.quarter); }
+  /* total -> the first/last calendar day of that quarter, for the date-range controls. */
+  function quarterStartDate(total) {
+    var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
+    return new Date(Date.UTC(y, qi * 3, 1));
+  }
+  function quarterEndDate(total) {
+    var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
+    return new Date(Date.UTC(y, qi * 3 + 3, 0));
+  }
+  function isoDate(d) { return d.toISOString().slice(0, 10); }
+
+  function distinctSorted(list) {
+    var seen = {}, out = [];
+    list.forEach(function (v) { var k = String(v); if (!seen[k]) { seen[k] = 1; out.push(v); } });
+    return out;
+  }
+  function avgOf(list) {
+    var vals = list.filter(function (v) { return v != null; });
+    if (!vals.length) return null;
+    return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+  }
+  function intFmt(v) { return Math.round(v).toLocaleString("en-US"); }
+  function pctFmt(v) { return Math.round(v * 100) + "%"; }
+  function decFmt(v) { return v.toFixed(2); }
+
+  function buildQuant() {
+    var wrap = document.createElement("div");
+    wrap.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column";
+    wrap.innerHTML =
+      '<div class="doc"><div class="doc-inner" style="max-width:1040px">' +
+        '<div id="q-empty"></div>' +
+        '<div id="q-content" hidden>' +
+          '<h3 class="q-title">Meeting Comparison</h3>' +
+          '<div class="compare-box">' +
+            '<div class="compare-controls">' +
+              '<div class="field benchmark-field"><label for="q-compare-mode">Benchmark period</label><select id="q-compare-mode">' +
+                '<option value="prev">Previous quarter</option>' +
+                '<option value="yoy">Same quarter last year</option>' +
+                '<option value="prevYear">Previous year</option>' +
+                '<option value="avg">All-time average</option>' +
+              '</select></div>' +
+              '<div class="meeting-fields">' +
+                '<div class="field"><label for="q-meeting-year">Year</label><select id="q-meeting-year"></select></div>' +
+                '<div class="field"><label for="q-meeting-quarter">Quarter</label><select id="q-meeting-quarter"></select></div>' +
+                '<div class="field"><label for="q-meeting-region">Region</label><select id="q-meeting-region"></select></div>' +
+              '</div>' +
+            '</div>' +
+            '<p class="compare-note" id="q-compare-note"></p>' +
+            '<div class="metric-grid" id="q-metric-cards"></div>' +
+          '</div>' +
+          '<h3 class="q-title">Metrics over Time</h3>' +
+          '<div class="time-controls">' +
+            '<div class="field">' +
+              '<label>Date range</label>' +
+              '<div class="date-inputs">' +
+                '<input type="date" id="q-date-start"><span>–</span><input type="date" id="q-date-end">' +
+              '</div>' +
+              '<div class="range-wrap">' +
+                '<div class="range-track"></div><div class="range-fill" id="q-range-fill"></div>' +
+                '<input type="range" id="q-range-start"><input type="range" id="q-range-end">' +
+              '</div>' +
+            '</div>' +
+            '<div class="field"><label for="q-category">Content Category</label><select id="q-category"></select></div>' +
+          '</div>' +
+          '<div class="time-pair">' +
+            '<div class="time-card" id="q-value-card"></div>' +
+            '<div class="time-chart"><p class="chart-title" id="q-value-title">Average value by date</p>' +
+              '<div id="q-value-chart"></div></div>' +
+          '</div>' +
+          '<div class="time-pair">' +
+            '<div class="time-card" id="q-rate-card"></div>' +
+            '<div class="time-chart"><p class="chart-title">Survey response rate by date</p>' +
+              '<div id="q-rate-chart"></div></div>' +
+          '</div>' +
+        '</div>' +
+      '</div></div>';
+    loadQuant(wrap);
+    return wrap;
+  }
+
+  /* quant-dashboard.json is keyed by Survey ID, same convention as council-themes.json,
+     -> { avgAttendees, responses, responseRate, byCategory, generated, sourceFile }. */
+  function loadQuant(wrap) {
+    var emptyEl = wrap.querySelector("#q-empty"), contentEl = wrap.querySelector("#q-content");
+    emptyEl.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+    fetch(CONFIG.quant.dataUrl + "?t=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (data) {
+        quantDocs = Object.keys(data || {}).map(function (sid) {
+          var m = SURVEY_ID_RE.exec(sid);
+          if (!m) return null;
+          var d = data[sid] || {};
+          return { sid: sid, year: Number(m[1]), quarter: m[2], region: normalizeRegion(m[3]),
+                    avgAttendees: d.avgAttendees, responses: d.responses,
+                    responseRate: d.responseRate, byCategory: d.byCategory || {},
+                    generated: d.generated, sourceFile: d.sourceFile };
+        }).filter(Boolean);
+
+        if (!quantDocs.length) {
+          contentEl.hidden = true;
+          emptyEl.innerHTML = '<div class="notice" style="margin:0">' +
+            "<h3>Nothing published yet</h3>" +
+            '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
+            "Data Folder, upload the Council Meeting Helper and Post-Meeting Survey files " +
+            "(alongside the Content Categories reference file), then click " +
+            "<b>Update Dashboard</b>.</p></div>";
+          return;
+        }
+        emptyEl.textContent = "";
+        contentEl.hidden = false;
+        wireQuant(wrap);
+      });
+  }
+
+  function matchesFilter(d, year, quarter, region) {
+    if (year !== FILTER_ALL && String(d.year) !== year) return false;
+    if (quarter !== FILTER_ALL && d.quarter !== quarter) return false;
+    if (region !== FILTER_ALL && d.region !== region) return false;
+    return true;
+  }
+
+  /* Mirrors the real report's own measures rather than treating every metric the same way:
+     Response Rate is always a weighted ratio of totals (sum of responses over sum of
+     attendees, not an average of each meeting's own rate), and Attendees and the rating
+     categories are always a plain average. Responses defaults to a total (SUM) across
+     whatever meetings are matched -- except when `opts.avgCounts` is set, used for the
+     All-time-average and Previous-year benchmarks, where the user wants "average responses
+     per meeting" instead of a total that grows with however many meetings got averaged in. */
+  function aggregate(matched, def, opts) {
+    opts = opts || {};
+    if (def.key === "responses") {
+      var vals = matched.map(function (d) { return d.responses; }).filter(function (v) { return v != null; });
+      if (!vals.length) return null;
+      if (opts.avgCounts) return avgOf(vals);
+      return vals.reduce(function (a, b) { return a + b; }, 0);
+    }
+    if (def.key === "responseRate") {
+      var withBoth = matched.filter(function (d) { return d.responses != null && d.avgAttendees != null; });
+      if (!withBoth.length) return null;
+      var totalResp = withBoth.reduce(function (a, d) { return a + d.responses; }, 0);
+      var totalAtt = withBoth.reduce(function (a, d) { return a + d.avgAttendees; }, 0);
+      return totalAtt ? totalResp / totalAtt : null;
+    }
+    if (def.key.indexOf("cat:") === 0) {
+      var cat = def.key.slice(4);
+      return avgOf(matched.map(function (d) { return d.byCategory ? d.byCategory[cat] : null; }));
+    }
+    return avgOf(matched.map(function (d) { return d[def.key]; }));
+  }
+
+  function quarterLabel(total) {
+    var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
+    return QUARTER_ORDER[qi] + " " + y;
+  }
+
+  var CARD_DEFS = [
+    { key: "avgAttendees", label: "Attendees", fmt: intFmt },
+    { key: "responses", label: "Responses", fmt: intFmt },
+    { key: "responseRate", label: "Response Rate", fmt: pctFmt },
+    { key: "cat:Overall value", label: "Overall Value", fmt: decFmt },
+    { key: "cat:Meeting logistics", label: "Mtg Logistics", fmt: decFmt },
+    { key: "cat:Presentation", label: "Presentations", fmt: decFmt },
+    { key: "cat:Panel", label: "Panels", fmt: decFmt }
+  ];
+
+  /* "Compare to" resolves against the selected meeting rather than its own slicers, so
+     Previous quarter / Same quarter last year / Previous year only make unambiguous sense
+     when the Year/Quarter/Region controls above currently resolve to exactly one meeting --
+     "the quarter before this one" isn't well-defined once several meetings are in view.
+     All-time average has no such requirement.
+
+     Previous quarter and Same quarter last year compare against every region published for
+     that one target quarter ("previous quarter, all regions"), not just the selected
+     meeting's own region -- summed/weighted the same way the selected meeting's own card
+     values are. All-time average and Previous year instead average per meeting (avgCounts),
+     since they're meant to read as "what a typical meeting looks like," not a total that
+     grows with however many meetings happen to be in the pool. */
+  function computeCompare(selected, mode) {
+    if (mode === "avg") {
+      var ids = {};
+      selected.forEach(function (d) { ids[d.sid] = 1; });
+      var pool = quantDocs.filter(function (d) { return !ids[d.sid]; });
+      if (!pool.length) return { matched: null, note: "Not enough other published meetings yet to average." };
+      return { matched: pool, avgCounts: true, note: "Comparing against the all-time average across " + pool.length +
+        " other meeting" + (pool.length === 1 ? "" : "s") + "." };
+    }
+    if (selected.length !== 1) {
+      return { matched: null, note: "Choose a single meeting above to compare by quarter or year, or switch to All-time average." };
+    }
+    var anchor = selected[0];
+
+    if (mode === "prevYear") {
+      var yearPool = quantDocs.filter(function (d) { return d.year === anchor.year - 1; });
+      if (!yearPool.length) return { matched: null, note: "No meetings published for " + (anchor.year - 1) + "." };
+      return { matched: yearPool, avgCounts: true, note: "Comparing against " + (anchor.year - 1) + " (" +
+        yearPool.length + " meeting" + (yearPool.length === 1 ? "" : "s") + ")." };
+    }
+
+    var offset = mode === "yoy" ? 4 : 1;
+    var target = quarterTotal(anchor) - offset;
+    var quarterPool = quantDocs.filter(function (d) { return quarterTotal(d) === target; });
+    if (!quarterPool.length) {
+      return { matched: null, note: "No meetings published for " + quarterLabel(target) + "." };
+    }
+    return { matched: quarterPool, note: "Comparing against " + quarterLabel(target) + " (all regions, " +
+      quarterPool.length + " meeting" + (quarterPool.length === 1 ? "" : "s") + ")." };
+  }
+
+  /* Big primary number (the selected meeting), a small colored delta badge, and the raw
+     benchmark value underneath -- higher is better for all seven of these, so up is always
+     green and down always red. */
+  function renderMetricCards(container, selected, compareMatched, compareAvgCounts) {
+    container.textContent = "";
+    CARD_DEFS.forEach(function (def) {
+      var card = document.createElement("div");
+      card.className = "metric-card";
+
+      var label = document.createElement("div");
+      label.className = "metric-label";
+      label.textContent = def.label;
+      card.appendChild(label);
+
+      var row = document.createElement("div");
+      row.className = "metric-primary-row";
+      var v = aggregate(selected, def);
+      var primary = document.createElement("span");
+      primary.className = "metric-primary";
+      primary.textContent = v == null ? "--" : def.fmt(v);
+      row.appendChild(primary);
+
+      var cv = compareMatched ? aggregate(compareMatched, def, { avgCounts: compareAvgCounts }) : null;
+      if (v != null && cv != null) {
+        var delta = v - cv;
+        var threshold = def.key === "responseRate" ? 0.001 : (def.key.indexOf("cat:") === 0 ? 0.005 : 0.5);
+        var dir = Math.abs(delta) < threshold ? "flat" : (delta > 0 ? "up" : "down");
+        var badge = document.createElement("span");
+        badge.className = "metric-delta " + dir;
+        var arrow = dir === "up" ? "▲" : (dir === "down" ? "▼" : "–");
+        var sign = delta > 0 ? "+" : (delta < 0 ? "−" : "");
+        badge.textContent = arrow + " " + (dir === "flat" ? "No change" : sign + def.fmt(Math.abs(delta)));
+        row.appendChild(badge);
+      }
+      card.appendChild(row);
+
+      var bench = document.createElement("div");
+      bench.className = "metric-benchmark" + (cv != null ? " has-value" : "");
+      if (cv != null) {
+        bench.appendChild(document.createTextNode("Benchmark: "));
+        var b = document.createElement("b");
+        b.textContent = def.fmt(cv);
+        bench.appendChild(b);
+      } else {
+        bench.textContent = "No benchmark data";
+      }
+      card.appendChild(bench);
+
+      container.appendChild(card);
+    });
+  }
+
+  function wireQuant(wrap) {
+    var byId = function (id) { return wrap.querySelector("#" + id); };
+    var years = distinctSorted(quantDocs.map(function (d) { return d.year; }))
+      .sort(function (a, b) { return a - b; });
+
+    function fillSlicer(sel, extra) {
+      sel.innerHTML = "";
+      [FILTER_ALL].concat(extra).forEach(function (v) {
+        var o = document.createElement("option");
+        o.value = String(v); o.textContent = String(v);
+        sel.appendChild(o);
+      });
+    }
+
+    /* Which regions actually have a published meeting for this exact year+quarter --
+       e.g. 2026-Q3 only has Central and Southern, so that's all the slicer should
+       offer; a quarter published before the regional split only has the literal
+       region "All", so that's the only option there. Unlike the slicer's own
+       always-present "All" (every other slicer here gets one via fillSlicer), this
+       list never gets FILTER_ALL prepended -- it only contains "All" when that's a
+       genuinely published region value for the selected quarter. */
+    function regionsFor(year, quarter) {
+      return distinctSorted(quantDocs.filter(function (d) {
+        return String(d.year) === String(year) && d.quarter === quarter;
+      }).map(function (d) { return d.region; })).sort();
+    }
+
+    function fillRegionSlicer(year, quarter, preferred) {
+      var sel = byId("q-meeting-region");
+      var opts = regionsFor(year, quarter);
+      sel.innerHTML = "";
+      opts.forEach(function (v) {
+        var o = document.createElement("option");
+        o.value = String(v); o.textContent = String(v);
+        sel.appendChild(o);
+      });
+      sel.value = opts.indexOf(preferred) !== -1 ? preferred : (opts[0] || "");
+    }
+
+    fillSlicer(byId("q-meeting-year"), years);
+    fillSlicer(byId("q-meeting-quarter"), QUARTER_ORDER);
+    var latest = quantDocs.slice().sort(function (a, b) { return quarterTotal(b) - quarterTotal(a); })[0];
+    byId("q-meeting-year").value = String(latest.year);
+    byId("q-meeting-quarter").value = latest.quarter;
+    fillRegionSlicer(latest.year, latest.quarter, latest.region);
+    byId("q-compare-mode").value = "prev";
+
+    function renderCompare() {
+      var selected = quantDocs.filter(function (d) {
+        return matchesFilter(d, byId("q-meeting-year").value, byId("q-meeting-quarter").value, byId("q-meeting-region").value);
+      });
+      var compare = computeCompare(selected, byId("q-compare-mode").value);
+      byId("q-compare-note").textContent = compare.note || "";
+      renderMetricCards(byId("q-metric-cards"), selected, compare.matched, compare.avgCounts);
+    }
+    function onYearQuarterChange() {
+      fillRegionSlicer(byId("q-meeting-year").value, byId("q-meeting-quarter").value, byId("q-meeting-region").value);
+      renderCompare();
+    }
+    ["q-meeting-year", "q-meeting-quarter"].forEach(function (id) {
+      byId(id).addEventListener("change", onYearQuarterChange);
+    });
+    ["q-meeting-region", "q-compare-mode"].forEach(function (id) {
+      byId(id).addEventListener("change", renderCompare);
+    });
+    renderCompare();
+
+    wireTimeSection(wrap);
+  }
+
+  /* Each point also carries "points": the raw value from every region contributing to that
+     quarter, so a hover tooltip can show exactly what was averaged -- not just the blended
+     number on the line. */
+  function timeSeries(totals, valueFn) {
+    return totals.map(function (total) {
+      var matched = quantDocs.filter(function (d) { return quarterTotal(d) === total; });
+      var points = matched.map(function (d) { return { region: d.region, value: valueFn(d) }; })
+        .filter(function (p) { return p.value != null; });
+      var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
+      return { total: total, year: y, quarter: QUARTER_ORDER[qi],
+               value: avgOf(points.map(function (p) { return p.value; })), points: points };
+    });
+  }
+
+  /* The plotted value is the weighted rate (sum responses / sum attendees, matching
+     aggregate()), but each point's tooltip still shows every region's own raw rate. */
+  function responseRateTimeSeries(totals) {
+    return totals.map(function (total) {
+      var matched = quantDocs.filter(function (d) { return quarterTotal(d) === total; });
+      var points = matched.filter(function (d) { return d.responseRate != null; })
+        .map(function (d) { return { region: d.region, value: d.responseRate }; });
+      var y = Math.floor(total / 4), qi = ((total % 4) + 4) % 4;
+      return { total: total, year: y, quarter: QUARTER_ORDER[qi],
+               value: aggregate(matched, { key: "responseRate" }), points: points };
+    });
+  }
+
+  function renderTimeCard(container, label, value, fmt) {
+    container.textContent = "";
+    var l = document.createElement("div");
+    l.className = "metric-label"; l.textContent = label;
+    container.appendChild(l);
+    var v = document.createElement("div");
+    v.className = "metric-primary";
+    v.textContent = value == null ? "--" : fmt(value);
+    container.appendChild(v);
+  }
+
+  /* A rating scale's natural range is 0-5, but zooming to roughly where the data actually
+     falls (rounded to the nearest half point, with a little breathing room) is what makes a
+     trend visible at all -- the real values here cluster in a band a point or two wide. */
+  function valueDomain(series) {
+    var vals = series.map(function (p) { return p.value; }).filter(function (v) { return v != null; });
+    if (!vals.length) return [0, 5];
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var lo = Math.max(0, Math.floor(min * 2) / 2 - 0.5);
+    var hi = Math.min(5, Math.ceil(max * 2) / 2 + 0.5);
+    if (hi - lo < 1) hi = Math.min(5, lo + 1);
+    return [lo, hi];
+  }
+
+  function linearRegression(points) {
+    var n = points.length;
+    if (n < 2) return null;
+    var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    points.forEach(function (p) { sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x; });
+    var denom = n * sumXX - sumX * sumX;
+    if (denom === 0) return null;
+    var slope = (n * sumXY - sumX * sumY) / denom;
+    return { slope: slope, intercept: (sumY - slope * sumX) / n };
+  }
+
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  function svgEl(name, attrs) {
+    var node = document.createElementNS(SVG_NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+    return node;
+  }
+
+  /* One series, one line, one dashed linear-trend overlay -- the "Average of Value" /
+     "Survey Response Rate" charts from the real report, redrawn from scratch. */
+  function renderTimeChart(container, series, opts) {
+    container.textContent = "";
+    container.style.position = "relative";
+    if (series.length < 2 || !series.some(function (p) { return p.value != null; })) {
+      var p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "Not enough published data in this range to chart.";
+      container.appendChild(p);
+      return;
+    }
+    var W = 640, H = 220, ML = 40, MR = 12, MT = 12, MB = 26;
+    var plotW = W - ML - MR, plotH = H - MT - MB;
+    var n = series.length;
+    var lo = opts.domain[0], hi = opts.domain[1];
+
+    function x(i) { return n <= 1 ? ML + plotW / 2 : ML + (i / (n - 1)) * plotW; }
+    function y(v) {
+      var clamped = Math.max(lo, Math.min(hi, v));
+      return MT + (1 - (clamped - lo) / (hi - lo)) * plotH;
+    }
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg", role: "img",
+      "aria-label": "Trend chart" });
+
+    var STEPS = 4;
+    for (var g = 0; g <= STEPS; g++) {
+      var val = lo + (hi - lo) * (g / STEPS);
+      var gy = y(val);
+      svg.appendChild(svgEl("line", { x1: ML, x2: W - MR, y1: gy, y2: gy, stroke: "var(--grid)", "stroke-width": 1 }));
+      var gl = svgEl("text", { x: ML - 8, y: gy + 3, "text-anchor": "end", "font-size": 10, fill: "var(--text-muted)" });
+      gl.textContent = opts.fmt(val);
+      svg.appendChild(gl);
+    }
+
+    series.forEach(function (pt, i) {
+      var lx = svgEl("text", { x: x(i), y: H - 8, "text-anchor": "middle", "font-size": 10, fill: "var(--text-muted)" });
+      lx.textContent = pt.quarter + " '" + String(pt.year).slice(-2);
+      svg.appendChild(lx);
+    });
+
+    var run = [];
+    function flush() {
+      if (run.length > 1) {
+        svg.appendChild(svgEl("polyline", {
+          points: run.map(function (pt) { return pt[0] + "," + pt[1]; }).join(" "),
+          fill: "none", stroke: "var(--accent)", "stroke-width": 2.5,
+          "stroke-linejoin": "round", "stroke-linecap": "round"
+        }));
+      }
+      run.forEach(function (pt) { svg.appendChild(svgEl("circle", { cx: pt[0], cy: pt[1], r: 2.5, fill: "var(--accent)" })); });
+      run = [];
+    }
+    series.forEach(function (pt, i) {
+      if (pt.value == null) { flush(); return; }
+      run.push([x(i), y(pt.value)]);
+    });
+    flush();
+
+    var regPoints = [];
+    series.forEach(function (pt, i) { if (pt.value != null) regPoints.push({ x: i, y: pt.value }); });
+    var reg = linearRegression(regPoints);
+    if (reg) {
+      var y0 = reg.slope * 0 + reg.intercept, y1 = reg.slope * (n - 1) + reg.intercept;
+      svg.appendChild(svgEl("line", { x1: x(0), y1: y(y0), x2: x(n - 1), y2: y(y1),
+        stroke: "var(--text-primary)", "stroke-width": 1.5, "stroke-dasharray": "5,4", opacity: 0.55 }));
+    }
+
+    /* Hover targets: a generously-sized invisible circle per point (rather than relying on
+       the small 2.5px visible dot) so hovering is easy to land on, with a floating tooltip
+       naming exactly what's on the line at that quarter -- every contributing region's own
+       value, not just the blended number the line shows. */
+    var tooltip = document.createElement("div");
+    tooltip.className = "chart-tooltip";
+    tooltip.hidden = true;
+
+    function showTooltip(pt, cx, cy) {
+      tooltip.textContent = "";
+      var head = document.createElement("div");
+      head.className = "chart-tooltip-head";
+      head.textContent = pt.quarter + " " + pt.year;
+      tooltip.appendChild(head);
+      pt.points.forEach(function (p) {
+        var row = document.createElement("div");
+        row.className = "chart-tooltip-row";
+        row.textContent = p.region + ": " + opts.fmt(p.value);
+        tooltip.appendChild(row);
+      });
+      var svgBox = svg.getBoundingClientRect(), containerBox = container.getBoundingClientRect();
+      var scale = svgBox.width / W;
+      tooltip.style.left = (svgBox.left - containerBox.left + cx * scale) + "px";
+      tooltip.style.top = (svgBox.top - containerBox.top + cy * scale) + "px";
+      tooltip.hidden = false;
+    }
+
+    series.forEach(function (pt, i) {
+      if (!pt.points.length) return;
+      var cx = x(i), cy = y(pt.value);
+      var hit = svgEl("circle", { cx: cx, cy: cy, r: 10, fill: "transparent" });
+      hit.style.cursor = "pointer";
+      hit.addEventListener("mouseenter", function () { showTooltip(pt, cx, cy); });
+      hit.addEventListener("mouseleave", function () { tooltip.hidden = true; });
+      svg.appendChild(hit);
+    });
+
+    container.appendChild(svg);
+    container.appendChild(tooltip);
+  }
+
+  function wireTimeSection(wrap) {
+    var byId = function (id) { return wrap.querySelector("#" + id); };
+    var slots = distinctSorted(quantDocs.map(quarterTotal)).sort(function (a, b) { return a - b; });
+    if (!slots.length) return;
+
+    var startSlot = 0, endSlot = slots.length - 1;
+    var startInput = byId("q-range-start"), endInput = byId("q-range-end"),
+        startDate = byId("q-date-start"), endDate = byId("q-date-end"), fill = byId("q-range-fill");
+    startInput.min = endInput.min = 0;
+    startInput.max = endInput.max = slots.length - 1;
+
+    /* Content Category options: the known set first (in the order the KPI cards use it),
+       then anything else actually present in the data that isn't one of those -- so an
+       unexpected category never just silently disappears from the dropdown. */
+    var categories = CATEGORY_ORDER.filter(function (c) {
+      return quantDocs.some(function (d) { return d.byCategory && d.byCategory[c] != null; });
+    });
+    var known = {}; categories.forEach(function (c) { known[c] = 1; });
+    quantDocs.forEach(function (d) {
+      Object.keys(d.byCategory || {}).forEach(function (c) { if (!known[c]) { known[c] = 1; categories.push(c); } });
+    });
+    var catEl = byId("q-category");
+    catEl.innerHTML = "";
+    categories.forEach(function (c) {
+      var o = document.createElement("option"); o.value = c; o.textContent = c; catEl.appendChild(o);
+    });
+    catEl.value = categories.indexOf("Overall value") >= 0 ? "Overall value" : (categories[0] || "");
+
+    function syncControls() {
+      startInput.value = startSlot; endInput.value = endSlot;
+      startDate.value = isoDate(quarterStartDate(slots[startSlot]));
+      endDate.value = isoDate(quarterEndDate(slots[endSlot]));
+      var span = slots.length > 1 ? slots.length - 1 : 1;
+      var pct1 = (startSlot / span) * 100, pct2 = (endSlot / span) * 100;
+      fill.style.left = pct1 + "%";
+      fill.style.width = Math.max(0, pct2 - pct1) + "%";
+    }
+
+    function nearestSlot(dateStr, wantStart) {
+      var target = new Date(dateStr + "T00:00:00Z").getTime();
+      var best = 0, bestDiff = Infinity;
+      slots.forEach(function (total, i) {
+        var d = wantStart ? quarterStartDate(total) : quarterEndDate(total);
+        var diff = Math.abs(d.getTime() - target);
+        if (diff < bestDiff) { bestDiff = diff; best = i; }
+      });
+      return best;
+    }
+
+    function renderTime() {
+      var cat = catEl.value;
+      var rangeSlots = slots.slice(startSlot, endSlot + 1);
+      var rangeSlotSet = {}; rangeSlots.forEach(function (t) { rangeSlotSet[t] = 1; });
+      var rangeDocs = quantDocs.filter(function (d) { return rangeSlotSet[quarterTotal(d)]; });
+
+      var valueSeries = timeSeries(rangeSlots, function (d) { return d.byCategory ? d.byCategory[cat] : null; });
+      var valueOverall = avgOf(rangeDocs.map(function (d) { return d.byCategory ? d.byCategory[cat] : null; }));
+      renderTimeCard(byId("q-value-card"), "Avg " + (cat || "Value"), valueOverall, decFmt);
+      byId("q-value-title").textContent = "Average of " + (cat || "Value") + " by Date";
+      renderTimeChart(byId("q-value-chart"), valueSeries,
+        { fmt: function (v) { return v.toFixed(1); }, domain: valueDomain(valueSeries) });
+
+      var rateSeries = responseRateTimeSeries(rangeSlots);
+      var rateOverall = aggregate(rangeDocs, { key: "responseRate" });
+      renderTimeCard(byId("q-rate-card"), "Avg Response Rate", rateOverall, pctFmt);
+      renderTimeChart(byId("q-rate-chart"), rateSeries,
+        { fmt: function (v) { return Math.round(v * 100) + "%"; }, domain: [0, 1] });
+    }
+
+    syncControls();
+    renderTime();
+
+    startInput.addEventListener("input", function () {
+      startSlot = Math.min(Number(startInput.value), endSlot);
+      syncControls(); renderTime();
+    });
+    endInput.addEventListener("input", function () {
+      endSlot = Math.max(Number(endInput.value), startSlot);
+      syncControls(); renderTime();
+    });
+    startDate.addEventListener("change", function () {
+      startSlot = Math.min(nearestSlot(startDate.value, true), endSlot);
+      syncControls(); renderTime();
+    });
+    endDate.addEventListener("change", function () {
+      endSlot = Math.max(nearestSlot(endDate.value, false), startSlot);
+      syncControls(); renderTime();
+    });
+    catEl.addEventListener("change", renderTime);
+  }
+
+  /* ---------- boot ---------- */
+  var fromHash = null;
+  tabs.forEach(function (t) { if (t.slug === location.hash.replace(/^#/, "")) fromHash = t; });
+  show(fromHash ? fromHash.key : tabs[0].key, false);
+  window.addEventListener("hashchange", function () {
+    tabs.forEach(function (t) {
+      if (t.slug === location.hash.replace(/^#/, "") && t !== current) show(t.key, false);
+    });
+  });
+})();
+</script>
+</body>
+</html>

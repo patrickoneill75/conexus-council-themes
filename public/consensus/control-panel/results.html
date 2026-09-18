@@ -90,7 +90,7 @@
 <div class="wrap">
   <header>
     <h1 id="surveyTitle">Loading…</h1>
-    <a class="link" href="/consensus/index.html">&larr; Consensus</a>
+    <a class="link" href="/consensus/control-panel/index.html">&larr; Consensus</a>
   </header>
   <p class="sub" id="generatedAt"></p>
   <div id="content"></div>
@@ -102,13 +102,13 @@
   var el = function (id) { return document.getElementById(id); };
   var token = null;
   try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
-  if (!token) { window.location.href = "/beta/login.html"; return; }
+  if (!token) { window.location.href = "/admin/login.html"; return; }
 
   fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
     .then(function (r) { if (!r.ok) throw new Error("not signed in"); })
     .catch(function () {
       try { sessionStorage.removeItem("beta-token"); } catch (e) {}
-      window.location.href = "/beta/login.html";
+      window.location.href = "/admin/login.html";
     });
 
   function esc(s) {

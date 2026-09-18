@@ -1,11 +1,12 @@
 """Settings, all from the environment so nothing secret lives in the repo.
 
 Box login (OAuth 2.0, standard "Log in with Box") happens once, interactively, in the
-control panel — see public/admin.html and src/worker.js. The Worker holds the Box app's
-client credentials and keeps the resulting token pair in Workers KV; the admin also picks
-the upload folder and the tracker file there. This package never talks to Box's OAuth
-directly: it calls the Worker's own relay endpoint, GET /api/box/pipeline-token,
-authenticated by a shared secret (BOX_RELAY_SECRET) rather than a login, since a GitHub
+control panel — see public/council-data/control-panel/index.html and src/worker.js. The
+Worker holds the Box app's client credentials and keeps the resulting token pair in
+Workers KV; the admin also picks the upload folder and the tracker file there. This
+package never talks to Box's OAuth directly: it calls this mini app's own relay
+endpoint, GET /api/council-data/relay/pipeline-token, authenticated by a shared secret
+(BOX_RELAY_SECRET) rather than a login, since a GitHub
 Actions run has no browser to sign in with.
 """
 from __future__ import annotations

@@ -1,16 +1,22 @@
 """Reading the Data Folder's files out of Box, and writing new versions back.
 
 This module never talks to Box's OAuth directly. Box login happens once, interactively,
-in the control panel (see public/admin.html and src/worker.js): the admin clicks "Log in
-with Box", Box's standard OAuth 2.0 flow runs, and the resulting access/refresh tokens
+in the control panel (see public/council-data/control-panel/index.html and
+src/worker.js/src/council_data.js): the admin clicks "Log in with Box", Box's standard
+OAuth 2.0 flow runs, and the resulting access/refresh tokens
 are kept by the Cloudflare Worker in Workers KV — the right place for them, since the
 refresh token rotates every time it's used and a GitHub Actions run has no durable place
 of its own to keep something that changes underneath it. The admin also picks the Data
 Folder there, once, and can change it any time.
 
-Instead, this module calls the Worker's own relay endpoint — GET /api/box/pipeline-token,
-authenticated by a shared secret (BOX_RELAY_SECRET) rather than a login — which hands
-back a short-lived access token plus the currently-selected Data Folder ID.
+Instead, this module calls the Worker's own relay endpoint for this mini app --
+GET /api/council-data/relay/pipeline-token, authenticated by a shared secret
+(BOX_RELAY_SECRET) rather than a login — which hands back a short-lived access token
+plus the currently-selected Data Folder ID. BOX_RELAY_URL is set to the repo's own
+GET /api/box/pipeline-token URL (a historical name kept for backward compatibility with
+existing secret values -- see src/worker.js); this module derives the Worker's origin
+from it and calls its own sibling path instead, the same pattern every other mini
+app's own relay client already uses (see pcn/relay.py, consensus/relay.py).
 
 `tracker_file_id()` is a leftover, kept only for the one-time migration that reads the
 old tracker.xlsx out of Box (see scripts/migrate_feedback_log.py) — everything else in
@@ -25,6 +31,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from urllib.parse import urlsplit
 
 import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -63,11 +70,17 @@ def enabled() -> bool:
     return bool(config.BOX_RELAY_URL and config.BOX_RELAY_SECRET)
 
 
+def _pipeline_token_url() -> str:
+    parts = urlsplit(config.BOX_RELAY_URL)
+    origin = f"{parts.scheme}://{parts.netloc}"
+    return f"{origin}/api/council-data/relay/pipeline-token"
+
+
 @_retry
 def _refresh():
     with _lock:
         response = requests.get(
-            config.BOX_RELAY_URL,
+            _pipeline_token_url(),
             headers={"x-pipeline-key": config.BOX_RELAY_SECRET},
             timeout=30,
         )

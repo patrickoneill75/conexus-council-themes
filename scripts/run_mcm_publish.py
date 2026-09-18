@@ -8,7 +8,7 @@ is already in the local data directory (e.g. left there by a run_mcm_download.py
 run_mcm_analyze.py you just ran locally), which is what keeps local iteration on the
 dashboard working with no Box calls.
 
-Only generated files are written. public/mcm/index.html (the control panel) is
+Only generated files are written. public/mcm/control-panel/index.html is
 hand-maintained and is never touched here.
 """
 import sys

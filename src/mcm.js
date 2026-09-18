@@ -11,7 +11,7 @@
  * KV namespace, Box app registration, and CONTROL_PASSWORD). None of that stands alone
  * any more: this mini app reuses everything the platform already has --
  *
- * Admin routes reuse the Mini App Platform's own admin accounts (see
+ * Admin routes reuse Connector's shared admin accounts (see
  * src/beta_auth.js's requireBetaAuth), same as src/pcn.js and src/consensus.js -- no
  * password of MCM's own.
  *
@@ -25,7 +25,7 @@
  * Storage: BOX_KV under an "mcm:" prefix.
  *   mcm:folder          -> JSON { id, name } -- the Box folder holding MCM's six data
  *     files (filings.csv, paragraphs.csv, signals.csv, companies.csv, narratives.json,
- *     status.json), picked once in the control panel (public/mcm/index.html).
+ *     status.json), picked once in the control panel (public/mcm/control-panel/index.html).
  *   mcm:run-dispatch     -> ISO timestamp of the last POST run dispatch, so run-status
  *     can tell a fresh run apart from a stale already-completed one.
  *
@@ -36,12 +36,13 @@
  * the length of one download/analyze/publish run. Checked before requireBetaAuth below,
  * since GitHub Actions has no beta-account session.
  *
- * The finished dashboard (public/mcm/dashboard.html, built by mcm/site.py from whatever
- * mcm_download.yml/mcm_analyze.yml/mcm_publish.yml last committed) is plain static JSON
- * fetched straight off the asset layer -- it never calls anything under /api/mcm/*, so
- * it stays fully public with no auth of any kind, exactly like this repo's own root
- * public/index.html. Only the control panel (public/mcm/index.html) and the routes
- * below are gated.
+ * The finished dashboard (public/mcm/index.html -- this mini app's public base page,
+ * built by mcm/site.py from whatever mcm_download.yml/mcm_analyze.yml/mcm_publish.yml
+ * last committed) is plain static JSON fetched straight off the asset layer -- it
+ * never calls anything under /api/mcm/*. Whether it's actually public right now is a
+ * runtime setting (see GET/POST /api/beta/app-visibility in src/beta_auth.js and
+ * public/tier-gate.js, which that page includes), not hardcoded here. Only the control
+ * panel (public/mcm/control-panel/index.html) and the routes below are always gated.
  */
 
 import { requireBetaAuth } from "./beta_auth.js";
@@ -207,7 +208,7 @@ export async function handleMcmApi(route, request, env) {
   if (!auth) return json({ error: "Not signed in" }, 401);
 
   // GET box/folders?id=0 -- same folder-picker copy PCN/Consensus already have,
-  // gated by requireBetaAuth rather than worker.js's own CONTROL_PASSWORD session.
+  // gated by requireBetaAuth like everything else admin-side in this file.
   if (route === "box/folders" && method === "GET") {
     const token = await boxAccessToken(env);
     if (!token) return json({ error: "Box is not connected yet." }, 409);
