@@ -115,7 +115,9 @@
           <span><span class="sw" style="background:var(--driver)"></span>driver -- affects things, nothing affects it</span>
           <span><span class="sw" style="background:var(--outcome)"></span>outcome -- something cared about, not itself influenceable</span>
           <span><span class="sw" style="background:var(--ordinary)"></span>ordinary -- both influences and is influenced</span>
-          <span>edge color: green = mostly positive, red = mostly negative, gray = contested/mixed</span>
+          <span><span class="sw" style="background:var(--accent)"></span>they move together (more of one, more of the other) -- not a judgment that this is good news</span>
+          <span><span class="sw" style="background:var(--bad)"></span>they move oppositely (more of one, less of the other)</span>
+          <span><span class="sw" style="background:var(--text-muted)"></span>contested/mixed -- members disagree on the direction</span>
           <span>edge dash = high dispersion (members disagree on this connection)</span>
         </div>
         <p class="msg muted" id="derivedAtMsg"></p>
@@ -263,10 +265,18 @@
   var ROLE_COLOR = { driver: "var(--driver)", outcome: "var(--outcome)", ordinary: "var(--ordinary)" };
 
   function edgeColor(edge) {
+    // This is a diverging polarity encoding (do the two issues move together, or
+    // oppositely?) -- NOT a good/bad judgment about the outcome. Deliberately
+    // blue/red rather than green/red: green reads as "good news" regardless of
+    // what it's attached to, which misled readers into thinking a blue-appropriate
+    // edge like "turnover -> knowledge loss" (a bad outcome, but a *positive*
+    // correlation -- more turnover, more knowledge loss) was mis-colored. Blue vs.
+    // red carries no such "good/bad" baggage; only the co-movement direction.
+    //
     // Contested (dispersion at least as large as the |mean|, i.e. the mean is mostly
     // cancellation rather than agreement) reads as neutral gray regardless of sign.
     if (edge.dispersion >= Math.abs(edge.mean_weight) && edge.assertion_count > 1) return "var(--text-muted)";
-    return edge.mean_weight >= 0 ? "var(--good)" : "var(--bad)";
+    return edge.mean_weight >= 0 ? "var(--accent)" : "var(--bad)";
   }
 
   function renderStats(network) {
