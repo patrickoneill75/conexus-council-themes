@@ -1,0 +1,59 @@
+name: MCM -- analyze
+
+# Triggered from the Manufacturing Conditions Monitor control panel (workflow_dispatch
+# via the GitHub API), or by hand from the Actions tab. Never runs on a schedule:
+# quarterly data appears on a known calendar, and unattended runs would spend Claude
+# tokens for nothing.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mcm-pipeline          # download and analyze must never interleave commits
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350        # GitHub kills any job at 360; stop cleanly before that
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run Claude analysis
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+          TIME_BUDGET_SECONDS: "18000"   # 5h, leaving room to commit before the 6h cap
+        run: python scripts/run_mcm_analyze.py
+
+      - name: Build the published site
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: python scripts/run_mcm_publish.py
+
+      - name: Commit site
+        run: |
+          git config user.name  "mcm-bot"
+          git config user.email "actions@github.com"
+          git add public/mcm/
+          if git diff --staged --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -m "MCM analyze: signals and quarterly narrative"
+            git push
+          fi
+          # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
+          # but Cloudflare watches this repo through its own GitHub App and will
+          # redeploy the Worker from this push.

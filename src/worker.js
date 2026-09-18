@@ -1,6 +1,7 @@
 import { handleBetaApi } from "./beta_auth.js";
 import { handleConsensusApi } from "./consensus.js";
 import { handlePcnApi } from "./pcn.js";
+import { handleMcmApi } from "./mcm.js";
 
 /**
  * Worker entry point: serves the public dashboard and the control-panel API.
@@ -10,9 +11,10 @@ import { handlePcnApi } from "./pcn.js";
  * the control password, the GitHub token and the Box credentials out of the browser.
  *
  * /api/beta/* is the mini-app platform's own routes (multi-user admin accounts for the
- * /beta portal) -- see src/beta_auth.js for that whole surface. /api/consensus/* is the
- * Consensus mini app (see src/consensus.js). Everything below this point is the
- * original Council Survey Dashboard's API, untouched by either.
+ * /beta portal) -- see src/beta_auth.js for that whole surface. /api/consensus/*,
+ * /api/pcn/* and /api/mcm/* are mini apps (see src/consensus.js, src/pcn.js,
+ * src/mcm.js). Everything below this point is the original Council Survey Dashboard's
+ * API, untouched by any of them.
  *
  * Routes:
  *   GET  /api/config-check                  -> which variables are set (unauthenticated)
@@ -252,6 +254,14 @@ async function handleApi(route, request, env) {
   // see pcn.js's module docstring.
   if (route === "pcn" || route.startsWith("pcn/")) {
     return handlePcnApi(route.slice("pcn".length).replace(/^\/+/, ""), request, env);
+  }
+
+  // ---- /api/mcm/* ----------------------------------------------------------------------
+  // Delegated entirely to mcm.js -- the Manufacturing Conditions Monitor mini app. Also
+  // beta-account gated, and shares this file's same user-delegated Box OAuth connection
+  // like every other mini app -- see mcm.js's module docstring.
+  if (route === "mcm" || route.startsWith("mcm/")) {
+    return handleMcmApi(route.slice("mcm".length).replace(/^\/+/, ""), request, env);
   }
 
   // ---- GET /api/config-check ---------------------------------------------------------

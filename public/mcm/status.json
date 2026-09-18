@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-09-18T13:00:06+00:00",
+  "latest_complete_quarter": "2026Q2",
+  "next_quarter_available": {
+    "period": "2026Q3",
+    "available_on": "2026-11-19"
+  },
+  "box_configured": false,
+  "download_up_to_date": false,
+  "analysis_up_to_date": true,
+  "quarters_missing_data": [
+    "2025Q2",
+    "2026Q1",
+    "2026Q2"
+  ],
+  "quarters_pending_analysis": [],
+  "totals": {
+    "filings": 0,
+    "paragraphs": 0,
+    "signals": 0,
+    "companies": 0,
+    "narratives": 0
+  },
+  "quarters": [
+    {
+      "period": "2025Q2",
+      "year": 2025,
+      "quarter": 2,
+      "role": "year_over_year",
+      "filings": 0,
+      "downloaded": 0,
+      "extracted": 0,
+      "analyzed": 0,
+      "signals": 0,
+      "narratives": [],
+      "narratives_complete": true,
+      "needs_analysis": false,
+      "has_data": false
+    },
+    {
+      "period": "2026Q1",
+      "year": 2026,
+      "quarter": 1,
+      "role": "quarter_over_quarter",
+      "filings": 0,
+      "downloaded": 0,
+      "extracted": 0,
+      "analyzed": 0,
+      "signals": 0,
+      "narratives": [],
+      "narratives_complete": true,
+      "needs_analysis": false,
+      "has_data": false
+    },
+    {
+      "period": "2026Q2",
+      "year": 2026,
+      "quarter": 2,
+      "role": "current",
+      "filings": 0,
+      "downloaded": 0,
+      "extracted": 0,
+      "analyzed": 0,
+      "signals": 0,
+      "narratives": [],
+      "narratives_complete": false,
+      "needs_analysis": false,
+      "has_data": false
+    }
+  ]
+}

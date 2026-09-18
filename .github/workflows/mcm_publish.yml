@@ -1,0 +1,51 @@
+name: MCM -- publish site
+
+# Rebuilds the Manufacturing Conditions Monitor dashboard from whatever is already in
+# Box, with no SEC or Claude calls -- for when only mcm_site_template/dashboard.html (or
+# another non-data file feeding mcm.site) changed and the live site just needs to catch
+# up. Triggered from the control panel (workflow_dispatch via the GitHub API), or by
+# hand from the Actions tab.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mcm-pipeline          # never interleave commits with download/analyze
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Build the published site
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: python scripts/run_mcm_publish.py
+
+      - name: Commit site
+        run: |
+          git config user.name  "mcm-bot"
+          git config user.email "actions@github.com"
+          git add public/mcm/
+          if git diff --staged --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -m "MCM publish: rebuild site from current data"
+            git push
+          fi
+          # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
+          # but Cloudflare watches this repo through its own GitHub App and will
+          # redeploy the Worker from this push.
