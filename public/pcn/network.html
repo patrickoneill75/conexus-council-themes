@@ -64,8 +64,9 @@
     </div>
     <div class="who">
       <span id="whoami"></span>
-      <a class="link" href="/pcn/timeline.html">Change over time &rarr;</a>
-      <a class="link" href="/pcn/index.html">&larr; Control panel</a>
+      <span id="projectLabel"></span>
+      <a class="link" id="timelineLink" href="/pcn/timeline.html">Change over time &rarr;</a>
+      <a class="link" id="controlPanelLink" href="/pcn/index.html">&larr; Control panel</a>
       <button type="button" class="link" id="signOutBtn">Sign out</button>
     </div>
   </header>
@@ -136,10 +137,19 @@
       });
   }
 
+  var projectId = new URL(window.location.href).searchParams.get("project") || "pcn";
+  var suffix = "?project=" + encodeURIComponent(projectId);
+  el("timelineLink").href = "/pcn/timeline.html" + suffix;
+  el("controlPanelLink").href = "/pcn/index.html" + suffix;
+
   fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
     .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
     .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
     .catch(signOut);
+
+  api("projects/" + encodeURIComponent(projectId)).then(function (project) {
+    el("projectLabel").textContent = "Project: " + project.name;
+  }).catch(function () {});
 
   var ROLE_COLOR = { driver: "var(--driver)", outcome: "var(--outcome)", ordinary: "var(--ordinary)" };
 
@@ -270,7 +280,7 @@
     });
   }
 
-  api("network").then(function (result) {
+  api("projects/" + encodeURIComponent(projectId) + "/network").then(function (result) {
     if (!result.network || !result.network.nodes || !result.network.nodes.length) {
       el("emptyState").hidden = false;
       el("content").hidden = true;

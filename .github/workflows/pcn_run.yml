@@ -1,8 +1,9 @@
 name: PCN Issue Map -- run
 
-# Triggered from the PCN Issue Map control panel's "Run pipeline" button (POST
-# /api/pcn/run), or by hand from the Actions tab. No inputs -- pcn/pipeline/run.py
-# auto-detects every "pending" meeting itself (same convention update_dashboard.yml
+# Triggered from a project's control panel "Run pipeline" button (POST
+# /api/pcn/projects/<id>/run), or by hand from the Actions tab. project_id says
+# which walled-off project to process -- pcn/pipeline/run.py auto-detects every
+# "pending" meeting for THAT project itself (same convention update_dashboard.yml
 # already established here), pulling everything it needs from Box through the
 # Worker's relay routes and pushing the updated ledger/issues/resolutions/network/
 # timeline straight back the same way. Nothing here touches this git repository --
@@ -10,9 +11,16 @@ name: PCN Issue Map -- run
 # Box + Workers KV, so there's no public/ file to commit.
 on:
   workflow_dispatch:
+    inputs:
+      project_id:
+        description: "Which PCN Issue Map project to process (its id, e.g. 'pcn')"
+        required: true
+        type: string
 
 concurrency:
-  group: pcn-run
+  # Scoped per project so one project's run never has to wait behind another's --
+  # they're walled off from each other precisely so this can happen concurrently.
+  group: pcn-run-${{ inputs.project_id }}
   cancel-in-progress: false
 
 jobs:
@@ -29,8 +37,9 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Process every pending meeting
+      - name: Process every pending meeting for this project
         env:
+          PCN_PROJECT_ID: ${{ inputs.project_id }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
           BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}

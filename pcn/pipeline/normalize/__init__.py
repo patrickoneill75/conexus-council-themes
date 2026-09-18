@@ -26,4 +26,5 @@ def normalize(raw: RawDocument) -> NormalizedDocument:
         notetaker=raw.notetaker,
         segments=segments,
         meeting_date=raw.meeting_date,
+        year=raw.year, quarter=raw.quarter, cohort=raw.cohort,
     )

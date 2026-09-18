@@ -24,6 +24,7 @@ meeting in the batch still gets processed; one bad file doesn't block the rest.
 from __future__ import annotations
 
 import base64
+import os
 import tempfile
 from pathlib import Path
 
@@ -44,6 +45,7 @@ def _process_meeting(meeting: dict, tmp_dir: Path) -> list[dict]:
     raw = ingest(
         path, meeting["inputType"], meeting["id"],
         notetaker=meeting.get("notetaker"), meeting_date=meeting.get("meetingDate"),
+        year=meeting.get("year"), quarter=meeting.get("quarter"), cohort=meeting.get("cohort"),
     )
     doc = normalize(raw)
     assertions = extract_document(doc)
@@ -51,12 +53,20 @@ def _process_meeting(meeting: dict, tmp_dir: Path) -> list[dict]:
 
 
 def run() -> None:
+    # Which walled-off project this run processes -- every Box folder, ledger, and
+    # published network/timeline is scoped to it; see src/pcn.js's module docstring
+    # for how the Worker keeps projects isolated from each other.
+    project_id = os.environ.get("PCN_PROJECT_ID", "").strip()
+    if not project_id:
+        raise SystemExit("PCN_PROJECT_ID is not set -- pcn_run.yml always dispatches with a project_id input.")
+    print(f"Project: {project_id}")
+
     print("Fetching current ledger/issues/resolutions from Box...")
-    state = relay.fetch_state()
+    state = relay.fetch_state(project_id)
     ledger: list[dict] = state.get("ledger", [])
     issues = [Issue(**row) for row in state.get("issues", [])]
 
-    pending = relay.fetch_pending_meetings()
+    pending = relay.fetch_pending_meetings(project_id)
     if not pending:
         print("No pending meetings -- nothing to do.")
         return
@@ -84,10 +94,10 @@ def run() -> None:
     timeline = derive_timeline(ledger, resolutions, issues)
 
     print("Pushing updated state back to Box, and publishing the network/timeline...")
-    relay.push_state(ledger, [i.to_dict() for i in issues], resolutions)
-    relay.publish_network(network)
-    relay.publish_timeline(timeline)
-    relay.mark_meetings_processed(results)
+    relay.push_state(project_id, ledger, [i.to_dict() for i in issues], resolutions)
+    relay.publish_network(project_id, network)
+    relay.publish_timeline(project_id, timeline)
+    relay.mark_meetings_processed(project_id, results)
 
     processed = sum(1 for r in results if r["status"] == "processed")
     failed = sum(1 for r in results if r["status"] == "failed")

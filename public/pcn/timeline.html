@@ -54,8 +54,9 @@
     </div>
     <div class="who">
       <span id="whoami"></span>
-      <a class="link" href="/pcn/network.html">Network view</a>
-      <a class="link" href="/pcn/index.html">&larr; Control panel</a>
+      <span id="projectLabel"></span>
+      <a class="link" id="networkLink" href="/pcn/network.html">Network view</a>
+      <a class="link" id="controlPanelLink" href="/pcn/index.html">&larr; Control panel</a>
       <button type="button" class="link" id="signOutBtn">Sign out</button>
     </div>
   </header>
@@ -115,10 +116,19 @@
       });
   }
 
+  var projectId = new URL(window.location.href).searchParams.get("project") || "pcn";
+  var suffix = "?project=" + encodeURIComponent(projectId);
+  el("networkLink").href = "/pcn/network.html" + suffix;
+  el("controlPanelLink").href = "/pcn/index.html" + suffix;
+
   fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
     .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
     .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
     .catch(signOut);
+
+  api("projects/" + encodeURIComponent(projectId)).then(function (project) {
+    el("projectLabel").textContent = "Project: " + project.name;
+  }).catch(function () {});
 
   function drawTrend(periods) {
     var svg = el("trendSvg");
@@ -165,7 +175,7 @@
       "<th>New connections</th><th>Newly contested</th></tr></thead><tbody>" + rows + "</tbody></table>";
   }
 
-  api("timeline").then(function (result) {
+  api("projects/" + encodeURIComponent(projectId) + "/timeline").then(function (result) {
     var timeline = result.timeline;
     if (!timeline || !timeline.periods || !timeline.periods.length) {
       el("emptyState").hidden = false;

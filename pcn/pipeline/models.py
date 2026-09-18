@@ -31,6 +31,12 @@ class RawDocument:
     raw_text: str
     meeting_date: str | None = None  # ISO date; when the meeting happened, for pcn/pipeline/timeline.py
     notetaker: str | None = None  # notes only; always None for a transcript
+    # Reporting metadata, admin-entered at upload time -- stored for filtering/export,
+    # never used to derive the network or timeline (that's meeting_date's job; see
+    # pcn/pipeline/timeline.py's own docstring on why the two are kept separate).
+    year: int | None = None
+    quarter: str | None = None  # "Q1".."Q4"
+    cohort: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -56,6 +62,9 @@ class NormalizedDocument:
     notetaker: str | None
     segments: list[Segment]
     meeting_date: str | None = None
+    year: int | None = None
+    quarter: str | None = None
+    cohort: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +74,9 @@ class NormalizedDocument:
             "source_filename": self.source_filename,
             "notetaker": self.notetaker,
             "meeting_date": self.meeting_date,
+            "year": self.year,
+            "quarter": self.quarter,
+            "cohort": self.cohort,
             "segments": [s.to_dict() for s in self.segments],
         }
 
@@ -90,6 +102,9 @@ class Assertion:
     agreement: bool | None  # True/False once two-pass reconciled; None if escalated (single-pass tie-break)
     notetaker: str | None = None  # notes only, copied from the source NormalizedDocument
     meeting_date: str | None = None  # ISO date, copied from the source NormalizedDocument
+    year: int | None = None  # reporting metadata, copied from the source NormalizedDocument -- see its docstring
+    quarter: str | None = None
+    cohort: str | None = None
     status: str = "unreviewed"  # unreviewed | confirmed | rejected -- see the design doc's review queue
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 

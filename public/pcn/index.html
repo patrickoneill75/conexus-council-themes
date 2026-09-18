@@ -21,15 +21,17 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--page); color:var(--text-primary);
          font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:720px; margin:0 auto; padding:32px 20px 64px; }
+  .wrap { max-width:760px; margin:0 auto; padding:32px 20px 64px; }
   header { display:flex; align-items:center; justify-content:space-between; gap:16px;
-           flex-wrap:wrap; margin-bottom:22px; }
+           flex-wrap:wrap; margin-bottom:14px; }
   h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
   .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
   .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
   a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
                          font:inherit; cursor:pointer; text-decoration:none; }
   a.link:hover, button.link:hover { text-decoration:underline; }
+  .project-bar { display:flex; align-items:center; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+  .project-bar label { font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
   .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
           padding:20px; margin-bottom:16px; }
   .card h3 { margin:0 0 4px; font-size:15px; }
@@ -62,12 +64,12 @@
   [hidden] { display:none !important; }
   label.field { display:flex; flex-direction:column; gap:4px; font-size:12.5px;
                 color:var(--text-secondary); }
-  input[type="file"], input[type="date"], input[type="text"], select {
+  input[type="file"], input[type="date"], input[type="text"], input[type="number"], select {
     font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface-1); color:var(--text-primary);
   }
   .field-row { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
-  .field-row > label.field { flex:1 1 160px; min-width:160px; }
+  .field-row > label.field { flex:1 1 130px; min-width:130px; }
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
   th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); }
   th { color:var(--text-secondary); font-weight:600; font-size:11.5px; }
@@ -86,16 +88,30 @@
   <header>
     <div>
       <h1>PCN Issue Map</h1>
-      <p class="sub">Causal-map extraction from PCN meeting notes and transcripts.</p>
+      <p class="sub">Causal-map extraction from meeting notes and transcripts.</p>
     </div>
     <div class="who">
       <span id="whoami"></span>
-      <a class="link" href="/pcn/network.html">View network &rarr;</a>
-      <a class="link" href="/pcn/timeline.html">Change over time &rarr;</a>
+      <a class="link" id="viewNetworkLink" href="/pcn/network.html">View network &rarr;</a>
+      <a class="link" id="viewTimelineLink" href="/pcn/timeline.html">Change over time &rarr;</a>
       <a class="link" href="/beta/index.html">&larr; Mini App Platform</a>
       <button type="button" class="link" id="signOutBtn">Sign out</button>
     </div>
   </header>
+
+  <div class="project-bar">
+    <label>Project
+      <select id="projectSelect"></select>
+    </label>
+    <span class="msg muted" style="margin:0">Each project has its own Box folder,
+      ledger, network, and pipeline runs -- fully walled off from every other
+      project.</span>
+  </div>
+  <div class="row" id="newProjectRow" hidden style="margin:-6px 0 20px">
+    <input type="text" id="newProjectName" placeholder="New project name">
+    <button type="button" class="primary small" id="createProjectBtn">Create</button>
+    <button type="button" class="small" id="cancelProjectBtn">Cancel</button>
+  </div>
 
   <div class="card">
     <h3>Box connection</h3>
@@ -109,8 +125,8 @@
 
   <div class="card">
     <h3>Data folder</h3>
-    <p class="desc">The one Box folder this app reads and writes -- its data file at
-      the root, plus a subfolder for raw source documents kept for audit.</p>
+    <p class="desc">The one Box folder this project reads and writes -- its data
+      files at the root, plus a subfolder for raw source documents kept for audit.</p>
     <p style="margin:0 0 10px">Currently: <b id="folderName">(none selected)</b></p>
     <div class="row">
       <button type="button" id="chooseFolderBtn">Choose folder…</button>
@@ -135,7 +151,23 @@
         <label class="field">Meeting date
           <input type="date" id="uploadMeetingDate" required>
         </label>
-        <label class="field" id="uploadNotetakerField">Notetaker
+        <label class="field">Year
+          <input type="number" id="uploadYear" min="2000" max="2100" step="1" required>
+        </label>
+        <label class="field">Quarter
+          <select id="uploadQuarter" required>
+            <option value="Q1">Q1</option>
+            <option value="Q2">Q2</option>
+            <option value="Q3">Q3</option>
+            <option value="Q4">Q4</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="field" style="flex-basis:220px">Cohort
+          <input type="text" id="uploadCohort" placeholder="Optional">
+        </label>
+        <label class="field" id="uploadNotetakerField" style="flex-basis:220px">Notetaker
           <input type="text" id="uploadNotetaker" placeholder="Who took these notes">
         </label>
       </div>
@@ -149,11 +181,11 @@
 
   <div class="card">
     <h3>Meetings</h3>
-    <p class="desc">Every meeting uploaded so far. "Pending" meetings are what the
-      next pipeline run below will process.</p>
+    <p class="desc">Every meeting uploaded so far, for this project. "Pending"
+      meetings are what the next pipeline run below will process.</p>
     <table id="meetingsTable">
-      <thead><tr><th>Date</th><th>Type</th><th>File</th><th>Status</th><th>Uploaded</th></tr></thead>
-      <tbody id="meetingsRows"><tr><td colspan="5" class="msg muted">Loading…</td></tr></tbody>
+      <thead><tr><th>Date</th><th>Year/Qtr</th><th>Cohort</th><th>Type</th><th>File</th><th>Status</th></tr></thead>
+      <tbody id="meetingsRows"><tr><td colspan="6" class="msg muted">Loading…</td></tr></tbody>
     </table>
   </div>
 
@@ -162,8 +194,8 @@
     <p class="desc">Runs ingest &rarr; normalize &rarr; extract &rarr; match &rarr;
       derive &rarr; timeline on GitHub Actions against every pending meeting above,
       then publishes the updated
-      <a class="link" href="/pcn/network.html">network</a> and
-      <a class="link" href="/pcn/timeline.html">change-over-time view</a>. Real
+      <a class="link" id="runNetworkLink" href="/pcn/network.html">network</a> and
+      <a class="link" id="runTimelineLink" href="/pcn/timeline.html">change-over-time view</a>. Real
       Claude calls, real (if small) cost per meeting.</p>
     <button type="button" class="primary" id="runBtn" disabled>Run pipeline</button>
     <div class="progress-wrap" id="runProgress" hidden>
@@ -210,16 +242,70 @@
     .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
     .catch(signOut);
 
+  /* ---------- Projects: each one is a fully walled-off Box folder + ledger +
+     network + timeline + pipeline runs. Selecting one reloads the page with
+     ?project=<id> so every card below starts from a clean slate. ---------- */
+  var currentProjectId = new URL(window.location.href).searchParams.get("project") || "pcn";
+  var projects = [];
+  var currentProject = null;
+
+  function projectPath(path) { return "projects/" + encodeURIComponent(currentProjectId) + "/" + path; }
+
+  function renderProjectSelect() {
+    el("projectSelect").innerHTML = projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === currentProjectId ? " selected" : "") + '>' +
+        esc(p.name) + "</option>";
+    }).join("") + '<option value="__new__">+ Add new project…</option>';
+  }
+
+  function loadProjects() {
+    return api("projects").then(function (data) {
+      projects = data.projects || [];
+      if (!projects.some(function (p) { return p.id === currentProjectId; })) {
+        currentProjectId = projects.length ? projects[0].id : "pcn";
+      }
+      currentProject = projects.filter(function (p) { return p.id === currentProjectId; })[0] || null;
+      renderProjectSelect();
+      var suffix = "?project=" + encodeURIComponent(currentProjectId);
+      el("viewNetworkLink").href = "/pcn/network.html" + suffix;
+      el("viewTimelineLink").href = "/pcn/timeline.html" + suffix;
+      el("runNetworkLink").href = "/pcn/network.html" + suffix;
+      el("runTimelineLink").href = "/pcn/timeline.html" + suffix;
+    });
+  }
+
+  el("projectSelect").addEventListener("change", function () {
+    var value = el("projectSelect").value;
+    if (value === "__new__") {
+      el("projectSelect").value = currentProjectId;
+      el("newProjectRow").hidden = false;
+      el("newProjectName").focus();
+      return;
+    }
+    window.location.search = "?project=" + encodeURIComponent(value);
+  });
+  el("cancelProjectBtn").addEventListener("click", function () {
+    el("newProjectRow").hidden = true;
+    el("projectSelect").value = currentProjectId;
+  });
+  el("createProjectBtn").addEventListener("click", function () {
+    var name = el("newProjectName").value.trim();
+    if (!name) return;
+    el("createProjectBtn").disabled = true;
+    api("projects", { method: "POST", body: JSON.stringify({ name: name }) }).then(function (result) {
+      window.location.search = "?project=" + encodeURIComponent(result.project.id);
+    }).catch(function (e) {
+      window.alert(e.message);
+      el("createProjectBtn").disabled = false;
+    });
+  });
+
   function loadStatus() {
     el("statusPill").innerHTML = '<span class="pill warn">Checking…</span>';
     return api("box/status").then(function (status) {
-      if (!status.connected) {
-        el("statusPill").innerHTML = '<span class="pill bad">Not connected</span>';
-        el("folderName").textContent = "(none selected)";
-        return;
-      }
-      el("statusPill").innerHTML = '<span class="pill good">Connected</span>';
-      el("folderName").textContent = status.folderName || "(none selected)";
+      el("statusPill").innerHTML = status.connected
+        ? '<span class="pill good">Connected</span>' : '<span class="pill bad">Not connected</span>';
+      el("folderName").textContent = (currentProject && currentProject.folderName) || "(none selected)";
     }).catch(function (e) {
       el("statusPill").innerHTML = '<span class="pill bad">Error</span>';
     });
@@ -231,7 +317,7 @@
     el("testBtn").disabled = true;
     el("testBtn").textContent = "Testing…";
     el("testResult").hidden = true;
-    api("box/test", { method: "POST" }).then(function (result) {
+    api(projectPath("box/test"), { method: "POST" }).then(function (result) {
       el("testResult").hidden = false;
       el("testResult").textContent = JSON.stringify(result, null, 2);
       el("testBtn").disabled = false;
@@ -273,9 +359,10 @@
       el("pickerUseBtn").addEventListener("click", function () {
         var crumbs = crumbEl.querySelectorAll(".crumb");
         var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : data.name;
-        api("config", { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
+        api(projectPath("config"), { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
           .then(function () {
             el("folderName").textContent = name;
+            if (currentProject) currentProject.folderName = name;
             el("folderPicker").hidden = true;
           }).catch(function (e) { window.alert(e.message); });
       });
@@ -301,6 +388,9 @@
     form.append("file", file);
     form.append("inputType", el("uploadInputType").value);
     form.append("meetingDate", el("uploadMeetingDate").value);
+    form.append("year", el("uploadYear").value);
+    form.append("quarter", el("uploadQuarter").value);
+    form.append("cohort", el("uploadCohort").value);
     form.append("notetaker", el("uploadNotetaker").value);
 
     el("uploadBtn").disabled = true;
@@ -311,13 +401,20 @@
     // Deliberately not the shared api() helper -- it always sets a JSON
     // content-type, which would break the multipart boundary the browser needs to
     // set itself for a FormData body.
-    fetch("/api/pcn/upload", { method: "POST", headers: { authorization: "Bearer " + token }, body: form })
+    fetch("/api/pcn/" + projectPath("upload"), { method: "POST", headers: { authorization: "Bearer " + token }, body: form })
       .then(function (r) {
         if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
         return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; });
       })
       .then(function () {
+        var keepYear = el("uploadYear").value, keepQuarter = el("uploadQuarter").value, keepCohort = el("uploadCohort").value;
         el("uploadForm").reset();
+        // Year/quarter/cohort usually repeat across a batch of uploads for the same
+        // reporting period -- carry them forward instead of making the admin retype
+        // them for every single file.
+        el("uploadYear").value = keepYear;
+        el("uploadQuarter").value = keepQuarter;
+        el("uploadCohort").value = keepCohort;
         updateNotetakerVisibility();
         el("uploadMsg").className = "msg ok";
         el("uploadMsg").textContent = "Uploaded -- queued for the next pipeline run.";
@@ -342,12 +439,12 @@
   var pendingCount = 0;
 
   function loadMeetings() {
-    return api("meetings").then(function (data) {
+    return api(projectPath("meetings")).then(function (data) {
       var meetings = data.meetings || [];
       pendingCount = meetings.filter(function (m) { return m.status === "pending"; }).length;
       el("runBtn").disabled = pendingCount === 0;
       if (!meetings.length) {
-        el("meetingsRows").innerHTML = '<tr><td colspan="5" class="msg muted">No meetings uploaded yet.</td></tr>';
+        el("meetingsRows").innerHTML = '<tr><td colspan="6" class="msg muted">No meetings uploaded yet.</td></tr>';
         return;
       }
       el("meetingsRows").innerHTML = meetings.map(function (m) {
@@ -355,12 +452,12 @@
         if (m.status === "failed" && m.error) {
           fileCell += '<div class="msg err" style="margin:2px 0 0">' + esc(m.error) + "</div>";
         }
-        return "<tr><td>" + esc(m.meetingDate) + "</td><td>" + esc(m.inputType) + "</td><td>" + fileCell +
-          "</td><td>" + (STATUS_PILL[m.status] || esc(m.status)) + "</td><td>" +
-          esc(new Date(m.uploadedAt).toLocaleString()) + "</td></tr>";
+        return "<tr><td>" + esc(m.meetingDate) + "</td><td>" + esc(m.year) + " " + esc(m.quarter) + "</td><td>" +
+          esc(m.cohort || "—") + "</td><td>" + esc(m.inputType) + "</td><td>" + fileCell +
+          "</td><td>" + (STATUS_PILL[m.status] || esc(m.status)) + "</td></tr>";
       }).join("");
     }).catch(function (e) {
-      el("meetingsRows").innerHTML = '<tr><td colspan="5" class="msg err">' + esc(e.message) + "</td></tr>";
+      el("meetingsRows").innerHTML = '<tr><td colspan="6" class="msg err">' + esc(e.message) + "</td></tr>";
     });
   }
 
@@ -369,7 +466,7 @@
     var attempts = 0;
     (function check() {
       attempts += 1;
-      api("run-status").then(function (body) {
+      api(projectPath("run-status")).then(function (body) {
         var run = (body.runs || [])[0];
         if (!run) {
           el("runProgress").querySelector(".progress-label").textContent = "Queued…";
@@ -401,7 +498,7 @@
     el("runBtn").textContent = "Starting…";
     el("runProgress").hidden = false;
     el("runProgress").querySelector(".progress-label").textContent = "Starting on GitHub Actions…";
-    api("run", { method: "POST" }).then(function () {
+    api(projectPath("run"), { method: "POST" }).then(function () {
       pollRunStatus();
     }).catch(function (e) {
       window.alert(e.message);
@@ -411,8 +508,10 @@
     });
   });
 
-  loadMeetings();
-  loadStatus();
+  loadProjects().then(function () {
+    loadMeetings();
+    loadStatus();
+  });
 })();
 </script>
 </body>
