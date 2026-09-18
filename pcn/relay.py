@@ -45,3 +45,43 @@ def publish_timeline(timeline: dict) -> None:
         headers=_headers(), timeout=30, json=timeline,
     )
     response.raise_for_status()
+
+
+@_retry
+def fetch_state() -> dict:
+    """The durable ledger/issues/resolutions as they stand in Box right now --
+    {ledger: [...], issues: [...], resolutions: {...}}, each empty if this is the
+    very first run."""
+    response = requests.get(f"{_worker_origin()}/api/pcn/relay/state", headers=_headers(), timeout=30)
+    response.raise_for_status()
+    return response.json()
+
+
+@_retry
+def push_state(ledger: list[dict], issues: list[dict], resolutions: dict) -> None:
+    response = requests.post(
+        f"{_worker_origin()}/api/pcn/relay/state",
+        headers=_headers(), timeout=60,
+        json={"ledger": ledger, "issues": issues, "resolutions": resolutions},
+    )
+    response.raise_for_status()
+
+
+@_retry
+def fetch_pending_meetings() -> list[dict]:
+    """Every meeting an admin has uploaded but this pipeline hasn't ingested yet --
+    each entry carries its raw file content as base64 (contentBase64) alongside its
+    metadata (id, inputType, inputFormat, meetingDate, notetaker, sourceFilename)."""
+    response = requests.get(f"{_worker_origin()}/api/pcn/relay/meetings/pending", headers=_headers(), timeout=60)
+    response.raise_for_status()
+    return response.json().get("meetings", [])
+
+
+@_retry
+def mark_meetings_processed(results: list[dict]) -> None:
+    """results: [{id, status: "processed"|"failed", error?}, ...]."""
+    response = requests.post(
+        f"{_worker_origin()}/api/pcn/relay/meetings/mark-processed",
+        headers=_headers(), timeout=30, json={"results": results},
+    )
+    response.raise_for_status()

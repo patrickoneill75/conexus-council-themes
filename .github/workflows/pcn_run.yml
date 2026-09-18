@@ -1,0 +1,37 @@
+name: PCN Issue Map -- run
+
+# Triggered from the PCN Issue Map control panel's "Run pipeline" button (POST
+# /api/pcn/run), or by hand from the Actions tab. No inputs -- pcn/pipeline/run.py
+# auto-detects every "pending" meeting itself (same convention update_dashboard.yml
+# already established here), pulling everything it needs from Box through the
+# Worker's relay routes and pushing the updated ledger/issues/resolutions/network/
+# timeline straight back the same way. Nothing here touches this git repository --
+# unlike update_dashboard.yml/consensus_analyze.yml, PCN's output lives entirely in
+# Box + Workers KV, so there's no public/ file to commit.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: pcn-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Process every pending meeting
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: python -m pcn.pipeline.run

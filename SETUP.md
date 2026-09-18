@@ -343,19 +343,37 @@ want to change either.
 
 Turns PCN meeting notes/transcripts into an accumulating, evidence-traceable map of how
 members believe their problems connect (Axelrod-style causal mapping / fuzzy cognitive
-maps — see the design doc for the full method and reasoning). **This is an early,
-in-progress build.** It'll grow in stages; this section will grow with it.
+maps — see the design doc for the full method and reasoning). Implements the design
+doc's complete 8-step build order.
 
 Its Box access is the **same shared, user-delegated connection** every other tool here
 uses — nothing new to set up. If the control panel says "Not connected," log in with
 Box from `admin.html`'s Developer section, same as you would for anything else.
 
-Open **PCN Issue Map**'s control panel from the Mini App Platform grid, click
-**Choose folder…** to pick this app's one data folder (a data file at its root, plus a
-subfolder for raw source documents kept for audit — same idea as the Data Folder the
-Council app uses, just its own separate folder), then **Test Box round-trip** — it
-writes a small JSON file there and reads it straight back, confirming the connection
-works.
+**Using it on real meetings**, from **PCN Issue Map**'s control panel (Mini App
+Platform grid):
+1. **Choose folder…** picks this app's one Box data folder (its own, separate from
+   the Council app's Data Folder) — `ledger.json`/`issues.json`/`resolutions.json` at
+   its root, plus a `raw/` subfolder holding every uploaded meeting file verbatim for
+   audit. **Test Box round-trip** confirms the connection works.
+2. **Upload a meeting**: pick Transcript or Notes, the meeting date, a notetaker
+   (notes only), and the file (`.vtt`/`.srt`/`.txt`/`.docx` for transcripts;
+   `.md`/`.txt`/`.docx` for either). This only saves the file to Box and queues it
+   ("pending" in the **Meetings** table below) — nothing is extracted yet.
+3. **Run pipeline** dispatches a GitHub Actions run (`pcn_run.yml`, `pcn/pipeline/
+   run.py`) that processes every pending meeting: ingest → normalize → extract →
+   match → derive → timeline, then publishes the updated network and timeline. A
+   meeting that fails (bad file, extraction error) is marked "Failed" with the error
+   shown in the table, rather than retried forever or silently dropped; every other
+   pending meeting in the batch still gets processed.
+4. Check the results on the **View network** and **Change over time** pages (linked
+   from the control panel).
+
+This Worker is the only thing that ever talks to Box directly for PCN's own state —
+`pcn/pipeline/run.py` (and the CLI's per-stage subcommands) reach it only through
+`relay/state` and `relay/meetings/*` (shared-secret auth, plain JSON), the same way
+Consensus's Python pipeline gets a survey's data as JSON rather than a Box token. See
+`src/pcn.js`'s module docstring for the full route list.
 
 **Pipeline** (`pcn/pipeline/`, Python): `pcn/pipeline/ingest` reads a source file
 (`.vtt`/`.srt`/`.txt` for transcripts, `.md`/`.txt`/`.docx` for either) into a
@@ -422,19 +440,15 @@ by **PCN Issue Map**'s **Change over time** page as a simple trend chart (issue/
 connection counts by quarter) plus a per-quarter table of what's new or newly
 contested.
 
-Run the whole pipeline manually against the committed synthetic fixtures
-(`pcn/fixtures/`, ingested with meeting dates two quarters apart) via the
-**PCN Issue Map -- fixture pipeline test** GitHub Actions workflow (Actions tab →
-Run workflow); it uploads each stage's JSON output, including the resulting
-ledger/issues/resolutions/network/timeline and the review queue's printed order, as a
-downloadable artifact, and publishes the derived network and timeline so both views
-have something real (if synthetic) to show. No real PCN meeting data exists in this
-repo — the fixtures are made up, matching the design doc's own worked example (a
-staffing → overtime → turnover loop). The ledger itself isn't wired up to live in
-this app's Box data folder yet — that lands once there's an actual admin-triggered
-run over uploaded meeting files, rather than just this fixture smoke test. This
-completes the design doc's 8-step build order (Sections 1–19); everything from here
-is refinement, not a missing stage.
+The **fixture pipeline test** workflow (Actions tab) is separate from the real
+`pcn_run.yml` above: it runs every stage's CLI subcommand against the committed
+synthetic fixtures (`pcn/fixtures/`, no real PCN meeting data exists in this repo —
+they're made up, matching the design doc's own worked example of a staffing →
+overtime → turnover loop) and uploads each stage's JSON output as a downloadable
+artifact, useful for debugging one stage at a time or verifying the pipeline still
+works without spending a real meeting's worth of Box state. It also publishes its
+own network/timeline, which a real run will simply overwrite the next time one
+happens.
 
 ---
 
@@ -506,3 +520,6 @@ is refinement, not a missing stage.
 | Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |
 | PCN Issue Map's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as the Council app's own "Box is not connected": open `admin.html`'s Developer section and log in. |
 | PCN Issue Map's "Test Box round-trip" fails | No data folder has been chosen yet (**Choose folder…** in its control panel), or the Box connection expired — try logging in with Box again. |
+| PCN Issue Map's "Run pipeline" button stays disabled | There are no "Pending" meetings in the table — upload one first. |
+| PCN Issue Map's "Run pipeline" fails immediately | `PANEL_GITHUB_TOKEN`/`GITHUB_REPO` aren't set up on this Worker — same secrets the Council app's own **Update Dashboard** button needs (see section 4 above). |
+| A PCN meeting shows "Failed" in the Meetings table | Its error is shown right in the table — often an unreadable/corrupt file for its declared type; fix the file and re-upload it as a new meeting (the failed one is left as-is, not retried automatically). |
