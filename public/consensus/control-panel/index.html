@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Consensus — Connector</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<script src="/claude-confirm.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -252,7 +253,8 @@
       el("surveyRows").innerHTML = surveys.map(function (s) {
         var actions = '<button type="button" class="small edit-btn" data-id="' + esc(s.id) + '">Edit</button> ';
         if (s.responseCount) {
-          actions += '<button type="button" class="small analyze-btn" data-id="' + esc(s.id) + '">Analyze</button> ';
+          actions += '<button type="button" class="small analyze-btn" data-id="' + esc(s.id) +
+            '" data-claude-questions="' + esc(s.claudeAnalyzeQuestionCount) + '">Analyze</button> ';
         }
         if (s.analyzedAt) {
           actions += '<a class="link" href="/consensus/control-panel/results.html?survey=' + esc(s.id) + '">Results</a>';
@@ -273,19 +275,27 @@
       });
       Array.prototype.forEach.call(el("surveyRows").querySelectorAll(".analyze-btn"), function (btn) {
         btn.addEventListener("click", function () {
-          btn.disabled = true; btn.textContent = "Starting…";
-          var progressEl = el("progress-" + btn.dataset.id);
-          // Show the (indeterminate) bar right on click, before the dispatch call has
-          // even returned -- the whole point is not making the admin wait to see
-          // anything happen.
-          if (progressEl) updateProgressBar(progressEl, null);
-          api("surveys/" + btn.dataset.id + "/analyze", { method: "POST" })
-            .then(function () { pollAnalyzeStatus(btn.dataset.id, btn); })
-            .catch(function (e) {
-              window.alert(e.message);
-              btn.disabled = false; btn.textContent = "Analyze";
-              if (progressEl) progressEl.hidden = true; // dispatch failed -- nothing is actually running
-            });
+          var n = Number(btn.dataset.claudeQuestions || 0);
+          var detail = n
+            ? "This will analyze " + n + " question" + (n === 1 ? "" : "s") + " (marked Claude " +
+              "Analyze: Yes) across every respondent's answers to them."
+            : "This survey has no questions marked Claude Analyze: Yes -- nothing will actually be sent to Claude.";
+          confirmClaudeSpend(detail).then(function (ok) {
+            if (!ok) return;
+            btn.disabled = true; btn.textContent = "Starting…";
+            var progressEl = el("progress-" + btn.dataset.id);
+            // Show the (indeterminate) bar right on click, before the dispatch call has
+            // even returned -- the whole point is not making the admin wait to see
+            // anything happen.
+            if (progressEl) updateProgressBar(progressEl, null);
+            api("surveys/" + btn.dataset.id + "/analyze", { method: "POST" })
+              .then(function () { pollAnalyzeStatus(btn.dataset.id, btn); })
+              .catch(function (e) {
+                window.alert(e.message);
+                btn.disabled = false; btn.textContent = "Analyze";
+                if (progressEl) progressEl.hidden = true; // dispatch failed -- nothing is actually running
+              });
+          });
         });
       });
     });

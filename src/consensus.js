@@ -621,6 +621,11 @@ export async function handleConsensusApi(route, request, env) {
     }));
     const summaries = surveys.filter(Boolean).map((s) => ({
       id: s.id, name: s.name, questionCount: s.questions.length,
+      // How many of this survey's questions actually get a Claude call on Analyze --
+      // surfaced so the control panel's spend-confirmation dialog can say "N
+      // question(s)" instead of a flat warning (a question can be marked
+      // "Claude Analyze: No" to skip it entirely).
+      claudeAnalyzeQuestionCount: s.questions.filter((q) => q.claudeAnalyze !== false).length,
       responseCount: s.responseCount, boxFolderName: s.boxFolderName,
       createdAt: s.createdAt, analyzedAt: s.analyzedAt,
       analyzedResponseCount: s.analyzedResponseCount || 0,
