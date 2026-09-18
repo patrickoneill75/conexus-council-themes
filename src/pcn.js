@@ -27,10 +27,10 @@
  *     first time it's read, so GET projects always has at least one entry.
  *   pcn:project:<id>:network      -> JSON, the latest connection network
  *     pcn/pipeline/derive computed for that project (see relay/projects/<id>/network
- *     below) -- what public/pcn/control-panel/network.html renders.
+ *     below) -- what public/pcn/index.html's Network tab renders.
  *   pcn:project:<id>:timeline     -> JSON, the latest change-over-time breakdown
  *     pcn/pipeline/timeline computed for that project (see relay/projects/<id>/
- *     timeline below) -- what public/pcn/control-panel/timeline.html renders.
+ *     timeline below) -- what public/pcn/index.html's Change-over-time tab renders.
  *   pcn:project:<id>:run-dispatch -> ISO timestamp of the last POST run dispatch for
  *     that project, so run-status below can tell a fresh run apart from a stale
  *     already-completed one -- same purpose as src/consensus.js's DISPATCH_PREFIX.
@@ -90,6 +90,37 @@ function json(body, status = 200) {
     status,
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
+}
+
+// Shared by the upload route (fields come off a FormData) and the meeting-edit route
+// (fields come off a JSON body) -- both just hand in plain string/number values.
+// inputType isn't cosmetic: pcn/pipeline/normalize's segmentation and
+// pcn/pipeline/extract's system prompt both branch on it, so a mis-coded meeting is a
+// real extraction-quality bug, which is exactly what the edit route exists to correct.
+function validateMeetingFields({ inputType, meetingDate, year, quarter, cohort, notetaker }) {
+  inputType = String(inputType || "");
+  if (inputType !== "transcript" && inputType !== "notes") {
+    return { error: "inputType must be 'transcript' or 'notes'." };
+  }
+  meetingDate = String(meetingDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(meetingDate)) {
+    return { error: "Meeting date must be an ISO date (YYYY-MM-DD)." };
+  }
+  const yearRaw = String(year || "").trim();
+  const yearNum = Number(yearRaw);
+  if (!yearRaw || !Number.isInteger(yearNum) || yearNum < 2000 || yearNum > 2100) {
+    return { error: "Year must be a 4-digit year." };
+  }
+  quarter = String(quarter || "").trim().toUpperCase();
+  if (!QUARTERS.includes(quarter)) {
+    return { error: "Quarter must be one of Q1, Q2, Q3, Q4." };
+  }
+  cohort = String(cohort || "").trim();
+  notetaker = String(notetaker || "").trim();
+  if (inputType === "notes" && !notetaker) {
+    return { error: "Notetaker is required for notes." };
+  }
+  return { fields: { inputType, meetingDate, year: yearNum, quarter, cohort, notetaker } };
 }
 
 function networkKey(projectId) { return `pcn:project:${projectId}:network`; }
@@ -549,28 +580,14 @@ export async function handlePcnApi(route, request, env) {
       const file = incoming.get("file");
       if (!(file instanceof File)) return json({ error: "No file in the request." }, 400);
 
-      const inputType = String(incoming.get("inputType") || "");
-      if (inputType !== "transcript" && inputType !== "notes") {
-        return json({ error: "inputType must be 'transcript' or 'notes'." }, 400);
-      }
-      const meetingDate = String(incoming.get("meetingDate") || "").trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(meetingDate)) {
-        return json({ error: "Meeting date must be an ISO date (YYYY-MM-DD)." }, 400);
-      }
-      const yearRaw = String(incoming.get("year") || "").trim();
-      const year = Number(yearRaw);
-      if (!yearRaw || !Number.isInteger(year) || year < 2000 || year > 2100) {
-        return json({ error: "Year must be a 4-digit year." }, 400);
-      }
-      const quarter = String(incoming.get("quarter") || "").trim().toUpperCase();
-      if (!QUARTERS.includes(quarter)) {
-        return json({ error: "Quarter must be one of Q1, Q2, Q3, Q4." }, 400);
-      }
-      const cohort = String(incoming.get("cohort") || "").trim();
-      const notetaker = String(incoming.get("notetaker") || "").trim();
-      if (inputType === "notes" && !notetaker) {
-        return json({ error: "Notetaker is required for notes." }, 400);
-      }
+      const validated = validateMeetingFields({
+        inputType: incoming.get("inputType"), meetingDate: incoming.get("meetingDate"),
+        year: incoming.get("year"), quarter: incoming.get("quarter"),
+        cohort: incoming.get("cohort"), notetaker: incoming.get("notetaker"),
+      });
+      if (validated.error) return json({ error: validated.error }, 400);
+      const { inputType, meetingDate, year, quarter, cohort, notetaker } = validated.fields;
+
       const ext = (file.name.split(".").pop() || "").toLowerCase();
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
         return json({ error: `Unsupported file type ".${ext}" -- use one of: ${ALLOWED_EXTENSIONS.join(", ")}.` }, 400);
@@ -619,6 +636,44 @@ export async function handlePcnApi(route, request, env) {
       return json({ meetings: await getMeetings(headers, project.folderId) });
     }
 
+    // POST projects/<id>/meetings/<meetingId> { inputType, meetingDate, year, quarter,
+    // cohort, notetaker } -- corrects a meeting's metadata after upload (e.g. a
+    // "notes" file mis-coded as "transcript"). Resets it to "pending" so pcn_run.yml
+    // reprocesses it with the corrected metadata on the next run, instead of leaving
+    // the original (wrong) extraction results in place.
+    if (sub.startsWith("meetings/") && method === "POST") {
+      const meetingId = sub.slice("meetings/".length);
+      const token = await boxAccessToken(env);
+      if (!token) return json({ error: "Box is not connected yet -- open the control panel and log in with Box." }, 409);
+      if (!project.folderId) return json({ error: "Pick a data folder for this project first." }, 409);
+
+      let body = {};
+      try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+      const validated = validateMeetingFields(body);
+      if (validated.error) return json({ error: validated.error }, 400);
+      const { inputType, meetingDate, year, quarter, cohort, notetaker } = validated.fields;
+
+      const headers = { authorization: `Bearer ${token}` };
+      const meetings = await getMeetings(headers, project.folderId);
+      const meeting = meetings.find((m) => m.id === meetingId);
+      if (!meeting) return json({ error: "Meeting not found" }, 404);
+
+      meeting.inputType = inputType;
+      meeting.meetingDate = meetingDate;
+      meeting.year = year;
+      meeting.quarter = quarter;
+      meeting.cohort = cohort || null;
+      meeting.notetaker = inputType === "notes" ? notetaker : null;
+      meeting.status = "pending";
+      meeting.editedAt = new Date().toISOString();
+      meeting.editedBy = auth.email;
+      delete meeting.error;
+      delete meeting.processedAt;
+
+      await saveMeetings(headers, project.folderId, meetings);
+      return json({ ok: true, meeting });
+    }
+
     // POST projects/<id>/run -> dispatches pcn_run.yml with project_id=<id> (it
     // processes every "pending" meeting for this project). Mirrors src/consensus.js's
     // own analyze dispatch.
@@ -645,16 +700,16 @@ export async function handlePcnApi(route, request, env) {
     }
 
     // GET projects/<id>/network -> { network, derivedAt } | { network: null,
-    // derivedAt: null } -- what public/pcn/control-panel/network.html renders for this project.
-    // Published only by relay/projects/<id>/network above (the pipeline run), never
-    // computed on the fly here.
+    // derivedAt: null } -- what public/pcn/index.html's Network tab renders for this
+    // project. Published only by relay/projects/<id>/network above (the pipeline
+    // run), never computed on the fly here.
     if (sub === "network" && method === "GET") {
       const raw = await env.BOX_KV.get(networkKey(projectId));
       return json(raw ? JSON.parse(raw) : { network: null, derivedAt: null });
     }
 
     // GET projects/<id>/timeline -> same publish-only-via-relay shape as network
-    // above, for public/pcn/control-panel/timeline.html.
+    // above, for public/pcn/index.html's Change-over-time tab.
     if (sub === "timeline" && method === "GET") {
       const raw = await env.BOX_KV.get(timelineKey(projectId));
       return json(raw ? JSON.parse(raw) : { timeline: null, derivedAt: null });

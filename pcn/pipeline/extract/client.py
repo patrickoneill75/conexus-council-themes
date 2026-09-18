@@ -33,10 +33,16 @@ def get_client() -> anthropic.Anthropic:
 
 @_retry
 def extract(system: str, user: str, model: str) -> list[dict]:
+    # No explicit temperature: the installed anthropic SDK's Messages.create() no
+    # longer exposes it as a request parameter at all (verified against the
+    # installed package -- passing it raises TypeError, which is what broke every
+    # extraction call and left the ledger empty). Sampling is still non-deterministic
+    # by default without it, which is all run.py's two-pass agreement check actually
+    # needs -- see its docstring; it never required temperature to be *tunable*, just
+    # nonzero, and "unset" already satisfies that here.
     response = get_client().messages.create(
         model=model,
         max_tokens=8000,
-        temperature=1,  # nonzero -- see run.py's two-pass docstring for why this matters
         system=system,
         messages=[{"role": "user", "content": user}],
         tools=[ASSERTION_TOOL],
