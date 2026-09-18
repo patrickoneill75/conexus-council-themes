@@ -1,25 +1,23 @@
 {
-  "generated_at": "2026-09-18T13:00:06+00:00",
+  "generated_at": "2026-09-18T13:46:21+00:00",
   "latest_complete_quarter": "2026Q2",
   "next_quarter_available": {
     "period": "2026Q3",
     "available_on": "2026-11-19"
   },
-  "box_configured": false,
-  "download_up_to_date": false,
-  "analysis_up_to_date": true,
-  "quarters_missing_data": [
-    "2025Q2",
-    "2026Q1",
+  "box_configured": true,
+  "download_up_to_date": true,
+  "analysis_up_to_date": false,
+  "quarters_missing_data": [],
+  "quarters_pending_analysis": [
     "2026Q2"
   ],
-  "quarters_pending_analysis": [],
   "totals": {
-    "filings": 0,
-    "paragraphs": 0,
-    "signals": 0,
-    "companies": 0,
-    "narratives": 0
+    "filings": 9873,
+    "paragraphs": 280785,
+    "signals": 32985,
+    "companies": 1961,
+    "narratives": 2
   },
   "quarters": [
     {
@@ -27,45 +25,48 @@
       "year": 2025,
       "quarter": 2,
       "role": "year_over_year",
-      "filings": 0,
-      "downloaded": 0,
-      "extracted": 0,
-      "analyzed": 0,
-      "signals": 0,
+      "filings": 3317,
+      "downloaded": 3317,
+      "extracted": 3317,
+      "analyzed": 3317,
+      "signals": 11376,
       "narratives": [],
       "narratives_complete": true,
       "needs_analysis": false,
-      "has_data": false
+      "has_data": true
     },
     {
       "period": "2026Q1",
       "year": 2026,
       "quarter": 1,
       "role": "quarter_over_quarter",
-      "filings": 0,
-      "downloaded": 0,
-      "extracted": 0,
-      "analyzed": 0,
-      "signals": 0,
+      "filings": 3339,
+      "downloaded": 3339,
+      "extracted": 3339,
+      "analyzed": 3339,
+      "signals": 10902,
       "narratives": [],
       "narratives_complete": true,
       "needs_analysis": false,
-      "has_data": false
+      "has_data": true
     },
     {
       "period": "2026Q2",
       "year": 2026,
       "quarter": 2,
       "role": "current",
-      "filings": 0,
-      "downloaded": 0,
-      "extracted": 0,
-      "analyzed": 0,
-      "signals": 0,
-      "narratives": [],
-      "narratives_complete": false,
-      "needs_analysis": false,
-      "has_data": false
+      "filings": 3217,
+      "downloaded": 3217,
+      "extracted": 3217,
+      "analyzed": 3216,
+      "signals": 10707,
+      "narratives": [
+        "national",
+        "indiana"
+      ],
+      "narratives_complete": true,
+      "needs_analysis": true,
+      "has_data": true
     }
   ]
 }
