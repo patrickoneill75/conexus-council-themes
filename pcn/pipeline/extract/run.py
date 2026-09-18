@@ -1,5 +1,6 @@
-"""Two-pass extraction: run extraction twice per source at nonzero temperature (see
-client.py), then reconcile the two passes per segment. Agreement between passes is a
+"""Two-pass extraction: run extraction twice per source relying on the model's default
+(nonzero) sampling for independent variation between the two calls -- see client.py's
+extract() -- then reconcile the two passes per segment. Agreement between passes is a
 free, automatic reliability signal without a second human coder -- an assertion both
 passes independently produced for the same segment is kept once, marked
 agreement=True; one only one pass produced is kept too (never silently dropped -- rule

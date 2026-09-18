@@ -92,8 +92,8 @@
     </div>
     <div class="who">
       <span id="whoami"></span>
-      <a class="link" id="viewNetworkLink" href="/pcn/control-panel/network.html">View network &rarr;</a>
-      <a class="link" id="viewTimelineLink" href="/pcn/control-panel/timeline.html">Change over time &rarr;</a>
+      <a class="link" id="viewNetworkLink" href="/pcn/index.html?tab=network">View network &rarr;</a>
+      <a class="link" id="viewTimelineLink" href="/pcn/index.html?tab=timeline">Change over time &rarr;</a>
       <a class="link" href="/admin/index.html">&larr; Connector</a>
       <button type="button" class="link" id="signOutBtn">Sign out</button>
     </div>
@@ -116,7 +116,9 @@
   <div class="card">
     <h3>Box connection</h3>
     <p class="desc">Uses the same Box connection every other tool here shares -- log in
-      with Box from admin.html's Developer section if this says not connected.</p>
+      with Box from Council Data's control panel Developer section
+      (<a href="/council-data/control-panel/index.html">/council-data/control-panel</a>)
+      if this says not connected.</p>
     <div class="row">
       <span id="statusPill"><span class="pill warn">Checking…</span></span>
       <button type="button" id="refreshStatusBtn">Refresh</button>
@@ -184,8 +186,8 @@
     <p class="desc">Every meeting uploaded so far, for this project. "Pending"
       meetings are what the next pipeline run below will process.</p>
     <table id="meetingsTable">
-      <thead><tr><th>Date</th><th>Year/Qtr</th><th>Cohort</th><th>Type</th><th>File</th><th>Status</th></tr></thead>
-      <tbody id="meetingsRows"><tr><td colspan="6" class="msg muted">Loading…</td></tr></tbody>
+      <thead><tr><th>Date</th><th>Year/Qtr</th><th>Cohort</th><th>Type</th><th>File</th><th>Status</th><th></th></tr></thead>
+      <tbody id="meetingsRows"><tr><td colspan="7" class="msg muted">Loading…</td></tr></tbody>
     </table>
   </div>
 
@@ -194,8 +196,8 @@
     <p class="desc">Runs ingest &rarr; normalize &rarr; extract &rarr; match &rarr;
       derive &rarr; timeline on GitHub Actions against every pending meeting above,
       then publishes the updated
-      <a class="link" id="runNetworkLink" href="/pcn/control-panel/network.html">network</a> and
-      <a class="link" id="runTimelineLink" href="/pcn/control-panel/timeline.html">change-over-time view</a>. Real
+      <a class="link" id="runNetworkLink" href="/pcn/index.html?tab=network">network</a> and
+      <a class="link" id="runTimelineLink" href="/pcn/index.html?tab=timeline">change-over-time view</a>. Real
       Claude calls, real (if small) cost per meeting.</p>
     <button type="button" class="primary" id="runBtn" disabled>Run pipeline</button>
     <div class="progress-wrap" id="runProgress" hidden>
@@ -266,11 +268,11 @@
       }
       currentProject = projects.filter(function (p) { return p.id === currentProjectId; })[0] || null;
       renderProjectSelect();
-      var suffix = "?project=" + encodeURIComponent(currentProjectId);
-      el("viewNetworkLink").href = "/pcn/control-panel/network.html" + suffix;
-      el("viewTimelineLink").href = "/pcn/control-panel/timeline.html" + suffix;
-      el("runNetworkLink").href = "/pcn/control-panel/network.html" + suffix;
-      el("runTimelineLink").href = "/pcn/control-panel/timeline.html" + suffix;
+      var suffix = "&project=" + encodeURIComponent(currentProjectId);
+      el("viewNetworkLink").href = "/pcn/index.html?tab=network" + suffix;
+      el("viewTimelineLink").href = "/pcn/index.html?tab=timeline" + suffix;
+      el("runNetworkLink").href = "/pcn/index.html?tab=network" + suffix;
+      el("runTimelineLink").href = "/pcn/index.html?tab=timeline" + suffix;
     });
   }
 
@@ -437,27 +439,108 @@
     failed: '<span class="pill bad">Failed</span>',
   };
   var pendingCount = 0;
+  var allMeetings = [];
+  var editingId = null;
 
   function loadMeetings() {
     return api(projectPath("meetings")).then(function (data) {
-      var meetings = data.meetings || [];
-      pendingCount = meetings.filter(function (m) { return m.status === "pending"; }).length;
+      allMeetings = data.meetings || [];
+      pendingCount = allMeetings.filter(function (m) { return m.status === "pending"; }).length;
       el("runBtn").disabled = pendingCount === 0;
-      if (!meetings.length) {
-        el("meetingsRows").innerHTML = '<tr><td colspan="6" class="msg muted">No meetings uploaded yet.</td></tr>';
-        return;
-      }
-      el("meetingsRows").innerHTML = meetings.map(function (m) {
-        var fileCell = esc(m.sourceFilename || "");
-        if (m.status === "failed" && m.error) {
-          fileCell += '<div class="msg err" style="margin:2px 0 0">' + esc(m.error) + "</div>";
-        }
-        return "<tr><td>" + esc(m.meetingDate) + "</td><td>" + esc(m.year) + " " + esc(m.quarter) + "</td><td>" +
-          esc(m.cohort || "—") + "</td><td>" + esc(m.inputType) + "</td><td>" + fileCell +
-          "</td><td>" + (STATUS_PILL[m.status] || esc(m.status)) + "</td></tr>";
-      }).join("");
+      renderMeetingsRows();
     }).catch(function (e) {
-      el("meetingsRows").innerHTML = '<tr><td colspan="6" class="msg err">' + esc(e.message) + "</td></tr>";
+      el("meetingsRows").innerHTML = '<tr><td colspan="7" class="msg err">' + esc(e.message) + "</td></tr>";
+    });
+  }
+
+  // The edit form mirrors the upload form's fields (minus the file, which can't be
+  // changed after the fact) -- fixing a mis-coded inputType/date/etc. after upload,
+  // e.g. a "notes" file that was mis-coded as a "transcript". Saving resets the
+  // meeting to "pending" server-side so the next pipeline run reprocesses it with the
+  // corrected metadata.
+  function editRowHtml(m) {
+    return '<tr><td colspan="7" style="padding:12px 8px">' +
+      '<div class="field-row" style="margin-bottom:12px">' +
+        '<label class="field">Type<select class="editInputType">' +
+          '<option value="transcript"' + (m.inputType === "transcript" ? " selected" : "") + '>Transcript</option>' +
+          '<option value="notes"' + (m.inputType === "notes" ? " selected" : "") + '>Notes</option>' +
+        '</select></label>' +
+        '<label class="field">Meeting date<input type="date" class="editMeetingDate" value="' + esc(m.meetingDate) + '"></label>' +
+        '<label class="field">Year<input type="number" class="editYear" min="2000" max="2100" step="1" value="' + esc(m.year) + '"></label>' +
+        '<label class="field">Quarter<select class="editQuarter">' +
+          QUARTER_OPTIONS.map(function (q) { return '<option value="' + q + '"' + (m.quarter === q ? " selected" : "") + '>' + q + '</option>'; }).join("") +
+        '</select></label>' +
+      '</div>' +
+      '<div class="field-row" style="margin-bottom:10px">' +
+        '<label class="field" style="flex-basis:220px">Cohort<input type="text" class="editCohort" value="' + esc(m.cohort || "") + '"></label>' +
+        '<label class="field editNotetakerField" style="flex-basis:220px"' + (m.inputType === "notes" ? "" : " hidden") + '>Notetaker' +
+          '<input type="text" class="editNotetaker" value="' + esc(m.notetaker || "") + '"></label>' +
+      '</div>' +
+      '<div class="row">' +
+        '<button type="button" class="primary small editSaveBtn">Save</button>' +
+        '<button type="button" class="small editCancelBtn">Cancel</button>' +
+        '<span class="msg muted" style="margin:0">Saving resets this meeting to "Pending" for reprocessing.</span>' +
+      '</div>' +
+      '<p class="msg err editErr" hidden style="margin-top:8px"></p>' +
+    '</td></tr>';
+  }
+  var QUARTER_OPTIONS = ["Q1", "Q2", "Q3", "Q4"];
+
+  function renderMeetingsRows() {
+    if (!allMeetings.length) {
+      el("meetingsRows").innerHTML = '<tr><td colspan="7" class="msg muted">No meetings uploaded yet.</td></tr>';
+      return;
+    }
+    el("meetingsRows").innerHTML = allMeetings.map(function (m) {
+      if (m.id === editingId) return editRowHtml(m);
+      var fileCell = esc(m.sourceFilename || "");
+      if (m.status === "failed" && m.error) {
+        fileCell += '<div class="msg err" style="margin:2px 0 0">' + esc(m.error) + "</div>";
+      }
+      return "<tr><td>" + esc(m.meetingDate) + "</td><td>" + esc(m.year) + " " + esc(m.quarter) + "</td><td>" +
+        esc(m.cohort || "—") + "</td><td>" + esc(m.inputType) + "</td><td>" + fileCell +
+        "</td><td>" + (STATUS_PILL[m.status] || esc(m.status)) + "</td>" +
+        '<td><button type="button" class="small editBtn" data-id="' + esc(m.id) + '">Edit</button></td></tr>';
+    }).join("");
+
+    Array.prototype.forEach.call(el("meetingsRows").querySelectorAll(".editBtn"), function (btn) {
+      btn.addEventListener("click", function () { editingId = btn.dataset.id; renderMeetingsRows(); });
+    });
+
+    if (!editingId) return;
+    var editRow = el("meetingsRows").querySelector(".editInputType").closest("tr");
+    var typeSel = editRow.querySelector(".editInputType");
+    var notetakerField = editRow.querySelector(".editNotetakerField");
+    typeSel.addEventListener("change", function () { notetakerField.hidden = typeSel.value !== "notes"; });
+    editRow.querySelector(".editCancelBtn").addEventListener("click", function () {
+      editingId = null;
+      renderMeetingsRows();
+    });
+    editRow.querySelector(".editSaveBtn").addEventListener("click", function () {
+      var body = {
+        inputType: typeSel.value,
+        meetingDate: editRow.querySelector(".editMeetingDate").value,
+        year: editRow.querySelector(".editYear").value,
+        quarter: editRow.querySelector(".editQuarter").value,
+        cohort: editRow.querySelector(".editCohort").value,
+        notetaker: editRow.querySelector(".editNotetaker").value,
+      };
+      var saveBtn = editRow.querySelector(".editSaveBtn");
+      var errEl = editRow.querySelector(".editErr");
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      errEl.hidden = true;
+      api(projectPath("meetings/" + encodeURIComponent(editingId)), { method: "POST", body: JSON.stringify(body) })
+        .then(function () {
+          editingId = null;
+          return loadMeetings();
+        })
+        .catch(function (e) {
+          errEl.hidden = false;
+          errEl.textContent = "Error: " + e.message;
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+        });
     });
   }
 
