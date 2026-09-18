@@ -1,4 +1,4 @@
-# PCN Issue Map: coding protocol
+# Issue Network Mapper: coding protocol
 
 One page, five decisions, settled before any extraction prompt is drafted. Per
 Carley (1993): the quality of a map is determined mostly by decisions made before

@@ -16,7 +16,7 @@ import { handleCouncilDataApi } from "./council_data.js";
  *                          own page reads.
  *   /api/council-data/* -- Council Themes/Quant dashboard (see src/council_data.js).
  *   /api/consensus/*    -- Consensus (see src/consensus.js).
- *   /api/pcn/*          -- PCN Issue Map (see src/pcn.js).
+ *   /api/pcn/*          -- Issue Network Mapper (see src/pcn.js).
  *   /api/mcm/*          -- Manufacturing Conditions Monitor (see src/mcm.js).
  *   /api/config-check   -- which Worker secrets are set (unauthenticated diagnostic).
  *   /api/box/authorize-url, /api/box/callback -- the ONE shared Box OAuth login flow.

@@ -1,7 +1,8 @@
 /**
- * PCN Issue Map: turns meeting notes/transcripts into an accumulating, evidence-
- * traceable map of how members believe their problems connect, mounted under
- * /api/pcn/*. This file is just the Worker side (control panel login, Box round-trip,
+ * Issue Network Mapper (still internally "pcn" -- see the id/route note below): turns
+ * meeting notes/transcripts into an accumulating, evidence-traceable map of how
+ * members believe their problems connect, mounted under /api/pcn/*. This file is
+ * just the Worker side (control panel login, Box round-trip,
  * and the relay + read routes the pipeline's derived output flows through) -- the
  * actual extraction/matching/derivation pipeline is Python, in pcn/pipeline/ (see
  * the design doc and pcn/CODING_PROTOCOL.md for the full build).
@@ -14,12 +15,12 @@
  * tool in this repo uses (see worker.js's box/authorize-url, box/callback, box/status)
  * -- not a separate service account.
  *
- * Projects: this app isn't just "PCN" -- an admin can wall off a whole separate
+ * Projects: this app isn't just one project -- an admin can wall off a whole separate
  * project (its own Box folder, ledger, issues, network, timeline, GitHub Actions
  * run) for a different meeting series entirely, so running one project's pipeline
- * never touches another's data even transiently. "PCN Issue Map" itself is just the
- * project seeded by default (id "pcn"); see PROJECTS_KEY below and the "Add new
- * project" flow in public/pcn/control-panel/index.html.
+ * never touches another's data even transiently. The default project (id "pcn") is
+ * just the one seeded automatically; see PROJECTS_KEY below and the "Add new
+ * project" flow in public/inm/control-panel/index.html.
  *
  * Storage: BOX_KV under a "pcn:" prefix.
  *   pcn:projects                 -> JSON array of { id, name, folderId, folderName,
@@ -27,10 +28,10 @@
  *     first time it's read, so GET projects always has at least one entry.
  *   pcn:project:<id>:network      -> JSON, the latest connection network
  *     pcn/pipeline/derive computed for that project (see relay/projects/<id>/network
- *     below) -- what public/pcn/index.html's Network tab renders.
+ *     below) -- what public/inm/index.html's Network tab renders.
  *   pcn:project:<id>:timeline     -> JSON, the latest change-over-time breakdown
  *     pcn/pipeline/timeline computed for that project (see relay/projects/<id>/
- *     timeline below) -- what public/pcn/index.html's Change-over-time tab renders.
+ *     timeline below) -- what public/inm/index.html's Change-over-time tab renders.
  *   pcn:project:<id>:run-dispatch -> ISO timestamp of the last POST run dispatch for
  *     that project, so run-status below can tell a fresh run apart from a stale
  *     already-completed one -- same purpose as src/consensus.js's DISPATCH_PREFIX.
@@ -138,9 +139,9 @@ async function getProjects(env) {
   const raw = await env.BOX_KV.get(PROJECTS_KEY);
   if (raw) return JSON.parse(raw);
   // Seeded once, on first read, so GET projects always has at least the default
-  // PCN Issue Map project even before anyone has picked its Box folder.
+  // project even before anyone has picked its Box folder.
   const seeded = [{
-    id: DEFAULT_PROJECT_ID, name: "PCN Issue Map", folderId: null, folderName: null,
+    id: DEFAULT_PROJECT_ID, name: "Issue Network Mapper", folderId: null, folderName: null,
     createdAt: new Date().toISOString(),
   }];
   await env.BOX_KV.put(PROJECTS_KEY, JSON.stringify(seeded));
@@ -700,7 +701,7 @@ export async function handlePcnApi(route, request, env) {
     }
 
     // GET projects/<id>/network -> { network, derivedAt } | { network: null,
-    // derivedAt: null } -- what public/pcn/index.html's Network tab renders for this
+    // derivedAt: null } -- what public/inm/index.html's Network tab renders for this
     // project. Published only by relay/projects/<id>/network above (the pipeline
     // run), never computed on the fly here.
     if (sub === "network" && method === "GET") {
@@ -709,7 +710,7 @@ export async function handlePcnApi(route, request, env) {
     }
 
     // GET projects/<id>/timeline -> same publish-only-via-relay shape as network
-    // above, for public/pcn/index.html's Change-over-time tab.
+    // above, for public/inm/index.html's Change-over-time tab.
     if (sub === "timeline" && method === "GET") {
       const raw = await env.BOX_KV.get(timelineKey(projectId));
       return json(raw ? JSON.parse(raw) : { timeline: null, derivedAt: null });
