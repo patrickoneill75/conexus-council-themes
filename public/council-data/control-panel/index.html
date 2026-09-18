@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Control Panel — Council Themes</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<script src="/claude-confirm.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -523,43 +524,52 @@
   }
 
   el("updateBtn").addEventListener("click", function () {
-    always(dispatchJob("update_dashboard", el("updateBtn"), el("updateState")), updateAnalysisReadiness)
-      .catch(function () {});
+    confirmClaudeSpend("Reads the Data Folder's current files, asks Claude to extract any " +
+      "newly-detected meetings, and re-synthesizes the current/QoQ/YoY themes for every " +
+      "affected quarter.").then(function (ok) {
+      if (!ok) return;
+      always(dispatchJob("update_dashboard", el("updateBtn"), el("updateState")), updateAnalysisReadiness)
+        .catch(function () {});
+    });
   });
 
   el("refreshDashboardBtn").addEventListener("click", function () {
+    // No Claude call -- rebuilds the quant dashboard from what's already in the Data
+    // Folder, so no spend confirmation needed here.
     always(dispatchJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState")), updateRefreshButtons)
       .catch(function () {});
   });
 
   el("refreshThemesBtn").addEventListener("click", function () {
-    if (!window.confirm("Re-synthesize every quarter already in the Feedback Log? " +
-                         "This replaces the published top issues / QoQ / YoY for all of them."))
-      return;
-    always(dispatchJob("setup", el("refreshThemesBtn"), el("refreshThemesState")), updateRefreshButtons)
-      .catch(function () {});
+    confirmClaudeSpend("Re-synthesizes every quarter already in the Feedback Log with Claude, " +
+      "replacing the published top issues / QoQ / YoY for all of them.").then(function (ok) {
+      if (!ok) return;
+      always(dispatchJob("setup", el("refreshThemesBtn"), el("refreshThemesState")), updateRefreshButtons)
+        .catch(function () {});
+    });
   });
 
   el("refreshAllBtn").addEventListener("click", function () {
-    if (!window.confirm("Re-synthesize every quarter already in the Feedback Log, and " +
-                         "rebuild the quant dashboard? This replaces every published " +
-                         "top issues / QoQ / YoY and every quant figure."))
-      return;
-    // Disable all three up front -- not just refreshAllBtn -- so a click on the
-    // standalone Refresh Themes button can't sneak in a second "setup" dispatch while
-    // Refresh Dashboard's own dispatch is still in flight.
-    el("refreshAllBtn").disabled = true;
-    el("refreshDashboardBtn").disabled = true;
-    el("refreshThemesBtn").disabled = true;
-    // Same "themes-analyze" concurrency group as every other run, so these two queue one
-    // after the other on GitHub's side rather than racing to commit public/. If the first
-    // dispatch fails to even queue, dispatchJob's rejection short-circuits this chain --
-    // the second job is never triggered, rather than silently doing half the work.
-    always(
-      dispatchJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState"))
-        .then(function () { return dispatchJob("setup", el("refreshThemesBtn"), el("refreshThemesState")); }),
-      updateRefreshButtons
-    ).catch(function () {});
+    confirmClaudeSpend("Rebuilds the quant dashboard, then re-synthesizes every quarter " +
+      "already in the Feedback Log with Claude -- replacing every published top issues / " +
+      "QoQ / YoY and every quant figure.").then(function (ok) {
+      if (!ok) return;
+      // Disable all three up front -- not just refreshAllBtn -- so a click on the
+      // standalone Refresh Themes button can't sneak in a second "setup" dispatch while
+      // Refresh Dashboard's own dispatch is still in flight.
+      el("refreshAllBtn").disabled = true;
+      el("refreshDashboardBtn").disabled = true;
+      el("refreshThemesBtn").disabled = true;
+      // Same "themes-analyze" concurrency group as every other run, so these two queue one
+      // after the other on GitHub's side rather than racing to commit public/. If the first
+      // dispatch fails to even queue, dispatchJob's rejection short-circuits this chain --
+      // the second job is never triggered, rather than silently doing half the work.
+      always(
+        dispatchJob("refresh_dashboard", el("refreshDashboardBtn"), el("refreshDashboardState"))
+          .then(function () { return dispatchJob("setup", el("refreshThemesBtn"), el("refreshThemesState")); }),
+        updateRefreshButtons
+      ).catch(function () {});
+    });
   });
 
   /* ---------- meetings table (remove & refresh) ---------- */
@@ -623,20 +633,21 @@
   el("meetingsRemoveBtn").addEventListener("click", function () {
     var ids = Object.keys(meetingsSelected);
     if (!ids.length) return;
-    if (!window.confirm("Permanently remove " + ids.length + " meeting" + (ids.length === 1 ? "" : "s") +
-        " (" + ids.join(", ") + ") from the Feedback Log and both dashboards, then " +
-        "re-synthesize everything that's left? Also removes the matching rows from " +
-        "the Data Folder's Helper and Survey exports in Box, best-effort."))
-      return;
-    always(
-      dispatchJob("remove_meetings", el("meetingsRemoveBtn"), el("meetingsRemoveState"), { survey_ids: ids }),
-      function () {
-        meetingsSelected = {};
-        Array.prototype.forEach.call(el("meetingsRows").querySelectorAll(".meetingCheck"), function (cb) { cb.checked = false; });
-        el("meetingsSelectAll").checked = false;
-        updateMeetingsRemoveBtn();
-      }
-    ).catch(function () {});
+    confirmClaudeSpend("Permanently removes " + ids.length + " meeting" + (ids.length === 1 ? "" : "s") +
+      " (" + ids.join(", ") + ") from the Feedback Log and both dashboards, then re-synthesizes " +
+      "everything that's left with Claude. Also removes the matching rows from the Data Folder's " +
+      "Helper and Survey exports in Box, best-effort.").then(function (ok) {
+      if (!ok) return;
+      always(
+        dispatchJob("remove_meetings", el("meetingsRemoveBtn"), el("meetingsRemoveState"), { survey_ids: ids }),
+        function () {
+          meetingsSelected = {};
+          Array.prototype.forEach.call(el("meetingsRows").querySelectorAll(".meetingCheck"), function (cb) { cb.checked = false; });
+          el("meetingsSelectAll").checked = false;
+          updateMeetingsRemoveBtn();
+        }
+      ).catch(function () {});
+    });
   });
 
   /* ---------- status ---------- */

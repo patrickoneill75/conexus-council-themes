@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Manufacturing Conditions Monitor — Connector</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='7' y='17' width='5' height='9' rx='1.5' fill='white'/%3E%3Crect x='14' y='11' width='5' height='15' rx='1.5' fill='white'/%3E%3Crect x='21' y='6' width='5' height='20' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<script src="/claude-confirm.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -292,6 +293,7 @@
   el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
 
   /* ---------- status + quarters table ---------- */
+  var pendingAnalysisQuarters = [];
   function runLabel(workflow) {
     var runs = (workflow && workflow.runs) || [];
     if (!runs.length) return { text: "Never run", busy: false };
@@ -310,6 +312,7 @@
   function refresh() {
     return api("status").then(function (body) {
       var pipeline = body.pipeline;
+      pendingAnalysisQuarters = (pipeline && pipeline.quarters_pending_analysis) || [];
       var d = runLabel(body.workflows.download), a = runLabel(body.workflows.analyze),
           p = runLabel(body.workflows.publish);
       el("downloadState").innerHTML = d.text + (d.url ? ' · <a href="' + d.url + '" target="_blank" rel="noopener">log</a>' : "");
@@ -398,8 +401,16 @@
         button.disabled = false;
       });
   }
+  // Download and Publish never call Claude (see their own card copy: "No AI cost" /
+  // "no SEC or Claude calls") -- only Analyze needs the spend confirmation.
   el("downloadBtn").addEventListener("click", function () { run("download", this); });
-  el("analyzeBtn").addEventListener("click", function () { run("analyze", this); });
+  el("analyzeBtn").addEventListener("click", function () {
+    var button = this;
+    var detail = pendingAnalysisQuarters.length
+      ? "This will analyze the downloaded-but-not-yet-analyzed quarter(s): " + pendingAnalysisQuarters.join(", ") + "."
+      : "This asks Claude to analyze every SEC filing downloaded but not yet analyzed, plus the current quarter's narrative.";
+    confirmClaudeSpend(detail).then(function (ok) { if (ok) run("analyze", button); });
+  });
   el("publishBtn").addEventListener("click", function () { run("publish", this); });
 
   loadStatus();

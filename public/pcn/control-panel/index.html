@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PCN Issue Map — Connector</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<script src="/claude-confirm.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -577,17 +578,22 @@
   }
 
   el("runBtn").addEventListener("click", function () {
-    el("runBtn").disabled = true;
-    el("runBtn").textContent = "Starting…";
-    el("runProgress").hidden = false;
-    el("runProgress").querySelector(".progress-label").textContent = "Starting on GitHub Actions…";
-    api(projectPath("run"), { method: "POST" }).then(function () {
-      pollRunStatus();
-    }).catch(function (e) {
-      window.alert(e.message);
-      el("runBtn").disabled = pendingCount === 0;
-      el("runBtn").textContent = "Run pipeline";
-      el("runProgress").hidden = true;
+    confirmClaudeSpend("This will process " + pendingCount + " pending meeting(s) -- roughly " +
+      "two Haiku calls per meeting for extraction, occasionally more if a Sonnet tie-breaker " +
+      "is needed.").then(function (ok) {
+      if (!ok) return;
+      el("runBtn").disabled = true;
+      el("runBtn").textContent = "Starting…";
+      el("runProgress").hidden = false;
+      el("runProgress").querySelector(".progress-label").textContent = "Starting on GitHub Actions…";
+      api(projectPath("run"), { method: "POST" }).then(function () {
+        pollRunStatus();
+      }).catch(function (e) {
+        window.alert(e.message);
+        el("runBtn").disabled = pendingCount === 0;
+        el("runBtn").textContent = "Run pipeline";
+        el("runProgress").hidden = true;
+      });
     });
   });
 
