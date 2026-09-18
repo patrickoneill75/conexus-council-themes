@@ -101,8 +101,23 @@ def extract_document(doc: NormalizedDocument) -> list[Assertion]:
             source_filename=doc.source_filename, notetaker=doc.notetaker,
             segments=[s for s in doc.segments if s.index in escalate_segments],
         )
-        escalated_user = build_user_message(escalated_doc)
-        sonnet_raw = _run_pass(system, escalated_user, config.SONNET_MODEL) or []
-        assertions.extend(_to_assertions(doc.meeting_id, doc, sonnet_raw, config.SONNET_MODEL, None))
+        # escalate_segments is a set of segment_index values a Haiku pass *claimed*,
+        # which is only ever as trustworthy as that pass's output -- a hallucinated or
+        # malformed segment_index (or None, if a pass omitted the field) matches no
+        # real segment, leaving escalated_doc.segments empty. build_user_message on an
+        # empty segment list returns "", and Claude's API rejects an empty user
+        # message outright, which used to surface as a confusing "Extraction pass
+        # failed... messages.0: user messages must have non-empty content" for a
+        # meeting that otherwise extracted fine. Skip the doomed call instead.
+        if escalated_doc.segments:
+            escalated_user = build_user_message(escalated_doc)
+            sonnet_raw = _run_pass(system, escalated_user, config.SONNET_MODEL) or []
+            assertions.extend(_to_assertions(doc.meeting_id, doc, sonnet_raw, config.SONNET_MODEL, None))
+        else:
+            log.warning(
+                "Escalation requested for segment_index(es) %r but none matched a real "
+                "segment in meeting %s -- skipping the Sonnet call.",
+                escalate_segments, doc.meeting_id,
+            )
 
     return assertions
