@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Issue Network Mapper — Network</title>
+<title>Issue Network Mapper — Change over time</title>
 </head>
 <body>
 <script>
-  // Rebranded to "Issue Network Mapper" at /inm/ -- kept as a redirect stub so old
+  // Network and Change-over-time are now tabs on one page at /inm/ -- see the
+  // Issue Network Mapper control panel's redesign. Kept as a redirect stub so old
   // bookmarks/links still land somewhere useful, preserving whatever ?project= was set.
   var params = new URLSearchParams(window.location.search);
-  params.set("tab", "network");
+  params.set("tab", "timeline");
   window.location.replace("/inm/index.html?" + params.toString());
 </script>
-<p>Redirecting to the <a href="/inm/index.html?tab=network">Network tab</a>…</p>
+<p>Redirecting to the <a href="/inm/index.html?tab=timeline">Change over time tab</a>…</p>
 </body>
 </html>

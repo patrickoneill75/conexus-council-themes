@@ -79,6 +79,17 @@ def run() -> None:
             label = f"{meeting['id']} ({meeting.get('sourceFilename', '?')})"
             try:
                 new_assertions = _process_meeting(meeting, tmp_dir)
+                # Strip any assertions this meeting already contributed before
+                # appending the fresh batch -- a meeting can be reprocessed (its
+                # status reset back to "pending" after a prompt/threshold change,
+                # via the control panel's Re-run), and without this the ledger would
+                # accumulate a second, duplicate batch under the same meeting_id
+                # rather than replacing the first: every downstream count derived
+                # from assertions (assertion_count, mean_weight, dispersion) would
+                # double-count that meeting's evidence, even though
+                # distinct_meeting_count -- keyed on meeting_id, not row count --
+                # would still (misleadingly) look unaffected.
+                ledger = [row for row in ledger if row["meeting_id"] != meeting["id"]]
                 ledger.extend(new_assertions)
                 results.append({"id": meeting["id"], "status": "processed"})
                 print(f"  {label}: {len(new_assertions)} assertions extracted.")

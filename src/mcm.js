@@ -17,10 +17,10 @@
  *
  * Box: this mini app uses the SAME shared, user-delegated Box connection every other
  * tool in this repo uses (see worker.js's box/authorize-url, box/callback, box/status)
- * -- not a separate service account or app registration. Unlike PCN (which walls off a
+ * -- not a separate service account or app registration. Unlike Issue Network Mapper (which walls off a
  * folder per project), MCM has exactly one dataset, so it keeps exactly one destination
  * folder, in its own KV key (mcm:folder) so it never collides with Council Themes/
- * Quant's Data Folder or any PCN project's folder.
+ * Quant's Data Folder or any Issue Network Mapper project's folder.
  *
  * Storage: BOX_KV under an "mcm:" prefix.
  *   mcm:folder          -> JSON { id, name } -- the Box folder holding MCM's six data
@@ -207,7 +207,7 @@ export async function handleMcmApi(route, request, env) {
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
 
-  // GET box/folders?id=0 -- same folder-picker copy PCN/Consensus already have,
+  // GET box/folders?id=0 -- same folder-picker copy Issue Network Mapper/Consensus already have,
   // gated by requireBetaAuth like everything else admin-side in this file.
   if (route === "box/folders" && method === "GET") {
     const token = await boxAccessToken(env);
@@ -232,8 +232,8 @@ export async function handleMcmApi(route, request, env) {
   }
 
   // GET box/status -> whether the shared Box connection is live, plus MCM's own
-  // selected folder (independent of Council Themes/Quant's Data Folder or any PCN
-  // project's folder).
+  // selected folder (independent of Council Themes/Quant's Data Folder or any Issue
+  // Network Mapper project's folder).
   if (route === "box/status" && method === "GET") {
     const token = await boxAccessToken(env);
     const folder = await getFolder(env);
@@ -252,7 +252,7 @@ export async function handleMcmApi(route, request, env) {
   }
 
   // POST box/test -> writes a trivial test file to MCM's data folder, reads it
-  // straight back, and confirms the round-trip (same shape as PCN's own box/test).
+  // straight back, and confirms the round-trip (same shape as Issue Network Mapper's own box/test).
   if (route === "box/test" && method === "POST") {
     const token = await boxAccessToken(env);
     if (!token) return json({ error: "Box is not connected yet -- open the control panel and log in with Box." }, 409);

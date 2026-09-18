@@ -32,13 +32,16 @@ const APPS = [
     controlPanelUrl: "/mcm/control-panel",
   },
   {
+    // id stays "pcn" -- it's an internal identifier (the app-visibility KV key, the
+    // Worker's /api/pcn/* mount in src/pcn.js) that predates this rebrand and isn't
+    // shown anywhere; only the user-facing name/baseUrl/controlPanelUrl changed.
     id: "pcn",
-    name: "PCN Issue Map",
-    description: "Extracts causal statements from PCN meeting notes/transcripts into an " +
+    name: "Issue Network Mapper",
+    description: "Extracts causal statements from meeting notes/transcripts into an " +
       "accumulating, evidence-traceable map of how members believe their problems " +
       "connect.",
-    baseUrl: "/pcn",
-    controlPanelUrl: "/pcn/control-panel",
+    baseUrl: "/inm",
+    controlPanelUrl: "/inm/control-panel",
   },
   {
     id: "consensus",

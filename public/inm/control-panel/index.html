@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue Network Mapper — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<script src="/claude-confirm.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:32px 20px 64px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
+           flex-wrap:wrap; margin-bottom:14px; }
+  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
+  .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
+  a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
+                         font:inherit; cursor:pointer; text-decoration:none; }
+  a.link:hover, button.link:hover { text-decoration:underline; }
+  .project-bar { display:flex; align-items:center; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+  .project-bar label { font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  .card h3 { margin:0 0 4px; font-size:15px; }
+  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.small { padding:6px 11px; font-size:12.5px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
+          border-radius:999px; border:1px solid transparent; white-space:nowrap; }
+  .pill.good { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
+  .pill.warn { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
+  .pill.bad { background:rgba(208,59,59,.12); color:var(--bad); border-color:rgba(208,59,59,.3); }
+  .msg { font-size:12.5px; margin:10px 0 0; }
+  .msg.err { color:var(--bad); }
+  .msg.ok { color:var(--good); }
+  .msg.muted { color:var(--text-muted); }
+  .folder-row { display:flex; align-items:center; justify-content:space-between;
+                padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .folder-row:hover { background:var(--wash); }
+  .folder-row .enter { font-size:12px; color:var(--accent); }
+  .crumb { cursor:pointer; color:var(--accent); }
+  .crumb:hover { text-decoration:underline; }
+  .crumb-sep { color:var(--text-muted); margin:0 4px; }
+  .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
+  pre { background:var(--wash); border-radius:8px; padding:10px 12px; font-size:12px;
+        overflow-x:auto; margin:10px 0 0; }
+  [hidden] { display:none !important; }
+  label.field { display:flex; flex-direction:column; gap:4px; font-size:12.5px;
+                color:var(--text-secondary); }
+  input[type="file"], input[type="date"], input[type="text"], input[type="number"], select {
+    font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface-1); color:var(--text-primary);
+  }
+  .field-row { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+  .field-row > label.field { flex:1 1 130px; min-width:130px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--text-secondary); font-weight:600; font-size:11.5px; }
+  .progress-wrap { margin-top:10px; max-width:260px; }
+  .progress-track { height:6px; border-radius:999px; background:var(--wash); overflow:hidden; }
+  .progress-fill { height:100%; width:35%; background:var(--accent); transition:none;
+                    animation:progress-indeterminate 1.1s ease-in-out infinite; }
+  @keyframes progress-indeterminate {
+    0% { margin-left:-35%; } 100% { margin-left:100%; }
+  }
+  .progress-label { font-size:11.5px; color:var(--text-secondary); margin-top:5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Issue Network Mapper</h1>
+      <p class="sub">Causal-map extraction from meeting notes and transcripts.</p>
+    </div>
+    <div class="who">
+      <span id="whoami"></span>
+      <a class="link" id="viewNetworkLink" href="/inm/index.html?tab=network">View network &rarr;</a>
+      <a class="link" id="viewTimelineLink" href="/inm/index.html?tab=timeline">Change over time &rarr;</a>
+      <a class="link" href="/admin/index.html">&larr; Connector</a>
+      <button type="button" class="link" id="signOutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="project-bar">
+    <label>Project
+      <select id="projectSelect"></select>
+    </label>
+    <span class="msg muted" style="margin:0">Each project has its own Box folder,
+      ledger, network, and pipeline runs -- fully walled off from every other
+      project.</span>
+  </div>
+  <div class="row" id="newProjectRow" hidden style="margin:-6px 0 20px">
+    <input type="text" id="newProjectName" placeholder="New project name">
+    <button type="button" class="primary small" id="createProjectBtn">Create</button>
+    <button type="button" class="small" id="cancelProjectBtn">Cancel</button>
+  </div>
+
+  <div class="card">
+    <h3>Box connection</h3>
+    <p class="desc">Uses the same Box connection every other tool here shares -- log in
+      with Box from Council Data's control panel Developer section
+      (<a href="/council-data/control-panel/index.html">/council-data/control-panel</a>)
+      if this says not connected.</p>
+    <div class="row">
+      <span id="statusPill"><span class="pill warn">Checking…</span></span>
+      <button type="button" id="refreshStatusBtn">Refresh</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Data folder</h3>
+    <p class="desc">The one Box folder this project reads and writes -- its data
+      files at the root, plus a subfolder for raw source documents kept for audit.</p>
+    <p style="margin:0 0 10px">Currently: <b id="folderName">(none selected)</b></p>
+    <div class="row">
+      <button type="button" id="chooseFolderBtn">Choose folder…</button>
+      <button type="button" class="primary" id="testBtn">Test Box round-trip</button>
+    </div>
+    <div id="folderPicker" hidden class="picker"></div>
+    <pre id="testResult" hidden></pre>
+  </div>
+
+  <div class="card">
+    <h3>Upload a meeting</h3>
+    <p class="desc">Saves the file to Box's "raw" subfolder and queues it for the next
+      pipeline run below -- nothing is extracted yet at upload time.</p>
+    <form id="uploadForm">
+      <div class="field-row">
+        <label class="field">Type
+          <select id="uploadInputType">
+            <option value="transcript">Transcript</option>
+            <option value="notes">Notes</option>
+          </select>
+        </label>
+        <label class="field">Meeting date
+          <input type="date" id="uploadMeetingDate" required>
+        </label>
+        <label class="field">Year
+          <input type="number" id="uploadYear" min="2000" max="2100" step="1" required>
+        </label>
+        <label class="field">Quarter
+          <select id="uploadQuarter" required>
+            <option value="Q1">Q1</option>
+            <option value="Q2">Q2</option>
+            <option value="Q3">Q3</option>
+            <option value="Q4">Q4</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="field" style="flex-basis:220px">Cohort
+          <input type="text" id="uploadCohort" placeholder="Optional">
+        </label>
+        <label class="field" id="uploadNotetakerField" style="flex-basis:220px">Notetaker
+          <input type="text" id="uploadNotetaker" placeholder="Who took these notes">
+        </label>
+      </div>
+      <label class="field" style="margin-bottom:12px">File (.vtt, .srt, .txt, .md, .docx)
+        <input type="file" id="uploadFile" accept=".vtt,.srt,.txt,.md,.docx" required>
+      </label>
+      <button type="submit" class="primary" id="uploadBtn">Upload</button>
+    </form>
+    <p class="msg" id="uploadMsg"></p>
+  </div>
+
+  <div class="card">
+    <h3>Meetings</h3>
+    <p class="desc">Every meeting uploaded so far, for this project. "Pending"
+      meetings are what the next pipeline run below will process.</p>
+    <table id="meetingsTable">
+      <thead><tr><th>Date</th><th>Year/Qtr</th><th>Cohort</th><th>Type</th><th>File</th><th>Status</th><th></th></tr></thead>
+      <tbody id="meetingsRows"><tr><td colspan="7" class="msg muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Run pipeline</h3>
+    <p class="desc">Runs ingest &rarr; normalize &rarr; extract &rarr; match &rarr;
+      derive &rarr; timeline on GitHub Actions against every pending meeting above,
+      then publishes the updated
+      <a class="link" id="runNetworkLink" href="/inm/index.html?tab=network">network</a> and
+      <a class="link" id="runTimelineLink" href="/inm/index.html?tab=timeline">change-over-time view</a>. Real
+      Claude calls, real (if small) cost per meeting.</p>
+    <div class="row">
+      <button type="button" class="primary" id="runBtn" disabled>Run pipeline</button>
+      <button type="button" id="rerunAllBtn" disabled>Re-run all meetings</button>
+    </div>
+    <p class="desc" style="margin:10px 0 0"><b>Re-run all meetings</b> resets every
+      meeting above back to "Pending" and runs the pipeline against all of them --
+      use this after changing the extraction prompt or matching thresholds and
+      wanting to see the new behavior across meetings that were already processed.
+      Each meeting's prior assertions are replaced, not duplicated.</p>
+    <div class="progress-wrap" id="runProgress" hidden>
+      <div class="progress-track"><div class="progress-fill"></div></div>
+      <div class="progress-label">Starting on GitHub Actions…</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  if (!token) { window.location.href = "/admin/login.html"; return; }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function signOut() {
+    try { sessionStorage.removeItem("beta-token"); } catch (e) {}
+    window.location.href = "/admin/login.html";
+  }
+  el("signOutBtn").addEventListener("click", signOut);
+
+  // Still /api/pcn/* -- the rebrand only touched the public-facing name and URL,
+  // not the Worker's internal route or KV namespace (see src/pcn.js).
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign({ "content-type": "application/json", authorization: "Bearer " + token },
+      options.headers || {});
+    return fetch("/api/pcn/" + path, options).then(function (r) {
+      if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+        return body;
+      });
+    });
+  }
+
+  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
+    .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
+    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .catch(signOut);
+
+  /* ---------- Projects: each one is a fully walled-off Box folder + ledger +
+     network + timeline + pipeline runs. Selecting one reloads the page with
+     ?project=<id> so every card below starts from a clean slate. ---------- */
+  var currentProjectId = new URL(window.location.href).searchParams.get("project") || "pcn";
+  var projects = [];
+  var currentProject = null;
+
+  function projectPath(path) { return "projects/" + encodeURIComponent(currentProjectId) + "/" + path; }
+
+  function renderProjectSelect() {
+    el("projectSelect").innerHTML = projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === currentProjectId ? " selected" : "") + '>' +
+        esc(p.name) + "</option>";
+    }).join("") + '<option value="__new__">+ Add new project…</option>';
+  }
+
+  function loadProjects() {
+    return api("projects").then(function (data) {
+      projects = data.projects || [];
+      if (!projects.some(function (p) { return p.id === currentProjectId; })) {
+        currentProjectId = projects.length ? projects[0].id : "pcn";
+      }
+      currentProject = projects.filter(function (p) { return p.id === currentProjectId; })[0] || null;
+      renderProjectSelect();
+      var suffix = "&project=" + encodeURIComponent(currentProjectId);
+      el("viewNetworkLink").href = "/inm/index.html?tab=network" + suffix;
+      el("viewTimelineLink").href = "/inm/index.html?tab=timeline" + suffix;
+      el("runNetworkLink").href = "/inm/index.html?tab=network" + suffix;
+      el("runTimelineLink").href = "/inm/index.html?tab=timeline" + suffix;
+    });
+  }
+
+  el("projectSelect").addEventListener("change", function () {
+    var value = el("projectSelect").value;
+    if (value === "__new__") {
+      el("projectSelect").value = currentProjectId;
+      el("newProjectRow").hidden = false;
+      el("newProjectName").focus();
+      return;
+    }
+    window.location.search = "?project=" + encodeURIComponent(value);
+  });
+  el("cancelProjectBtn").addEventListener("click", function () {
+    el("newProjectRow").hidden = true;
+    el("projectSelect").value = currentProjectId;
+  });
+  el("createProjectBtn").addEventListener("click", function () {
+    var name = el("newProjectName").value.trim();
+    if (!name) return;
+    el("createProjectBtn").disabled = true;
+    api("projects", { method: "POST", body: JSON.stringify({ name: name }) }).then(function (result) {
+      window.location.search = "?project=" + encodeURIComponent(result.project.id);
+    }).catch(function (e) {
+      window.alert(e.message);
+      el("createProjectBtn").disabled = false;
+    });
+  });
+
+  function loadStatus() {
+    el("statusPill").innerHTML = '<span class="pill warn">Checking…</span>';
+    return api("box/status").then(function (status) {
+      el("statusPill").innerHTML = status.connected
+        ? '<span class="pill good">Connected</span>' : '<span class="pill bad">Not connected</span>';
+      el("folderName").textContent = (currentProject && currentProject.folderName) || "(none selected)";
+    }).catch(function (e) {
+      el("statusPill").innerHTML = '<span class="pill bad">Error</span>';
+    });
+  }
+
+  el("refreshStatusBtn").addEventListener("click", loadStatus);
+
+  el("testBtn").addEventListener("click", function () {
+    el("testBtn").disabled = true;
+    el("testBtn").textContent = "Testing…";
+    el("testResult").hidden = true;
+    api(projectPath("box/test"), { method: "POST" }).then(function (result) {
+      el("testResult").hidden = false;
+      el("testResult").textContent = JSON.stringify(result, null, 2);
+      el("testBtn").disabled = false;
+      el("testBtn").textContent = "Test Box round-trip";
+    }).catch(function (e) {
+      el("testResult").hidden = false;
+      el("testResult").textContent = "Error: " + e.message;
+      el("testBtn").disabled = false;
+      el("testBtn").textContent = "Test Box round-trip";
+    });
+  });
+
+  /* ---------- Box folder picker (same shape as Consensus's) ---------- */
+  function openPicker(folderId) {
+    el("folderPicker").hidden = false;
+    el("folderPicker").innerHTML = '<p class="msg muted">Loading…</p>';
+    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
+      var html = '<div class="msg" style="margin-bottom:8px" id="pickerCrumb"></div>' +
+        '<div id="pickerList" style="max-height:240px;overflow-y:auto"></div>' +
+        '<div class="row" style="margin-top:12px">' +
+        '<button class="primary small" type="button" id="pickerUseBtn">Use this folder</button>' +
+        '<button class="small" type="button" id="pickerCancelBtn">Cancel</button></div>';
+      el("folderPicker").innerHTML = html;
+      var crumbEl = el("pickerCrumb"), listEl = el("pickerList");
+      crumbEl.innerHTML = data.breadcrumb.map(function (c, i) {
+        var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
+        return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' + esc(c.name || "All Files") + "</span>";
+      }).join("");
+      Array.prototype.forEach.call(crumbEl.querySelectorAll(".crumb"), function (node) {
+        node.addEventListener("click", function () { openPicker(node.dataset.id); });
+      });
+      listEl.innerHTML = data.folders.length ? data.folders.map(function (f) {
+        return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>📁 ' + esc(f.name) +
+          '</span><span class="enter">Open &rarr;</span></div>';
+      }).join("") : '<p class="msg muted">No subfolders here -- "Use this folder" picks this one.</p>';
+      Array.prototype.forEach.call(listEl.querySelectorAll(".folder-row"), function (row) {
+        row.addEventListener("click", function () { openPicker(row.dataset.id); });
+      });
+      el("pickerUseBtn").addEventListener("click", function () {
+        var crumbs = crumbEl.querySelectorAll(".crumb");
+        var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : data.name;
+        api(projectPath("config"), { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
+          .then(function () {
+            el("folderName").textContent = name;
+            if (currentProject) currentProject.folderName = name;
+            el("folderPicker").hidden = true;
+          }).catch(function (e) { window.alert(e.message); });
+      });
+      el("pickerCancelBtn").addEventListener("click", function () { el("folderPicker").hidden = true; });
+    }).catch(function (e) {
+      el("folderPicker").innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
+    });
+  }
+  el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
+
+  /* ---------- Upload a meeting ---------- */
+  function updateNotetakerVisibility() {
+    el("uploadNotetakerField").hidden = el("uploadInputType").value !== "notes";
+  }
+  el("uploadInputType").addEventListener("change", updateNotetakerVisibility);
+  updateNotetakerVisibility();
+
+  el("uploadForm").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var file = el("uploadFile").files[0];
+    if (!file) return;
+    var form = new FormData();
+    form.append("file", file);
+    form.append("inputType", el("uploadInputType").value);
+    form.append("meetingDate", el("uploadMeetingDate").value);
+    form.append("year", el("uploadYear").value);
+    form.append("quarter", el("uploadQuarter").value);
+    form.append("cohort", el("uploadCohort").value);
+    form.append("notetaker", el("uploadNotetaker").value);
+
+    el("uploadBtn").disabled = true;
+    el("uploadBtn").textContent = "Uploading…";
+    el("uploadMsg").className = "msg muted";
+    el("uploadMsg").textContent = "";
+
+    // Deliberately not the shared api() helper -- it always sets a JSON
+    // content-type, which would break the multipart boundary the browser needs to
+    // set itself for a FormData body.
+    fetch("/api/pcn/" + projectPath("upload"), { method: "POST", headers: { authorization: "Bearer " + token }, body: form })
+      .then(function (r) {
+        if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+        return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; });
+      })
+      .then(function () {
+        var keepYear = el("uploadYear").value, keepQuarter = el("uploadQuarter").value, keepCohort = el("uploadCohort").value;
+        el("uploadForm").reset();
+        // Year/quarter/cohort usually repeat across a batch of uploads for the same
+        // reporting period -- carry them forward instead of making the admin retype
+        // them for every single file.
+        el("uploadYear").value = keepYear;
+        el("uploadQuarter").value = keepQuarter;
+        el("uploadCohort").value = keepCohort;
+        updateNotetakerVisibility();
+        el("uploadMsg").className = "msg ok";
+        el("uploadMsg").textContent = "Uploaded -- queued for the next pipeline run.";
+        loadMeetings();
+      })
+      .catch(function (e) {
+        el("uploadMsg").className = "msg err";
+        el("uploadMsg").textContent = "Error: " + e.message;
+      })
+      .then(function () {
+        el("uploadBtn").disabled = false;
+        el("uploadBtn").textContent = "Upload";
+      });
+  });
+
+  /* ---------- Meetings table ---------- */
+  var STATUS_PILL = {
+    pending: '<span class="pill warn">Pending</span>',
+    processed: '<span class="pill good">Processed</span>',
+    failed: '<span class="pill bad">Failed</span>',
+  };
+  var pendingCount = 0;
+  var allMeetings = [];
+  var editingId = null;
+
+  function loadMeetings() {
+    return api(projectPath("meetings")).then(function (data) {
+      allMeetings = data.meetings || [];
+      pendingCount = allMeetings.filter(function (m) { return m.status === "pending"; }).length;
+      el("runBtn").disabled = pendingCount === 0;
+      el("rerunAllBtn").disabled = allMeetings.length === 0;
+      renderMeetingsRows();
+    }).catch(function (e) {
+      el("meetingsRows").innerHTML = '<tr><td colspan="7" class="msg err">' + esc(e.message) + "</td></tr>";
+    });
+  }
+
+  // The edit form mirrors the upload form's fields (minus the file, which can't be
+  // changed after the fact) -- fixing a mis-coded inputType/date/etc. after upload,
+  // e.g. a "notes" file that was mis-coded as a "transcript". Saving resets the
+  // meeting to "pending" server-side so the next pipeline run reprocesses it with the
+  // corrected metadata.
+  function editRowHtml(m) {
+    return '<tr><td colspan="7" style="padding:12px 8px">' +
+      '<div class="field-row" style="margin-bottom:12px">' +
+        '<label class="field">Type<select class="editInputType">' +
+          '<option value="transcript"' + (m.inputType === "transcript" ? " selected" : "") + '>Transcript</option>' +
+          '<option value="notes"' + (m.inputType === "notes" ? " selected" : "") + '>Notes</option>' +
+        '</select></label>' +
+        '<label class="field">Meeting date<input type="date" class="editMeetingDate" value="' + esc(m.meetingDate) + '"></label>' +
+        '<label class="field">Year<input type="number" class="editYear" min="2000" max="2100" step="1" value="' + esc(m.year) + '"></label>' +
+        '<label class="field">Quarter<select class="editQuarter">' +
+          QUARTER_OPTIONS.map(function (q) { return '<option value="' + q + '"' + (m.quarter === q ? " selected" : "") + '>' + q + '</option>'; }).join("") +
+        '</select></label>' +
+      '</div>' +
+      '<div class="field-row" style="margin-bottom:10px">' +
+        '<label class="field" style="flex-basis:220px">Cohort<input type="text" class="editCohort" value="' + esc(m.cohort || "") + '"></label>' +
+        '<label class="field editNotetakerField" style="flex-basis:220px"' + (m.inputType === "notes" ? "" : " hidden") + '>Notetaker' +
+          '<input type="text" class="editNotetaker" value="' + esc(m.notetaker || "") + '"></label>' +
+      '</div>' +
+      '<div class="row">' +
+        '<button type="button" class="primary small editSaveBtn">Save</button>' +
+        '<button type="button" class="small editCancelBtn">Cancel</button>' +
+        '<span class="msg muted" style="margin:0">Saving resets this meeting to "Pending" for reprocessing.</span>' +
+      '</div>' +
+      '<p class="msg err editErr" hidden style="margin-top:8px"></p>' +
+    '</td></tr>';
+  }
+  var QUARTER_OPTIONS = ["Q1", "Q2", "Q3", "Q4"];
+
+  function renderMeetingsRows() {
+    if (!allMeetings.length) {
+      el("meetingsRows").innerHTML = '<tr><td colspan="7" class="msg muted">No meetings uploaded yet.</td></tr>';
+      return;
+    }
+    el("meetingsRows").innerHTML = allMeetings.map(function (m) {
+      if (m.id === editingId) return editRowHtml(m);
+      var fileCell = esc(m.sourceFilename || "");
+      if (m.status === "failed" && m.error) {
+        fileCell += '<div class="msg err" style="margin:2px 0 0">' + esc(m.error) + "</div>";
+      }
+      return "<tr><td>" + esc(m.meetingDate) + "</td><td>" + esc(m.year) + " " + esc(m.quarter) + "</td><td>" +
+        esc(m.cohort || "—") + "</td><td>" + esc(m.inputType) + "</td><td>" + fileCell +
+        "</td><td>" + (STATUS_PILL[m.status] || esc(m.status)) + "</td>" +
+        '<td><button type="button" class="small editBtn" data-id="' + esc(m.id) + '">Edit</button></td></tr>';
+    }).join("");
+
+    Array.prototype.forEach.call(el("meetingsRows").querySelectorAll(".editBtn"), function (btn) {
+      btn.addEventListener("click", function () { editingId = btn.dataset.id; renderMeetingsRows(); });
+    });
+
+    if (!editingId) return;
+    var editRow = el("meetingsRows").querySelector(".editInputType").closest("tr");
+    var typeSel = editRow.querySelector(".editInputType");
+    var notetakerField = editRow.querySelector(".editNotetakerField");
+    typeSel.addEventListener("change", function () { notetakerField.hidden = typeSel.value !== "notes"; });
+    editRow.querySelector(".editCancelBtn").addEventListener("click", function () {
+      editingId = null;
+      renderMeetingsRows();
+    });
+    editRow.querySelector(".editSaveBtn").addEventListener("click", function () {
+      var body = {
+        inputType: typeSel.value,
+        meetingDate: editRow.querySelector(".editMeetingDate").value,
+        year: editRow.querySelector(".editYear").value,
+        quarter: editRow.querySelector(".editQuarter").value,
+        cohort: editRow.querySelector(".editCohort").value,
+        notetaker: editRow.querySelector(".editNotetaker").value,
+      };
+      var saveBtn = editRow.querySelector(".editSaveBtn");
+      var errEl = editRow.querySelector(".editErr");
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      errEl.hidden = true;
+      api(projectPath("meetings/" + encodeURIComponent(editingId)), { method: "POST", body: JSON.stringify(body) })
+        .then(function () {
+          editingId = null;
+          return loadMeetings();
+        })
+        .catch(function (e) {
+          errEl.hidden = false;
+          errEl.textContent = "Error: " + e.message;
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+        });
+    });
+  }
+
+  /* ---------- Run pipeline ---------- */
+  function pollRunStatus() {
+    var attempts = 0;
+    (function check() {
+      attempts += 1;
+      api(projectPath("run-status")).then(function (body) {
+        var run = (body.runs || [])[0];
+        if (!run) {
+          el("runProgress").querySelector(".progress-label").textContent = "Queued…";
+        } else if (run.status !== "completed") {
+          el("runProgress").querySelector(".progress-label").textContent =
+            "Running since " + new Date(run.started_at).toLocaleTimeString("en-US");
+        } else {
+          el("runProgress").hidden = true;
+          el("runBtn").disabled = false;
+          el("runBtn").textContent = "Run pipeline";
+          el("rerunAllBtn").disabled = false;
+          el("uploadMsg").className = run.conclusion === "success" ? "msg ok" : "msg err";
+          el("uploadMsg").textContent = run.conclusion === "success"
+            ? "Run finished -- network and timeline updated." : "Run failed -- check the Actions tab for details.";
+          loadMeetings();
+          return;
+        }
+        // 180 attempts * 4s = 12 minutes.
+        if (attempts < 180) setTimeout(check, 4000);
+        else { el("runProgress").hidden = true; loadMeetings(); }
+      }).catch(function () {
+        if (attempts < 180) setTimeout(check, 4000);
+        else { el("runProgress").hidden = true; loadMeetings(); }
+      });
+    })();
+  }
+
+  // Shared by both "Run pipeline" (only "pending" meetings) and "Re-run all
+  // meetings" (which resets everything to "pending" first, then calls this same
+  // dispatch) -- one run-status poll loop either way.
+  function startRun() {
+    el("runBtn").disabled = true;
+    el("runBtn").textContent = "Starting…";
+    el("rerunAllBtn").disabled = true;
+    el("runProgress").hidden = false;
+    el("runProgress").querySelector(".progress-label").textContent = "Starting on GitHub Actions…";
+    return api(projectPath("run"), { method: "POST" }).then(function () {
+      pollRunStatus();
+    }).catch(function (e) {
+      window.alert(e.message);
+      el("runBtn").disabled = pendingCount === 0;
+      el("rerunAllBtn").disabled = allMeetings.length === 0;
+      el("runBtn").textContent = "Run pipeline";
+      el("runProgress").hidden = true;
+    });
+  }
+
+  el("runBtn").addEventListener("click", function () {
+    confirmClaudeSpend("This will process " + pendingCount + " pending meeting(s) -- roughly " +
+      "two Haiku calls per meeting for extraction, occasionally more if a Sonnet tie-breaker " +
+      "is needed.").then(function (ok) { if (ok) startRun(); });
+  });
+
+  el("rerunAllBtn").addEventListener("click", function () {
+    confirmClaudeSpend("This resets all " + allMeetings.length + " meeting(s) in this project " +
+      "back to \"Pending\" and reprocesses every one of them -- roughly two Haiku calls per " +
+      "meeting for extraction, occasionally more if a Sonnet tie-breaker is needed. Each " +
+      "meeting's prior assertions are replaced, not duplicated.").then(function (ok) {
+      if (!ok) return;
+      el("rerunAllBtn").disabled = true;
+      el("rerunAllBtn").textContent = "Resetting…";
+      api(projectPath("meetings/reprocess-all"), { method: "POST" }).then(function () {
+        el("rerunAllBtn").textContent = "Re-run all meetings";
+        return loadMeetings();
+      }).then(startRun).catch(function (e) {
+        window.alert(e.message);
+        el("rerunAllBtn").disabled = allMeetings.length === 0;
+        el("rerunAllBtn").textContent = "Re-run all meetings";
+      });
+    });
+  });
+
+  loadProjects().then(function () {
+    loadMeetings();
+    loadStatus();
+  });
+})();
+</script>
+</body>
+</html>

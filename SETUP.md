@@ -32,7 +32,7 @@ gated by the shared admin accounts, never a password of its own.
 | `public/consensus/` | Worker static assets | Consensus: the public respondent chat (`respond.html`, no login, per-survey link) and its control panel (`control-panel/{index,results}.html`, admin-gated). See **9 · Consensus** below. |
 | `src/consensus.js` | Cloudflare Worker | `/api/consensus/*`. Survey CRUD, the live follow-up-question chat, response storage in Box, and triggering the batch analysis -- gates its admin routes with the same admin accounts via `requireBetaAuth`. |
 | `scripts/consensus_analyze.py` | GitHub Actions | Synthesizes a survey's collected responses (out of Box) into prioritized themes per question with Claude, and publishes `public/consensus-results/<id>.json`. Triggered from the Consensus control panel's "Analyze" button. |
-| `public/pcn/` | Worker static assets | PCN Issue Map: its control panel (`control-panel/{index,network,timeline}.html`, admin-gated) -- no separate public page yet. See **10 · PCN Issue Map** below. |
+| `public/inm/` | Worker static assets | Issue Network Mapper: its public page (`index.html` -- Network/Change-over-time tabs, a project picker, admin-gated) and its control panel (`control-panel/index.html`). `public/pcn/` still exists as redirect stubs to here, for old bookmarks. See **10 · Issue Network Mapper** below. |
 | `src/pcn.js` | Cloudflare Worker | `/api/pcn/*`. Admin-gated like Consensus, and shares the same Box connection every other tool here uses -- picks its own one data folder the same way Consensus picks a responses folder per survey. |
 | `public/mcm/` | Worker static assets | Manufacturing Conditions Monitor: the public dashboard (`index.html`) and its control panel (`control-panel/index.html`, admin-gated). See **11 · Manufacturing Conditions Monitor** below. |
 | `src/mcm.js` | Cloudflare Worker | `/api/mcm/*`. Same shared Box connection and admin accounts as every other mini app; its own data folder. |
@@ -196,7 +196,7 @@ which is the problem this wrapper exists to avoid.
 "Public", and one admin hub at `/admin/` (sign-in, the grid of *every* mini app, and
 Settings) that every mini app's control panel signs into via the same admin accounts.
 There is no per-app password anywhere — Council Themes/Quant's control panel signs in
-exactly the same way PCN/Consensus/MCM's always have.
+exactly the same way Issue Network Mapper/Consensus/MCM's always have.
 
 ### Signing in
 
@@ -239,7 +239,7 @@ Also on **Settings**, per app: **Public** (listed on the public grid at the site
 link), or **Admin-only** (not listed, and the page itself redirects to sign-in unless
 you're already signed in — the same check every admin page here already does, just
 driven by this setting instead of being hardcoded). Council Themes/Quant and
-Manufacturing Conditions Monitor default to Public; PCN Issue Map and Consensus
+Manufacturing Conditions Monitor default to Public; Issue Network Mapper and Consensus
 default to Admin-only, since neither has a public-facing page built yet.
 
 One thing this does **not** do: for a page whose content is plain static JSON
@@ -373,9 +373,9 @@ want to change either.
 
 ---
 
-## 10 · PCN Issue Map
+## 10 · Issue Network Mapper
 
-Turns PCN meeting notes/transcripts into an accumulating, evidence-traceable map of how
+Turns meeting notes/transcripts into an accumulating, evidence-traceable map of how
 members believe their problems connect (Axelrod-style causal mapping / fuzzy cognitive
 maps — see the design doc for the full method and reasoning). Implements the design
 doc's complete 8-step build order.
@@ -385,19 +385,19 @@ uses — nothing new to set up. If the control panel says "Not connected," log i
 Box from Council Themes/Quant's control panel Developer section
 (`/council-data/control-panel/index.html`), same as you would for anything else.
 
-**Projects.** This isn't just a PCN-only tool: the control panel's **Project**
+**Projects.** This isn't just a single meeting series: the control panel's **Project**
 dropdown holds any number of fully walled-off projects, each with its own Box data
 folder, ledger, issues, network, timeline, and GitHub Actions runs — none of a
-project's data or pipeline runs ever touches another's, even transiently. "PCN Issue
-Map" is just the project seeded by default (id `pcn`); pick **+ Add new project…** to
-wall off a different meeting series entirely (e.g. a specific client engagement that
-has nothing to do with PCN), give it a name, and you're dropped onto that project's
-own empty control panel to configure its own Box folder from scratch. Every URL in
-the app (control panel, network view, timeline view) carries `?project=<id>` so a
-bookmark or link always returns to the right one.
+project's data or pipeline runs ever touches another's, even transiently. The default
+project seeded automatically has id `pcn` (a holdover from before this app supported
+more than one meeting series); pick **+ Add new project…** to wall off a different
+meeting series entirely, give it a name, and you're dropped onto that project's own
+empty control panel to configure its own Box folder from scratch. Every URL in the app
+(control panel, network view, timeline view) carries `?project=<id>` so a bookmark or
+link always returns to the right one.
 
-**Using it on real meetings**, from a project's control panel (admin hub → PCN Issue
-Map → **Control panel**, or `?project=<id>` for another one):
+**Using it on real meetings**, from a project's control panel (admin hub → Issue
+Network Mapper → **Control panel**, or `?project=<id>` for another one):
 1. **Choose folder…** picks this project's one Box data folder —
    `ledger.json`/`issues.json`/`resolutions.json` at its root, plus a `raw/`
    subfolder holding every uploaded meeting file verbatim for audit. **Test Box
@@ -496,7 +496,7 @@ table of what's new or newly contested.
 
 The **fixture pipeline test** workflow (Actions tab) is separate from the real
 `pcn_run.yml` above: it runs every stage's CLI subcommand against the committed
-synthetic fixtures (`pcn/fixtures/`, no real PCN meeting data exists in this repo —
+synthetic fixtures (`pcn/fixtures/`, no real meeting data exists in this repo —
 they're made up, matching the design doc's own worked example of a staffing →
 overtime → turnover loop) and uploads each stage's JSON output as a downloadable
 artifact, useful for debugging one stage at a time or verifying the pipeline still
@@ -519,7 +519,7 @@ by hand is adding one secret**.
 **Add the one new secret.** `SEC_CONTACT_EMAIL` in step 4's table above — nothing
 else. Every other secret it needs (`ANTHROPIC_API_KEY`, `BOX_RELAY_URL`,
 `BOX_RELAY_SECRET`, the Box app credentials, the GitHub token) already exists in this
-repository, shared with Council Themes/Quant/PCN/Consensus.
+repository, shared with Council Themes/Quant/Issue Network Mapper/Consensus.
 
 **Open it.** From the admin hub (`/admin/`), open **Manufacturing Conditions
 Monitor** → **Control panel** (`/mcm/control-panel/index.html`). Needs a signed-in
@@ -527,7 +527,7 @@ admin account — same accounts as every other mini app here, no password of its
 
 **Pick a Box folder.** Under **Data folder**, click **Choose folder…** and pick (or
 create) an empty folder. This is MCM's own folder — separate from Council Themes/
-Quant's Data Folder and from any PCN project's folder — and holds its six data files
+Quant's Data Folder and from any Issue Network Mapper project's folder — and holds its six data files
 (`filings.csv`, `paragraphs.csv`, `signals.csv`, `companies.csv`, `narratives.json`,
 `status.json`), synced by `mcm/box_store.py` through `GET /api/mcm/relay/pipeline-
 token` (shared-secret auth, same mechanism as every other mini app's relay route).
@@ -551,7 +551,7 @@ other mini app's base page.
   exactly what your own account can reach and nothing else. There is no service account
   with enterprise-wide reach. It has both read and write scope, used by every mini app
   in this repo — Council Themes/Quant write only to the configured Data Folder;
-  PCN Issue Map to whichever data folder each of its projects has been pointed at;
+  Issue Network Mapper to whichever data folder each of its projects has been pointed at;
   Manufacturing Conditions Monitor to its own single folder (step 11) — none of it
   touches anything else in your Box account.
 - **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
@@ -598,7 +598,7 @@ other mini app's base page.
   writes to the one Box folder that survey's admin already configured. The control
   panel routes (create/edit a survey, trigger analysis) require a signed-in admin
   account, same as the rest of the platform.
-- **PCN Issue Map's network view is the one page in this repo that loads an external
+- **Issue Network Mapper's network view is the one page in this repo that loads an external
   script** (D3, from a CDN) — needed for the force-directed graph layout; every other
   page here is hand-rolled with no third-party JS. It's a static, widely-used
   visualization library with no data collection of its own; nothing it renders is
@@ -634,10 +634,10 @@ other mini app's base page.
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |
 | Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |
-| PCN Issue Map's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as Council Themes/Quant's own "Box is not connected": open `/council-data/control-panel/index.html`'s Developer section and log in. |
-| PCN Issue Map's "Test Box round-trip" fails | No data folder has been chosen yet (**Choose folder…** in its control panel), or the Box connection expired — try logging in with Box again. |
-| PCN Issue Map's "Run pipeline" button stays disabled | There are no "Pending" meetings in the table — upload one first. |
-| PCN Issue Map's "Run pipeline" fails immediately | `PANEL_GITHUB_TOKEN`/`GITHUB_REPO` aren't set up on this Worker — same secrets the Council app's own **Update Dashboard** button needs (see section 4 above). |
-| PCN Issue Map's network/timeline pages look empty after switching projects | Each project has its own network/timeline, only populated once that specific project has run its pipeline at least once — check the URL's `?project=` matches the one you just ran. |
-| A new PCN Issue Map project's name collides with an existing one | Its id gets a numeric suffix automatically (`-2`, `-3`, ...) rather than failing — check the **Project** dropdown for the exact name if you're not sure which is which. |
-| A PCN meeting shows "Failed" in the Meetings table | Its error is shown right in the table — often an unreadable/corrupt file for its declared type; fix the file and re-upload it as a new meeting (the failed one is left as-is, not retried automatically). |
+| Issue Network Mapper's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as Council Themes/Quant's own "Box is not connected": open `/council-data/control-panel/index.html`'s Developer section and log in. |
+| Issue Network Mapper's "Test Box round-trip" fails | No data folder has been chosen yet (**Choose folder…** in its control panel), or the Box connection expired — try logging in with Box again. |
+| Issue Network Mapper's "Run pipeline" button stays disabled | There are no "Pending" meetings in the table — upload one first. |
+| Issue Network Mapper's "Run pipeline" fails immediately | `PANEL_GITHUB_TOKEN`/`GITHUB_REPO` aren't set up on this Worker — same secrets the Council app's own **Update Dashboard** button needs (see section 4 above). |
+| Issue Network Mapper's network/timeline pages look empty after switching projects | Each project has its own network/timeline, only populated once that specific project has run its pipeline at least once — check the URL's `?project=` matches the one you just ran. |
+| A new Issue Network Mapper project's name collides with an existing one | Its id gets a numeric suffix automatically (`-2`, `-3`, ...) rather than failing — check the **Project** dropdown for the exact name if you're not sure which is which. |
+| A meeting shows "Failed" in the Meetings table | Its error is shown right in the table — often an unreadable/corrupt file for its declared type; fix the file and re-upload it as a new meeting (the failed one is left as-is, not retried automatically). |

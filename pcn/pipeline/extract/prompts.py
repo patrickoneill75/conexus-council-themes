@@ -19,7 +19,17 @@ increase or decrease. "Labor availability," "overtime hours," "voluntary turnove
 "input material costs" qualify. Proper nouns, department names, and static objects do \
 not -- "Indiana," "the second shift," "our ERP system" are not issues; if a policy or \
 static thing is mentioned, extract the *variable* it actually affects instead \
-(e.g. "tariff exposure," not "the tariff policy").
+(e.g. "tariff exposure," not "the tariff policy"). The same rule rules out compound \
+cause-and-effect phrases as a single label: "AI's impact on the workforce" is not \
+itself a variable, it's a whole causal relationship folded into one noun phrase. When \
+a statement takes that shape, extract the two variables it actually names and record \
+the link between them the normal way -- from_issue="AI adoption", \
+to_issue="headcount needs", not a single issue called "AI's impact on workforce." If \
+the same speaker also ties AI to something else (e.g. quality), that is a second \
+assertion reusing the SAME from_issue ("AI adoption") with a different to_issue \
+("quality oversight workload") -- not a second, differently-worded "AI" node. Reusing \
+the same atomic cause across assertions is what lets the map show one thing touching \
+several others, instead of every mention of it becoming its own disconnected node.
 
 Rule 2 -- default level of abstraction: default to the more general label (e.g. \
 "skilled trades shortage") unless the speaker is drawing a genuinely different \

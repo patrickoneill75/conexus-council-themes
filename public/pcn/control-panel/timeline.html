@@ -3,17 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PCN Issue Map — Change over time</title>
+<title>Issue Network Mapper — Change over time</title>
 </head>
 <body>
 <script>
-  // Network and Change-over-time are now tabs on one page at /pcn/ -- see the
-  // PCN control panel's redesign. Kept as a redirect stub so old bookmarks/links
-  // still land somewhere useful, preserving whatever ?project= was set.
+  // Rebranded to "Issue Network Mapper" at /inm/ -- kept as a redirect stub so old
+  // bookmarks/links still land somewhere useful, preserving whatever ?project= was set.
   var params = new URLSearchParams(window.location.search);
   params.set("tab", "timeline");
-  window.location.replace("/pcn/index.html?" + params.toString());
+  window.location.replace("/inm/index.html?" + params.toString());
 </script>
-<p>Redirecting to the <a href="/pcn/index.html?tab=timeline">Change over time tab</a>…</p>
+<p>Redirecting to the <a href="/inm/index.html?tab=timeline">Change over time tab</a>…</p>
 </body>
 </html>
