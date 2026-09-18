@@ -2,10 +2,10 @@
  * Consensus: a mini app for chatbot-style surveys with Claude-generated follow-up
  * questions, mounted under /api/consensus/*.
  *
- * Admin routes (survey builder, analyze) reuse the Mini App Platform's own admin
- * accounts (see src/beta_auth.js's requireBetaAuth) rather than inventing another
- * login system. Respondent-facing routes are public, matching this survey's whole
- * point: anyone with the link answers it, no account needed.
+ * Admin routes (survey builder, analyze) reuse Connector's shared admin accounts
+ * (see src/beta_auth.js's requireBetaAuth) rather than inventing another login
+ * system. Respondent-facing routes are public, matching this survey's whole point:
+ * anyone with the link answers it, no account needed.
  *
  * Storage:
  *   consensus:survey:<id> -> the survey definition (JSON) -- see buildSurvey() below
@@ -587,11 +587,10 @@ export async function handleConsensusApi(route, request, env) {
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
 
-  // GET box/folders?id=0 -- the survey builder's own folder picker. worker.js already
-  // has one of these for the Council app, but it's gated by admin.html's
-  // CONTROL_PASSWORD session, a different auth system than this mini app's beta
-  // accounts -- rather than teach that route two auth schemes, this is its own small
-  // copy, gated by requireBetaAuth like everything else admin-side in this file.
+  // GET box/folders?id=0 -- the survey builder's own folder picker. src/council_data.js
+  // already has one of these for Council Themes/Quant, but rather than share a route
+  // across two mini app files, this is its own small copy, gated by requireBetaAuth
+  // like everything else admin-side in this file.
   if (route === "box/folders" && method === "GET") {
     const token = await boxAccessToken(env);
     if (!token) return json({ error: "Box is not connected yet." }, 409);

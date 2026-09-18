@@ -3,406 +3,921 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Manufacturing Conditions Monitor — Mini App Platform</title>
+<title>Manufacturing Conditions Monitor</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='7' y='17' width='5' height='9' rx='1.5' fill='white'/%3E%3Crect x='14' y='11' width='5' height='15' rx='1.5' fill='white'/%3E%3Crect x='21' y='6' width='5' height='20' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>html { visibility: hidden; }</style>
+<script src="/tier-gate.js" data-app="mcm"></script>
 <style>
   :root {
     color-scheme: light;
-    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
-    --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
-    --accent:#2a78d6; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+    --page:           #f9f9f7;
+    --surface-1:      #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --wash:           rgba(11,11,11,0.04);
+    --head:           #e34948;   /* diverging pole: headwind */
+    --tail:           #2a78d6;   /* diverging pole: tailwind */
+    --neutral:        #f0efec;   /* diverging midpoint */
+    --good:           #006300;
+    --bad:            #d03b3b;
   }
-  @media (prefers-color-scheme: dark) { :root {
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page:           #0d0d0d;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --wash:           rgba(255,255,255,0.06);
+      --head:           #e66767;
+      --tail:           #3987e5;
+      --neutral:        #383835;
+      --good:           #0ca30c;
+      --bad:            #d03b3b;
+    }
+  }
+  :root[data-theme="dark"] {
     color-scheme: dark;
-    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
-    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
-    --accent:#3987e5; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
-  } }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--page); color:var(--text-primary);
-         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
-  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
-           flex-wrap:wrap; margin-bottom:18px; }
-  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
-  .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
-  .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
-  a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
-                         font:inherit; cursor:pointer; text-decoration:none; }
-  a.link:hover, button.link:hover { text-decoration:underline; }
-  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
-          padding:20px; margin-bottom:16px; }
-  .card h3 { margin:0 0 4px; font-size:14px; }
-  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
-  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
-           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .banner { border-radius:10px; padding:11px 14px; font-size:13.5px; display:flex; gap:9px;
-            align-items:flex-start; margin-bottom:14px; }
-  .banner .dot { width:9px; height:9px; border-radius:50%; background:currentColor; flex:0 0 auto; margin-top:5px; }
-  .ok { background:rgba(12,163,12,.09); color:var(--good); border:1px solid rgba(12,163,12,.28); }
-  .due { background:rgba(250,178,25,.12); color:#93370d; border:1px solid rgba(250,178,25,.4); }
-  .err { background:rgba(208,59,59,.10); color:var(--bad); border:1px solid rgba(208,59,59,.3); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { text-align:left; padding:8px 10px; }
-  th { font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:var(--text-muted);
-       font-weight:600; border-bottom:1px solid var(--border); }
-  td { border-bottom:1px solid var(--grid); font-variant-numeric:tabular-nums; }
-  td.num, th.num { text-align:right; }
-  .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
-          border-radius:999px; border:1px solid transparent; white-space:nowrap; }
-  .pill.done { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
-  .pill.pending { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
-  .pill.nodata { background:var(--wash); color:var(--text-muted); border-color:var(--border); }
-  .pill.good { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
-  .pill.warn { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
-  .pill.bad { background:rgba(208,59,59,.12); color:var(--bad); border-color:rgba(208,59,59,.3); }
-  .muted { color:var(--text-muted); }
-  .msg { font-size:12.5px; margin:10px 0 0; }
-  .msg.err { color:var(--bad); }
-  .msg.ok { color:var(--good); }
-  .msg.muted { color:var(--text-muted); }
-  .small { font-size:12.5px; }
-  .job { border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
-  .jobs { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
-  .job h3 { margin:0 0 4px; font-size:14px; }
-  .job p { margin:0 0 12px; font-size:12.5px; color:var(--text-secondary); }
-  .spin { display:inline-block; width:11px; height:11px; border:2px solid currentColor;
-          border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite;
-          vertical-align:-1px; margin-right:6px; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  .folder-row { display:flex; align-items:center; justify-content:space-between;
-                padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
-  .folder-row:hover { background:var(--wash); }
-  .folder-row .enter { font-size:12px; color:var(--accent); }
-  .crumb { cursor:pointer; color:var(--accent); }
-  .crumb:hover { text-decoration:underline; }
-  .crumb-sep { color:var(--text-muted); margin:0 4px; }
-  .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
-  pre { background:var(--wash); border-radius:8px; padding:10px 12px; font-size:12px;
-        overflow-x:auto; margin:10px 0 0; }
-  [hidden] { display:none !important; }
-  @media(max-width:760px){ .jobs{grid-template-columns:1fr;} }
+    --page:           #0d0d0d;
+    --surface-1:      #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --wash:           rgba(255,255,255,0.06);
+    --head:           #e66767;
+    --tail:           #3987e5;
+    --neutral:        #383835;
+    --good:           #0ca30c;
+    --bad:            #d03b3b;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+
+  header { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  header .titles { flex: 1 1 340px; min-width: 260px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin: 0; max-width: 68ch; }
+  .stamp { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+  .theme-btn {
+    background: var(--surface-1); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .theme-btn:hover { background: var(--wash); }
+
+  /* One filter row, above everything it scopes. */
+  .filters {
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;
+    margin: 22px 0 18px; padding: 14px 16px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .field { display: flex; flex-direction: column; gap: 5px; min-width: 150px; }
+  .field label { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+                 color: var(--text-muted); font-weight: 600; }
+  .field select {
+    font: inherit; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--page); color: var(--text-primary);
+  }
+  .field select:focus-visible { outline: 2px solid var(--tail); outline-offset: 1px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .tile .label { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+                 color: var(--text-muted); font-weight: 600; }
+  /* Proportional figures on stat-tile values (never tabular at display size). */
+  .tile .value { font-size: 28px; font-weight: 650; line-height: 1.15; margin: 5px 0 2px;
+                 letter-spacing: -0.02em; }
+  .tile .meta { font-size: 12px; color: var(--text-secondary); }
+  .delta { font-weight: 600; }
+  .delta.up { color: var(--good); }
+  .delta.down { color: var(--bad); }
+  .delta.flat { color: var(--text-muted); }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-top: 16px;
+  }
+  .card h2 { font-size: 15px; font-weight: 650; margin: 0 0 2px; }
+  .card .card-sub { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 14px; }
+
+  .legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+            font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  /* --- diverging bar chart --- */
+  .plot { position: relative; --label-w: 226px; --value-w: 62px; }
+  .gridlines { position: absolute; top: 0; bottom: 20px;
+               left: var(--label-w); right: var(--value-w); pointer-events: none; }
+  .gridlines i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+  .gridlines i.zero { background: var(--baseline); }
+  .row {
+    display: grid; grid-template-columns: var(--label-w) 1fr var(--value-w);
+    align-items: center; column-gap: 0; height: 26px; cursor: pointer;
+    border-radius: 6px;
+  }
+  .row:hover, .row.active { background: var(--wash); }
+  .row:focus-visible { outline: 2px solid var(--tail); outline-offset: -2px; }
+  .row .name {
+    padding-right: 12px; font-size: 12.5px; color: var(--text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .row.active .name { color: var(--text-primary); font-weight: 600; }
+  .track { position: relative; height: 100%; }
+  .bar { position: absolute; top: 50%; transform: translateY(-50%); height: 14px; }
+  .bar.neg { right: 50%; background: var(--head); border-radius: 4px 0 0 4px; }
+  .bar.pos { left: 50%; background: var(--tail); border-radius: 0 4px 4px 0; }
+  .bar.zero { left: 50%; width: 2px; background: var(--baseline); border-radius: 1px; }
+  .row .val {
+    text-align: right; font-size: 12.5px; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums; padding-left: 10px;
+  }
+  .axis {
+    display: grid; grid-template-columns: var(--label-w) 1fr var(--value-w);
+    height: 20px; align-items: center;
+  }
+  .axis .ticks { position: relative; height: 100%; }
+  .axis .ticks span {
+    position: absolute; top: 2px; transform: translateX(-50%);
+    font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+  }
+  .axis-note { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; }
+
+  #tooltip {
+    position: fixed; z-index: 50; pointer-events: none; opacity: 0;
+    transition: opacity .1s ease; max-width: 280px;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 9px;
+    padding: 9px 11px; font-size: 12.5px; line-height: 1.45;
+    box-shadow: 0 6px 22px rgba(0,0,0,.16);
+  }
+  #tooltip b { font-weight: 650; }
+  #tooltip .tt-row { color: var(--text-secondary); }
+
+  /* --- table (the chart's table-view twin) --- */
+  /* .table-wrap is the positioning root for the floating evidence panel below -- it sits
+     OUTSIDE .table-scroll entirely (not inside the <table> as a row), which is what lets
+     it be exactly as wide as the card and wrap normally to the screen. A cell living
+     inside the table, even styled to look otherwise, is still read by the table's own
+     column-width math -- one specified width on a colspan cell was enough to make the
+     *other* rows' topic column balloon to over 300px while a row was open, wide enough
+     to stop wrapping and let the numeric columns scrolling underneath show through it. */
+  .table-wrap { position: relative; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-hint { display: none; font-size: 11.5px; color: var(--text-muted); margin: 8px 0 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+  th, td { text-align: right; padding: 8px 10px; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 200px; }
+  thead th {
+    font-size: 11px; letter-spacing: .03em; text-transform: uppercase;
+    color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border);
+  }
+  /* The topic column stays put while the numeric columns scroll under it, so it's never
+     ambiguous which row you're looking at on a narrow screen. Needs an opaque background
+     of its own -- otherwise the columns scrolling underneath show through. */
+  thead th:first-child, tbody tr:not(.topic-detail-spacer) td:first-child {
+    position: sticky; left: 0; background: var(--surface-1); z-index: 1;
+  }
+  thead th:first-child { z-index: 2; }
+  /* var(--wash) is a translucent tint (4-6% alpha), meant to sit over an opaque
+     background -- used by itself here it barely hides anything, so the columns
+     scrolling underneath a sticky, hovered/active first cell would show right through
+     it. Layer it over the same opaque surface color instead. */
+  tbody tr.topic-row:hover td:first-child, tbody tr.topic-row.active td:first-child {
+    background-color: var(--surface-1);
+    background-image: linear-gradient(var(--wash), var(--wash));
+  }
+  tbody td { border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  tbody tr.topic-row { cursor: pointer; }
+  tbody tr.topic-row:hover { background: var(--wash); }
+  tbody tr.topic-row.active { background: var(--wash); }
+  /* Same accent mechanism (a real border, not a box-shadow) on both the open row and the
+     panel below it, so they land at the exact same pixel and read as one connected piece --
+     a shadow on the row and a border on the panel don't reliably line up. Reserve the
+     border space on every row (transparent by default) so activating one doesn't nudge its
+     contents sideways. */
+  tbody tr.topic-row td:first-child { border-left: 3px solid transparent; }
+  tbody tr.topic-row.active td:first-child { border-left-color: var(--tail); }
+  .topic-cell { display: inline-flex; align-items: center; gap: 9px; }
+  /* A dedicated, always-visible control -- colored and circled like a real button, not a
+     muted glyph that reads as decoration -- is what actually signals "click me" here. */
+  .expander {
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+    width: 22px; height: 22px; border-radius: 999px;
+    background: var(--wash); color: var(--tail);
+    transition: transform .15s ease, background .15s ease;
+  }
+  tbody tr.topic-row:hover .expander { background: var(--tail); color: #fff; }
+  tbody tr.topic-row.active .expander { transform: rotate(90deg); }
+  .expander svg { width: 12px; height: 12px; }
+  /* A spacer row, not a real one -- it exists only to push the rows below it down by
+     however tall the floating panel (positioned over it, see .detail-float) currently is. */
+  tr.topic-detail-spacer td { padding: 0; border: 0; }
+  .detail-float {
+    position: absolute; left: 0; right: 0; box-sizing: border-box;
+    padding: 18px 20px 20px; background: var(--wash); border-left: 3px solid var(--tail);
+  }
+  @media (max-width: 900px) {
+    table { min-width: 600px; }
+    th:first-child, td:first-child { min-width: 140px; }
+    .table-hint { display: block; }
+  }
+
+  /* --- topic detail --- */
+  .takeaways { margin: 0 0 16px; padding: 12px 18px; border-left: 3px solid var(--tail);
+               background: var(--wash); border-radius: 0 9px 9px 0; }
+  .takeaways ul { margin: 6px 0 0; padding-left: 18px; }
+  .takeaways li { margin-bottom: 5px; }
+  .takeaways .th { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+                   color: var(--text-muted); font-weight: 600; }
+  /* align-items:start so an empty "no signals" column doesn't stretch to match its neighbour */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .brief { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .brief.head { border-top: 3px solid var(--head); }
+  .brief.tail { border-top: 3px solid var(--tail); }
+  .brief h3 { margin: 0 0 2px; font-size: 13.5px; font-weight: 650;
+              display: flex; align-items: center; gap: 7px; }
+  .brief .count { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
+  .brief p { margin: 0 0 10px; font-size: 13px; }
+  .brief .themes { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px;
+                   color: var(--text-secondary); }
+  .brief .themes li { margin-bottom: 4px; }
+  .ex { border-top: 1px solid var(--grid); padding-top: 10px; margin-top: 10px; }
+  .ex .who { font-size: 12.5px; font-weight: 600; }
+  .ex .why { font-size: 12.5px; color: var(--text-secondary); margin: 3px 0 6px; }
+  blockquote {
+    margin: 0; padding: 7px 0 7px 11px; border-left: 2px solid var(--grid);
+    font-size: 12.5px; color: var(--text-secondary); font-style: italic;
+  }
+  a { color: var(--tail); }
+  .muted { color: var(--text-muted); }
+  .empty { padding: 26px 0; text-align: center; color: var(--text-muted); font-size: 13.5px; }
+  footer { margin-top: 26px; font-size: 12px; color: var(--text-muted); max-width: 78ch; }
+  footer p { margin: 0 0 8px; }
+
+  /* --- quarterly narrative (the lead of the page) --- */
+  .narrative { margin-top: 16px; }
+  .narrative-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+                    margin-bottom: 4px; }
+  .narrative-head h2 { margin: 0; font-size: 17px; }
+  .cutswitch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px;
+               overflow: hidden; }
+  .cutswitch button { font: inherit; font-size: 12.5px; padding: 5px 12px; border: 0;
+                      background: var(--surface-1); color: var(--text-secondary);
+                      cursor: pointer; }
+  .cutswitch button + button { border-left: 1px solid var(--border); }
+  .cutswitch button[aria-pressed="true"] { background: var(--tail); color: #fff; font-weight: 600; }
+  .sections { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 12px;
+              align-items: start; }
+  .section-card { border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+                  background: var(--surface-1); }
+  .section-card.wide { grid-column: 1 / -1; }
+  .section-kicker { font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+                    font-weight: 700; color: var(--tail); margin-bottom: 6px; }
+  .section-card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 650; line-height: 1.35; }
+  .section-card p { margin: 0 0 10px; font-size: 13.5px; }
+  .section-card ul { margin: 0; padding-left: 18px; }
+  .section-card li { font-size: 13px; margin-bottom: 5px; color: var(--text-secondary); }
+  .read-more-btn {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 12px;
+    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--tail);
+    background: none; border: 0; padding: 0; cursor: pointer;
+  }
+  .read-more-btn:hover { text-decoration: underline; }
+  .section-body { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .section-body p:last-child { margin-bottom: 0; }
+  .narr-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13.5px;
+                border: 1px dashed var(--border); border-radius: 12px; }
+  @media(max-width: 1040px) { .sections { grid-template-columns: 1fr 1fr; } }
+  @media(max-width: 760px) { .sections { grid-template-columns: 1fr; } }
+
+  @media (max-width: 900px) {
+    .tiles { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .cols { grid-template-columns: 1fr; }
+    .plot { --label-w: 130px; --value-w: 52px; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div>
+    <div class="titles">
       <h1>Manufacturing Conditions Monitor</h1>
-      <p class="sub">SEC filing headwinds/tailwinds — data refresh and analysis.</p>
+      <p class="sub">Economic headwinds and tailwinds extracted from public-company manufacturing
+        disclosures — 10-K and 10-Q MD&amp;A and Risk Factors, plus earnings-related 8-Ks.</p>
+      <p class="stamp" id="stamp">Loading…</p>
     </div>
-    <div class="who">
-      <span id="whoami"></span>
-      <a class="link" href="/mcm/dashboard.html" target="_blank" rel="noopener">Open the dashboard &rarr;</a>
-      <a class="link" href="/beta/index.html">&larr; Mini App Platform</a>
-      <button type="button" class="link" id="signOutBtn">Sign out</button>
-    </div>
+    <button class="theme-btn" id="themeBtn" type="button">Dark mode</button>
   </header>
 
-  <div id="banners"></div>
+  <section class="card narrative" id="narrativeCard">
+    <div class="narrative-head">
+      <h2 id="narrativeTitle">Quarterly analysis</h2>
+      <span class="cutswitch" id="cutSwitch" role="group" aria-label="Narrative scope"></span>
+    </div>
+    <p class="card-sub" id="narrativeSub"></p>
+    <div id="narrativeBody"></div>
+  </section>
 
-  <div class="card" id="boxCard">
-    <h3>Box connection</h3>
-    <p class="desc">Uses the same Box connection every other tool here shares — log in
-      with Box from admin.html's Developer section if this says not connected.</p>
-    <div class="row">
-      <span id="statusPill"><span class="pill warn">Checking…</span></span>
-      <button type="button" id="refreshStatusBtn">Refresh</button>
+  <section class="tiles" id="tiles"></section>
+
+  <div class="filters" id="filters">
+    <div class="field">
+      <label for="fSic">Industry (2-digit SIC)</label>
+      <select id="fSic"></select>
+    </div>
+    <div class="field">
+      <label for="fState">Business location</label>
+      <select id="fState"></select>
     </div>
   </div>
 
-  <div class="card">
-    <h3>Data folder</h3>
-    <p class="desc">The one Box folder MCM's six data files live in — its own folder,
-      separate from Council Themes/Quant's Data Folder or any PCN project's.</p>
-    <p style="margin:0 0 10px">Currently: <b id="folderName">(none selected)</b></p>
-    <div class="row">
-      <button type="button" id="chooseFolderBtn">Choose folder…</button>
-      <button type="button" class="primary" id="testBtn">Test Box round-trip</button>
+  <section class="card">
+    <h2>Net headwind–tailwind balance by topic</h2>
+    <p class="card-sub">Select a topic to read the evidence behind it.</p>
+    <div class="legend">
+      <span class="key"><span class="swatch" style="background:var(--head)"></span> Headwind (worsening conditions)</span>
+      <span class="key"><span class="swatch" style="background:var(--tail)"></span> Tailwind (improving conditions)</span>
     </div>
-    <div id="folderPicker" hidden class="picker"></div>
-    <pre id="testResult" hidden></pre>
-  </div>
+    <div id="chart"></div>
+  </section>
 
-  <div class="card">
-    <div class="jobs">
-      <div class="job">
-        <h3>1 · Download new data</h3>
-        <p>Downloads and extracts only the three quarters the dashboard needs: the latest
-           complete quarter, plus its quarter-over-quarter and year-over-year comparisons.
-           No AI cost.</p>
-        <button class="primary" id="downloadBtn" type="button">Download new data</button>
-        <p class="small muted" id="downloadState" style="margin:10px 0 0"></p>
+  <section class="card">
+    <h2>All topics</h2>
+    <p class="card-sub">The same figures as the chart above, with quarter-over-quarter and
+      year-over-year change in percentage points. Click a row to see example headwinds and
+      tailwinds.</p>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Topic</th><th>Balance</th><th>Companies</th><th>Signals</th>
+            <th>Headwind</th><th>Tailwind</th><th>Mixed</th><th>QoQ &Delta;</th><th>YoY &Delta;</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
       </div>
-      <div class="job">
-        <h3>2 · Analyze</h3>
-        <p>Runs the Claude analysis over anything downloaded but not yet analyzed, and writes
-           the current quarter's narrative. Results are stored in Box, so each quarter is
-           paid for once.</p>
-        <button class="primary" id="analyzeBtn" type="button">Analyze</button>
-        <p class="small muted" id="analyzeState" style="margin:10px 0 0"></p>
-      </div>
-      <div class="job">
-        <h3>Publish site</h3>
-        <p>Rebuilds the dashboard from data already in Box — no SEC or Claude calls. Use this
-           after a code-only change (like a dashboard layout fix) to push it live without
-           re-downloading or re-analyzing anything.</p>
-        <button id="publishBtn" type="button">Publish site</button>
-        <p class="small muted" id="publishState" style="margin:10px 0 0"></p>
-      </div>
+      <div id="topicDetailFloat" class="detail-float" hidden></div>
     </div>
-  </div>
+    <p class="table-hint">Topic stays put — swipe left to see the rest of the columns →</p>
+  </section>
 
-  <div class="card">
-    <h3>Quarters</h3>
-    <p class="desc">Only the three quarters the dashboard shows: the current quarter and its
-      QoQ and YoY comparisons. A quarter shows as <span class="pill pending">Needs analysis</span>
-      once its data is downloaded but Claude has not run on it yet. The narrative is only ever
-      written for the current quarter — the comparison quarters feed it as data, so they show
-      <span class="pill nodata">Not applicable</span> under Narrative.</p>
-    <div style="overflow-x:auto">
-      <table>
-        <thead><tr>
-          <th>Quarter</th><th class="num">Filings</th><th class="num">Signals</th>
-          <th>Data</th><th>Analysis</th><th>Narrative</th>
-        </tr></thead>
-        <tbody id="quarters"></tbody>
-      </table>
-    </div>
-    <p class="small muted" id="totals" style="margin:12px 0 0"></p>
-  </div>
+  <footer>
+    <p><b>How to read this.</b> Signal balance = (tailwind signals − headwind signals) ÷ all signals,
+      ranging from −1 (all headwinds) to +1 (all tailwinds); mixed signals stay in the denominator.
+      It measures how often a condition is described as adverse or favourable across companies —
+      not the dollar size of the effect.</p>
+    <p><b>Method.</b> Filings are retrieved from SEC EDGAR, the MD&amp;A and Risk Factors sections
+      are extracted deterministically into a paragraph-level dataset, and each paragraph is
+      classified by Claude into the topics above. Quotes are verbatim from the filings.
+      "Business location" is the filer's principal business address on file with the SEC,
+      which is its headquarters — not necessarily where its plants are.</p>
+  </footer>
 </div>
+
+<div id="tooltip" role="status" aria-live="polite"></div>
 
 <script>
 (function () {
   "use strict";
+
+  var D = null, sel = { sic: "ALL", state: "ALL" }, activeTopic = null;
+  var evidenceCache = {};
+  var ROLE = { current: 0, qoq: 1, yoy: 2 };
   var el = function (id) { return document.getElementById(id); };
-  var token = null;
-  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
-  if (!token) { window.location.href = "/beta/login.html"; return; }
 
   function esc(s) {
-    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
-  function num(n) { return Number(n || 0).toLocaleString("en-US"); }
-  function signOut() {
-    try { sessionStorage.removeItem("beta-token"); } catch (e) {}
-    window.location.href = "/beta/login.html";
+  function pct(x) { return (x * 100).toFixed(0) + "%"; }
+  function signed(x) { return (x >= 0 ? "+" : "") + x.toFixed(2); }
+  function num(n) { return n.toLocaleString("en-US"); }
+  /* Round BEFORE signing, so -0.3 prints "+0" rather than the nonsense "-0". */
+  function pts(d) { var r = Math.round(d); return (r >= 0 ? "+" : "") + r; }
+  /* A delta computed off a handful of signals is noise; keep the number, drop the emphasis. */
+  var SMALL_SAMPLE = 5;
+  function deltaClass(d, sample) {
+    if (sample < SMALL_SAMPLE) return "flat";
+    return Math.abs(d) < 0.5 ? "flat" : (d > 0 ? "up" : "down");
   }
-  el("signOutBtn").addEventListener("click", signOut);
+  /* "2026Q1" -> "2026 Q1", for display. */
+  function prettyPeriod(p) { return p ? p.slice(0, 4) + " " + p.slice(4) : ""; }
 
-  function api(path, options) {
-    options = options || {};
-    options.headers = Object.assign({ "content-type": "application/json", authorization: "Bearer " + token },
-      options.headers || {});
-    return fetch("/api/mcm/" + path, options).then(function (r) {
-      if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
-      return r.json().then(function (body) {
-        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
-        return body;
-      });
+  /* ---------- theme ---------- */
+  function initTheme() {
+    var saved = null;
+    try { saved = localStorage.getItem("mcm-theme"); } catch (e) {}
+    if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+    syncThemeLabel();
+    el("themeBtn").addEventListener("click", function () {
+      var isDark = document.documentElement.getAttribute("data-theme") === "dark" ||
+        (!document.documentElement.hasAttribute("data-theme") &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches);
+      var next = isDark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("mcm-theme", next); } catch (e) {}
+      syncThemeLabel();
     });
   }
-
-  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
-    .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
-    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
-    .catch(signOut);
-
-  /* ---------- Box connection + folder ---------- */
-  var currentFolderName = "(none selected)";
-
-  function loadStatus() {
-    el("statusPill").innerHTML = '<span class="pill warn">Checking…</span>';
-    return api("box/status").then(function (status) {
-      el("statusPill").innerHTML = status.connected
-        ? '<span class="pill good">Connected</span>' : '<span class="pill bad">Not connected</span>';
-      currentFolderName = (status.folder && status.folder.name) || "(none selected)";
-      el("folderName").textContent = currentFolderName;
-    }).catch(function (e) {
-      el("statusPill").innerHTML = '<span class="pill bad">Error</span>';
-    });
+  function syncThemeLabel() {
+    var isDark = document.documentElement.getAttribute("data-theme") === "dark" ||
+      (!document.documentElement.hasAttribute("data-theme") &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches);
+    el("themeBtn").textContent = isDark ? "Light mode" : "Dark mode";
   }
-  el("refreshStatusBtn").addEventListener("click", loadStatus);
 
-  el("testBtn").addEventListener("click", function () {
-    el("testBtn").disabled = true;
-    el("testBtn").textContent = "Testing…";
-    el("testResult").hidden = true;
-    api("box/test", { method: "POST" }).then(function (result) {
-      el("testResult").hidden = false;
-      el("testResult").textContent = JSON.stringify(result, null, 2);
-      el("testBtn").disabled = false;
-      el("testBtn").textContent = "Test Box round-trip";
-    }).catch(function (e) {
-      el("testResult").hidden = false;
-      el("testResult").textContent = "Error: " + e.message;
-      el("testBtn").disabled = false;
-      el("testBtn").textContent = "Test Box round-trip";
+  /* ---------- aggregation (all of it runs in the browser) ----------
+     The dashboard only ever looks at three fixed quarters -- current, QoQ, YoY --
+     identified by role index rather than a browsable list of periods. */
+  function aggregate(role, sicIdx, stateIdx) {
+    var s = D.signals, n = s.r.length;
+    var cats = D.dims.categories.map(function () {
+      return { head: 0, tail: 0, mixed: 0, total: 0, ciks: {} };
     });
-  });
-
-  /* ---------- Box folder picker (same shape as PCN's/Consensus's) ---------- */
-  function openPicker(folderId) {
-    el("folderPicker").hidden = false;
-    el("folderPicker").innerHTML = '<p class="msg muted">Loading…</p>';
-    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
-      var html = '<div class="msg" style="margin-bottom:8px" id="pickerCrumb"></div>' +
-        '<div id="pickerList" style="max-height:240px;overflow-y:auto"></div>' +
-        '<div class="row" style="margin-top:12px">' +
-        '<button class="primary small" type="button" id="pickerUseBtn">Use this folder</button>' +
-        '<button class="small" type="button" id="pickerCancelBtn">Cancel</button></div>';
-      el("folderPicker").innerHTML = html;
-      var crumbEl = el("pickerCrumb"), listEl = el("pickerList");
-      crumbEl.innerHTML = data.breadcrumb.map(function (c, i) {
-        var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
-        return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' + esc(c.name || "All Files") + "</span>";
-      }).join("");
-      Array.prototype.forEach.call(crumbEl.querySelectorAll(".crumb"), function (node) {
-        node.addEventListener("click", function () { openPicker(node.dataset.id); });
-      });
-      listEl.innerHTML = data.folders.length ? data.folders.map(function (f) {
-        return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>📁 ' + esc(f.name) +
-          '</span><span class="enter">Open &rarr;</span></div>';
-      }).join("") : '<p class="msg muted">No subfolders here — "Use this folder" picks this one.</p>';
-      Array.prototype.forEach.call(listEl.querySelectorAll(".folder-row"), function (row) {
-        row.addEventListener("click", function () { openPicker(row.dataset.id); });
-      });
-      el("pickerUseBtn").addEventListener("click", function () {
-        var crumbs = crumbEl.querySelectorAll(".crumb");
-        var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : data.name;
-        api("box/select-folder", { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
-          .then(function () {
-            currentFolderName = name;
-            el("folderName").textContent = name;
-            el("folderPicker").hidden = true;
-          }).catch(function (e) { window.alert(e.message); });
-      });
-      el("pickerCancelBtn").addEventListener("click", function () { el("folderPicker").hidden = true; });
-    }).catch(function (e) {
-      el("folderPicker").innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
-    });
-  }
-  el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
-
-  /* ---------- status + quarters table ---------- */
-  function runLabel(workflow) {
-    var runs = (workflow && workflow.runs) || [];
-    if (!runs.length) return { text: "Never run", busy: false };
-    var r = runs[0];
-    if (r.status !== "completed") {
-      return { text: '<span class="spin"></span>Running since ' +
-        new Date(r.started_at).toLocaleTimeString("en-US"), busy: true, url: r.url };
+    var tot = { head: 0, tail: 0, mixed: 0, total: 0 };
+    for (var i = 0; i < n; i++) {
+      if (s.r[i] !== role) continue;
+      if (sicIdx !== -1 && s.g[i] !== sicIdx) continue;
+      if (stateIdx !== -1 && s.t[i] !== stateIdx) continue;
+      var c = cats[s.c[i]], d = s.d[i];
+      if (d === 0) { c.head++; tot.head++; } else if (d === 1) { c.tail++; tot.tail++; } else { c.mixed++; tot.mixed++; }
+      c.total++; tot.total++;
+      c.ciks[s.k[i]] = 1;
     }
-    var when = new Date(r.updated_at).toLocaleString("en-US",
-      { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    var word = r.conclusion === "success" ? "Succeeded"
-      : (r.conclusion === "cancelled" ? "Cancelled" : "Failed");
-    return { text: word + " " + when, busy: false, url: r.url, failed: r.conclusion !== "success" };
+    var f = D.filings, fn = f.r.length, fCiks = {}, fCount = 0;
+    for (var j = 0; j < fn; j++) {
+      if (f.r[j] !== role) continue;
+      if (sicIdx !== -1 && f.g[j] !== sicIdx) continue;
+      if (stateIdx !== -1 && f.t[j] !== stateIdx) continue;
+      fCiks[f.k[j]] = 1; fCount++;
+    }
+    var rows = cats.map(function (c, i) {
+      return {
+        idx: i, name: D.dims.categories[i], total: c.total,
+        companies: Object.keys(c.ciks).length,
+        balance: c.total ? (c.tail - c.head) / c.total : 0,
+        headShare: c.total ? c.head / c.total : 0,
+        tailShare: c.total ? c.tail / c.total : 0,
+        mixedShare: c.total ? c.mixed / c.total : 0,
+        head: c.head, tail: c.tail, mixed: c.mixed
+      };
+    }).filter(function (r) { return r.total > 0; });
+    return {
+      rows: rows, totals: tot,
+      balance: tot.total ? (tot.tail - tot.head) / tot.total : 0,
+      companies: Object.keys(fCiks).length, filings: fCount
+    };
+  }
+  function topicBalanceMap(agg) {
+    var map = {};
+    agg.rows.forEach(function (r) { map[r.name] = r.balance; });
+    return map;
+  }
+  function conditionLabel(v) {
+    if (v <= -0.50) return "Headwinds dominate";
+    if (v < -0.10) return "More headwinds than tailwinds";
+    if (v <= 0.10) return "Broadly balanced";
+    if (v < 0.50) return "More tailwinds than headwinds";
+    return "Tailwinds dominate";
   }
 
-  function refresh() {
-    return api("status").then(function (body) {
-      var pipeline = body.pipeline;
-      var d = runLabel(body.workflows.download), a = runLabel(body.workflows.analyze),
-          p = runLabel(body.workflows.publish);
-      el("downloadState").innerHTML = d.text + (d.url ? ' · <a href="' + d.url + '" target="_blank" rel="noopener">log</a>' : "");
-      el("analyzeState").innerHTML = a.text + (a.url ? ' · <a href="' + a.url + '" target="_blank" rel="noopener">log</a>' : "");
-      el("publishState").innerHTML = p.text + (p.url ? ' · <a href="' + p.url + '" target="_blank" rel="noopener">log</a>' : "");
-      el("downloadBtn").disabled = d.busy;
-      el("analyzeBtn").disabled = a.busy;
-      el("publishBtn").disabled = p.busy;
 
-      var banners = "";
-      if (!pipeline) {
-        banners = '<div class="banner err"><span class="dot"></span><div>No published data yet. ' +
-          'Run <b>Download new data</b>, then <b>Analyze</b>.</div></div>';
-        el("banners").innerHTML = banners;
-        el("quarters").innerHTML = "";
-        return;
-      }
-      if (pipeline.box_configured === false) {
-        banners += '<div class="banner err"><span class="dot"></span><div><b>Downloads can\'t reach ' +
-          'Box yet.</b> BOX_RELAY_URL and BOX_RELAY_SECRET need to be set as repository secrets ' +
-          'before a run can save anything. See SETUP.md.</div></div>';
-      }
-      if (pipeline.download_up_to_date) {
-        banners += '<div class="banner ok"><span class="dot"></span><div><b>Data are current ' +
-          'through ' + esc(pipeline.latest_complete_quarter) + '.</b> Next quarter (' +
-          esc(pipeline.next_quarter_available.period) + ') becomes available ' +
-          esc(pipeline.next_quarter_available.available_on) + '.</div></div>';
-      } else {
-        banners += '<div class="banner due"><span class="dot"></span><div><b>New data available.</b> ' +
-          'Not yet downloaded: ' + esc((pipeline.quarters_missing_data || []).join(", ")) + '.</div></div>';
-      }
-      if (!pipeline.analysis_up_to_date) {
-        banners += '<div class="banner due"><span class="dot"></span><div><b>Analysis pending.</b> ' +
-          'Downloaded but not analyzed: ' + esc((pipeline.quarters_pending_analysis || []).join(", ")) +
-          '.</div></div>';
-      } else if (pipeline.download_up_to_date) {
-        banners += '<div class="banner ok"><span class="dot"></span><div>All downloaded quarters ' +
-          'have been analyzed.</div></div>';
-      }
-      el("banners").innerHTML = banners;
+  /* ---------- quarterly narrative ---------- */
+  var NARR = null, narrCut = "national";
+  // Which sections currently have their full narrative expanded, keyed by section id
+  // (not by cut -- switching between National/Indiana keeps whatever's open). Read by
+  // renderNarrative() on every render, so it survives re-renders triggered by filters,
+  // the cut switch, or expanding a topic row elsewhere on the page.
+  var expandedSections = {};
+  var SECTION_ORDER = [
+    ["this_quarter", "This quarter", false],
+    ["looking_ahead", "Looking ahead", false],
+    ["quarter_over_quarter", "Quarter over quarter", false],
+    ["year_over_year", "Year over year", false]
+  ];
+  /* Switching the narrative cut re-scopes the filters to match it, every time — not just
+     the first time — so the bar chart/table below always agree with what the narrative
+     above is talking about. */
+  var CUT_FILTER_DEFAULTS = {
+    national: { sic: "ALL", state: "ALL" },
+    indiana:  { sic: "ALL", state: "IN" }
+  };
 
-      var ROLE_LABEL = { current: "Current quarter", quarter_over_quarter: "QoQ comparison",
-                        year_over_year: "YoY comparison" };
-      el("quarters").innerHTML = (pipeline.quarters || []).slice().reverse().map(function (q) {
-        var dataPill = q.has_data
-          ? '<span class="pill done">Downloaded</span>'
-          : '<span class="pill nodata">No data</span>';
-        var analysisPill = !q.has_data ? '<span class="pill nodata">—</span>'
-          : (q.needs_analysis ? '<span class="pill pending">Needs analysis</span>'
-                              : '<span class="pill done">Analyzed</span>');
-        var narrPill = q.role !== "current" ? '<span class="pill nodata">Not applicable</span>'
-          : (q.narratives_complete ? '<span class="pill done">Written</span>'
-            : (q.narratives.length ? '<span class="pill pending">Partial</span>'
-                                   : '<span class="pill nodata">—</span>'));
-        return "<tr><td><b>" + esc(q.period) + "</b>" +
-          '<div class="muted small">' + esc(ROLE_LABEL[q.role] || q.role) + "</div></td>" +
-          '<td class="num">' + num(q.filings) + "</td>" +
-          '<td class="num">' + num(q.signals) + "</td>" +
-          "<td>" + dataPill + "</td><td>" + analysisPill + "</td><td>" + narrPill + "</td></tr>";
-      }).join("");
+  function narrativeCuts() {
+    var cuts = {};
+    Object.keys(NARR || {}).forEach(function (k) {
+      var n = NARR[k];
+      if (n && n.cut) cuts[n.cut] = n.cut_label || n.cut;
+    });
+    var order = ["national", "indiana"];
+    return order.filter(function (c) { return cuts[c]; })
+      .map(function (c) { return { key: c, label: cuts[c] }; })
+      .concat(Object.keys(cuts).filter(function (c) { return order.indexOf(c) < 0; })
+        .map(function (c) { return { key: c, label: cuts[c] }; }));
+  }
 
-      var t = pipeline.totals || {};
-      el("totals").textContent = num(t.filings) + " filings · " + num(t.paragraphs) +
-        " extracted paragraphs · " + num(t.signals) + " signals · " + num(t.companies) +
-        " companies · " + num(t.narratives) + " written narratives. Updated " +
-        new Date(pipeline.generated_at).toLocaleString("en-US") + ".";
-    }).catch(function (e) {
-      el("banners").innerHTML = '<div class="banner err"><span class="dot"></span><div>' +
-        esc(e.message) + "</div></div>";
+  function renderNarrative() {
+    var card = el("narrativeCard");
+    if (!NARR || !Object.keys(NARR).length) { card.hidden = true; return; }
+    card.hidden = false;
+    var cuts = narrativeCuts();
+    if (!cuts.length) { card.hidden = true; return; }
+    if (!cuts.some(function (c) { return c.key === narrCut; })) narrCut = cuts[0].key;
+
+    el("cutSwitch").innerHTML = cuts.map(function (c) {
+      return '<button type="button" data-cut="' + esc(c.key) + '" aria-pressed="' +
+        (c.key === narrCut) + '">' + esc(c.label) + "</button>";
+    }).join("");
+    Array.prototype.forEach.call(el("cutSwitch").querySelectorAll("button"), function (b) {
+      b.addEventListener("click", function () {
+        if (b.dataset.cut === narrCut) return;
+        narrCut = b.dataset.cut;
+        var defaults = CUT_FILTER_DEFAULTS[narrCut] || { sic: "ALL", state: "ALL" };
+        sel.sic = defaults.sic;
+        sel.state = defaults.state;
+        el("fSic").value = sel.sic;
+        el("fState").value = sel.state;
+        render();
+      });
+    });
+
+    var period = D.latest_period;
+    el("narrativeTitle").textContent = "Quarterly analysis — " + prettyPeriod(period);
+    var n = NARR[period + "|" + narrCut];
+    if (!n) {
+      el("narrativeSub").textContent = "";
+      el("narrativeBody").innerHTML =
+        '<div class="narr-empty">No written analysis for ' + esc(period) +
+        ' yet. Run the analyze step in the control panel.</div>';
+      return;
+    }
+    var c = n.counts || {};
+    el("narrativeSub").textContent =
+      (n.cut_label || "") + " · " + num(c.signals || 0) + " signals from " +
+      num(c.companies || 0) + " companies · balance " +
+      ((c.signal_balance >= 0 ? "+" : "") + Number(c.signal_balance || 0).toFixed(2));
+
+    // "this_quarter" always spans full width. The other three (looking ahead, QoQ, YoY)
+    // share the row in thirds only when all three are present; otherwise each present one
+    // takes the full row instead of leaving unused blank slots.
+    var otherKeys = ["looking_ahead", "quarter_over_quarter", "year_over_year"];
+    var allOthersPresent = otherKeys.every(function (k) { return !!(n.sections || {})[k]; });
+
+    var out = "";
+    SECTION_ORDER.forEach(function (entry) {
+      var key = entry[0];
+      var s = (n.sections || {})[key];
+      if (!s) return;
+      var wide = key === "this_quarter" || !allOthersPresent;
+      var expanded = !!expandedSections[key];
+      // Bullets first -- that's the part a busy exec actually reads -- with the full
+      // prose narrative tucked behind "Read full narrative" for whoever wants the detail.
+      out += '<div class="section-card' + (wide ? " wide" : "") + '">' +
+        '<div class="section-kicker">' + esc(entry[1]) + "</div>" +
+        "<h3>" + esc(s.headline || "") + "</h3>" +
+        ((s.bullets && s.bullets.length)
+          ? "<ul>" + s.bullets.map(function (b) { return "<li>" + esc(b) + "</li>"; }).join("") + "</ul>"
+          : "") +
+        (s.body
+          ? '<button type="button" class="read-more-btn" data-section="' + esc(key) +
+            '" aria-expanded="' + expanded + '">' +
+            (expanded ? "Show less ▴" : "Read full narrative ▾") + "</button>" +
+            '<div class="section-body"' + (expanded ? "" : " hidden") + ">" +
+            s.body.split(/\n{2,}/).map(function (p) {
+              return "<p>" + esc(p.trim()) + "</p>";
+            }).join("") + "</div>"
+          : "") +
+        "</div>";
+    });
+    el("narrativeBody").innerHTML = out
+      ? '<div class="sections">' + out + "</div>"
+      : '<div class="narr-empty">No sections were generated for this quarter.</div>';
+    Array.prototype.forEach.call(el("narrativeBody").querySelectorAll(".read-more-btn"), function (btn) {
+      btn.addEventListener("click", function () {
+        var key = btn.dataset.section;
+        expandedSections[key] = !expandedSections[key];
+        renderNarrative();
+      });
     });
   }
 
-  /* ---------- trigger jobs ---------- */
-  function run(job, button) {
-    button.disabled = true;
-    var stateEl = el(job + "State");
-    stateEl.innerHTML = '<span class="spin"></span>Starting…';
-    api("run", { method: "POST", body: JSON.stringify({ job: job }) })
-      .then(function () {
-        stateEl.innerHTML = '<span class="spin"></span>Queued on GitHub Actions…';
-        // GitHub takes a moment to register the run before the API reports it.
-        setTimeout(refresh, 4000);
-      })
-      .catch(function (e) {
-        stateEl.textContent = "Could not start: " + e.message;
-        button.disabled = false;
+  /* ---------- rendering ---------- */
+  function currentIdx() {
+    return {
+      sic: sel.sic === "ALL" ? -1 : D.dims.sic2.findIndex(function (r) { return r[0] === sel.sic; }),
+      state: sel.state === "ALL" ? -1 : D.dims.states.findIndex(function (r) { return r[0] === sel.state; })
+    };
+  }
+
+  function toggleTopic(name) {
+    activeTopic = activeTopic === name ? null : name;
+    render();
+  }
+
+  function render() {
+    var ix = currentIdx();
+    var agg = aggregate(ROLE.current, ix.sic, ix.state);
+    var qoqAgg = aggregate(ROLE.qoq, ix.sic, ix.state);
+    var yoyAgg = aggregate(ROLE.yoy, ix.sic, ix.state);
+    var qoq = qoqAgg.totals.total ? topicBalanceMap(qoqAgg) : null;
+    var yoy = yoyAgg.totals.total ? topicBalanceMap(yoyAgg) : null;
+
+    renderNarrative();
+    renderTiles(agg, qoqAgg);
+    var rows = agg.rows.slice().sort(function (a, b) { return a.balance - b.balance; });
+    renderChart(rows);
+    if (activeTopic && !rows.some(function (r) { return r.name === activeTopic; })) activeTopic = null;
+    renderTable(rows, qoq, yoy);
+  }
+
+  function renderTiles(agg, prior) {
+    var t = agg.totals;
+    var deltaHtml = '<span class="muted">No prior-quarter comparison</span>';
+    if (prior && prior.totals.total) {
+      var d = (agg.balance - prior.balance) * 100;
+      var cls = deltaClass(d, t.total);
+      var glyph = cls === "flat" ? "→" : (d > 0 ? "▲" : "▼");
+      var label = prettyPeriod(D.comparison_periods.qoq);
+      deltaHtml = '<span class="delta ' + cls + '">' + glyph + " " + pts(d) +
+        " pts</span> <span class=\"muted\">vs " + esc(label) + "</span>";
+    }
+    el("tiles").innerHTML =
+      tile("Companies represented", num(agg.companies), num(agg.filings) + " filings") +
+      tile("Economic signals", num(t.total), "Classified observations") +
+      tile("Headwind / tailwind split",
+        t.total ? pct(t.head / t.total) + " / " + pct(t.tail / t.total) : "—",
+        t.total ? pct(t.mixed / t.total) + " mixed" : "No signals") +
+      // Two lines, so the condition label and the delta never collide mid-word.
+      tile("Signal balance", t.total ? signed(agg.balance) : "—",
+        (t.total ? "<div>" + conditionLabel(agg.balance) + "</div>" : "") +
+        "<div>" + deltaHtml + "</div>");
+  }
+  function tile(label, value, meta) {
+    return '<div class="tile"><div class="label">' + esc(label) + '</div>' +
+      '<div class="value">' + esc(value) + '</div><div class="meta">' + meta + '</div></div>';
+  }
+
+  function renderChart(rows) {
+    var host = el("chart");
+    if (!rows.length) {
+      host.innerHTML = '<div class="empty">No analyzed signals for this combination of filters.</div>';
+      return;
+    }
+    var grid = '<div class="gridlines">' +
+      [0, 25, 50, 75, 100].map(function (p) {
+        return '<i class="' + (p === 50 ? "zero" : "") + '" style="left:' + p + '%"></i>';
+      }).join("") + '</div>';
+    var bars = rows.map(function (r) {
+      var w = Math.abs(r.balance) * 50;
+      var bar = Math.abs(r.balance) < 0.005
+        ? '<span class="bar zero"></span>'
+        : '<span class="bar ' + (r.balance < 0 ? "neg" : "pos") + '" style="width:' + w.toFixed(2) + '%"></span>';
+      return '<div class="row' + (r.name === activeTopic ? " active" : "") + '" tabindex="0" role="button" ' +
+        'data-topic="' + esc(r.name) + '" aria-label="' + esc(r.name) + ', balance ' + signed(r.balance) + '">' +
+        '<span class="name">' + esc(r.name) + '</span>' +
+        '<span class="track">' + bar + '</span>' +
+        '<span class="val">' + signed(r.balance) + '</span></div>';
+    }).join("");
+    var axis = '<div class="axis"><span></span><span class="ticks">' +
+      [["-1.0", 0], ["-0.5", 25], ["0", 50], ["+0.5", 75], ["+1.0", 100]].map(function (t) {
+        return '<span style="left:' + t[1] + '%">' + t[0] + "</span>";
+      }).join("") + '</span><span></span></div>';
+    host.innerHTML = '<div class="plot">' + grid + bars + axis + '</div>' +
+      '<p class="axis-note">−1 means every signal in that topic was a headwind; +1 means every one was a tailwind.</p>';
+
+    Array.prototype.forEach.call(host.querySelectorAll(".row"), function (row) {
+      var r = rows.filter(function (x) { return x.name === row.dataset.topic; })[0];
+      row.addEventListener("mousemove", function (e) { showTip(e, r); });
+      row.addEventListener("mouseleave", hideTip);
+      row.addEventListener("click", function () { toggleTopic(r.name); });
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTopic(r.name); }
+      });
+      row.addEventListener("focus", function () { showTipAt(row, r); });
+      row.addEventListener("blur", hideTip);
+    });
+  }
+
+  function tipHtml(r) {
+    return "<b>" + esc(r.name) + "</b><br>" +
+      '<span class="tt-row">Balance ' + signed(r.balance) + " · " + num(r.companies) + " companies</span><br>" +
+      '<span class="tt-row">' + num(r.head) + " headwind · " + num(r.tail) + " tailwind · " +
+      num(r.mixed) + " mixed</span>";
+  }
+  function showTip(e, r) {
+    var tt = el("tooltip");
+    tt.innerHTML = tipHtml(r);
+    tt.style.opacity = "1";
+    var x = e.clientX + 14, y = e.clientY + 14;
+    var box = tt.getBoundingClientRect();
+    if (x + box.width > window.innerWidth - 10) x = e.clientX - box.width - 14;
+    if (y + box.height > window.innerHeight - 10) y = e.clientY - box.height - 14;
+    tt.style.left = Math.max(8, x) + "px";
+    tt.style.top = Math.max(8, y) + "px";
+  }
+  function showTipAt(node, r) {
+    var rect = node.getBoundingClientRect();
+    showTip({ clientX: rect.left + 40, clientY: rect.top }, r);
+  }
+  function hideTip() { el("tooltip").style.opacity = "0"; }
+
+  var CHEVRON_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3l6 5-6 5" ' +
+    'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" ' +
+    'stroke-linejoin="round"/></svg>';
+
+  // The evidence panel for an open row is a free-floating div positioned over a blank
+  // "spacer" row rather than content living inside the table itself (see the CSS comment
+  // on .table-wrap for why: a cell inside the table, however it's styled, still gets read
+  // by the table's own column-width math). Position = the spacer's location; height =
+  // however tall the panel's actual content is, fed back into the spacer so the rows
+  // below get pushed down by the right amount. Called after every render, after the
+  // evidence finishes loading (content, and so height, changes), and on resize (width
+  // changes, so wrapped text reflows to a different height).
+  function syncDetailFloat() {
+    var floatEl = el("topicDetailFloat");
+    var spacer = el("tbody") && el("tbody").querySelector("tr.topic-detail-spacer > td");
+    if (!floatEl) return;
+    if (!spacer || !activeTopic) {
+      floatEl.hidden = true;
+      return;
+    }
+    var wrap = document.querySelector(".table-wrap");
+    floatEl.hidden = false;
+    floatEl.style.top = (spacer.getBoundingClientRect().top - wrap.getBoundingClientRect().top) + "px";
+    spacer.style.height = floatEl.getBoundingClientRect().height + "px";
+  }
+
+  function renderTable(rows, qoq, yoy) {
+    if (!rows.length) {
+      el("tbody").innerHTML = '<tr><td colspan="9" class="muted">No signals for this selection.</td></tr>';
+      return;
+    }
+    var html = "";
+    rows.forEach(function (r) {
+      var open = r.name === activeTopic;
+      html += '<tr class="topic-row' + (open ? " active" : "") + '" data-topic="' + esc(r.name) +
+        '" tabindex="0" role="button" aria-expanded="' + open +
+        '" aria-label="' + esc(r.name) + (open ? ", showing examples" : ", show examples") + '">' +
+        '<td><span class="topic-cell"><span class="expander">' + CHEVRON_SVG + '</span>' +
+        esc(r.name) + "</span></td>" +
+        "<td>" + signed(r.balance) + "</td>" +
+        "<td>" + num(r.companies) + "</td>" +
+        "<td>" + num(r.total) + "</td>" +
+        "<td>" + pct(r.headShare) + "</td>" +
+        "<td>" + pct(r.tailShare) + "</td>" +
+        "<td>" + pct(r.mixedShare) + "</td>" +
+        "<td>" + deltaCell(r, qoq, r.total) + "</td>" +
+        "<td>" + deltaCell(r, yoy, r.total) + "</td></tr>";
+      if (open) {
+        html += '<tr class="topic-detail-spacer" aria-hidden="true"><td colspan="9"></td></tr>';
+      }
+    });
+    el("tbody").innerHTML = html;
+    // The row itself -- chevron included, it's not a separate control -- is the only
+    // toggle: click (or re-click) it to open or close. A dedicated close button turned
+    // out to be redundant with that and just added a second, inconsistent way to do the
+    // same thing.
+    Array.prototype.forEach.call(el("tbody").querySelectorAll("tr.topic-row"), function (tr) {
+      tr.addEventListener("click", function () { toggleTopic(tr.dataset.topic); });
+      tr.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTopic(tr.dataset.topic); }
+      });
+    });
+    if (activeTopic) {
+      el("topicDetailFloat").innerHTML = '<div class="empty">Loading evidence…</div>';
+      syncDetailFloat();
+      loadTopicDetail(activeTopic, rows);
+    } else {
+      syncDetailFloat();
+    }
+  }
+  function deltaCell(r, map, sample) {
+    if (!map || !(r.name in map)) return '<span class="muted">—</span>';
+    var d = (r.balance - map[r.name]) * 100;
+    var title = sample < SMALL_SAMPLE ? ' title="Based on fewer than ' + SMALL_SAMPLE +
+      ' signals — treat as noise."' : "";
+    return '<span class="delta ' + deltaClass(d, sample) + '"' + title + ">" + pts(d) + "</span>";
+  }
+
+  /* ---------- topic detail (a floating panel positioned under its row) ---------- */
+  function loadTopicDetail(name, rows) {
+    var r = rows.filter(function (x) { return x.name === name; })[0];
+    var host = el("topicDetailFloat");
+    if (!host || !r) return;
+    var catIdx = D.dims.categories.indexOf(name);
+    if (D.evidence.indexOf(catIdx) < 0) {
+      host.innerHTML = '<div class="empty">No evidence available for this selection.</div>';
+      syncDetailFloat();
+      return;
+    }
+    loadJson("evidence/" + catIdx + ".json", evidenceCache).catch(function () { return []; })
+      .then(function (all) {
+        if (activeTopic !== name) return;
+        var host2 = el("topicDetailFloat");
+        if (!host2) return;
+        all = (all || []).filter(function (row) {
+          if (sel.sic !== "ALL" && row.sic2 !== sel.sic) return false;
+          if (sel.state !== "ALL" && row.state !== sel.state) return false;
+          return true;
+        });
+        var byDir = function (d) {
+          return all.filter(function (x) { return x.direction === d; })
+            .sort(function (a, b) { return (b.intensity || 0) - (a.intensity || 0); }).slice(0, 5);
+        };
+        host2.innerHTML = '<div class="cols">' +
+          evidenceCol("head", "▼ Headwinds", byDir("Headwind"), r.head, "headwind") +
+          evidenceCol("tail", "▲ Tailwinds", byDir("Tailwind"), r.tail, "tailwind") + "</div>";
+        syncDetailFloat();
       });
   }
-  el("downloadBtn").addEventListener("click", function () { run("download", this); });
-  el("analyzeBtn").addEventListener("click", function () { run("analyze", this); });
-  el("publishBtn").addEventListener("click", function () { run("publish", this); });
+  function evidenceCol(cls, title, rows, count, word) {
+    if (!count) {
+      return '<div class="brief ' + cls + '"><h3>' + esc(title) + "</h3>" +
+        '<p class="count">No ' + word + " signals were identified.</p></div>";
+    }
+    var html = '<div class="brief ' + cls + '"><h3>' + esc(title) + "</h3>" +
+      '<p class="count">' + num(count) + " signals · showing the " + rows.length + " strongest</p>";
+    if (!rows.length) html += '<p class="muted">No quotes available at this filter depth.</p>';
+    rows.forEach(function (ex) {
+      html += '<div class="ex"><div class="who">' + esc(ex.company) +
+        (ex.ticker ? " (" + esc(ex.ticker) + ")" : "") + " — " + esc(ex.form) +
+        ", period ended " + esc(ex.report_date) + "</div>" +
+        '<div class="why">' + esc(ex.summary) + "</div>" +
+        (ex.quote ? "<blockquote>“" + esc(ex.quote) + "”" +
+          (ex.url ? ' <a href="' + esc(ex.url) + '" target="_blank" rel="noopener">filing</a>' : "") +
+          "</blockquote>" : "") + "</div>";
+    });
+    return html + "</div>";
+  }
 
-  loadStatus();
-  refresh();
-  setInterval(refresh, 15000);
+  function loadJson(path, cache) {
+    if (cache[path]) return Promise.resolve(cache[path]);
+    return fetch(path).then(function (r) {
+      if (!r.ok) throw new Error("not found");
+      return r.json();
+    }).then(function (j) { cache[path] = j; return j; });
+  }
+
+  /* ---------- filters ---------- */
+  function buildFilters() {
+    el("fSic").innerHTML = '<option value="ALL">All manufacturing</option>' +
+      D.dims.sic2.map(function (r) {
+        return '<option value="' + esc(r[0]) + '">' + esc(r[0] + " — " + r[1]) + "</option>";
+      }).join("");
+    el("fState").innerHTML = '<option value="ALL">All states</option>' +
+      D.dims.states.map(function (r) {
+        return '<option value="' + esc(r[0]) + '">' + esc(r[1] + " (" + r[0] + ")") + "</option>";
+      }).join("");
+    el("fSic").addEventListener("change", function () { sel.sic = this.value; render(); });
+    el("fState").addEventListener("change", function () { sel.state = this.value; render(); });
+  }
+
+  /* ---------- boot ---------- */
+  initTheme();
+  window.addEventListener("resize", syncDetailFloat);
+  fetch("data.json").then(function (r) { return r.json(); }).then(function (json) {
+    D = json;
+    if (!D.counts.signals && !D.counts.filings) {
+      el("stamp").textContent = "No analyzed data yet for " + prettyPeriod(D.latest_period) + ".";
+    } else {
+      var when = new Date(D.generated_at);
+      el("stamp").textContent = "Data for " + prettyPeriod(D.latest_period) + " · " +
+        num(D.counts.signals) + " signals from " + num(D.counts.filings) + " filings · updated " +
+        (isNaN(when) ? D.generated_at : when.toLocaleDateString("en-US",
+          { year: "numeric", month: "long", day: "numeric" }));
+    }
+    buildFilters();
+    fetch("narratives.json").then(function (r) { return r.ok ? r.json() : {}; })
+      .catch(function () { return {}; })
+      .then(function (n) { NARR = n; render(); });
+  }).catch(function (e) {
+    el("stamp").textContent = "Could not load data.json — if you opened this file directly, " +
+      "serve the folder over HTTP instead.";
+  });
 })();
 </script>
 </body>

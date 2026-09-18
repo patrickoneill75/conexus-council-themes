@@ -6,7 +6,7 @@
  * actual extraction/matching/derivation pipeline is Python, in pcn/pipeline/ (see
  * the design doc and pcn/CODING_PROTOCOL.md for the full build).
  *
- * Admin routes reuse the Mini App Platform's own admin accounts (see
+ * Admin routes reuse Connector's shared admin accounts (see
  * src/beta_auth.js's requireBetaAuth), same as src/consensus.js -- no separate
  * control-panel password.
  *
@@ -19,7 +19,7 @@
  * run) for a different meeting series entirely, so running one project's pipeline
  * never touches another's data even transiently. "PCN Issue Map" itself is just the
  * project seeded by default (id "pcn"); see PROJECTS_KEY below and the "Add new
- * project" flow in public/pcn/index.html.
+ * project" flow in public/pcn/control-panel/index.html.
  *
  * Storage: BOX_KV under a "pcn:" prefix.
  *   pcn:projects                 -> JSON array of { id, name, folderId, folderName,
@@ -27,10 +27,10 @@
  *     first time it's read, so GET projects always has at least one entry.
  *   pcn:project:<id>:network      -> JSON, the latest connection network
  *     pcn/pipeline/derive computed for that project (see relay/projects/<id>/network
- *     below) -- what public/pcn/network.html renders.
+ *     below) -- what public/pcn/control-panel/network.html renders.
  *   pcn:project:<id>:timeline     -> JSON, the latest change-over-time breakdown
  *     pcn/pipeline/timeline computed for that project (see relay/projects/<id>/
- *     timeline below) -- what public/pcn/timeline.html renders.
+ *     timeline below) -- what public/pcn/control-panel/timeline.html renders.
  *   pcn:project:<id>:run-dispatch -> ISO timestamp of the last POST run dispatch for
  *     that project, so run-status below can tell a fresh run apart from a stale
  *     already-completed one -- same purpose as src/consensus.js's DISPATCH_PREFIX.
@@ -439,9 +439,9 @@ export async function handlePcnApi(route, request, env) {
   if (!auth) return json({ error: "Not signed in" }, 401);
 
   // GET box/folders?id=0 -- same folder-picker copy Consensus's survey builder has,
-  // gated by requireBetaAuth like everything else admin-side in this file rather than
-  // worker.js's own CONTROL_PASSWORD session. Not project-scoped: browsing Box
-  // itself isn't project data, only the folder a project ends up pointed at is.
+  // gated by requireBetaAuth like everything else admin-side in this file. Not
+  // project-scoped: browsing Box itself isn't project data, only the folder a
+  // project ends up pointed at is.
   if (route === "box/folders" && method === "GET") {
     const token = await boxAccessToken(env);
     if (!token) return json({ error: "Box is not connected yet." }, 409);
@@ -645,7 +645,7 @@ export async function handlePcnApi(route, request, env) {
     }
 
     // GET projects/<id>/network -> { network, derivedAt } | { network: null,
-    // derivedAt: null } -- what public/pcn/network.html renders for this project.
+    // derivedAt: null } -- what public/pcn/control-panel/network.html renders for this project.
     // Published only by relay/projects/<id>/network above (the pipeline run), never
     // computed on the fly here.
     if (sub === "network" && method === "GET") {
@@ -654,7 +654,7 @@ export async function handlePcnApi(route, request, env) {
     }
 
     // GET projects/<id>/timeline -> same publish-only-via-relay shape as network
-    // above, for public/pcn/timeline.html.
+    // above, for public/pcn/control-panel/timeline.html.
     if (sub === "timeline" && method === "GET") {
       const raw = await env.BOX_KV.get(timelineKey(projectId));
       return json(raw ? JSON.parse(raw) : { timeline: null, derivedAt: null });

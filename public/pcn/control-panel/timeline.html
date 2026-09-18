@@ -55,8 +55,8 @@
     <div class="who">
       <span id="whoami"></span>
       <span id="projectLabel"></span>
-      <a class="link" id="networkLink" href="/pcn/network.html">Network view</a>
-      <a class="link" id="controlPanelLink" href="/pcn/index.html">&larr; Control panel</a>
+      <a class="link" id="networkLink" href="/pcn/control-panel/network.html">Network view</a>
+      <a class="link" id="controlPanelLink" href="/pcn/control-panel/index.html">&larr; Control panel</a>
       <button type="button" class="link" id="signOutBtn">Sign out</button>
     </div>
   </header>
@@ -93,7 +93,7 @@
   var el = function (id) { return document.getElementById(id); };
   var token = null;
   try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
-  if (!token) { window.location.href = "/beta/login.html"; return; }
+  if (!token) { window.location.href = "/admin/login.html"; return; }
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -101,7 +101,7 @@
   }
   function signOut() {
     try { sessionStorage.removeItem("beta-token"); } catch (e) {}
-    window.location.href = "/beta/login.html";
+    window.location.href = "/admin/login.html";
   }
   el("signOutBtn").addEventListener("click", signOut);
 
@@ -118,8 +118,8 @@
 
   var projectId = new URL(window.location.href).searchParams.get("project") || "pcn";
   var suffix = "?project=" + encodeURIComponent(projectId);
-  el("networkLink").href = "/pcn/network.html" + suffix;
-  el("controlPanelLink").href = "/pcn/index.html" + suffix;
+  el("networkLink").href = "/pcn/control-panel/network.html" + suffix;
+  el("controlPanelLink").href = "/pcn/control-panel/index.html" + suffix;
 
   fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
     .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })

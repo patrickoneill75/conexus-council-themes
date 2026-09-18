@@ -1,8 +1,10 @@
 # Setup
 
-Same architecture as `conexus-mcm`: a Cloudflare Worker serves `public/` and handles
-`/api/*`, the control panel logs in with Box and picks a folder, and a GitHub Actions run
-does the reading and publishing. Nothing secret ever reaches the browser.
+"Connector": a Cloudflare Worker serves `public/` and handles `/api/*`, every mini
+app's control panel logs in with Box and picks a folder, and a GitHub Actions run does
+the reading and publishing for each one. Nothing secret ever reaches the browser, and
+every mini app signs in through the same admin-account system -- there is no
+per-app password anywhere any more.
 
 Everything below is done in a browser. There are no terminal steps.
 
@@ -10,21 +12,30 @@ Everything below is done in a browser. There are no terminal steps.
 
 ## What you end up with
 
+Every mini app follows the same convention: its public-ready page lives at its own
+base path (`/<id>`), and its control panel always lives at `/<id>/control-panel` --
+gated by the shared admin accounts, never a password of its own.
+
 | Piece | Where it lives | What it does |
 | --- | --- | --- |
-| `public/index.html` | Worker static assets | The public dashboard. Power BI pages plus the Council Themes tab. No login. |
-| `public/admin.html` | Worker static assets | The control panel. Helper/Survey upload, Update Dashboard, and the Meetings table (delete a meeting's published data and re-synthesize what's left) on the main page; Box login, the Data Folder picker, and Refresh Dashboard/Themes/All under Developer. |
-| `src/worker.js` | Cloudflare Worker | `/api/*`. Holds the password, the GitHub token and the Box credentials. |
+| `public/index.html` | Worker static assets | The **public grid** -- Connector's own front door. Reads `public/apps.js` and each app's current visibility tier and shows a tile only for the ones set to "Public". No login, no control-panel links. |
+| `public/apps.js` | Worker static assets | The one shared registry of every mini app (id, name, description, base URL, control panel URL) -- read by both the public grid and the admin hub. Add a new mini app here once. |
+| `public/admin/` | Worker static assets | The admin hub: sign-in (`login.html`), the grid of *every* mini app regardless of visibility (`index.html`), and Settings (`settings.html`) -- admin accounts plus each app's visibility tier. See **8 · The admin hub** below. |
+| `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. Multi-user admin accounts (signup, sign-in, password reset, the admin list) and the per-app visibility tiers every mini app's own page reads via `public/tier-gate.js`. |
+| `public/tier-gate.js` | Worker static assets | Included by every mini app's public base page. Redirects to sign-in when that app's tier is "Admin-only" and there's no session; otherwise reveals the page immediately. |
+| `public/council-data/` | Worker static assets | Council Themes/Quant: the public dashboard (`index.html`, Power BI pages plus the Council Themes tab) and its control panel (`control-panel/index.html` -- Helper/Survey upload, Update Dashboard, the Meetings table, Box login and the Data Folder picker under Developer). See **5 · Connect Box and set up the panel** below. |
+| `src/council_data.js` | Cloudflare Worker | `/api/council-data/*`. Everything the Council Themes/Quant control panel does, gated by the shared admin accounts via `requireBetaAuth` -- no password of its own. |
+| `src/worker.js` | Cloudflare Worker | `/api/*` routing to every mini app, plus the one shared Box OAuth login flow (`box/authorize-url`, `box/callback`) every mini app's own Box connection reuses. |
 | `scripts/update_dashboard.py` | GitHub Actions | Auto-detects every meeting in the Data Folder's Post-Meeting Survey export that isn't in `data/feedback_log.json` yet (resolving Year/Quarter/Region per meeting from the Council Meeting Helper export), extracts and publishes each one's themes with Claude, then rebuilds the quant dashboard. |
 | `scripts/setup_analysis.py` | GitHub Actions | Re-synthesizes every quarter already in `data/feedback_log.json`, no new survey involved — the one-time bootstrap (or a full redo). |
 | `scripts/remove_meetings.py` | GitHub Actions | Deletes one or more meetings' data from the Feedback Log and both published dashboards, then re-synthesizes every quarter still left. Also strips the matching rows out of the Data Folder's own Helper and Survey exports in Box, best-effort, so the meeting doesn't come back on the next Update Dashboard. Triggered from the Meetings table's "Remove & refresh" button. |
-| `public/beta/` | Worker static assets | The Mini App Platform: a grid of every tool built on this Worker, gated by its own admin accounts (separate from `admin.html`'s single password). See **8 · The Mini App Platform** below. |
-| `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. The platform's multi-user admin accounts -- signup, sign-in, password reset, the admin list. Completely independent of `src/worker.js`'s own `CONTROL_PASSWORD` gate. |
-| `public/consensus/` | Worker static assets | Consensus: survey builder + results (`index.html`, `results.html`, beta-account gated) and the public respondent chat (`respond.html`, no login). See **9 · Consensus** below. |
-| `src/consensus.js` | Cloudflare Worker | `/api/consensus/*`. Survey CRUD, the live follow-up-question chat, response storage in Box, and triggering the batch analysis -- gates its admin routes with the same beta accounts via `requireBetaAuth`. |
-| `scripts/consensus_analyze.py` | GitHub Actions | Synthesizes a survey's collected responses (out of Box) into prioritized themes per question with Claude, and publishes `public/consensus-results/<id>.json`. Triggered from the Consensus admin page's "Analyze" button. |
-| `public/pcn/` | Worker static assets | PCN Issue Map: the control panel (`index.html`, beta-account gated). See **10 · PCN Issue Map** below. |
-| `src/pcn.js` | Cloudflare Worker | `/api/pcn/*`. Beta-account gated like Consensus, and shares the same Box connection every other tool here uses -- picks its own one data folder the same way Consensus picks a responses folder per survey. |
+| `public/consensus/` | Worker static assets | Consensus: the public respondent chat (`respond.html`, no login, per-survey link) and its control panel (`control-panel/{index,results}.html`, admin-gated). See **9 · Consensus** below. |
+| `src/consensus.js` | Cloudflare Worker | `/api/consensus/*`. Survey CRUD, the live follow-up-question chat, response storage in Box, and triggering the batch analysis -- gates its admin routes with the same admin accounts via `requireBetaAuth`. |
+| `scripts/consensus_analyze.py` | GitHub Actions | Synthesizes a survey's collected responses (out of Box) into prioritized themes per question with Claude, and publishes `public/consensus-results/<id>.json`. Triggered from the Consensus control panel's "Analyze" button. |
+| `public/pcn/` | Worker static assets | PCN Issue Map: its control panel (`control-panel/{index,network,timeline}.html`, admin-gated) -- no separate public page yet. See **10 · PCN Issue Map** below. |
+| `src/pcn.js` | Cloudflare Worker | `/api/pcn/*`. Admin-gated like Consensus, and shares the same Box connection every other tool here uses -- picks its own one data folder the same way Consensus picks a responses folder per survey. |
+| `public/mcm/` | Worker static assets | Manufacturing Conditions Monitor: the public dashboard (`index.html`) and its control panel (`control-panel/index.html`, admin-gated). See **11 · Manufacturing Conditions Monitor** below. |
+| `src/mcm.js` | Cloudflare Worker | `/api/mcm/*`. Same shared Box connection and admin accounts as every other mini app; its own data folder. |
 
 ---
 
@@ -90,8 +101,8 @@ Add these under `Settings → Secrets and variables → Actions` in your reposit
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → "Edit Cloudflare Workers" |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → Workers & Pages → Account details |
-| `CONTROL_PASSWORD` | A password you choose for the control panel |
 | `PANEL_GITHUB_TOKEN` | A fine-grained GitHub token, this repo only, **Actions: read and write** |
+| `poneill_password` | A password you choose — bootstraps the *first* admin account (see step 8). Every admin after that sets their own password through the sign-in page itself, not a secret. |
 | `BOX_CLIENT_ID` | Box app Configuration tab (the shared app — see step 3) |
 | `BOX_CLIENT_SECRET` | Box app Configuration tab (the shared app — see step 3) |
 | `BOX_RELAY_SECRET` | A long random string you make up |
@@ -112,13 +123,15 @@ terminal.
 run sends it. They must be the same value.
 
 Check it worked by opening `https://<your-worker-address>/api/config-check`. You are
-looking for `"configured": true`.
+looking for `"buttons_configured": true` and `"box_kv_bound": true`.
 
 ---
 
 ## 5 · Connect Box and set up the panel
 
-1. Open `https://<your-worker-address>/admin.html` and sign in with `CONTROL_PASSWORD`.
+1. Open `https://<your-worker-address>/admin/login.html` and sign in with your admin
+   account (see step 8 if you haven't set one up yet), then open
+   **Council Themes/Quant** → **Control panel** from the hub.
 2. **Log in with Box**. Box asks you to authorise the app; it comes back to the panel.
 3. **Data Folder** → **Choose folder…** and pick (or create) a Box folder to hold the
    three source files: `Council Meeting Helper.csv`, `Post-Meeting Survey.csv` (both
@@ -176,18 +189,14 @@ which is the problem this wrapper exists to avoid.
 
 ---
 
-## 8 · The Mini App Platform
+## 8 · The admin hub
 
-Every tool built the same way as this one (Claude → GitHub → Cloudflare) ends up needing
-its own repo, its own Worker, its own round of "paste in the API keys again." `/beta` is a
-thin layer on top of *this* Worker that fixes that going forward: one grid of tools
-("mini apps" — that's the name to use when asking for a new one), gated by admin accounts
-that live in the same KV namespace this project already uses.
-
-**It's a separate thing from everything above.** The Council Survey Dashboard
-(`public/index.html`) and its control panel (`public/admin.html`, `CONTROL_PASSWORD`) keep
-working exactly as they do today, at the same addresses, for your whole team — `/beta`
-doesn't touch either. It's reachable at `https://<your-worker-address>/beta/`.
+**Connector** is the name of the whole platform: one public grid at the site root
+(`public/index.html`, no login) listing whichever mini apps are currently set to
+"Public", and one admin hub at `/admin/` (sign-in, the grid of *every* mini app, and
+Settings) that every mini app's control panel signs into via the same admin accounts.
+There is no per-app password anywhere — Council Themes/Quant's control panel signs in
+exactly the same way PCN/Consensus/MCM's always have.
 
 ### Signing in
 
@@ -195,19 +204,20 @@ doesn't touch either. It's reachable at `https://<your-worker-address>/beta/`.
    **Actions → Set Cloudflare secrets → Run workflow** — same mechanism as every other
    secret in this project (step 4 above). This seeds one admin account: email
    `poneill@conexusindiana.com`, username `poneill`, that password. It's read exactly
-   once, the first time anyone hits `/beta`; after that the account is stored the same
+   once, the first time anyone hits `/admin`; after that the account is stored the same
    way every other admin's is, and the secret is never read again.
-2. Open `/beta/login.html` and sign in with that username/email and password.
+2. Open `/admin/login.html` and sign in with that username/email and password.
 
 ### Adding another admin
 
-From the grid (`/beta/`), **Manage admins** → enter their email → **Add**. That's it —
-they're now allowed to set up their own account, but nothing is created for them yet.
+From **Settings** (`/admin/settings.html`, linked from the hub) → **Add an admin** →
+enter their email → **Add**. That's it — they're now allowed to set up their own
+account, but nothing is created for them yet.
 
-They go to `/beta/login.html` → **Set up new account / Forgot password** → enter their
+They go to `/admin/login.html` → **Set up new account / Forgot password** → enter their
 email → if it's on the list and doesn't have a password yet, they're prompted to pick a
 username and password right there. The same button handles "I forgot my password": once
-another admin clears it for you (**Manage admins** → **Reset**), your account is back in
+another admin clears it for you (**Settings** → **Reset**), your account is back in
 that same "allowed, no password yet" state, and you use the same button to set a new one.
 
 **Worth knowing:** there's no email-sending step anywhere in that flow — setting a
@@ -222,23 +232,45 @@ couple more routes in `src/beta_auth.js`, not a different storage model. Ask for
 want it; it wasn't built now because it adds a moving part (an email provider) this
 project doesn't otherwise need.
 
+### App visibility
+
+Also on **Settings**, per app: **Public** (listed on the public grid at the site root),
+**Hidden** (not listed there, but the page still works for anyone with the direct
+link), or **Admin-only** (not listed, and the page itself redirects to sign-in unless
+you're already signed in — the same check every admin page here already does, just
+driven by this setting instead of being hardcoded). Council Themes/Quant and
+Manufacturing Conditions Monitor default to Public; PCN Issue Map and Consensus
+default to Admin-only, since neither has a public-facing page built yet.
+
+One thing this does **not** do: for a page whose content is plain static JSON
+(Council Themes/Quant, MCM's dashboard), "Admin-only" gates the *page*, not the
+underlying JSON files themselves (`council-themes.json`, `/mcm/data.json`, etc.) —
+those stay fetchable directly by anyone who already knows or guesses the exact
+filename, same as today. Airtight gating of the data itself would mean serving it
+through an authenticated `/api/*` route instead of a static file; ask if you need that.
+
 ### Adding a mini app
 
-1. Build it wherever makes sense in the repo — its own `public/<name>/` pages, its own
-   `/api/<name>/*` routes if it needs a backend, its own GitHub Actions workflow if it
-   needs one. `src/beta_auth.js` and the rest of the platform don't need to know anything
-   about how it works internally.
-2. Add one entry to the `MINI_APPS` array at the top of `public/beta/index.html` — name,
-   description, and its public/admin URLs (either can be omitted). That's the only step
-   that makes it show up in the grid.
+1. Build it wherever makes sense in the repo — its own `public/<id>/` pages (base page
+   at `public/<id>/index.html`, control panel at `public/<id>/control-panel/index.html`),
+   its own `/api/<id>/*` routes if it needs a backend (gated by `requireBetaAuth`, never
+   a password of its own), its own GitHub Actions workflow if it needs one.
+   `src/beta_auth.js` and the rest of the platform don't need to know anything about how
+   it works internally.
+2. Add one entry to the `APPS` array in `public/apps.js` — id, name, description; its
+   `baseUrl`/`controlPanelUrl` are just `/<id>` and `/<id>/control-panel`. That's the
+   only step that makes it show up in the admin hub's grid and in Settings' visibility
+   list. If its base page should ever be gated by the "Admin-only" tier, also add
+   `<script src="/tier-gate.js" data-app="<id>"></script>` (and
+   `<style>html{visibility:hidden}</style>`) to that page, same as
+   `public/council-data/index.html`/`public/mcm/index.html` do.
 3. If it needs its own secrets (an API key, a webhook secret, whatever), they follow the
    same pattern every secret in this project already follows: store it as a GitHub
    repository secret, and either send it to Cloudflare via
    **Actions → Set Cloudflare secrets** (add a step there, same shape as `poneill_password`'s)
    if a Worker route needs to read it, or leave it as a plain repository secret if only a
    GitHub Actions script needs it (like `ANTHROPIC_API_KEY` already does — see step 4).
-   No need to rename anything already set up for the Council Survey Dashboard; each mini
-   app's secrets are namespaced by whatever name you give them.
+   Each mini app's secrets are namespaced by whatever name you give them.
 
 ---
 
@@ -249,9 +281,10 @@ ask Claude to generate a set number of follow-up questions on the fly, based on 
 you give it. Once responses are in, one click synthesizes each question into prioritized
 themes plus areas of consensus and areas needing more information.
 
-Reachable from the grid (`/beta/`) → **Consensus**, or directly at
-`/consensus/index.html`. Uses the same admin accounts as the rest of `/beta` — nothing
-extra to sign in to — and the same Box connection as the Council Survey Dashboard.
+Reachable from the admin hub (`/admin/`) → **Consensus** → **Control panel**, or
+directly at `/consensus/control-panel/index.html`. Uses the same admin accounts as
+every other mini app — nothing extra to sign in to — and the same Box connection as
+Council Themes/Quant.
 
 ### Setup
 
@@ -349,7 +382,8 @@ doc's complete 8-step build order.
 
 Its Box access is the **same shared, user-delegated connection** every other tool here
 uses — nothing new to set up. If the control panel says "Not connected," log in with
-Box from `admin.html`'s Developer section, same as you would for anything else.
+Box from Council Themes/Quant's control panel Developer section
+(`/council-data/control-panel/index.html`), same as you would for anything else.
 
 **Projects.** This isn't just a PCN-only tool: the control panel's **Project**
 dropdown holds any number of fully walled-off projects, each with its own Box data
@@ -362,8 +396,8 @@ own empty control panel to configure its own Box folder from scratch. Every URL 
 the app (control panel, network view, timeline view) carries `?project=<id>` so a
 bookmark or link always returns to the right one.
 
-**Using it on real meetings**, from a project's control panel (Mini App Platform
-grid → PCN Issue Map, or `?project=<id>` for another one):
+**Using it on real meetings**, from a project's control panel (admin hub → PCN Issue
+Map → **Control panel**, or `?project=<id>` for another one):
 1. **Choose folder…** picks this project's one Box data folder —
    `ledger.json`/`issues.json`/`resolutions.json` at its root, plus a `raw/`
    subfolder holding every uploaded meeting file verbatim for audit. **Test Box
@@ -478,18 +512,18 @@ real project's own data.
 A quarterly headwinds/tailwinds dashboard for U.S. manufacturing, built entirely from
 SEC EDGAR filings (10-K/10-Q) — no council survey data involved. This mini app was
 ported in from what used to be a fully standalone repo/Worker/Box app; it now reuses
-everything this repo already has (the shared Box connection, `BOX_KV`, the `/beta`
-admin accounts, GitHub Actions dispatch), so the **only step below you actually have
-to do by hand is adding one secret**.
+everything this repo already has (the shared Box connection, `BOX_KV`, the admin
+accounts, GitHub Actions dispatch), so the **only step below you actually have to do
+by hand is adding one secret**.
 
 **Add the one new secret.** `SEC_CONTACT_EMAIL` in step 4's table above — nothing
 else. Every other secret it needs (`ANTHROPIC_API_KEY`, `BOX_RELAY_URL`,
 `BOX_RELAY_SECRET`, the Box app credentials, the GitHub token) already exists in this
 repository, shared with Council Themes/Quant/PCN/Consensus.
 
-**Open it.** From the Mini App Platform (`/beta/index.html`), open **Manufacturing
-Conditions Monitor**. Its control panel (`public/mcm/index.html`) needs a signed-in
-`/beta` account — same accounts as every other mini app here, no password of its own.
+**Open it.** From the admin hub (`/admin/`), open **Manufacturing Conditions
+Monitor** → **Control panel** (`/mcm/control-panel/index.html`). Needs a signed-in
+admin account — same accounts as every other mini app here, no password of its own.
 
 **Pick a Box folder.** Under **Data folder**, click **Choose folder…** and pick (or
 create) an empty folder. This is MCM's own folder — separate from Council Themes/
@@ -503,11 +537,11 @@ standalone tool had (`mcm_download.yml` → `mcm_analyze.yml` → `mcm_publish.y
 dispatched from `POST /api/mcm/run`). Only the latest complete quarter and its QoQ/
 YoY comparisons are ever downloaded or analyzed (`mcm/periods.py:required_quarters`) —
 see the original tool's own design notes, unchanged by the port. The published
-dashboard (`public/mcm/dashboard.html`, generated by `mcm/site.py`) is **fully public,
-no sign-in at all** — it fetches only static JSON (`data.json`, `narratives.json`,
-`status.json`, `evidence/*.json`) straight off the asset layer, exactly like this
-repo's own root `public/index.html`. Only the control panel that *runs* the pipeline
-is gated.
+dashboard (`public/mcm/index.html`, MCM's public base page, generated by
+`mcm/site.py`) fetches only static JSON (`data.json`, `narratives.json`,
+`status.json`, `evidence/*.json`) straight off the asset layer — whether it's
+currently public depends on its visibility tier in Settings (step 8), same as every
+other mini app's base page.
 
 ---
 
@@ -527,44 +561,57 @@ is gated.
   your Box account. Both calls are logged in the Actions run's own output.
 - **Credentials never reach a browser.** The Box client secret, the GitHub token, and the
   Anthropic API key live in Cloudflare Worker / GitHub Actions secrets respectively; the
-  Box token pair lives in Workers KV. The control panel only ever holds a short-lived
-  session token, and survey uploads are proxied through the Worker so a Box token never
+  Box token pair lives in Workers KV. Every control panel only ever holds a short-lived
+  session token, and file uploads are proxied through the Worker so a Box token never
   reaches the browser either.
-- **Revocable in one click.** *Disconnect* in the panel deletes the stored token pair, and
-  you can revoke the app's access from your own Box account settings at any time.
+- **Revocable in one click.** *Disconnect* (Council Themes/Quant's control panel,
+  Developer section) deletes the stored token pair, and you can revoke the app's access
+  from your own Box account settings at any time. Every other mini app's own Box
+  connection is the same underlying token, so this disconnects all of them at once.
 - **Auditable.** Every analysis run is a logged GitHub Actions run showing when it ran,
   who triggered it, and exactly what it extracted, appended, and published.
-- **`/beta`'s admin accounts are a separate, lighter-weight system.** Passwords are hashed
-  (PBKDF2-SHA256, a random salt per account) — never stored or logged in plain text — and
-  session tokens are HMAC-signed, not cookies, so there's nothing for a CSRF attack to
-  ride on. The iteration count is intentionally lower than a typical server-side
-  recommendation, because it has to fit inside a Cloudflare Worker's per-request CPU
-  budget (not wall-clock time) rather than a normal server's — see the comment above
+- **The admin accounts (`/api/beta/*`) are a separate, lighter-weight system** from
+  Box/GitHub credentials, and now the *only* sign-in system in this app — there is no
+  per-app password anywhere any more. Passwords are hashed (PBKDF2-SHA256, a random
+  salt per account) — never stored or logged in plain text — and session tokens are
+  HMAC-signed, not cookies, so there's nothing for a CSRF attack to ride on. The
+  iteration count is intentionally lower than a typical server-side recommendation,
+  because it has to fit inside a Cloudflare Worker's per-request CPU budget (not
+  wall-clock time) rather than a normal server's — see the comment above
   `PBKDF2_ITERATIONS` in `src/beta_auth.js` for the actual numbers. What it does *not* do
   is verify email ownership before letting someone set a password (see step 8 above) — a
   deliberate simplicity trade for a small, trusted admin list, not an oversight.
+- **Per-app visibility (Settings, step 8) is a curation/UI control, not a hard access
+  boundary for static-JSON pages.** "Admin-only" gates the *page* the same way every
+  admin page here already gates itself (a client-side session check redirecting to
+  sign-in), but does not additionally lock the underlying static JSON files
+  (`council-themes.json`, `quant-dashboard.json`, `/mcm/data.json`, etc.) — those stay
+  fetchable directly by anyone who already knows or guesses the exact filename. Nothing
+  in any of them is more sensitive than what "Public" already shows by design (see
+  step 8's note on this), so this is a deliberate, documented tradeoff, not a gap
+  discovered later.
 - **Consensus's respondent-facing routes are intentionally public and unauthenticated**
   (`GET /api/consensus/public/*`, `POST /api/consensus/followup`, `POST
   /api/consensus/submit`) — that's the whole point of a survey link. None of them trust
   the client for anything that matters: which follow-up to generate (and how many to
   allow) is read from the stored survey, never from the request, and `submit` only
-  writes to the one Box folder that survey's admin already configured. The admin routes
-  (create/edit a survey, trigger analysis) require a signed-in `/beta` account, same as
-  the rest of the platform.
+  writes to the one Box folder that survey's admin already configured. The control
+  panel routes (create/edit a survey, trigger analysis) require a signed-in admin
+  account, same as the rest of the platform.
 - **PCN Issue Map's network view is the one page in this repo that loads an external
   script** (D3, from a CDN) — needed for the force-directed graph layout; every other
   page here is hand-rolled with no third-party JS. It's a static, widely-used
   visualization library with no data collection of its own; nothing it renders is
   fetched from anywhere but this Worker's own `GET /api/pcn/network`.
-- **Manufacturing Conditions Monitor's published dashboard is intentionally public and
-  unauthenticated** (`public/mcm/dashboard.html`) — it only ever reads static SEC-filing
-  facts and Claude-written narrative text, nothing about council members or survey
-  respondents, so there's nothing in it that needs gating beyond however you already
-  choose to expose this whole site (see step 7). Only the control panel that *runs* the
-  download/analyze/publish jobs (`public/mcm/index.html`) requires a signed-in `/beta`
-  account. `SEC_CONTACT_EMAIL` is not sensitive — it's sent in plain text as part of SEC
-  EDGAR's required fair-access request header, the same way any browser's user agent is
-  — it's a repository secret only because there's no other per-repo config file for it.
+- **Manufacturing Conditions Monitor's published dashboard** (`public/mcm/index.html`)
+  only ever reads static SEC-filing facts and Claude-written narrative text, nothing
+  about council members or survey respondents — whether it's currently public is set in
+  Settings (step 8), same as Council Themes/Quant's own dashboard. Only its control
+  panel (`public/mcm/control-panel/index.html`), which *runs* the download/analyze/
+  publish jobs, always requires a signed-in admin account. `SEC_CONTACT_EMAIL` is not
+  sensitive — it's sent in plain text as part of SEC EDGAR's required fair-access
+  request header, the same way any browser's user agent is — it's a repository secret
+  only because there's no other per-repo config file for it.
 
 ---
 
@@ -572,7 +619,7 @@ is gated.
 
 | Symptom | Cause |
 | --- | --- |
-| Login says "not configured" | The Set Cloudflare secrets workflow has not run, or ran against a different Worker. The error message names the Worker serving the page. |
+| Any control panel says "Not signed in" right after signing in | Your session expired (8 hours) or a page cached an old token — sign out and back in at `/admin/login.html`. |
 | Box login returns an error | The redirect URI in the Box app does not exactly match `https://<worker>/api/box/callback` — check the shared app has *both* projects' callback URLs listed (step 3). |
 | "Login link expired or was already used" | The one-time state value is spent. Click **Log in with Box** again. |
 | "Could not start: GitHub refused the trigger (404)" | The workflow file (`update_dashboard.yml` / `setup_analysis.yml`) isn't on the branch the Worker dispatches to (`GITHUB_BRANCH`, default `main`) — check it's merged. |
@@ -582,12 +629,12 @@ is gated.
 | Update Dashboard says "No new meetings found" | Every meeting in the current Post-Meeting Survey export is already in `data/feedback_log.json` — this is expected if nothing new was uploaded, not a bug. |
 | Run succeeds, page unchanged | Nothing changed, or Cloudflare is still redeploying. Give it a minute. |
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
-| `/beta/login.html` says "That email isn't on the admin list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
+| `/admin/login.html` says "That email isn't on the admin list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
 | "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an existing admin to **Reset** it under Manage admins, then try again. |
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |
 | Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |
-| PCN Issue Map's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as the Council app's own "Box is not connected": open `admin.html`'s Developer section and log in. |
+| PCN Issue Map's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as Council Themes/Quant's own "Box is not connected": open `/council-data/control-panel/index.html`'s Developer section and log in. |
 | PCN Issue Map's "Test Box round-trip" fails | No data folder has been chosen yet (**Choose folder…** in its control panel), or the Box connection expired — try logging in with Box again. |
 | PCN Issue Map's "Run pipeline" button stays disabled | There are no "Pending" meetings in the table — upload one first. |
 | PCN Issue Map's "Run pipeline" fails immediately | `PANEL_GITHUB_TOKEN`/`GITHUB_REPO` aren't set up on this Worker — same secrets the Council app's own **Update Dashboard** button needs (see section 4 above). |

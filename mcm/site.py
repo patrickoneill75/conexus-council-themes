@@ -142,11 +142,10 @@ def build(output_dir, template_html: str, log=print):
     (output_dir / "narratives.json").write_text(
         json.dumps(published_narratives, ensure_ascii=False), encoding="utf-8")
     (output_dir / "status.json").write_text(json.dumps(status, indent=2), encoding="utf-8")
-    # dashboard.html, not index.html -- public/mcm/index.html is the hand-maintained
-    # control panel (see public/mcm/index.html); this generated payload is the public,
-    # unauthenticated dashboard page, matching this repo's convention of a hand-
-    # maintained admin page that a publish step never overwrites.
-    (output_dir / "dashboard.html").write_text(template_html, encoding="utf-8")
+    # index.html here is MCM's public base page (public/mcm/index.html) -- the
+    # hand-maintained control panel lives at public/mcm/control-panel/index.html and
+    # is a completely separate file this publish step never touches.
+    (output_dir / "index.html").write_text(template_html, encoding="utf-8")
 
     total = sum(f.stat().st_size for f in output_dir.rglob("*") if f.is_file())
     log(f"Site built: {role_periods['current']} (QoQ {role_periods['qoq']}, YoY "

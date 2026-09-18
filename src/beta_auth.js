@@ -1,11 +1,12 @@
 /**
- * The mini-app platform's own admin-account system, mounted under /api/beta/*.
+ * Connector's own admin-account system, mounted under /api/beta/* (the route prefix
+ * predates the "Connector"/"/admin" rebrand and was kept as-is to avoid churn -- it's
+ * an internal name, never shown to a user).
  *
- * Deliberately separate from admin.html's single shared CONTROL_PASSWORD: this is a
- * multi-user account system (each admin has their own email/username/password) for the
- * /beta portal and anything built on it going forward, while the existing Council
- * Survey Dashboard and its admin.html control panel keep working exactly as they do
- * today, completely untouched.
+ * A multi-user account system (each admin has their own email/username/password) that
+ * every mini app's control panel signs into via requireBetaAuth -- including Council
+ * Themes/Quant's own (see src/council_data.js), which used to have its own separate
+ * CONTROL_PASSWORD. There is no per-app password anywhere in this repo any more.
  *
  * Storage: reuses the BOX_KV namespace (no new namespace to create in the Cloudflare
  * dashboard) under a "beta:" key prefix, so it never collides with the Box connection
@@ -17,10 +18,9 @@
  *                                 actually set a password. Its absence is exactly what
  *                                 "hasn't set up yet" / "just got reset" means.
  *   beta:session-secret        -> a random signing key, generated once on first use and
- *                                 reused after that -- there's no single shared password
- *                                 to derive a signing key from any more, so this plays
- *                                 the same role CONTROL_PASSWORD itself plays for
- *                                 admin.html's session tokens (see worker.js).
+ *                                 reused after that.
+ *   beta:app-visibility        -> see the module docstring further down, near
+ *                                 APP_VISIBILITY_KEY.
  *
  * Passwords are hashed with PBKDF2-SHA256 (a random 16-byte salt per account) via the
  * Workers runtime's own Web Crypto -- no external dependency. The iteration count
@@ -43,6 +43,13 @@
  * signed in (POST /api/beta/admins/reset) -- self-service only ever *sets* a password
  * that isn't there, never *clears* one that is.
  *
+ * Also holds the per-app visibility setting every mini app checks (see public/apps.js
+ * for the app registry itself, which is static and unrelated to this):
+ *   beta:app-visibility -> JSON { [appId]: "public" | "hidden" | "admin-only" }.
+ *   GET is deliberately unauthenticated -- the public grid (public/index.html) has no
+ *   session and needs to read it to decide which tiles to show. POST requires
+ *   requireBetaAuth, same as everything else admin-side.
+ *
  * Security note: setup-complete does not verify the requester actually owns that email
  * inbox (no email-sending service is wired up) -- anyone who knows an allowlisted
  * address can claim it, as long as it doesn't already have a password. That is a
@@ -56,8 +63,16 @@ const decoder = new TextDecoder();
 
 const ALLOWLIST_KEY = "beta:admin-emails";
 const SESSION_SECRET_KEY = "beta:session-secret";
+const APP_VISIBILITY_KEY = "beta:app-visibility";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
 const PBKDF2_ITERATIONS = 5000;
+const VISIBILITY_TIERS = ["public", "hidden", "admin-only"];
+// Mirrors the ids in public/apps.js (kept in sync by hand -- that file is a static
+// asset, not part of this Worker's module graph, so it can't be imported here).
+// Apps with real, already-public content default to "public"; anything else defaults
+// to "admin-only" until an admin explicitly opens it up from Settings.
+const KNOWN_APP_IDS = ["council-data", "mcm", "pcn", "consensus"];
+const DEFAULT_PUBLIC_APPS = ["council-data", "mcm"];
 
 const SEED_ADMIN_EMAIL = "poneill@conexusindiana.com";
 const SEED_ADMIN_USERNAME = "poneill";
@@ -203,6 +218,17 @@ async function saveAllowlist(env, list) {
 function findAllowlistEntry(list, email) {
   const target = normalizeEmail(email);
   return list.find((a) => normalizeEmail(a.email) === target) || null;
+}
+
+async function getAppVisibility(env) {
+  const raw = await env.BOX_KV.get(APP_VISIBILITY_KEY);
+  return raw ? JSON.parse(raw) : {};
+}
+async function saveAppVisibility(env, map) {
+  await env.BOX_KV.put(APP_VISIBILITY_KEY, JSON.stringify(map));
+}
+function tierFor(map, appId) {
+  return map[appId] || (DEFAULT_PUBLIC_APPS.includes(appId) ? "public" : "admin-only");
 }
 
 async function getAccount(env, email) {
@@ -380,6 +406,38 @@ export async function handleBetaApi(route, request, env) {
     }
     await deleteAccount(env, email);
     return json({ ok: true });
+  }
+
+  // ---- GET /api/beta/app-visibility --------------------------------------------------
+  // Deliberately unauthenticated -- the public grid (public/index.html) reads this
+  // with no session to decide which tiles to show. Returns every known app's
+  // resolved tier (defaults filled in via tierFor()/KNOWN_APP_IDS above), plus
+  // whatever else is in the stored map (forward-compatible with an app added to
+  // public/apps.js before this file's KNOWN_APP_IDS is updated to match).
+  if (route === "app-visibility" && method === "GET") {
+    const stored = await getAppVisibility(env);
+    const visibility = { ...stored };
+    for (const id of KNOWN_APP_IDS) visibility[id] = tierFor(stored, id);
+    return json({ visibility });
+  }
+
+  // ---- POST /api/beta/app-visibility -------------------------------------------------
+  // { id, tier } -- tier is one of "public" | "hidden" | "admin-only".
+  if (route === "app-visibility" && method === "POST") {
+    const auth = await requireAuth(request, env);
+    if (!auth) return json({ error: "Not signed in" }, 401);
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    const id = String(body.id || "").trim();
+    const tier = String(body.tier || "").trim();
+    if (!id) return json({ error: "id is required" }, 400);
+    if (!VISIBILITY_TIERS.includes(tier)) {
+      return json({ error: `tier must be one of: ${VISIBILITY_TIERS.join(", ")}` }, 400);
+    }
+    const map = await getAppVisibility(env);
+    map[id] = tier;
+    await saveAppVisibility(env, map);
+    return json({ ok: true, visibility: map });
   }
 
   return json({ error: "Not found" }, 404);
