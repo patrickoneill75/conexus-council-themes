@@ -22,7 +22,10 @@ from .normalize import normalize as run_normalize
 
 
 def _cmd_ingest(args: argparse.Namespace) -> None:
-    doc = run_ingest(Path(args.input), args.input_type, args.meeting_id, args.notetaker, args.meeting_date)
+    doc = run_ingest(
+        Path(args.input), args.input_type, args.meeting_id, args.notetaker, args.meeting_date,
+        year=args.year, quarter=args.quarter, cohort=args.cohort,
+    )
     Path(args.output).write_text(json.dumps(doc.to_dict(), indent=2), encoding="utf-8")
     print(f"Ingested {args.input} -> {args.output} ({doc.input_type}/{doc.input_format})")
 
@@ -104,6 +107,8 @@ def _cmd_review_reject(args: argparse.Namespace) -> None:
 
 
 def _cmd_derive(args: argparse.Namespace) -> None:
+    if args.publish and not args.project:
+        raise SystemExit("--project is required with --publish (which project's network is this?).")
     ledger_rows = ledger.load(Path(args.ledger))
     resolutions = resolutions_store.load(Path(args.resolutions))
     issues = issues_store.load(Path(args.issues)) if args.issues else []
@@ -115,11 +120,13 @@ def _cmd_derive(args: argparse.Namespace) -> None:
     )
     if args.publish:
         from .. import relay
-        relay.publish_network(network)
-        print("Published network to the Worker (relay/network).")
+        relay.publish_network(args.project, network)
+        print(f"Published network to the Worker (relay/projects/{args.project}/network).")
 
 
 def _cmd_timeline(args: argparse.Namespace) -> None:
+    if args.publish and not args.project:
+        raise SystemExit("--project is required with --publish (which project's timeline is this?).")
     ledger_rows = ledger.load(Path(args.ledger))
     resolutions = resolutions_store.load(Path(args.resolutions))
     issues = issues_store.load(Path(args.issues)) if args.issues else []
@@ -131,8 +138,8 @@ def _cmd_timeline(args: argparse.Namespace) -> None:
     )
     if args.publish:
         from .. import relay
-        relay.publish_timeline(timeline)
-        print("Published timeline to the Worker (relay/timeline).")
+        relay.publish_timeline(args.project, timeline)
+        print(f"Published timeline to the Worker (relay/projects/{args.project}/timeline).")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -147,6 +154,11 @@ def main(argv: list[str] | None = None) -> None:
     ingest_parser.add_argument("--notetaker", dest="notetaker", default=None)
     ingest_parser.add_argument("--meeting-date", dest="meeting_date", default=None,
                                 help="ISO date (YYYY-MM-DD) the meeting happened, for the timeline view.")
+    ingest_parser.add_argument("--year", type=int, default=None,
+                                help="Reporting year -- metadata only, doesn't affect timeline bucketing.")
+    ingest_parser.add_argument("--quarter", default=None, choices=["Q1", "Q2", "Q3", "Q4"],
+                                help="Reporting quarter -- metadata only, doesn't affect timeline bucketing.")
+    ingest_parser.add_argument("--cohort", default=None, help="Reporting cohort -- metadata only.")
     ingest_parser.set_defaults(func=_cmd_ingest)
 
     normalize_parser = subparsers.add_parser("normalize", help="Turn a RawDocument into a NormalizedDocument.")
@@ -199,7 +211,8 @@ def main(argv: list[str] | None = None) -> None:
     derive_parser.add_argument("output")
     derive_parser.add_argument("--issues", default=None, help="Issue store, for human-readable node labels.")
     derive_parser.add_argument("--publish", action="store_true",
-                                help="Also push the derived network to the Worker (relay/network).")
+                                help="Also push the derived network to the Worker (relay/projects/<project>/network).")
+    derive_parser.add_argument("--project", default=None, help="Project id -- required with --publish.")
     derive_parser.set_defaults(func=_cmd_derive)
 
     timeline_parser = subparsers.add_parser(
@@ -210,7 +223,8 @@ def main(argv: list[str] | None = None) -> None:
     timeline_parser.add_argument("output")
     timeline_parser.add_argument("--issues", default=None, help="Issue store, for human-readable labels.")
     timeline_parser.add_argument("--publish", action="store_true",
-                                  help="Also push the derived timeline to the Worker (relay/timeline).")
+                                  help="Also push the derived timeline to the Worker (relay/projects/<project>/timeline).")
+    timeline_parser.add_argument("--project", default=None, help="Project id -- required with --publish.")
     timeline_parser.set_defaults(func=_cmd_timeline)
 
     args = parser.parse_args(argv)

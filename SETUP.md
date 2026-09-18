@@ -343,19 +343,56 @@ want to change either.
 
 Turns PCN meeting notes/transcripts into an accumulating, evidence-traceable map of how
 members believe their problems connect (Axelrod-style causal mapping / fuzzy cognitive
-maps — see the design doc for the full method and reasoning). **This is an early,
-in-progress build.** It'll grow in stages; this section will grow with it.
+maps — see the design doc for the full method and reasoning). Implements the design
+doc's complete 8-step build order.
 
 Its Box access is the **same shared, user-delegated connection** every other tool here
 uses — nothing new to set up. If the control panel says "Not connected," log in with
 Box from `admin.html`'s Developer section, same as you would for anything else.
 
-Open **PCN Issue Map**'s control panel from the Mini App Platform grid, click
-**Choose folder…** to pick this app's one data folder (a data file at its root, plus a
-subfolder for raw source documents kept for audit — same idea as the Data Folder the
-Council app uses, just its own separate folder), then **Test Box round-trip** — it
-writes a small JSON file there and reads it straight back, confirming the connection
-works.
+**Projects.** This isn't just a PCN-only tool: the control panel's **Project**
+dropdown holds any number of fully walled-off projects, each with its own Box data
+folder, ledger, issues, network, timeline, and GitHub Actions runs — none of a
+project's data or pipeline runs ever touches another's, even transiently. "PCN Issue
+Map" is just the project seeded by default (id `pcn`); pick **+ Add new project…** to
+wall off a different meeting series entirely (e.g. a specific client engagement that
+has nothing to do with PCN), give it a name, and you're dropped onto that project's
+own empty control panel to configure its own Box folder from scratch. Every URL in
+the app (control panel, network view, timeline view) carries `?project=<id>` so a
+bookmark or link always returns to the right one.
+
+**Using it on real meetings**, from a project's control panel (Mini App Platform
+grid → PCN Issue Map, or `?project=<id>` for another one):
+1. **Choose folder…** picks this project's one Box data folder —
+   `ledger.json`/`issues.json`/`resolutions.json` at its root, plus a `raw/`
+   subfolder holding every uploaded meeting file verbatim for audit. **Test Box
+   round-trip** confirms the connection works.
+2. **Upload a meeting**: pick Transcript or Notes, the meeting date, **Year**,
+   **Quarter**, an optional **Cohort** label, a notetaker (notes only), and the file
+   (`.vtt`/`.srt`/`.txt`/`.docx` for transcripts; `.md`/`.txt`/`.docx` for either).
+   Year/Quarter/Cohort are reporting metadata carried through onto every assertion
+   extracted from this meeting (for future filtering/export) — they do **not**
+   change how the change-over-time view buckets its quarters, which still derives
+   that purely from the meeting date; the two are independent on purpose, since a
+   meeting's reporting period and its calendar quarter aren't always the same thing.
+   This only saves the file to Box and queues it ("pending" in the **Meetings**
+   table below) — nothing is extracted yet.
+3. **Run pipeline** dispatches a GitHub Actions run (`pcn_run.yml` with this
+   project's id as input, `pcn/pipeline/run.py`) that processes every pending
+   meeting *for this project only*: ingest → normalize → extract → match → derive →
+   timeline, then publishes the updated network and timeline. A meeting that fails
+   (bad file, extraction error) is marked "Failed" with the error shown in the
+   table, rather than retried forever or silently dropped; every other pending
+   meeting in the batch still gets processed.
+4. Check the results on the **View network** and **Change over time** pages (linked
+   from the control panel, carrying the same project).
+
+This Worker is the only thing that ever talks to Box directly for any project's
+state — `pcn/pipeline/run.py` (and the CLI's per-stage subcommands) reach it only
+through `relay/projects/<id>/state` and `relay/projects/<id>/meetings/*`
+(shared-secret auth, plain JSON), the same way Consensus's Python pipeline gets a
+survey's data as JSON rather than a Box token. See `src/pcn.js`'s module docstring
+for the full route list.
 
 **Pipeline** (`pcn/pipeline/`, Python): `pcn/pipeline/ingest` reads a source file
 (`.vtt`/`.srt`/`.txt` for transcripts, `.md`/`.txt`/`.docx` for either) into a
@@ -397,16 +434,16 @@ implementation carried), and feedback loops via `networkx.simple_cycles` (capped
 counts aren't comparable across input types (a transcript yields far more assertions
 than notes of identical substance), so nothing here sums them together.
 
-The `derive` stage's `--publish` flag pushes the network to this Worker via
-`POST relay/network` (shared-secret `x-pipeline-key: BOX_RELAY_SECRET` auth, same
-mechanism as `GET /api/box/pipeline-token` and Consensus's own relay routes — see
-`pcn/relay.py`), stored in `BOX_KV` and served back by `GET network` (beta-account
-gated) for **PCN Issue Map**'s **View network** page (linked from its control panel)
-to render: an interactive force-directed graph (D3, loaded from a CDN — the one
-external script this app uses) with node size by centrality, node color by role,
-edge color by sign (green positive / red negative / gray contested), and a dashed
-edge where dispersion swamps the mean (members disagree). Click a node or connection
-for its detail — definition, degree, supporting-assertion counts.
+The `derive` stage's `--publish --project <id>` flags push the network to this
+Worker via `POST relay/projects/<id>/network` (shared-secret `x-pipeline-key:
+BOX_RELAY_SECRET` auth, same mechanism as `GET /api/box/pipeline-token` and
+Consensus's own relay routes — see `pcn/relay.py`), stored in `BOX_KV` and served
+back by `GET projects/<id>/network` (beta-account gated) for that project's **View
+network** page to render: an interactive force-directed graph (D3, loaded from a
+CDN — the one external script this app uses) with node size by centrality, node
+color by role, edge color by sign (green positive / red negative / gray contested),
+and a dashed edge where dispersion swamps the mean (members disagree). Click a node
+or connection for its detail — definition, degree, supporting-assertion counts.
 
 `pcn/pipeline/timeline` answers "what changed since last time": it buckets the
 ledger's assertions by quarter using each one's `meeting_date` (set via `ingest
@@ -417,24 +454,21 @@ connections are newly evidenced in a quarter, and which existing connections jus
 became **contested** — a connection that used to look settled getting a
 contradicting assertion from a later meeting. It does not mean connections
 disappearing (only rejecting an assertion in review does that). Published the same
-way as the network (`--publish` → `POST relay/timeline` → `GET timeline`), rendered
-by **PCN Issue Map**'s **Change over time** page as a simple trend chart (issue/
-connection counts by quarter) plus a per-quarter table of what's new or newly
-contested.
+way as the network (`--publish --project <id>` → `POST relay/projects/<id>/timeline`
+→ `GET projects/<id>/timeline`), rendered by that project's **Change over time**
+page as a simple trend chart (issue/connection counts by quarter) plus a per-quarter
+table of what's new or newly contested.
 
-Run the whole pipeline manually against the committed synthetic fixtures
-(`pcn/fixtures/`, ingested with meeting dates two quarters apart) via the
-**PCN Issue Map -- fixture pipeline test** GitHub Actions workflow (Actions tab →
-Run workflow); it uploads each stage's JSON output, including the resulting
-ledger/issues/resolutions/network/timeline and the review queue's printed order, as a
-downloadable artifact, and publishes the derived network and timeline so both views
-have something real (if synthetic) to show. No real PCN meeting data exists in this
-repo — the fixtures are made up, matching the design doc's own worked example (a
-staffing → overtime → turnover loop). The ledger itself isn't wired up to live in
-this app's Box data folder yet — that lands once there's an actual admin-triggered
-run over uploaded meeting files, rather than just this fixture smoke test. This
-completes the design doc's 8-step build order (Sections 1–19); everything from here
-is refinement, not a missing stage.
+The **fixture pipeline test** workflow (Actions tab) is separate from the real
+`pcn_run.yml` above: it runs every stage's CLI subcommand against the committed
+synthetic fixtures (`pcn/fixtures/`, no real PCN meeting data exists in this repo —
+they're made up, matching the design doc's own worked example of a staffing →
+overtime → turnover loop) and uploads each stage's JSON output as a downloadable
+artifact, useful for debugging one stage at a time or verifying the pipeline still
+works without spending a real meeting's worth of Box state. It publishes its network/
+timeline under an ad-hoc `fixtures` project id, never registered through the admin
+UI (see this file's project section above) — deliberately kept separate from every
+real project's own data.
 
 ---
 
@@ -444,8 +478,9 @@ is refinement, not a missing stage.
   exactly what your own account can reach and nothing else. There is no service account
   with enterprise-wide reach. It has both read and write scope (shared with conexus-mcm,
   which needs write) — this project uses write only to replace the two export files in
-  the configured Data Folder, plus (for PCN Issue Map) its own separate data folder;
-  neither touches anything else in your Box account.
+  the configured Data Folder, plus (for PCN Issue Map) whichever data folder each of
+  its projects has been pointed at; none of it touches anything else in your Box
+  account.
 - **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
   run sends a new meeting's free-text answers (organization name and rating numbers
   included, but never the respondent's name — those columns are stripped before the
@@ -506,3 +541,8 @@ is refinement, not a missing stage.
 | Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |
 | PCN Issue Map's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as the Council app's own "Box is not connected": open `admin.html`'s Developer section and log in. |
 | PCN Issue Map's "Test Box round-trip" fails | No data folder has been chosen yet (**Choose folder…** in its control panel), or the Box connection expired — try logging in with Box again. |
+| PCN Issue Map's "Run pipeline" button stays disabled | There are no "Pending" meetings in the table — upload one first. |
+| PCN Issue Map's "Run pipeline" fails immediately | `PANEL_GITHUB_TOKEN`/`GITHUB_REPO` aren't set up on this Worker — same secrets the Council app's own **Update Dashboard** button needs (see section 4 above). |
+| PCN Issue Map's network/timeline pages look empty after switching projects | Each project has its own network/timeline, only populated once that specific project has run its pipeline at least once — check the URL's `?project=` matches the one you just ran. |
+| A new PCN Issue Map project's name collides with an existing one | Its id gets a numeric suffix automatically (`-2`, `-3`, ...) rather than failing — check the **Project** dropdown for the exact name if you're not sure which is which. |
+| A PCN meeting shows "Failed" in the Meetings table | Its error is shown right in the table — often an unreadable/corrupt file for its declared type; fix the file and re-upload it as a new meeting (the failed one is left as-is, not retried automatically). |

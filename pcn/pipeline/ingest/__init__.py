@@ -25,7 +25,8 @@ _READERS = {
 
 
 def ingest(path: Path, input_type: str, meeting_id: str, notetaker: str | None = None,
-           meeting_date: str | None = None) -> RawDocument:
+           meeting_date: str | None = None, year: int | None = None,
+           quarter: str | None = None, cohort: str | None = None) -> RawDocument:
     if input_type not in ("transcript", "notes"):
         raise ValueError(f"input_type must be 'transcript' or 'notes', got {input_type!r}")
     ext = path.suffix.lower().lstrip(".")
@@ -41,4 +42,5 @@ def ingest(path: Path, input_type: str, meeting_id: str, notetaker: str | None =
         raw_text=raw_text,
         meeting_date=meeting_date,
         notetaker=notetaker if input_type == "notes" else None,
+        year=year, quarter=quarter, cohort=cohort,
     )
