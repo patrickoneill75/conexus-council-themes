@@ -21,6 +21,23 @@ An issue has to be something that can meaningfully **increase or decrease**.
 This single rule prevents most of the junk nodes that make maps of this kind
 unreadable — proper nouns, department names, and static objects are not issues.
 
+The same rule also rules out **compound cause-and-effect phrases as a single
+label** — "AI's impact on the workforce" is not itself a variable that increases or
+decreases; it's already a whole causal relationship described in one noun phrase.
+When a statement takes that shape, extract the two variables it names and record the
+causal link between them the normal way, instead of writing the whole phrase into
+one `from_issue`/`to_issue` field:
+
+- "AI is changing how much oversight quality work needs" → `from_issue: "AI
+  adoption"`, `to_issue: "quality oversight workload"` — **not** a single issue
+  called "AI's impact on quality."
+- If the same speaker also says AI affects staffing levels, that's a *second*
+  assertion with the *same* `from_issue: "AI adoption"` and a *different*
+  `to_issue`, e.g. `"headcount needs"` — not a second, unrelated "AI's impact on
+  workforce" node. Reusing the same atomic cause across multiple assertions is what
+  lets the map actually show that one thing (AI) touches several others (quality,
+  staffing, ...), rather than each mention of AI becoming its own disconnected node.
+
 ## 2. Default level of abstraction
 
 "Welder shortage," "machinist shortage," and "skilled trades shortage" are three

@@ -28,11 +28,22 @@ ASSERTION_TOOL = {
                         },
                         "from_issue": {
                             "type": "string",
-                            "description": "The cause -- something that can meaningfully increase or decrease.",
+                            "description": (
+                                "The cause -- a single atomic variable that can meaningfully "
+                                "increase or decrease on its own. Never a phrase describing one "
+                                "thing's effect on another (e.g. not 'AI's impact on the "
+                                "workforce') -- that relationship belongs in the from_issue/"
+                                "to_issue pairing itself, not folded into one label."
+                            ),
                         },
                         "to_issue": {
                             "type": "string",
-                            "description": "The effect -- something that can meaningfully increase or decrease.",
+                            "description": (
+                                "The effect -- a single atomic variable that can meaningfully "
+                                "increase or decrease on its own. Same constraint as from_issue: "
+                                "never a phrase describing a cause-and-effect relationship by "
+                                "itself."
+                            ),
                         },
                         "weight": {
                             "type": "number",

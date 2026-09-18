@@ -200,7 +200,15 @@
       <a class="link" id="runNetworkLink" href="/inm/index.html?tab=network">network</a> and
       <a class="link" id="runTimelineLink" href="/inm/index.html?tab=timeline">change-over-time view</a>. Real
       Claude calls, real (if small) cost per meeting.</p>
-    <button type="button" class="primary" id="runBtn" disabled>Run pipeline</button>
+    <div class="row">
+      <button type="button" class="primary" id="runBtn" disabled>Run pipeline</button>
+      <button type="button" id="rerunAllBtn" disabled>Re-run all meetings</button>
+    </div>
+    <p class="desc" style="margin:10px 0 0"><b>Re-run all meetings</b> resets every
+      meeting above back to "Pending" and runs the pipeline against all of them --
+      use this after changing the extraction prompt or matching thresholds and
+      wanting to see the new behavior across meetings that were already processed.
+      Each meeting's prior assertions are replaced, not duplicated.</p>
     <div class="progress-wrap" id="runProgress" hidden>
       <div class="progress-track"><div class="progress-fill"></div></div>
       <div class="progress-label">Starting on GitHub Actions…</div>
@@ -450,6 +458,7 @@
       allMeetings = data.meetings || [];
       pendingCount = allMeetings.filter(function (m) { return m.status === "pending"; }).length;
       el("runBtn").disabled = pendingCount === 0;
+      el("rerunAllBtn").disabled = allMeetings.length === 0;
       renderMeetingsRows();
     }).catch(function (e) {
       el("meetingsRows").innerHTML = '<tr><td colspan="7" class="msg err">' + esc(e.message) + "</td></tr>";
@@ -563,6 +572,7 @@
           el("runProgress").hidden = true;
           el("runBtn").disabled = false;
           el("runBtn").textContent = "Run pipeline";
+          el("rerunAllBtn").disabled = false;
           el("uploadMsg").className = run.conclusion === "success" ? "msg ok" : "msg err";
           el("uploadMsg").textContent = run.conclusion === "success"
             ? "Run finished -- network and timeline updated." : "Run failed -- check the Actions tab for details.";
@@ -579,22 +589,47 @@
     })();
   }
 
+  // Shared by both "Run pipeline" (only "pending" meetings) and "Re-run all
+  // meetings" (which resets everything to "pending" first, then calls this same
+  // dispatch) -- one run-status poll loop either way.
+  function startRun() {
+    el("runBtn").disabled = true;
+    el("runBtn").textContent = "Starting…";
+    el("rerunAllBtn").disabled = true;
+    el("runProgress").hidden = false;
+    el("runProgress").querySelector(".progress-label").textContent = "Starting on GitHub Actions…";
+    return api(projectPath("run"), { method: "POST" }).then(function () {
+      pollRunStatus();
+    }).catch(function (e) {
+      window.alert(e.message);
+      el("runBtn").disabled = pendingCount === 0;
+      el("rerunAllBtn").disabled = allMeetings.length === 0;
+      el("runBtn").textContent = "Run pipeline";
+      el("runProgress").hidden = true;
+    });
+  }
+
   el("runBtn").addEventListener("click", function () {
     confirmClaudeSpend("This will process " + pendingCount + " pending meeting(s) -- roughly " +
       "two Haiku calls per meeting for extraction, occasionally more if a Sonnet tie-breaker " +
-      "is needed.").then(function (ok) {
+      "is needed.").then(function (ok) { if (ok) startRun(); });
+  });
+
+  el("rerunAllBtn").addEventListener("click", function () {
+    confirmClaudeSpend("This resets all " + allMeetings.length + " meeting(s) in this project " +
+      "back to \"Pending\" and reprocesses every one of them -- roughly two Haiku calls per " +
+      "meeting for extraction, occasionally more if a Sonnet tie-breaker is needed. Each " +
+      "meeting's prior assertions are replaced, not duplicated.").then(function (ok) {
       if (!ok) return;
-      el("runBtn").disabled = true;
-      el("runBtn").textContent = "Starting…";
-      el("runProgress").hidden = false;
-      el("runProgress").querySelector(".progress-label").textContent = "Starting on GitHub Actions…";
-      api(projectPath("run"), { method: "POST" }).then(function () {
-        pollRunStatus();
-      }).catch(function (e) {
+      el("rerunAllBtn").disabled = true;
+      el("rerunAllBtn").textContent = "Resetting…";
+      api(projectPath("meetings/reprocess-all"), { method: "POST" }).then(function () {
+        el("rerunAllBtn").textContent = "Re-run all meetings";
+        return loadMeetings();
+      }).then(startRun).catch(function (e) {
         window.alert(e.message);
-        el("runBtn").disabled = pendingCount === 0;
-        el("runBtn").textContent = "Run pipeline";
-        el("runProgress").hidden = true;
+        el("rerunAllBtn").disabled = allMeetings.length === 0;
+        el("rerunAllBtn").textContent = "Re-run all meetings";
       });
     });
   });

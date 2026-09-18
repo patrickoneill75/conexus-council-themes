@@ -637,6 +637,29 @@ export async function handlePcnApi(route, request, env) {
       return json({ meetings: await getMeetings(headers, project.folderId) });
     }
 
+    // POST projects/<id>/meetings/reprocess-all -> resets EVERY meeting in this
+    // project back to "pending" (clearing error/processedAt), regardless of its
+    // current status -- so an admin can force the whole project through the
+    // pipeline again after tuning the extraction prompt or matching thresholds,
+    // without opening the edit form on every already-processed meeting just to
+    // flip its status. pcn/pipeline/run.py's per-meeting ledger replace (not
+    // append) is what makes reprocessing safe to do more than once.
+    if (sub === "meetings/reprocess-all" && method === "POST") {
+      const token = await boxAccessToken(env);
+      if (!token) return json({ error: "Box is not connected yet -- open the control panel and log in with Box." }, 409);
+      if (!project.folderId) return json({ error: "Pick a data folder for this project first." }, 409);
+
+      const headers = { authorization: `Bearer ${token}` };
+      const meetings = await getMeetings(headers, project.folderId);
+      for (const meeting of meetings) {
+        meeting.status = "pending";
+        delete meeting.error;
+        delete meeting.processedAt;
+      }
+      await saveMeetings(headers, project.folderId, meetings);
+      return json({ ok: true, meetings });
+    }
+
     // POST projects/<id>/meetings/<meetingId> { inputType, meetingDate, year, quarter,
     // cohort, notetaker } -- corrects a meeting's metadata after upload (e.g. a
     // "notes" file mis-coded as "transcript"). Resets it to "pending" so pcn_run.yml
