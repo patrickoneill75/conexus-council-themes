@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Description Review — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='7' width='16' height='18' rx='1.5' fill='white'/%3E%3Crect x='11' y='11' width='10' height='2' fill='%232a78d6'/%3E%3Crect x='11' y='15' width='10' height='2' fill='%232a78d6'/%3E%3Crect x='11' y='19' width='6' height='2' fill='%232a78d6'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:680px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:20px; font-weight:650; margin:0 0 6px; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:0 0 20px; }
+  [hidden] { display:none !important; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:20px 22px; margin-bottom:14px; }
+  .field { margin-bottom:14px; }
+  .field label { display:block; font-weight:600; font-size:12.5px; margin-bottom:4px; }
+  input[type=text] { width:100%; font:inherit; padding:8px 10px; border-radius:8px;
+                      border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  .duty-card { border:1px solid var(--border); border-radius:10px; padding:13px 15px; margin-bottom:10px; }
+  .duty-card .text { font-size:13.5px; margin:0 0 8px; }
+  .choices { display:flex; gap:8px; flex-wrap:wrap; }
+  .choice-btn { padding:8px 13px; border-radius:999px; border:1px solid var(--border);
+                background:var(--surface-1); color:var(--text-secondary); font-size:12.5px; cursor:pointer; }
+  .choice-btn.selected { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .msg { font-size:12.5px; margin:10px 0 0; }
+  .msg.err { color:var(--bad); }
+  .msg.ok { color:var(--good); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Job description review</h1>
+  <p class="sub" id="jobTitleSub">Loading…</p>
+
+  <div id="alreadyDone" class="card" hidden>
+    <p class="msg ok">This review has already been submitted. Thanks -- you can close this page.</p>
+  </div>
+
+  <div id="form" hidden>
+    <div class="card">
+      <div class="field">
+        <label for="roleInput">Your role</label>
+        <input type="text" id="roleInput" placeholder="e.g. Plant Supervisor, Line Lead">
+      </div>
+      <p class="sub" style="margin:0">For each duty, is it still accurate?</p>
+    </div>
+    <div id="dutiesList"></div>
+    <button type="button" class="primary" id="submitBtn">Submit</button>
+    <p class="msg" id="submitMsg"></p>
+  </div>
+
+  <div id="errorBox" class="card" hidden>
+    <p class="msg err" id="errorMsg"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  var token = new URL(window.location.href).searchParams.get("token");
+  if (!token) {
+    el("errorBox").hidden = false; el("errorMsg").textContent = "This link is missing its token.";
+    el("jobTitleSub").textContent = "";
+  } else {
+    fetch("/api/job-description/invite/" + encodeURIComponent(token))
+      .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; }); })
+      .then(function (data) {
+        el("jobTitleSub").textContent = data.jobTitle;
+        if (data.alreadyResponded) { el("alreadyDone").hidden = false; return; }
+        el("dutiesList").innerHTML = data.duties.map(function (d) {
+          return '<div class="duty-card" data-duty="' + esc(d.id) + '">' +
+            '<p class="text">' + esc(d.text) + '</p>' +
+            '<div class="choices">' +
+            '<button type="button" class="choice-btn" data-value="still_accurate">Still accurate</button>' +
+            '<button type="button" class="choice-btn" data-value="changed">Changed</button>' +
+            '<button type="button" class="choice-btn" data-value="no_longer_done">No longer done</button>' +
+            '</div></div>';
+        }).join("");
+        Array.prototype.forEach.call(el("dutiesList").querySelectorAll(".duty-card"), function (card) {
+          Array.prototype.forEach.call(card.querySelectorAll(".choice-btn"), function (btn) {
+            btn.addEventListener("click", function () {
+              Array.prototype.forEach.call(card.querySelectorAll(".choice-btn"), function (b) { b.classList.remove("selected"); });
+              btn.classList.add("selected");
+            });
+          });
+        });
+        el("form").hidden = false;
+      })
+      .catch(function (e) {
+        el("errorBox").hidden = false; el("errorMsg").textContent = e.message;
+      });
+  }
+
+  el("submitBtn").addEventListener("click", function () {
+    var answers = {};
+    Array.prototype.forEach.call(el("dutiesList").querySelectorAll(".duty-card"), function (card) {
+      var selected = card.querySelector(".choice-btn.selected");
+      if (selected) answers[card.dataset.duty] = { answer: selected.dataset.value };
+    });
+    el("submitBtn").disabled = true;
+    fetch("/api/job-description/invite/" + encodeURIComponent(token) + "/step3", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: el("roleInput").value, dutyAnswers: answers }),
+    }).then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; }); })
+      .then(function () {
+        el("form").hidden = true;
+        el("alreadyDone").hidden = false;
+      })
+      .catch(function (e) {
+        el("submitMsg").className = "msg err"; el("submitMsg").textContent = "Error: " + e.message;
+      })
+      .then(function () { el("submitBtn").disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>

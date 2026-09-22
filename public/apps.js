@@ -72,4 +72,14 @@ const APPS = [
     baseUrl: "/artifacts",
     controlPanelUrl: "/artifacts/control-panel",
   },
+  {
+    id: "job-description",
+    name: "Job Description Updater",
+    description: "Claude reads an uploaded job description and walks the employer through " +
+      "updating it with the Conexus Job Description Toolkit -- confirm/correct taps instead " +
+      "of open-ended questions, ~15 minutes instead of the toolkit's own 60-90 minute manual " +
+      "exercise.",
+    baseUrl: "/job-description",
+    controlPanelUrl: "/job-description/control-panel",
+  },
 ];

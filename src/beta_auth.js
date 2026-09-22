@@ -71,7 +71,7 @@ const VISIBILITY_TIERS = ["public", "hidden", "admin-only"];
 // asset, not part of this Worker's module graph, so it can't be imported here).
 // Apps with real, already-public content default to "public"; anything else defaults
 // to "admin-only" until an admin explicitly opens it up from Settings.
-const KNOWN_APP_IDS = ["council-data", "mcm", "pcn", "consensus", "stars", "artifacts"];
+const KNOWN_APP_IDS = ["council-data", "mcm", "pcn", "consensus", "stars", "artifacts", "job-description"];
 const DEFAULT_PUBLIC_APPS = ["council-data", "mcm", "stars"];
 
 const SEED_ADMIN_EMAIL = "poneill@conexusindiana.com";
