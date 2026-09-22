@@ -69,6 +69,14 @@
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
   th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); }
   th { color:var(--text-secondary); font-weight:600; font-size:11.5px; width:40%; }
+  .tabs { display:flex; gap:22px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+  .tab-btn { font:inherit; font-weight:600; font-size:13.5px; border:0; background:none;
+             padding:9px 2px; color:var(--text-secondary); cursor:pointer;
+             border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent); }
+  .tab-btn:hover { color:var(--text-primary); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
 </style>
 </head>
 <body>
@@ -86,6 +94,12 @@
     </div>
   </header>
 
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="data">Data</button>
+    <button type="button" class="tab-btn" data-tab="datasource">Data source</button>
+  </div>
+
+  <section class="tab-panel" id="tab-datasource">
   <div class="card" id="boxCard">
     <h3>Box connection</h3>
     <p class="desc">Uses the same Box connection every other tool here shares -- log in
@@ -113,7 +127,9 @@
     <div id="folderPicker" hidden class="picker"></div>
     <pre id="testResult" hidden></pre>
   </div>
+  </section>
 
+  <section class="tab-panel active" id="tab-data">
   <div class="card">
     <h3>Data status</h3>
     <p class="desc">What the live API is actually serving right now.</p>
@@ -155,6 +171,7 @@
     </form>
     <p class="msg" id="uploadMsg"></p>
   </div>
+  </section>
 </div>
 
 <script>
@@ -356,6 +373,16 @@
         el("uploadBtn").disabled = false;
         el("uploadBtn").textContent = "Upload";
       });
+  });
+
+  /* ---------- tabs ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (btn) {
+    btn.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-panel"), function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    });
   });
 
   loadStatus();
