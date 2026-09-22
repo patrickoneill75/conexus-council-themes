@@ -76,6 +76,8 @@ const DEFAULT_PUBLIC_APPS = ["council-data", "mcm", "stars"];
 
 const SEED_ADMIN_EMAIL = "poneill@conexusindiana.com";
 const SEED_ADMIN_USERNAME = "poneill";
+// Set once, the first time the seed admin is provisioned -- see ensureSeedAdmin().
+const SEED_ADMIN_DONE_KEY = "beta:seed-admin-provisioned";
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -244,12 +246,25 @@ async function deleteAccount(env, email) {
 
 /* One admin, bootstrapped from a repository secret rather than the self-service UI --
    there's no existing admin yet to add poneill@conexusindiana.com to the list, or to
-   click "reset" for him. Cheap and idempotent: once his account record exists, every
-   later call is a single KV read that short-circuits immediately. Runs even if
-   poneill_password was never set as a Cloudflare secret -- it just no-ops. */
+   click "reset" for him. Cheap and idempotent: once seeding has happened, every later
+   call is a single KV read that short-circuits immediately. Runs even if
+   poneill_password was never set as a Cloudflare secret -- it just no-ops.
+
+   The "have I seeded yet" flag is its own key rather than "does the account record
+   exist", because POST admins/reset works by DELETING the account record. Keyed on the
+   record, this function re-created the seed account from poneill_password on the very
+   next /api/beta/* request -- so resetting the seed admin silently did nothing (the old
+   password kept working, and "Set up new account" reported the account already had a
+   password). The flag lives in the same namespace, so a genuinely empty KV still
+   bootstraps exactly as before. */
 async function ensureSeedAdmin(env) {
   if (!env.poneill_password) return;
-  if (await getAccount(env, SEED_ADMIN_EMAIL)) return;
+  if (await env.BOX_KV.get(SEED_ADMIN_DONE_KEY)) return;
+  if (await getAccount(env, SEED_ADMIN_EMAIL)) {
+    // Already seeded before this flag existed -- record it and stop.
+    await env.BOX_KV.put(SEED_ADMIN_DONE_KEY, new Date().toISOString());
+    return;
+  }
 
   const allowlist = await getAllowlist(env);
   if (!findAllowlistEntry(allowlist, SEED_ADMIN_EMAIL)) {
@@ -262,6 +277,7 @@ async function ensureSeedAdmin(env) {
     email: SEED_ADMIN_EMAIL, username: SEED_ADMIN_USERNAME,
     password_hash: hash, password_salt: salt, created_at: new Date().toISOString(),
   });
+  await env.BOX_KV.put(SEED_ADMIN_DONE_KEY, new Date().toISOString());
 }
 
 /* ---------- routes ---------- */

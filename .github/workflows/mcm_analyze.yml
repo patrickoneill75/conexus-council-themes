@@ -20,6 +20,11 @@ jobs:
     timeout-minutes: 350        # GitHub kills any job at 360; stop cleanly before that
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, not the default shallow clone -- the commit step below
+          # rebases onto origin/main on a rejected push, which a shallow history
+          # cannot do. Same reasoning as update_dashboard.yml.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -52,7 +57,25 @@ jobs:
             echo "Nothing changed."
           else
             git commit -m "MCM analyze: signals and quarterly narrative"
-            git push
+            # Retries on a non-fast-forward push: another workflow in a different
+            # concurrency group (themes-analyze, consensus-analyze) can reach
+            # origin/main first. Without this the push simply failed and the run's
+            # committed output -- including an analyze run's already-paid-for Claude
+            # results -- was thrown away. Only public/mcm/ is touched here, so rebasing
+            # onto the new tip applies cleanly in the overwhelming majority of cases;
+            # a real conflict fails the step loudly rather than guessing.
+            for attempt in 1 2 3 4 5; do
+              if git push; then
+                break
+              fi
+              if [ "$attempt" = 5 ]; then
+                echo "::error::Could not push after 5 attempts -- main keeps moving faster than this run can catch up."
+                exit 1
+              fi
+              echo "Push rejected (attempt $attempt/5) -- rebasing onto the current main and retrying..."
+              git fetch origin main
+              git rebase origin/main
+            done
           fi
           # Pushing with GITHUB_TOKEN deliberately does not re-trigger GitHub workflows,
           # but Cloudflare watches this repo through its own GitHub App and will

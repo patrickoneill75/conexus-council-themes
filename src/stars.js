@@ -159,7 +159,13 @@ async function downloadFile(headers, fileId) {
 async function getOccupationData(env) {
   const raw = env.BOX_KV ? await env.BOX_KV.get(OCCUPATIONS_KEY) : null;
   const data = raw ? JSON.parse(raw) : bundledOccupationData;
-  const occByTitle = {};
+  // Object.create(null), NOT {}: the public search routes below look titles up in here
+  // straight from the request body, and a plain object inherits Object.prototype -- so
+  // targetTitle "constructor"/"toString"/"valueOf" would return a function instead of
+  // undefined, sail past every `if (!target)` guard, and then throw on target.vector,
+  // turning an unauthenticated POST into a 500. A null-prototype map has no inherited
+  // keys to hit. It also lets a genuine occupation titled "__proto__" be stored at all.
+  const occByTitle = Object.create(null);
   for (const o of data.occupations) occByTitle[o.title] = o;
   return { skills: data.skills, occupations: data.occupations, occByTitle };
 }

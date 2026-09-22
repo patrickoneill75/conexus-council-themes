@@ -109,7 +109,7 @@ def main() -> int:
         relay.report_progress(survey_id, i + 1, total_questions, question["text"])
         respondents = by_question.get(question["id"], {})
         threads = []
-        for rid, turns in respondents.items():
+        for turns in respondents.values():
             turns.sort(key=lambda t: t[0])
             threads.append([{"prompt": p, "answer": a} for (_turn, p, a) in turns])
 

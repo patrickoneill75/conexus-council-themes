@@ -47,12 +47,15 @@ def resolve_issue(label: str, issues: list[Issue]) -> ResolveResult:
             return ResolveResult(issue_id=issue.id, method="exact", matched_label=label)
 
     # Stage 2: rapidfuzz fuzzy match.
-    best_issue, best_score, best_label = None, -1.0, None
+    # matched_label below is the INCOMING label, not whichever existing one scored
+    # best: recording the new wording as an alias is what makes the same label hit
+    # stage 1 next run. The best-scoring existing label itself is never needed.
+    best_issue, best_score = None, -1.0
     for issue in issues:
         for existing in _labels(issue):
             score = fuzz.WRatio(normalized, normalize_label(existing))
             if score > best_score:
-                best_issue, best_score, best_label = issue, score, existing
+                best_issue, best_score = issue, score
     if best_issue is not None and best_score >= FUZZY_THRESHOLD:
         return ResolveResult(issue_id=best_issue.id, method="fuzzy", matched_label=label)
 
