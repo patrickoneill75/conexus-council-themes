@@ -22,14 +22,23 @@
   body { margin:0; background:var(--page); color:var(--text-primary);
          font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
   .wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
-  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
-           flex-wrap:wrap; margin-bottom:18px; }
+  .topbar { display:flex; align-items:center; justify-content:flex-end; gap:16px;
+            font-size:12.5px; color:var(--text-secondary); margin-bottom:16px; }
+  header { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  header .title-block { flex:1 1 240px; min-width:160px; }
   h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
   .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
-  .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
   a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
                          font:inherit; cursor:pointer; text-decoration:none; }
   a.link:hover, button.link:hover { text-decoration:underline; }
+  a.btn { display:inline-flex; align-items:center; font:inherit; border-radius:8px;
+          border:1px solid var(--border); cursor:pointer; padding:9px 16px;
+          background:var(--surface-1); color:var(--text-primary); text-decoration:none;
+          white-space:nowrap; }
+  a.btn:hover { background:var(--wash); }
+  a.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  a.btn.primary:hover { filter:brightness(0.94); }
+  .dash-links { display:flex; gap:10px; flex-wrap:wrap; }
   .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
           padding:20px; margin-bottom:16px; }
   .card h3 { margin:0 0 4px; font-size:14px; }
@@ -74,17 +83,19 @@
 </head>
 <body>
 <div class="wrap">
+  <div class="topbar">
+    <span id="whoami"></span>
+    <a class="link" href="/admin/settings.html">Settings</a>
+    <button type="button" class="link" id="signOutBtn">Sign out</button>
+  </div>
+
   <header>
-    <div>
+    <a class="btn" href="/admin/index.html">&larr; Connector</a>
+    <div class="title-block">
       <h1>Artifact Catalogue</h1>
       <p class="sub">A curated list of Claude artifact links -- nothing to export or convert.</p>
     </div>
-    <div class="who">
-      <span id="whoami"></span>
-      <a class="link" href="/artifacts/index.html" target="_blank" rel="noopener">Open the gallery &rarr;</a>
-      <a class="link" href="/admin/index.html">&larr; Connector</a>
-      <button type="button" class="link" id="signOutBtn">Sign out</button>
-    </div>
+    <a class="btn primary" href="/artifacts/index.html" target="_blank" rel="noopener">Open the gallery &rarr;</a>
   </header>
 
   <div class="tabs">
