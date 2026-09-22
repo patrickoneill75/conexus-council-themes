@@ -21,7 +21,7 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--page); color:var(--text-primary);
          font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 64px; }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
   header { display:flex; align-items:center; justify-content:space-between; gap:16px;
            flex-wrap:wrap; margin-bottom:18px; }
   h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
@@ -34,13 +34,6 @@
           padding:20px; margin-bottom:16px; }
   .card h3 { margin:0 0 4px; font-size:14px; }
   .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
-  .instructions { background:var(--wash); border:1px solid var(--border); border-radius:10px;
-                   padding:14px 16px; margin-bottom:16px; font-size:12.5px; color:var(--text-secondary); }
-  .instructions h4 { margin:0 0 8px; font-size:13px; color:var(--text-primary); }
-  .instructions ol { margin:0 0 10px; padding-left:20px; }
-  .instructions li { margin-bottom:5px; }
-  .instructions .caveat { margin:10px 0 0; padding-top:10px; border-top:1px solid var(--border); }
-  .instructions code { background:var(--wash); padding:1px 5px; border-radius:4px; }
   button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
            padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
@@ -52,33 +45,19 @@
           border-radius:999px; border:1px solid transparent; white-space:nowrap; cursor:pointer; }
   .pill.good { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
   .pill.warn { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
-  .pill.bad { background:rgba(208,59,59,.12); color:var(--bad); border-color:rgba(208,59,59,.3); }
-  .pill.nodata { background:var(--wash); color:var(--text-muted); border-color:var(--border); }
   .msg { font-size:12.5px; margin:10px 0 0; }
   .msg.err { color:var(--bad); }
   .msg.ok { color:var(--good); }
   .msg.muted { color:var(--text-muted); }
-  .folder-row { display:flex; align-items:center; justify-content:space-between;
-                padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
-  .folder-row:hover { background:var(--wash); }
-  .folder-row .enter { font-size:12px; color:var(--accent); }
-  .crumb { cursor:pointer; color:var(--accent); }
-  .crumb:hover { text-decoration:underline; }
-  .crumb-sep { color:var(--text-muted); margin:0 4px; }
-  .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
-  pre { background:var(--wash); border-radius:8px; padding:10px 12px; font-size:12px;
-        overflow-x:auto; margin:10px 0 0; }
   [hidden] { display:none !important; }
   label.field { display:flex; flex-direction:column; gap:4px; font-size:12.5px;
                 color:var(--text-secondary); margin-bottom:12px; }
   label.field:last-of-type { margin-bottom:0; }
   input[type="text"], input[type="url"], textarea, select {
     font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--page); color:var(--text-primary);
+    background:var(--page); color:var(--text-primary); width:100%;
   }
   textarea { resize:vertical; min-height:56px; }
-  input[type="file"] { font:inherit; padding:7px 9px; border-radius:8px; border:1px solid var(--border);
-                        background:var(--surface-1); color:var(--text-primary); }
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
   th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
   th { color:var(--text-secondary); font-weight:600; font-size:11.5px; }
@@ -90,7 +69,7 @@
   <header>
     <div>
       <h1>Artifact Catalogue</h1>
-      <p class="sub">Lightweight Claude artifacts, rehosted natively -- data folder and catalogue.</p>
+      <p class="sub">A curated list of Claude artifact links -- nothing to export or convert.</p>
     </div>
     <div class="who">
       <span id="whoami"></span>
@@ -100,42 +79,18 @@
     </div>
   </header>
 
-  <div class="card" id="boxCard">
-    <h3>Box connection</h3>
-    <p class="desc">Uses the same Box connection every other tool here shares -- log in
-      with Box from Council Data's control panel Developer section
-      (<a href="/council-data/control-panel/index.html">/council-data/control-panel</a>)
-      if this says not connected.</p>
-    <div class="row">
-      <span id="statusPill"><span class="pill warn">Checking…</span></span>
-      <button type="button" id="refreshStatusBtn">Refresh</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>Data folder</h3>
-    <p class="desc">The one Box folder holding every catalogued artifact's HTML file plus
-      <code>manifest.json</code> (the index this app reads) -- its own folder, separate from
-      every other mini app's data. A folder must be chosen before you can add an artifact.</p>
-    <p style="margin:0 0 10px">Currently: <b id="folderName">(none selected)</b></p>
-    <div class="row">
-      <button type="button" id="chooseFolderBtn">Choose folder…</button>
-      <button type="button" class="primary" id="testBtn">Test Box round-trip</button>
-    </div>
-    <div id="folderPicker" hidden class="picker"></div>
-    <pre id="testResult" hidden></pre>
-  </div>
-
   <div class="card">
     <h3>Catalogue</h3>
-    <p class="desc">Every artifact added so far. Click a visibility pill to flip it.</p>
+    <p class="desc">Every artifact added so far. Click a visibility pill to flip it -- "Public"
+      shows the card on the gallery, "Private" only shows it here. Either way, opening a card
+      always takes you straight to the real artifact on claude.ai.</p>
     <table id="catalogueTable">
       <thead><tr>
-        <th style="width:26%">Title</th>
-        <th style="width:12%">Visibility</th>
-        <th style="width:20%">Source</th>
-        <th style="width:16%">Added</th>
-        <th style="width:26%"></th>
+        <th style="width:30%">Title</th>
+        <th style="width:14%">Visibility</th>
+        <th style="width:30%">Link</th>
+        <th style="width:14%">Added</th>
+        <th style="width:12%"></th>
       </tr></thead>
       <tbody id="catalogueBody"></tbody>
     </table>
@@ -144,50 +99,27 @@
 
   <div class="card">
     <h3>Add an artifact</h3>
-    <div class="instructions">
-      <h4>How to get an exported HTML file</h4>
-      <p style="margin:0 0 8px">This control panel can't pull an artifact's content from a
-        claude.ai link by itself -- there's no API for that. Instead:</p>
-      <ol>
-        <li>In a Claude Code or claude.ai session, ask Claude to export the artifact:
-          paste the artifact's <code>claude.ai/artifact/...</code> link and ask it to read
-          the page and save the raw HTML. This only works for an artifact <em>you own</em>;
-          one shared with you (not created by you) only yields a summary, not the full
-          page -- "remix"/duplicate it into your own account first if that's the case.</li>
-        <li>Claude hands you the saved <code>.html</code> file.</li>
-        <li>Upload that file below, set a title, description, and whether it should be
-          public or private, and submit.</li>
-      </ol>
-      <p class="caveat"><strong>One real limitation:</strong> an artifact that reads live
-        data or shared storage via Claude's runtime capabilities (<code>window.claude.*</code>)
-        depends on claude.ai's own backend. Those calls simply fail once rehosted here --
-        this catalogue is for genuinely self-contained artifacts.</p>
-    </div>
-    <form id="uploadForm">
+    <p class="desc">Paste the artifact's own claude.ai link -- nothing is fetched, exported, or
+      converted. The card just opens that link directly.</p>
+    <form id="addForm">
       <label class="field">Title (required)
         <input type="text" id="fieldTitle" required maxlength="200">
       </label>
-      <label class="field">Slug (optional) -- used in the URL; auto-generated from the title if left blank
-        <input type="text" id="fieldSlug" maxlength="60" placeholder="auto from title">
+      <label class="field">Artifact URL (required)
+        <input type="url" id="fieldUrl" required placeholder="https://claude.ai/artifact/...">
       </label>
-      <label class="field">Description (optional) -- shown on the public gallery card
+      <label class="field">Description (optional) -- shown on the gallery card
         <textarea id="fieldDescription" maxlength="500"></textarea>
-      </label>
-      <label class="field">Source URL (optional) -- the original claude.ai link, kept only for a "view original" link, never fetched
-        <input type="url" id="fieldSourceUrl" placeholder="https://claude.ai/artifact/...">
       </label>
       <label class="field">Visibility
         <select id="fieldVisibility">
-          <option value="private" selected>Private -- only signed-in admins can view it</option>
-          <option value="public">Public -- listed on the Connector public gallery</option>
+          <option value="private" selected>Private -- only shown here, to signed-in admins</option>
+          <option value="public">Public -- listed on the Connector gallery</option>
         </select>
       </label>
-      <label class="field">Exported artifact HTML file (required)
-        <input type="file" id="fieldHtmlFile" accept=".html,text/html" required>
-      </label>
-      <button type="submit" class="primary" id="uploadBtn" style="margin-top:4px">Add to catalogue</button>
+      <button type="submit" class="primary" id="addBtn" style="margin-top:4px">Add to catalogue</button>
     </form>
-    <p class="msg" id="uploadMsg"></p>
+    <p class="msg" id="addMsg"></p>
   </div>
 </div>
 
@@ -227,78 +159,6 @@
     .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
     .catch(signOut);
 
-  /* ---------- Box connection + folder ---------- */
-  function loadStatus() {
-    el("statusPill").innerHTML = '<span class="pill warn">Checking…</span>';
-    return api("box/status").then(function (status) {
-      el("statusPill").innerHTML = status.connected
-        ? '<span class="pill good">Connected</span>' : '<span class="pill bad">Not connected</span>';
-      el("folderName").textContent = (status.folder && status.folder.name) || "(none selected)";
-    }).catch(function (e) {
-      el("statusPill").innerHTML = '<span class="pill bad">Error</span>';
-    });
-  }
-  el("refreshStatusBtn").addEventListener("click", loadStatus);
-
-  el("testBtn").addEventListener("click", function () {
-    el("testBtn").disabled = true;
-    el("testBtn").textContent = "Testing…";
-    el("testResult").hidden = true;
-    api("box/test", { method: "POST" }).then(function (result) {
-      el("testResult").hidden = false;
-      el("testResult").textContent = JSON.stringify(result, null, 2);
-      el("testBtn").disabled = false;
-      el("testBtn").textContent = "Test Box round-trip";
-    }).catch(function (e) {
-      el("testResult").hidden = false;
-      el("testResult").textContent = "Error: " + e.message;
-      el("testBtn").disabled = false;
-      el("testBtn").textContent = "Test Box round-trip";
-    });
-  });
-
-  /* ---------- Box folder picker (same shape as every other mini app's) ---------- */
-  function openPicker(folderId) {
-    el("folderPicker").hidden = false;
-    el("folderPicker").innerHTML = '<p class="msg muted">Loading…</p>';
-    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
-      var html = '<div class="msg" style="margin-bottom:8px" id="pickerCrumb"></div>' +
-        '<div id="pickerList" style="max-height:240px;overflow-y:auto"></div>' +
-        '<div class="row" style="margin-top:12px">' +
-        '<button class="primary small" type="button" id="pickerUseBtn">Use this folder</button>' +
-        '<button class="small" type="button" id="pickerCancelBtn">Cancel</button></div>';
-      el("folderPicker").innerHTML = html;
-      var crumbEl = el("pickerCrumb"), listEl = el("pickerList");
-      crumbEl.innerHTML = data.breadcrumb.map(function (c, i) {
-        var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
-        return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' + esc(c.name || "All Files") + "</span>";
-      }).join("");
-      Array.prototype.forEach.call(crumbEl.querySelectorAll(".crumb"), function (node) {
-        node.addEventListener("click", function () { openPicker(node.dataset.id); });
-      });
-      listEl.innerHTML = data.folders.length ? data.folders.map(function (f) {
-        return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>📁 ' + esc(f.name) +
-          '</span><span class="enter">Open &rarr;</span></div>';
-      }).join("") : '<p class="msg muted">No subfolders here -- "Use this folder" picks this one.</p>';
-      Array.prototype.forEach.call(listEl.querySelectorAll(".folder-row"), function (row) {
-        row.addEventListener("click", function () { openPicker(row.dataset.id); });
-      });
-      el("pickerUseBtn").addEventListener("click", function () {
-        var crumbs = crumbEl.querySelectorAll(".crumb");
-        var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : data.name;
-        api("box/select-folder", { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
-          .then(function () {
-            el("folderName").textContent = name;
-            el("folderPicker").hidden = true;
-          }).catch(function (e) { window.alert(e.message); });
-      });
-      el("pickerCancelBtn").addEventListener("click", function () { el("folderPicker").hidden = true; });
-    }).catch(function (e) {
-      el("folderPicker").innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
-    });
-  }
-  el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
-
   /* ---------- Catalogue table ---------- */
   function loadCatalogue() {
     return api("catalogue").then(function (data) {
@@ -310,10 +170,9 @@
         return "<tr>" +
           "<td><b>" + esc(a.title) + "</b>" + (a.description ? "<br><span class=\"msg muted\">" + esc(a.description) + "</span>" : "") + "</td>" +
           '<td><span class="pill ' + pillClass + ' toggle-visibility" data-slug="' + esc(a.slug) + '" data-current="' + esc(a.visibility) + '">' + pillLabel + "</span></td>" +
-          "<td>" + (a.sourceUrl ? '<a class="link" href="' + esc(a.sourceUrl) + '" target="_blank" rel="noopener">Original &rarr;</a>' : '<span class="msg muted">—</span>') + "</td>" +
+          '<td><a class="link" href="' + esc(a.url) + '" target="_blank" rel="noopener">' + esc(a.url) + "</a></td>" +
           "<td>" + esc(new Date(a.addedAt).toLocaleDateString("en-US")) + "</td>" +
-          '<td class="row"><a class="link" href="/artifacts/view.html?slug=' + encodeURIComponent(a.slug) + '" target="_blank" rel="noopener">Open</a>' +
-          '<button type="button" class="small danger delete-btn" data-slug="' + esc(a.slug) + '">Delete</button></td>' +
+          '<td><button type="button" class="small danger delete-btn" data-slug="' + esc(a.slug) + '">Delete</button></td>' +
           "</tr>";
       }).join("");
 
@@ -339,49 +198,36 @@
   }
 
   /* ---------- Add artifact ---------- */
-  el("uploadForm").addEventListener("submit", function (event) {
+  el("addForm").addEventListener("submit", function (event) {
     event.preventDefault();
-    var htmlFile = el("fieldHtmlFile").files[0];
-    if (!htmlFile) return;
-    var form = new FormData();
-    form.append("title", el("fieldTitle").value.trim());
-    form.append("slug", el("fieldSlug").value.trim());
-    form.append("description", el("fieldDescription").value.trim());
-    form.append("sourceUrl", el("fieldSourceUrl").value.trim());
-    form.append("visibility", el("fieldVisibility").value);
-    form.append("htmlFile", htmlFile);
+    el("addBtn").disabled = true;
+    el("addBtn").textContent = "Adding…";
+    el("addMsg").className = "msg muted";
+    el("addMsg").textContent = "";
 
-    el("uploadBtn").disabled = true;
-    el("uploadBtn").textContent = "Adding…";
-    el("uploadMsg").className = "msg muted";
-    el("uploadMsg").textContent = "";
-
-    // Deliberately not the shared api() helper -- it always sets a JSON
-    // content-type, which would break the multipart boundary the browser needs to
-    // set itself for a FormData body.
-    fetch("/api/artifacts/upload", { method: "POST", headers: { authorization: "Bearer " + token }, body: form })
-      .then(function (r) {
-        if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
-        return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; });
-      })
+    api("add", { method: "POST", body: JSON.stringify({
+      title: el("fieldTitle").value.trim(),
+      url: el("fieldUrl").value.trim(),
+      description: el("fieldDescription").value.trim(),
+      visibility: el("fieldVisibility").value,
+    }) })
       .then(function () {
-        el("uploadForm").reset();
+        el("addForm").reset();
         el("fieldVisibility").value = "private";
-        el("uploadMsg").className = "msg ok";
-        el("uploadMsg").textContent = "Added to the catalogue.";
+        el("addMsg").className = "msg ok";
+        el("addMsg").textContent = "Added to the catalogue.";
         loadCatalogue();
       })
       .catch(function (e) {
-        el("uploadMsg").className = "msg err";
-        el("uploadMsg").textContent = "Error: " + e.message;
+        el("addMsg").className = "msg err";
+        el("addMsg").textContent = "Error: " + e.message;
       })
       .then(function () {
-        el("uploadBtn").disabled = false;
-        el("uploadBtn").textContent = "Add to catalogue";
+        el("addBtn").disabled = false;
+        el("addBtn").textContent = "Add to catalogue";
       });
   });
 
-  loadStatus();
   loadCatalogue();
 })();
 </script>

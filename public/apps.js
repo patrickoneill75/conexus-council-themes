@@ -66,10 +66,9 @@ const APPS = [
   {
     id: "artifacts",
     name: "Artifact Catalogue",
-    description: "Lightweight, self-contained Claude artifacts (dashboards, one-off tools, " +
-      "visualizations) rehosted natively on Connector, each with its own public/private " +
-      "toggle. Getting an artifact in is a Claude-assisted export + upload, not a live pull " +
-      "from a claude.ai link -- see the control panel for how.",
+    description: "A curated, nicely-presented list of Claude artifact links, each with its " +
+      "own public/private toggle. Nothing is exported or converted -- a card just opens the " +
+      "real artifact on claude.ai.",
     baseUrl: "/artifacts",
     controlPanelUrl: "/artifacts/control-panel",
   },

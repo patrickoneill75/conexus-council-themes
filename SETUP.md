@@ -38,8 +38,8 @@ gated by the shared admin accounts, never a password of its own.
 | `src/mcm.js` | Cloudflare Worker | `/api/mcm/*`. Same shared Box connection and admin accounts as every other mini app; its own data folder. |
 | `public/stars/` | Worker static assets | STARs Talent Transfer Explorer: the public matching tool (`index.html`, no login) and its control panel (`control-panel/index.html`, admin-gated). See **12 · STARs Talent Transfer Explorer** below. |
 | `src/stars.js` | Cloudflare Worker | `/api/stars/*`. The occupation-matching/skill-gap routes are public and unauthenticated (no Claude call anywhere); Box folder/upload routes are admin-gated like every other mini app. |
-| `public/artifacts/` | Worker static assets | Artifact Catalogue: the public gallery (`index.html`), a sandboxed viewer (`view.html`), and its control panel (`control-panel/index.html`, admin-gated). See **13 · Artifact Catalogue** below. |
-| `src/artifacts.js` | Cloudflare Worker | `/api/artifacts/*`. `list`/`artifact/<slug>` are public for public-tier artifacts (private ones require a session); Box folder/upload/visibility/delete routes are admin-gated like every other mini app. |
+| `public/artifacts/` | Worker static assets | Artifact Catalogue: the public gallery (`index.html`, cards link straight out to claude.ai) and its control panel (`control-panel/index.html`, admin-gated). See **13 · Artifact Catalogue** below. |
+| `src/artifacts.js` | Cloudflare Worker | `/api/artifacts/*`. `list` is public (public-tier entries only); `catalogue`/`add`/`visibility`/`delete` are admin-gated. No Box involved -- entries are just {title, url, description, visibility} in KV. |
 
 ---
 
@@ -591,42 +591,23 @@ match.
 
 ## 13 · Artifact Catalogue
 
-Rehosts lightweight, self-contained Claude artifacts (dashboards, one-off tools,
-visualizations) as native pages on Connector, each with its own public/private
-toggle — for artifacts made outside this repo (e.g. in a claude.ai conversation) that
-are worth keeping around as a real, durably-stored page instead of just a link.
+A simple, curated list of Claude artifact links, kept in one nice-looking place —
+for artifacts made outside this repo (e.g. in a claude.ai conversation) that are
+worth keeping track of. This is deliberately **not** a rehosting tool: there's
+nothing to export, convert, or upload. An entry is just a title, the artifact's own
+`claude.ai/artifact/...` link, an optional description, and a public/private tier.
+Opening a card always takes you straight to the real artifact on claude.ai.
 
-**This is not a "paste a link and it imports itself" tool.** A Cloudflare Worker has
-no API it can call to reach into claude.ai and pull an artifact's content on its own
-— there is no such public endpoint. Getting an artifact in is a two-step,
-partly-manual process:
+**Adding one**: open the control panel (`/artifacts/control-panel`) and use **Add an
+artifact** — paste the link, give it a title and (optionally) a description, and
+choose **Public** (listed on `/artifacts`, the public gallery) or **Private** (shown
+only here, to a signed-in admin). New artifacts default to Private — flip the pill in
+the catalogue table once you're ready to make one public.
 
-1. **Export it.** In a Claude Code or claude.ai session, give Claude the artifact's
-   `claude.ai/artifact/...` link and ask it to read the page and save the raw HTML
-   (the Artifact tool's `read` action does this). This only works for an artifact you
-   own — a shared/duplicated-in one only yields a text summary, not the full page;
-   "remix" it into your own account first if that's the case.
-2. **Upload it.** Open the control panel (`/artifacts/control-panel`), pick (or
-   create) a Box folder under **Data folder** if one hasn't been chosen yet, then use
-   **Add an artifact**: attach the exported `.html` file, set a title, an optional
-   description and source-URL (kept only as a "view original" link, never fetched),
-   and whether it should be **Public** (listed on `/artifacts`, viewable by anyone)
-   or **Private** (visible only to a signed-in admin). New artifacts default to
-   Private — flip the pill in the catalogue table once you're ready to make one
-   public.
-
-**One real limitation, not a bug**: an artifact that reads live/shared data via
-Claude's runtime capabilities (`window.claude.*`) depends on being served from
-claude.ai's own backend. Those calls simply fail once the exported HTML is rehosted
-here — this catalogue only works well for artifacts that are genuinely
-self-contained.
-
-Each artifact's HTML file (and `manifest.json`, the index of every catalogued
-artifact) lives in the Box folder chosen above — a real, inspectable file location,
-not just a database row. The public gallery and viewer page load a private artifact's
-content into a sandboxed `<iframe>` (`sandbox="allow-scripts allow-forms ..."`,
-deliberately without `allow-same-origin`) so its script can never read Connector's
-own cookies or storage even though it's served from the same origin.
+**What the visibility toggle does and doesn't do**: it only controls whether a card
+appears on the public gallery. It has no effect on the underlying claude.ai link
+itself — whoever has that URL and whatever sharing claude.ai has it set to determines
+who can actually open it, same as any link.
 
 ---
 
@@ -638,9 +619,9 @@ own cookies or storage even though it's served from the same origin.
   in this repo — Council Themes/Quant write only to the configured Data Folder;
   Issue Network Mapper to whichever data folder each of its projects has been pointed at;
   Manufacturing Conditions Monitor to its own single folder (step 11); STARs Talent
-  Transfer Explorer to its own single folder (step 12); Artifact Catalogue to its own
-  single folder (step 13), and only when one has been chosen — none of it touches
-  anything else in your Box account.
+  Transfer Explorer to its own single folder (step 12), and only when one has been
+  chosen — none of it touches anything else in your Box account. (Artifact Catalogue,
+  step 13, doesn't use Box at all — its entries are just small metadata in KV.)
 - **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
   run sends a new meeting's free-text answers (organization name and rating numbers
   included, but never the respondent's name — those columns are stripped before the

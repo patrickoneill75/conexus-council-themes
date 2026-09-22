@@ -12,13 +12,13 @@
     color-scheme: light;
     --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
     --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
-    --accent:#2a78d6;
+    --accent:#2a78d6; --accent-wash:rgba(42,120,214,0.08);
   }
   @media (prefers-color-scheme: dark) { :root {
     color-scheme: dark;
     --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
     --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
-    --accent:#3987e5;
+    --accent:#3987e5; --accent-wash:rgba(57,135,229,0.14);
   } }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--page); color:var(--text-primary);
@@ -28,12 +28,15 @@
   h1 { font-size:22px; font-weight:650; margin:0 0 4px; letter-spacing:-0.01em; }
   .sub { color:var(--text-secondary); font-size:13px; margin:0; max-width:70ch; }
   [hidden] { display:none !important; }
-  .empty-note { color:var(--text-muted); font-size:13.5px; padding:40px 4px; text-align:center; }
+  .empty-note { color:var(--text-muted); font-size:13.5px; padding:60px 4px; text-align:center; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; }
   .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
-          padding:18px 20px; display:flex; flex-direction:column; gap:8px; text-decoration:none;
-          color:inherit; transition:border-color .15s; }
-  .card:hover { border-color:var(--accent); }
+          padding:18px 20px; display:flex; flex-direction:column; gap:10px; text-decoration:none;
+          color:inherit; transition:border-color .15s, transform .15s; }
+  .card:hover { border-color:var(--accent); transform:translateY(-1px); }
+  .card-icon { width:34px; height:34px; border-radius:9px; background:var(--accent-wash);
+               display:flex; align-items:center; justify-content:center; color:var(--accent);
+               font-size:16px; font-weight:700; }
   .card h3 { margin:0; font-size:15px; }
   .card p { margin:0; font-size:12.5px; color:var(--text-secondary); flex:1; }
   .card .view { font-size:12.5px; color:var(--accent); font-weight:600; }
@@ -43,7 +46,8 @@
 <div class="wrap">
   <header>
     <h1>Artifact Catalogue</h1>
-    <p class="sub">Self-contained Claude artifacts, hosted natively here.</p>
+    <p class="sub">A curated set of Claude artifacts worth keeping around. Each card opens
+      the real thing on claude.ai.</p>
   </header>
   <div id="grid" class="grid"></div>
   <p id="emptyNote" class="empty-note" hidden>No public artifacts yet.</p>
@@ -65,10 +69,11 @@
       return;
     }
     grid.innerHTML = artifacts.map(function (a) {
-      return '<a class="card" href="/artifacts/view.html?slug=' + encodeURIComponent(a.slug) + '">' +
+      return '<a class="card" href="' + esc(a.url) + '" target="_blank" rel="noopener">' +
+        '<div class="card-icon">&#10022;</div>' +
         "<h3>" + esc(a.title) + "</h3>" +
         (a.description ? "<p>" + esc(a.description) + "</p>" : "<p></p>") +
-        '<span class="view">View &rarr;</span></a>';
+        '<span class="view">Open on claude.ai &#8599;</span></a>';
     }).join("");
   }).catch(function () {
     document.getElementById("emptyNote").hidden = false;
