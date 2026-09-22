@@ -2,8 +2,20 @@
   // Worker with static assets: public/ is served by Cloudflare's asset layer, and
   // src/worker.js handles /api/* — which is what makes runtime secrets possible.
   // An assets-ONLY Worker (no "main") cannot have variables or secrets attached.
+  // IMPORTANT: "name" must match the Worker's actual name in the Cloudflare dashboard
+  // (Workers & Pages -- the one "Workers Builds" deploys to on every push, currently
+  // "connector"). Every tool that targets a Worker by name -- `wrangler secret put`
+  // (including the "Set Cloudflare secrets" GitHub Actions workflow), `wrangler deploy`
+  // run by hand, etc. -- reads this field, and a mismatch here means those commands
+  // silently create/update a DIFFERENT, never-deployed Worker instead of erroring, since
+  // Wrangler creates a Worker on first use of a name that doesn't exist yet. That's
+  // exactly what happened before this comment was added: this said "conexus-council-themes"
+  // (the repo's old name) while the real, live Worker was "connector", so every secret
+  // set via that workflow -- including the Job Description Updater's Claude key -- was
+  // landing on an orphaned Worker nothing ever served traffic from. If you ever rename
+  // the Worker in the Cloudflare dashboard, update this to match in the same change.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "conexus-council-themes",
+  "name": "connector",
   "main": "src/worker.js",
   "compatibility_date": "2026-09-03",
   "assets": {
@@ -19,7 +31,7 @@
   // GITHUB_REPO must match your repository exactly, in owner/name form.
   "vars": {
     "GITHUB_REPO": "patrickoneill75/conexus-council-themes",
-    "WORKER_NAME": "conexus-council-themes"
+    "WORKER_NAME": "connector"
   },
   // Holds the Box connection: the access/refresh token pair (the refresh token rotates
   // every time it's used, so it cannot live in a static secret) and the source folder
