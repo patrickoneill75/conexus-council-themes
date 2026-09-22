@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifact — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M9 8h14v4H9zM9 14h14v10H9z' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --accent:#2a78d6; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --accent:#3987e5; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--page); color:var(--text-primary);
+               font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  body { display:flex; flex-direction:column; }
+  .bar { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+         padding:10px 18px; border-bottom:1px solid var(--border); background:var(--surface-1); }
+  .bar h1 { font-size:14px; font-weight:650; margin:0; }
+  .bar .links { display:flex; gap:14px; font-size:12.5px; }
+  a.link { color:var(--accent); text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+  #frame { flex:1; width:100%; border:0; display:block; }
+  .state { max-width:520px; margin:60px auto; text-align:center; padding:0 20px; }
+  .state p { color:var(--text-secondary); font-size:13.5px; }
+  .state.err h2 { color:var(--bad); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div id="bar" class="bar" hidden>
+  <h1 id="title"></h1>
+  <div class="links">
+    <a class="link" id="sourceLink" href="#" target="_blank" rel="noopener" hidden>View original &rarr;</a>
+    <a class="link" href="/artifacts/index.html">&larr; Catalogue</a>
+  </div>
+</div>
+<div id="stateBox" class="state">
+  <p>Loading…</p>
+</div>
+<iframe id="frame" hidden
+  sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox"
+  referrerpolicy="no-referrer"></iframe>
+
+<script>
+(function () {
+  "use strict";
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  var params = new URLSearchParams(window.location.search);
+  var slug = params.get("slug") || "";
+  var stateBox = document.getElementById("stateBox");
+
+  function showError(message, showSignIn) {
+    stateBox.className = "state err";
+    stateBox.innerHTML = "<h2>Can't show this artifact</h2><p>" + esc(message) + "</p>" +
+      (showSignIn ? '<p><a class="link" href="/admin/login.html">Sign in</a></p>' : "") +
+      '<p><a class="link" href="/artifacts/index.html">&larr; Back to the catalogue</a></p>';
+  }
+
+  if (!slug) { showError("No artifact was specified."); return; }
+
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  var headers = token ? { authorization: "Bearer " + token } : {};
+
+  fetch("/api/artifacts/artifact/" + encodeURIComponent(slug), { headers: headers })
+    .then(function (r) {
+      if (r.status === 401) { showError("This artifact is private.", true); throw new Error("private"); }
+      if (r.status === 404) { showError("No artifact was found at that link."); throw new Error("missing"); }
+      if (!r.ok) { showError("Something went wrong loading this artifact (HTTP " + r.status + ")."); throw new Error("http " + r.status); }
+      return r.json();
+    })
+    .then(function (data) {
+      document.title = data.title + " — Connector";
+      document.getElementById("title").textContent = data.title;
+      if (data.sourceUrl) {
+        var sourceLink = document.getElementById("sourceLink");
+        sourceLink.href = data.sourceUrl;
+        sourceLink.hidden = false;
+      }
+      document.getElementById("bar").hidden = false;
+      stateBox.hidden = true;
+      var frame = document.getElementById("frame");
+      frame.hidden = false;
+      frame.srcdoc = data.html;
+    })
+    .catch(function () { /* message already shown above */ });
+})();
+</script>
+</body>
+</html>

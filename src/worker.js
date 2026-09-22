@@ -4,6 +4,7 @@ import { handlePcnApi } from "./pcn.js";
 import { handleMcmApi } from "./mcm.js";
 import { handleCouncilDataApi } from "./council_data.js";
 import { handleStarsApi } from "./stars.js";
+import { handleArtifactsApi } from "./artifacts.js";
 
 /**
  * Worker entry point: serves every mini app's public/ pages and delegates /api/*.
@@ -20,6 +21,7 @@ import { handleStarsApi } from "./stars.js";
  *   /api/pcn/*          -- Issue Network Mapper (see src/pcn.js).
  *   /api/mcm/*          -- Manufacturing Conditions Monitor (see src/mcm.js).
  *   /api/stars/*        -- STARs Talent Transfer Explorer (see src/stars.js).
+ *   /api/artifacts/*    -- Artifact Catalogue (see src/artifacts.js).
  *   /api/config-check   -- which Worker secrets are set (unauthenticated diagnostic).
  *   /api/box/authorize-url, /api/box/callback -- the ONE shared Box OAuth login flow.
  *     Every mini app reads the resulting box:tokens KV entry itself (each duplicates
@@ -120,6 +122,11 @@ async function handleApi(route, request, env) {
   // ---- /api/stars/* --------------------------------------------------------------------
   if (route === "stars" || route.startsWith("stars/")) {
     return handleStarsApi(route.slice("stars".length).replace(/^\/+/, ""), request, env);
+  }
+
+  // ---- /api/artifacts/* ------------------------------------------------------------------
+  if (route === "artifacts" || route.startsWith("artifacts/")) {
+    return handleArtifactsApi(route.slice("artifacts".length).replace(/^\/+/, ""), request, env);
   }
 
   // ---- GET /api/config-check ---------------------------------------------------------

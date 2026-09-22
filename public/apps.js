@@ -63,4 +63,14 @@ const APPS = [
     baseUrl: "/stars",
     controlPanelUrl: "/stars/control-panel",
   },
+  {
+    id: "artifacts",
+    name: "Artifact Catalogue",
+    description: "Lightweight, self-contained Claude artifacts (dashboards, one-off tools, " +
+      "visualizations) rehosted natively on Connector, each with its own public/private " +
+      "toggle. Getting an artifact in is a Claude-assisted export + upload, not a live pull " +
+      "from a claude.ai link -- see the control panel for how.",
+    baseUrl: "/artifacts",
+    controlPanelUrl: "/artifacts/control-panel",
+  },
 ];
