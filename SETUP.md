@@ -65,7 +65,14 @@ gated by the shared admin accounts, never a password of its own.
 
    This is where the Box connection lives: the token pair (the refresh token rotates on
    every use, so it cannot be a static secret) and the folder you pick in the panel.
-3. Note the Worker's address — `https://conexus-council-themes.<subdomain>.workers.dev`.
+3. Note the Worker's address — `https://<worker-name>.<subdomain>.workers.dev`, where
+   `<worker-name>` is whatever you named it in this step, **not** necessarily the repo
+   name. Open `wrangler.jsonc` and set `"name"` (and `vars.WORKER_NAME`, for the
+   `/api/config-check` diagnostic) to match it exactly — every `wrangler` command that
+   targets a Worker by name, including the **Set Cloudflare secrets** workflow, reads
+   this field, and a mismatch here means secrets silently land on a different, unused
+   Worker instead of failing loudly. This repo's own deployed Worker is named
+   `connector`.
 
 ---
 
@@ -86,7 +93,7 @@ Box Developer Console app. Reuse that app rather than creating a new one:
 
    ```
    https://<conexus-mcm-worker-address>/api/box/callback
-   https://<conexus-council-themes-worker-address>/api/box/callback
+   https://<this-worker-address>/api/box/callback
    ```
 
    Box rejects a login whose redirect URI isn't listed here, character for character.
@@ -760,6 +767,7 @@ second respondent.
 | `/admin/login.html` says "That email isn't on the admin list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
 | "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an existing admin to **Reset** it under Manage admins, then try again. |
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
+| **Set Cloudflare secrets** reports success but a key/secret still shows as missing on the live site, for every secret at once, not just one | `wrangler.jsonc`'s `"name"` doesn't match the Worker's actual name in the Cloudflare dashboard (Workers & Pages → the one "Workers Builds" deploys to). `wrangler secret put` creates a Worker under whatever name it's given if none exists yet, so a mismatch here silently sends every secret to a separate, never-deployed Worker instead of erroring — this happened once already (see `wrangler.jsonc`'s comment on `"name"`). Fix the name in `wrangler.jsonc` to match the dashboard, commit, then re-run **Set Cloudflare secrets**. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |
 | Consensus "Analyze" fails with "the responses file doesn't exist in Box" | Same as above, or the survey's responses folder was changed after respondents already answered — check the survey's Box folder still matches where they were saved. |
 | Issue Network Mapper's Box status says "Not connected" | Nobody has logged in with Box yet on this Worker — same fix as Council Themes/Quant's own "Box is not connected": open `/council-data/control-panel/index.html`'s Developer section and log in. |
