@@ -52,4 +52,24 @@ const APPS = [
     baseUrl: "/consensus",
     controlPanelUrl: "/consensus/control-panel",
   },
+  {
+    // id stays "stars" -- matches the original private repo's own naming
+    // ("STARs Talent Transfer API"), ported in as-is.
+    id: "stars",
+    name: "STARs Talent Transfer Explorer",
+    description: "Ranks occupations by O*NET skill-profile similarity plus Indiana wage " +
+      "data, for employers screening transferable talent pools and workers exploring " +
+      "higher-wage career pathways. No Claude call anywhere in the request path.",
+    baseUrl: "/stars",
+    controlPanelUrl: "/stars/control-panel",
+  },
+  {
+    id: "artifacts",
+    name: "Artifact Catalogue",
+    description: "A curated, nicely-presented list of Claude artifact links, each with its " +
+      "own public/private toggle. Nothing is exported or converted -- a card just opens the " +
+      "real artifact on claude.ai.",
+    baseUrl: "/artifacts",
+    controlPanelUrl: "/artifacts/control-panel",
+  },
 ];

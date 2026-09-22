@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifact Catalogue — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M9 8h14v4H9zM9 14h14v10H9z' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
+           flex-wrap:wrap; margin-bottom:18px; }
+  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
+  .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
+  a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
+                         font:inherit; cursor:pointer; text-decoration:none; }
+  a.link:hover, button.link:hover { text-decoration:underline; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  .card h3 { margin:0 0 4px; font-size:14px; }
+  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.small { padding:6px 11px; font-size:12.5px; }
+  button.danger { color:var(--bad); border-color:rgba(208,59,59,.4); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
+          border-radius:999px; border:1px solid transparent; white-space:nowrap; cursor:pointer; }
+  .pill.good { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
+  .pill.warn { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
+  .msg { font-size:12.5px; margin:10px 0 0; }
+  .msg.err { color:var(--bad); }
+  .msg.ok { color:var(--good); }
+  .msg.muted { color:var(--text-muted); }
+  [hidden] { display:none !important; }
+  label.field { display:flex; flex-direction:column; gap:4px; font-size:12.5px;
+                color:var(--text-secondary); margin-bottom:12px; }
+  label.field:last-of-type { margin-bottom:0; }
+  input[type="text"], input[type="url"], textarea, select {
+    font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--page); color:var(--text-primary); width:100%;
+  }
+  textarea { resize:vertical; min-height:56px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--text-secondary); font-weight:600; font-size:11.5px; }
+  .empty-note { color:var(--text-muted); font-size:13px; padding:14px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Artifact Catalogue</h1>
+      <p class="sub">A curated list of Claude artifact links -- nothing to export or convert.</p>
+    </div>
+    <div class="who">
+      <span id="whoami"></span>
+      <a class="link" href="/artifacts/index.html" target="_blank" rel="noopener">Open the gallery &rarr;</a>
+      <a class="link" href="/admin/index.html">&larr; Connector</a>
+      <button type="button" class="link" id="signOutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <h3>Catalogue</h3>
+    <p class="desc">Every artifact added so far. Click a visibility pill to flip it -- "Public"
+      shows the card on the gallery, "Private" only shows it here. Either way, opening a card
+      always takes you straight to the real artifact on claude.ai.</p>
+    <table id="catalogueTable">
+      <thead><tr>
+        <th style="width:30%">Title</th>
+        <th style="width:14%">Visibility</th>
+        <th style="width:30%">Link</th>
+        <th style="width:14%">Added</th>
+        <th style="width:12%"></th>
+      </tr></thead>
+      <tbody id="catalogueBody"></tbody>
+    </table>
+    <p class="empty-note" id="catalogueEmpty" hidden>No artifacts yet -- add one below.</p>
+  </div>
+
+  <div class="card">
+    <h3>Add an artifact</h3>
+    <p class="desc">Paste the artifact's own claude.ai link -- nothing is fetched, exported, or
+      converted. The card just opens that link directly.</p>
+    <form id="addForm">
+      <label class="field">Title (required)
+        <input type="text" id="fieldTitle" required maxlength="200">
+      </label>
+      <label class="field">Artifact URL (required)
+        <input type="url" id="fieldUrl" required placeholder="https://claude.ai/artifact/...">
+      </label>
+      <label class="field">Description (optional) -- shown on the gallery card
+        <textarea id="fieldDescription" maxlength="500"></textarea>
+      </label>
+      <label class="field">Visibility
+        <select id="fieldVisibility">
+          <option value="private" selected>Private -- only shown here, to signed-in admins</option>
+          <option value="public">Public -- listed on the Connector gallery</option>
+        </select>
+      </label>
+      <button type="submit" class="primary" id="addBtn" style="margin-top:4px">Add to catalogue</button>
+    </form>
+    <p class="msg" id="addMsg"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  if (!token) { window.location.href = "/admin/login.html"; return; }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function signOut() {
+    try { sessionStorage.removeItem("beta-token"); } catch (e) {}
+    window.location.href = "/admin/login.html";
+  }
+  el("signOutBtn").addEventListener("click", signOut);
+
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign({ "content-type": "application/json", authorization: "Bearer " + token },
+      options.headers || {});
+    return fetch("/api/artifacts/" + path, options).then(function (r) {
+      if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+        return body;
+      });
+    });
+  }
+
+  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
+    .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
+    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .catch(signOut);
+
+  /* ---------- Catalogue table ---------- */
+  function loadCatalogue() {
+    return api("catalogue").then(function (data) {
+      var artifacts = data.artifacts || [];
+      el("catalogueEmpty").hidden = !!artifacts.length;
+      el("catalogueBody").innerHTML = artifacts.map(function (a) {
+        var pillClass = a.visibility === "public" ? "good" : "warn";
+        var pillLabel = a.visibility === "public" ? "Public" : "Private";
+        return "<tr>" +
+          "<td><b>" + esc(a.title) + "</b>" + (a.description ? "<br><span class=\"msg muted\">" + esc(a.description) + "</span>" : "") + "</td>" +
+          '<td><span class="pill ' + pillClass + ' toggle-visibility" data-slug="' + esc(a.slug) + '" data-current="' + esc(a.visibility) + '">' + pillLabel + "</span></td>" +
+          '<td><a class="link" href="' + esc(a.url) + '" target="_blank" rel="noopener">' + esc(a.url) + "</a></td>" +
+          "<td>" + esc(new Date(a.addedAt).toLocaleDateString("en-US")) + "</td>" +
+          '<td><button type="button" class="small danger delete-btn" data-slug="' + esc(a.slug) + '">Delete</button></td>' +
+          "</tr>";
+      }).join("");
+
+      Array.prototype.forEach.call(el("catalogueBody").querySelectorAll(".toggle-visibility"), function (pill) {
+        pill.addEventListener("click", function () {
+          var next = pill.dataset.current === "public" ? "private" : "public";
+          api("visibility", { method: "POST", body: JSON.stringify({ slug: pill.dataset.slug, visibility: next }) })
+            .then(loadCatalogue).catch(function (e) { window.alert(e.message); });
+        });
+      });
+      Array.prototype.forEach.call(el("catalogueBody").querySelectorAll(".delete-btn"), function (btn) {
+        btn.addEventListener("click", function () {
+          if (!window.confirm("Delete this artifact from the catalogue? This can't be undone.")) return;
+          api("delete", { method: "POST", body: JSON.stringify({ slug: btn.dataset.slug }) })
+            .then(loadCatalogue).catch(function (e) { window.alert(e.message); });
+        });
+      });
+    }).catch(function (e) {
+      el("catalogueBody").innerHTML = "";
+      el("catalogueEmpty").hidden = false;
+      el("catalogueEmpty").textContent = "Error: " + e.message;
+    });
+  }
+
+  /* ---------- Add artifact ---------- */
+  el("addForm").addEventListener("submit", function (event) {
+    event.preventDefault();
+    el("addBtn").disabled = true;
+    el("addBtn").textContent = "Adding…";
+    el("addMsg").className = "msg muted";
+    el("addMsg").textContent = "";
+
+    api("add", { method: "POST", body: JSON.stringify({
+      title: el("fieldTitle").value.trim(),
+      url: el("fieldUrl").value.trim(),
+      description: el("fieldDescription").value.trim(),
+      visibility: el("fieldVisibility").value,
+    }) })
+      .then(function () {
+        el("addForm").reset();
+        el("fieldVisibility").value = "private";
+        el("addMsg").className = "msg ok";
+        el("addMsg").textContent = "Added to the catalogue.";
+        loadCatalogue();
+      })
+      .catch(function (e) {
+        el("addMsg").className = "msg err";
+        el("addMsg").textContent = "Error: " + e.message;
+      })
+      .then(function () {
+        el("addBtn").disabled = false;
+        el("addBtn").textContent = "Add to catalogue";
+      });
+  });
+
+  loadCatalogue();
+})();
+</script>
+</body>
+</html>
