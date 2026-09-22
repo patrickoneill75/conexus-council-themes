@@ -86,6 +86,14 @@
         overflow-x:auto; margin:10px 0 0; }
   [hidden] { display:none !important; }
   @media(max-width:760px){ .jobs{grid-template-columns:1fr;} }
+  .tabs { display:flex; gap:22px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+  .tab-btn { font:inherit; font-weight:600; font-size:13.5px; border:0; background:none;
+             padding:9px 2px; color:var(--text-secondary); cursor:pointer;
+             border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent); }
+  .tab-btn:hover { color:var(--text-primary); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
 </style>
 </head>
 <body>
@@ -105,6 +113,12 @@
 
   <div id="banners"></div>
 
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="pipeline">Pipeline</button>
+    <button type="button" class="tab-btn" data-tab="datasource">Data source</button>
+  </div>
+
+  <section class="tab-panel" id="tab-datasource">
   <div class="card" id="boxCard">
     <h3>Box connection</h3>
     <p class="desc">Uses the same Box connection every other tool here shares — log in
@@ -129,7 +143,9 @@
     <div id="folderPicker" hidden class="picker"></div>
     <pre id="testResult" hidden></pre>
   </div>
+  </section>
 
+  <section class="tab-panel active" id="tab-pipeline">
   <div class="card">
     <div class="jobs">
       <div class="job">
@@ -177,6 +193,7 @@
     </div>
     <p class="small muted" id="totals" style="margin:12px 0 0"></p>
   </div>
+  </section>
 </div>
 
 <script>
@@ -412,6 +429,16 @@
     confirmClaudeSpend(detail).then(function (ok) { if (ok) run("analyze", button); });
   });
   el("publishBtn").addEventListener("click", function () { run("publish", this); });
+
+  /* ---------- tabs ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (btn) {
+    btn.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-panel"), function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    });
+  });
 
   loadStatus();
   refresh();

@@ -86,14 +86,15 @@
   .crumb-sep { color:var(--text-muted); margin:0 4px; }
   code { background:var(--wash); border-radius:5px; padding:2px 6px; font-size:12.5px; }
   hr.rule { border:0; border-top:1px solid var(--border); margin:16px 0; }
-  details.devtools summary { cursor:pointer; font-size:12.5px; font-weight:600;
-    color:var(--text-muted); list-style:none; user-select:none; }
-  details.devtools summary::-webkit-details-marker { display:none; }
-  details.devtools summary::before { content:"▸"; display:inline-block; width:1em;
-    transition:transform .15s; }
-  details.devtools[open] summary::before { transform:rotate(90deg); }
-  details.devtools .devtools-body { margin-top:12px; }
   .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
+  .tabs { display:flex; gap:22px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+  .tab-btn { font:inherit; font-weight:600; font-size:13.5px; border:0; background:none;
+             padding:9px 2px; color:var(--text-secondary); cursor:pointer;
+             border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent); }
+  .tab-btn:hover { color:var(--text-primary); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
 </style>
 </head>
 <body>
@@ -113,6 +114,13 @@
 
   <div id="banners"></div>
 
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="uploads">Uploads</button>
+    <button type="button" class="tab-btn" data-tab="dashboard">Dashboard</button>
+    <button type="button" class="tab-btn" data-tab="developer">Developer</button>
+  </div>
+
+  <section class="tab-panel active" id="tab-uploads">
   <div class="card" id="uploadCard">
     <h3>Council Meeting Helper Upload</h3>
     <p class="desc">A fresh export of the Council Meeting Helper — one row per
@@ -140,7 +148,9 @@
     </div>
     <p class="small muted" id="surveyUploadState" style="margin:10px 0 0"></p>
   </div>
+  </section>
 
+  <section class="tab-panel" id="tab-dashboard">
   <div class="card" id="updateCard">
     <h3>Update Dashboard</h3>
     <p class="desc">Reads the Data Folder's two files, figures out which meetings
@@ -192,10 +202,9 @@
       </table>
     </div>
   </div>
+  </section>
 
-  <details class="devtools">
-    <summary>Developer</summary>
-    <div class="devtools-body">
+  <section class="tab-panel" id="tab-developer">
       <div class="card" id="boxCard">
         <h3>Box connection</h3>
         <p class="desc">Signs in as you, so this can read and write only what your own Box
@@ -247,8 +256,7 @@
         <p class="small muted" id="refreshDashboardState" style="margin:10px 0 0"></p>
         <p class="small muted" id="refreshThemesState" style="margin:2px 0 0"></p>
       </div>
-    </div>
-  </details>
+  </section>
 </div>
 
 <script>
@@ -715,6 +723,16 @@
         esc(e.message) + "</div></div>";
     });
   }
+
+  /* ---------- tabs ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (btn) {
+    btn.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-panel"), function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    });
+  });
 
   refresh();
   refreshBox();

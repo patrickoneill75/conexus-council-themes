@@ -111,6 +111,14 @@
   .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
   code { background:var(--wash); border-radius:5px; padding:2px 6px; font-size:12.5px; word-break:break-all; }
   [hidden] { display:none !important; }
+  .tabs { display:flex; gap:22px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+  .tab-btn { font:inherit; font-weight:600; font-size:13.5px; border:0; background:none;
+             padding:9px 2px; color:var(--text-secondary); cursor:pointer;
+             border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent); }
+  .tab-btn:hover { color:var(--text-primary); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
 </style>
 </head>
 <body>
@@ -146,6 +154,13 @@
   <div id="builderView" hidden>
     <button type="button" class="link" id="backToListBtn" style="margin-bottom:14px">&larr; Back to surveys</button>
 
+    <div class="tabs">
+      <button type="button" class="tab-btn active" data-tab="context">Survey context</button>
+      <button type="button" class="tab-btn" data-tab="questions">Questions</button>
+      <button type="button" class="tab-btn" data-tab="folder">Responses folder</button>
+    </div>
+
+    <section class="tab-panel active" id="tab-context">
     <div class="card">
       <h3>Survey context</h3>
       <p class="desc">Given to Claude alongside every question, so follow-ups (and later,
@@ -159,7 +174,9 @@
       <label for="surveyGeneralGuidance">General guidance</label>
       <textarea id="surveyGeneralGuidance" placeholder="Guidance that applies to every question's follow-ups -- e.g. &quot;take the respondent's earlier answer about their industry into account.&quot; Unlike a question's own context box, this reaches Claude on every question, including ones with 0 follow-ups of their own."></textarea>
     </div>
+    </section>
 
+    <section class="tab-panel" id="tab-questions">
     <div class="card">
       <h3>Questions</h3>
       <p class="desc">Each question can ask Claude to generate a set number of
@@ -167,7 +184,9 @@
       <div id="questionsList"></div>
       <button type="button" id="addQuestionBtn">Add question</button>
     </div>
+    </section>
 
+    <section class="tab-panel" id="tab-folder">
     <div class="card">
       <h3>Responses folder</h3>
       <p class="desc">The Box folder responses are saved to, as a CSV -- the same Box
@@ -178,6 +197,7 @@
       </div>
       <div id="folderPicker" hidden class="picker"></div>
     </div>
+    </section>
 
     <div class="card">
       <div class="row">
@@ -579,6 +599,7 @@
   function openBuilder(id) {
     el("listView").hidden = true;
     el("builderView").hidden = false;
+    showBuilderTab("context");
     if (!id) { resetBuilder(); return; }
     editingId = id;
     el("saveMsg").className = "msg muted";
@@ -694,6 +715,19 @@
     });
   }
   el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
+
+  /* ---------- tabs ---------- */
+  function showBuilderTab(name) {
+    Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) {
+      b.classList.toggle("active", b.dataset.tab === name);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".tab-panel"), function (p) {
+      p.classList.toggle("active", p.id === "tab-" + name);
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (btn) {
+    btn.addEventListener("click", function () { showBuilderTab(btn.dataset.tab); });
+  });
 
   resetBuilder();
   loadSurveys();

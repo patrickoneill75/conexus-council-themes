@@ -82,6 +82,14 @@
     0% { margin-left:-35%; } 100% { margin-left:100%; }
   }
   .progress-label { font-size:11.5px; color:var(--text-secondary); margin-top:5px; }
+  .tabs { display:flex; gap:22px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+  .tab-btn { font:inherit; font-weight:600; font-size:13.5px; border:0; background:none;
+             padding:9px 2px; color:var(--text-secondary); cursor:pointer;
+             border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent); }
+  .tab-btn:hover { color:var(--text-primary); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
 </style>
 </head>
 <body>
@@ -114,6 +122,12 @@
     <button type="button" class="small" id="cancelProjectBtn">Cancel</button>
   </div>
 
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="meetings">Meetings &amp; pipeline</button>
+    <button type="button" class="tab-btn" data-tab="datasource">Data source</button>
+  </div>
+
+  <section class="tab-panel" id="tab-datasource">
   <div class="card">
     <h3>Box connection</h3>
     <p class="desc">Uses the same Box connection every other tool here shares -- log in
@@ -138,7 +152,9 @@
     <div id="folderPicker" hidden class="picker"></div>
     <pre id="testResult" hidden></pre>
   </div>
+  </section>
 
+  <section class="tab-panel active" id="tab-meetings">
   <div class="card">
     <h3>Upload a meeting</h3>
     <p class="desc">Saves the file to Box's "raw" subfolder and queues it for the next
@@ -214,6 +230,7 @@
       <div class="progress-label">Starting on GitHub Actions…</div>
     </div>
   </div>
+  </section>
 
 </div>
 
@@ -631,6 +648,16 @@
         el("rerunAllBtn").disabled = allMeetings.length === 0;
         el("rerunAllBtn").textContent = "Re-run all meetings";
       });
+    });
+  });
+
+  /* ---------- tabs ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (btn) {
+    btn.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-panel"), function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
     });
   });
 
