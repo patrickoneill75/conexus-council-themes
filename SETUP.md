@@ -40,6 +40,8 @@ gated by the shared admin accounts, never a password of its own.
 | `src/stars.js` | Cloudflare Worker | `/api/stars/*`. The occupation-matching/skill-gap routes are public and unauthenticated (no Claude call anywhere); Box folder/upload routes are admin-gated like every other mini app. |
 | `public/artifacts/` | Worker static assets | Artifact Catalogue: the public gallery (`index.html`, cards link straight out to claude.ai) and its control panel (`control-panel/index.html`, admin-gated). See **13 · Artifact Catalogue** below. |
 | `src/artifacts.js` | Cloudflare Worker | `/api/artifacts/*`. `list` is public (public-tier entries only); `catalogue`/`add`/`visibility`/`delete` are admin-gated. No Box involved -- entries are just {title, url, description, visibility} in KV. |
+| `public/job-description/` | Worker static assets | Job Description Updater: the employer's own upload/chat flow (`index.html`, no login), the supervisor/incumbent shareable-link page (`respond.html`, no login), and its control panel (`control-panel/index.html`, admin-gated). See **14 · Job Description Updater** below. |
+| `src/job_description.js` | Cloudflare Worker | `/api/job-description/*`. The upload/chat/invite routes are public and unauthenticated, same as Consensus's respondent chat; Box folder picker and the sessions list are admin-gated. Its own Claude key, `job_description_claude_api`, is called live from the Worker (see step 14). |
 
 ---
 
@@ -611,6 +613,59 @@ who can actually open it, same as any link.
 
 ---
 
+## 14 · Job Description Updater
+
+An employer uploads a job description (PDF or Word), and a Claude-powered chat walks
+them through updating it with the Conexus Job Description Toolkit — the toolkit's own
+~60–90 minute manual exercise, compressed to ~15 minutes by having Claude read the
+whole document up front and the employer only confirm, correct, or supply what the
+document can't know (how the work has actually changed, which requirements are truly
+necessary). No step in this app asks an open-ended question where a tap-to-choose
+answer with Claude's own guess prefilled will do.
+
+**This app needs its own Anthropic API key, separate from every other mini app's.**
+Unlike the batch, GitHub-Actions-driven Claude calls everywhere else in this repo
+(Update Dashboard, Analyze, etc.), both of this app's Claude calls — the pre-read on
+upload, and the final outputs on Step 7 — have to respond live, synchronously, while
+the employer is sitting in the chat waiting, the same way Consensus's follow-up-question
+chat already does (see `src/consensus.js`'s own module docstring). That means this key
+has to reach the **Worker itself**, not just a GitHub Actions secret:
+
+1. Create the key in your Anthropic account, named however you like (the control panel
+   just checks whether it's set, not its name).
+2. Add it as a repository secret named exactly **`job_description_claude_api`**
+   (Settings → Secrets and variables → Actions → New repository secret).
+3. Run **Set Cloudflare secrets** from the Actions tab (same workflow every other
+   Worker secret in this repo goes through) — it reads that repository secret and
+   pushes it to the Worker. Unlike `consensus_claude_api`, nothing else needs a copy of
+   this one; there's no separate batch script for this app.
+4. Confirm it took: open the control panel (`/job-description/control-panel`) → **Data
+   source** tab → **Claude key** card should say Configured.
+
+**Pick a Box folder** (optional, but recommended, same as every other mini app's data
+folder): open the control panel and, under **Data source**, **Choose folder…**. Every
+upload gets its own subfolder there (named after the session), holding the original
+file plus every generated output — the revised description, the redline, the analysis
+worksheet, and all five Part 5 communication drafts, each saved as a `.md` file. If no
+folder is chosen yet, the tool still works end to end; it just doesn't save anything
+durably outside the session record in KV.
+
+**Document parsing**: a PDF is handed to Claude directly (it reads PDFs natively — no
+separate parsing). A `.docx` has no equivalent native support, so this app extracts its
+text itself with a small ZIP/DEFLATE reader built into `src/job_description.js` — no
+new dependency, matching this repo's zero-runtime-dependency Worker code. It handles a
+standard Word-written `.docx`; an unusual writer or a ZIP64 archive returns a clear
+error rather than a silent wrong extraction.
+
+**Supervisor/incumbent comparison** (optional): on Step 2, if the respondent isn't the
+supervisor closest to the work, they can generate a shareable link
+(`/job-description/respond.html?token=...`) covering just the duty reality-check. If
+both people respond, only the duties where their answers differ are surfaced back to
+the primary respondent to resolve — nothing else about the session is required from a
+second respondent.
+
+---
+
 ## Notes for a security review
 
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
@@ -621,12 +676,17 @@ who can actually open it, same as any link.
   Manufacturing Conditions Monitor to its own single folder (step 11); STARs Talent
   Transfer Explorer to its own single folder (step 12), and only when one has been
   chosen — none of it touches anything else in your Box account. (Artifact Catalogue,
-  step 13, doesn't use Box at all — its entries are just small metadata in KV.)
+  step 13, doesn't use Box at all — its entries are just small metadata in KV.) Job
+  Description Updater (step 14) writes to its own single folder the same way, one
+  subfolder per session.
 - **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
   run sends a new meeting's free-text answers (organization name and rating numbers
   included, but never the respondent's name — those columns are stripped before the
   request) and the existing Feedback Log's items to the Claude API, and nothing else in
-  your Box account. Both calls are logged in the Actions run's own output.
+  your Box account. Both calls are logged in the Actions run's own output. Job
+  Description Updater sends Claude the uploaded job description itself plus the
+  employer's own answers as they're given (step 14) — never anything else from Box, and
+  nothing from any other mini app's data.
 - **Credentials never reach a browser.** The Box client secret, the GitHub token, and the
   Anthropic API key live in Cloudflare Worker / GitHub Actions secrets respectively; the
   Box token pair lives in Workers KV. Every control panel only ever holds a short-lived
