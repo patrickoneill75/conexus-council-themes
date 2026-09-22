@@ -36,6 +36,8 @@ gated by the shared admin accounts, never a password of its own.
 | `src/pcn.js` | Cloudflare Worker | `/api/pcn/*`. Admin-gated like Consensus, and shares the same Box connection every other tool here uses -- picks its own one data folder the same way Consensus picks a responses folder per survey. |
 | `public/mcm/` | Worker static assets | Manufacturing Conditions Monitor: the public dashboard (`index.html`) and its control panel (`control-panel/index.html`, admin-gated). See **11 · Manufacturing Conditions Monitor** below. |
 | `src/mcm.js` | Cloudflare Worker | `/api/mcm/*`. Same shared Box connection and admin accounts as every other mini app; its own data folder. |
+| `public/stars/` | Worker static assets | STARs Talent Transfer Explorer: the public matching tool (`index.html`, no login) and its control panel (`control-panel/index.html`, admin-gated). See **12 · STARs Talent Transfer Explorer** below. |
+| `src/stars.js` | Cloudflare Worker | `/api/stars/*`. The occupation-matching/skill-gap routes are public and unauthenticated (no Claude call anywhere); Box folder/upload routes are admin-gated like every other mini app. |
 
 ---
 
@@ -545,6 +547,46 @@ other mini app's base page.
 
 ---
 
+## 12 · STARs Talent Transfer Explorer
+
+Ranks occupations by how closely their 35 O*NET skill-importance scores match a
+target job, layered with Indiana wage data — one tool for employers screening
+transferable talent pools, another for workers exploring higher-wage career
+pathways. Ported in from what used to be two standalone repos (a private Cloudflare
+Worker holding the O*NET/wage data, and a public GitHub Pages frontend calling it
+over CORS); both halves are now one mini app here, reusing the shared Box connection
+and admin accounts like every other one. **No step below involves Claude or any
+other API call** — the ranking is pure Euclidean distance, and the per-skill
+"development focus" text is a static, hand-written table already checked into
+`src/stars_logic.js` (see that file's own docstring). Nothing needs to be "rerun."
+
+**Nothing to add — it works immediately after deploy.** `src/data/stars-occupations.json`
+(the same 873-occupation dataset the original repo shipped, ~250KB) is bundled with
+the Worker as a default, so `/stars` and its control panel both work out of the box
+with no setup. The steps below are only for updating that data later.
+
+**Open it.** From the admin hub (`/admin/`), open **STARs Talent Transfer Explorer**
+→ **Control panel** (`/stars/control-panel/index.html`).
+
+**Pick a Box folder** (optional, but recommended). Under **Data folder**, click
+**Choose folder…** and pick (or create) an empty folder — STARS's own, separate from
+every other mini app's. This is where a freshly regenerated `occupations.json` gets
+uploaded and durably stored, independent of a code deploy; the **Data status** card
+shows whether the live tool is currently serving the bundled default or something
+uploaded here.
+
+**Updating the data**, when Indiana wage figures or the underlying O*NET skill model
+changes: run `generate_data.py` locally with Python (see `stars/README.md` in this
+repo for the exact command — it needs the source workbook and, optionally, a wage
+CSV), then upload the resulting `occupations.json` through the control panel's
+**Upload data** card. The source workbook and wage CSV can be uploaded alongside it,
+purely for provenance/future regeneration — the live tool never reads them at
+request time, only `occupations.json`. If the file in Box is ever edited or replaced
+directly (outside this upload form), **Refresh from Box** re-syncs the live tool to
+match.
+
+---
+
 ## Notes for a security review
 
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
@@ -552,8 +594,9 @@ other mini app's base page.
   with enterprise-wide reach. It has both read and write scope, used by every mini app
   in this repo — Council Themes/Quant write only to the configured Data Folder;
   Issue Network Mapper to whichever data folder each of its projects has been pointed at;
-  Manufacturing Conditions Monitor to its own single folder (step 11) — none of it
-  touches anything else in your Box account.
+  Manufacturing Conditions Monitor to its own single folder (step 11); STARs Talent
+  Transfer Explorer to its own single folder (step 12), and only when one has been
+  chosen — none of it touches anything else in your Box account.
 - **Claude sees survey responses and Feedback Log rows, nothing else.** Each analysis
   run sends a new meeting's free-text answers (organization name and rating numbers
   included, but never the respondent's name — those columns are stripped before the

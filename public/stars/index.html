@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STARs Talent Transfer Explorer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M16 6l2.5 6.2L25 13l-5 4.4L21.5 24 16 20.4 10.5 24 12 17.4 7 13l6.5-.8z' fill='white'/%3E%3C/svg%3E">
+<style>html { visibility: hidden; }</style>
+<script src="/tier-gate.js" data-app="stars"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --accent-wash:rgba(42,120,214,0.08); --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --accent-wash:rgba(57,135,229,0.14); --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:1280px; margin:0 auto; padding:32px 20px 64px; }
+  header { margin-bottom:18px; }
+  h1 { font-size:22px; font-weight:650; margin:0 0 4px; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:0; max-width:70ch; }
+  a.link { color:var(--accent); text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+  .status-banner { padding:11px 14px; border-radius:10px; font-size:13.5px; margin-bottom:16px;
+                    background:rgba(208,59,59,.10); border:1px solid rgba(208,59,59,.3); color:var(--bad); }
+  [hidden] { display:none !important; }
+
+  .tabs { display:flex; gap:22px; margin-bottom:20px; border-bottom:1px solid var(--border); }
+  .tab-btn { font:inherit; font-weight:600; font-size:13.5px; border:0; background:none;
+             padding:9px 2px; color:var(--text-secondary); cursor:pointer;
+             border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent); }
+  .tab-btn:hover { color:var(--text-primary); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+
+  .intro-text { margin:0 0 14px; font-size:13px; color:var(--text-secondary); max-width:70ch; }
+
+  .top-row { display:flex; flex-wrap:wrap; gap:24px; margin-bottom:10px; }
+  .top-row > .col { flex:1 1 420px; min-width:320px; }
+
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:18px 20px; margin-bottom:16px; }
+  .field { margin-bottom:14px; }
+  .field:last-child { margin-bottom:0; }
+  .field label { display:block; font-weight:600; font-size:12.5px; margin-bottom:4px; }
+  .field .hint { font-size:11.5px; color:var(--text-muted); margin:2px 0 6px; }
+
+  .combobox { position:relative; }
+  .combobox input[type="text"] {
+    width:100%; font:inherit; padding:9px 10px; border-radius:8px;
+    border:1px solid var(--border); background:var(--page); color:var(--text-primary);
+  }
+  .combobox-list {
+    position:absolute; z-index:20; top:calc(100% + 4px); left:0; right:0;
+    max-height:260px; overflow-y:auto; background:var(--surface-1); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.18); display:none;
+  }
+  .combobox-list.open { display:block; }
+  .combobox-option { padding:8px 10px; cursor:pointer; font-size:13px; }
+  .combobox-option:hover, .combobox-option.highlighted { background:var(--accent-wash); }
+  .combobox-empty { padding:8px 10px; color:var(--text-muted); font-size:12.5px; }
+
+  .field input[type="range"] { width:100%; }
+  .slider-value { font-size:12px; color:var(--text-muted); }
+  .checkbox-field { display:flex; align-items:flex-start; gap:8px; }
+  .checkbox-field input { margin-top:3px; }
+  .checkbox-field label { font-weight:500; font-size:12.5px; }
+
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+  button.primary { width:100%; background:var(--accent); border-color:var(--accent); color:#fff; font-weight:650; }
+  button.primary:disabled { opacity:.6; cursor:default; }
+
+  .summary-panel { background:var(--wash); border:1px solid var(--border); border-radius:10px;
+                    padding:14px 16px; margin-top:4px; font-size:13px; }
+  .summary-panel h3 { margin:0 0 6px; font-size:14.5px; }
+  .summary-panel p { margin:0 0 6px; }
+  .summary-panel p:last-child { margin-bottom:0; }
+
+  .results-row { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; }
+  .results-row > .col { flex:1 1 420px; min-width:320px; }
+  .section-header h3 { font-size:15px; margin:0 0 4px; }
+  .section-header p { margin:0 0 10px; color:var(--text-secondary); font-size:12px; }
+
+  table.results-table, table.gap-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.results-table th, table.gap-table th {
+    text-align:left; border-bottom:1px solid var(--border); padding:8px 10px;
+    background:var(--wash); position:sticky; top:0; color:var(--text-secondary);
+    font-weight:600; font-size:11.5px;
+  }
+  table.results-table td, table.gap-table td { border-bottom:1px solid var(--border); padding:8px 10px; vertical-align:top; }
+  table.results-table tbody tr { cursor:pointer; }
+  table.results-table tbody tr:hover { background:var(--wash); }
+  table.results-table tbody tr.selected { background:var(--accent-wash); }
+  .table-scroll { max-height:620px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; }
+
+  .gap-note { margin-top:10px; font-size:12.5px; color:var(--text-secondary); }
+  .gap-note em { color:var(--text-muted); }
+  .empty-note { color:var(--text-muted); font-size:13px; padding:16px 4px; }
+
+  details.how-it-works { margin-top:20px; border:1px solid var(--border); border-radius:10px; padding:4px 16px; }
+  details.how-it-works summary { cursor:pointer; font-weight:600; padding:10px 0; font-size:13px; }
+  details.how-it-works ul { margin:0 0 14px; padding-left:20px; font-size:12.5px; color:var(--text-secondary); }
+  details.how-it-works li { margin-bottom:6px; }
+
+  @media (max-width:720px) { .top-row, .results-row { gap:16px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>STARs Talent Transfer Explorer</h1>
+    <p class="sub">Skills-based pathways into better-fit jobs -- ranked by O*NET skill-profile
+      similarity plus Indiana wage data.</p>
+  </header>
+
+  <div id="statusBanner" class="status-banner" hidden></div>
+
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="employer">For Employers</button>
+    <button type="button" class="tab-btn" data-tab="worker">For Workers</button>
+  </div>
+
+  <!-- =========================== EMPLOYER TAB =========================== -->
+  <section class="tab-panel active" id="tab-employer">
+    <div class="top-row">
+      <div class="col">
+        <p class="intro-text">
+          Choose the occupation you need to fill. The tool ranks other occupations by how closely their
+          <strong>35 O*NET skill-importance scores</strong> match the target job, then layers in
+          <strong>Indiana wage data</strong> and a <strong>directional skill-gap analysis</strong>.
+        </p>
+
+        <div class="card">
+          <div class="field">
+            <label for="employer-target-input">Occupation you need to fill</label>
+            <div class="hint">Type to search the occupation list.</div>
+            <div class="combobox" id="employer-combobox">
+              <input type="text" id="employer-target-input" autocomplete="off" placeholder="Search occupations…">
+              <div class="combobox-list" id="employer-combobox-list"></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="employer-result-count">Number of results: <span class="slider-value" id="employer-result-count-value">20</span></label>
+            <input type="range" id="employer-result-count" min="5" max="50" step="5" value="20">
+          </div>
+
+          <div class="field checkbox-field">
+            <input type="checkbox" id="employer-lower-wage-only" checked>
+            <label for="employer-lower-wage-only">Only show occupations earning less than the target occupation</label>
+          </div>
+
+          <div class="field">
+            <button type="button" class="primary" id="employer-find-button">Find transferable occupations</button>
+          </div>
+        </div>
+
+        <div class="summary-panel" id="employer-target-summary"></div>
+      </div>
+      <div class="col"></div>
+    </div>
+
+    <div class="results-row">
+      <div class="col">
+        <div class="section-header">
+          <h3>Transfer occupation rank</h3>
+          <p>Click any occupation row to update the skills-gap analysis.</p>
+        </div>
+        <div class="table-scroll">
+          <table class="results-table">
+            <thead><tr>
+              <th style="width:46%">Transfer occupation</th>
+              <th style="width:18%">Skill similarity</th>
+              <th style="width:18%">Indiana median wage</th>
+              <th style="width:18%">Average wage increase</th>
+            </tr></thead>
+            <tbody id="employer-results-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="section-header"><div id="employer-skill-gap-heading"><h3>Skills gap</h3></div></div>
+        <div class="table-scroll">
+          <table class="gap-table">
+            <thead><tr>
+              <th style="width:25%">Skill to build</th>
+              <th style="width:12%">Gap</th>
+              <th style="width:63%">Development focus</th>
+            </tr></thead>
+            <tbody id="employer-gap-body"></tbody>
+          </table>
+        </div>
+        <div class="gap-note" id="employer-gap-note"></div>
+      </div>
+    </div>
+
+    <details class="how-it-works">
+      <summary>How the employer tool works</summary>
+      <ul>
+        <li><strong>Ranking:</strong> the original STARs model, unchanged -- Euclidean distance across 35 O*NET skill-importance scores. Smaller distance = closer occupational skill profile. This is what the table is sorted by.</li>
+        <li><strong>Skill similarity:</strong> a 0-100% readout of that same Euclidean distance, scaled against the largest distance two occupations could possibly have. It moves in lockstep with the ranking, just in a more human-readable form.</li>
+        <li><strong>Average wage increase:</strong> the percentage increase from the transfer occupation's Indiana annual wage to the target occupation's Indiana annual wage.</li>
+        <li><strong>Wage matching:</strong> Indiana wage data use the BLS May 2019/2020 hybrid OEWS occupation structure -- matched by title/SOC first, then the official BLS hybrid crosswalk where needed.</li>
+        <li><strong>Wage filter:</strong> when selected, results only include occupations with a lower Indiana annual median wage than the target occupation.</li>
+        <li><strong>Skill gaps:</strong> directional -- skills more important in the target occupation than in the potential transfer occupation.</li>
+        <li><strong>Gap %:</strong> the transfer occupation's shortfall relative to the target occupation's O*NET importance score: (target − source) / target.</li>
+        <li><strong>Important:</strong> this is an occupation-level talent-pool screening tool, not an assessment of an individual applicant and not a substitute for required licenses, credentials, safety training, or employer-specific qualification.</li>
+      </ul>
+    </details>
+  </section>
+
+  <!-- =========================== WORKER TAB =========================== -->
+  <section class="tab-panel" id="tab-worker">
+    <div class="top-row">
+      <div class="col">
+        <p class="intro-text">
+          Choose your current occupation. The tool ranks other occupations that use similar skills, then helps you
+          identify <strong>higher-wage career pathways</strong> and the specific skills you may need to build.
+        </p>
+
+        <div class="card">
+          <div class="field">
+            <label for="worker-current-input">Your current occupation</label>
+            <div class="hint">Type to search the occupation list.</div>
+            <div class="combobox" id="worker-combobox">
+              <input type="text" id="worker-current-input" autocomplete="off" placeholder="Search occupations…">
+              <div class="combobox-list" id="worker-combobox-list"></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="worker-result-count">Number of results: <span class="slider-value" id="worker-result-count-value">20</span></label>
+            <input type="range" id="worker-result-count" min="5" max="50" step="5" value="20">
+          </div>
+
+          <div class="field checkbox-field">
+            <input type="checkbox" id="worker-higher-wage-only" checked>
+            <label for="worker-higher-wage-only">Only show occupations earning more than your current occupation</label>
+          </div>
+
+          <div class="field">
+            <button type="button" class="primary" id="worker-find-button">Find higher-wage career options</button>
+          </div>
+        </div>
+
+        <div class="summary-panel" id="worker-current-summary"></div>
+      </div>
+      <div class="col"></div>
+    </div>
+
+    <div class="results-row">
+      <div class="col">
+        <div class="section-header">
+          <h3>Career option rank</h3>
+          <p>Click any occupation row to update the skills-to-build analysis.</p>
+        </div>
+        <div class="table-scroll">
+          <table class="results-table">
+            <thead><tr>
+              <th style="width:46%">Potential occupation</th>
+              <th style="width:18%">Skill similarity</th>
+              <th style="width:18%">Indiana median wage</th>
+              <th style="width:18%">Average wage increase</th>
+            </tr></thead>
+            <tbody id="worker-results-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="section-header"><div id="worker-skill-gap-heading"><h3>Skills to build</h3></div></div>
+        <div class="table-scroll">
+          <table class="gap-table">
+            <thead><tr>
+              <th style="width:25%">Skill to build</th>
+              <th style="width:12%">Gap</th>
+              <th style="width:63%">Development focus</th>
+            </tr></thead>
+            <tbody id="worker-gap-body"></tbody>
+          </table>
+        </div>
+        <div class="gap-note" id="worker-gap-note"></div>
+      </div>
+    </div>
+
+    <details class="how-it-works">
+      <summary>How the worker tool works</summary>
+      <ul>
+        <li><strong>Start with your current occupation:</strong> the model treats your current job as evidence of skills you may already have developed through work experience.</li>
+        <li><strong>Ranking:</strong> potential next occupations are ranked using the same Euclidean distance across 35 O*NET skill-importance scores used in the employer tool.</li>
+        <li><strong>Skill similarity:</strong> a 0-100% readout of that same Euclidean distance. Higher scores mean the potential occupation has a skill profile more similar to your current occupation, and the percentage always agrees with the table's sort order.</li>
+        <li><strong>Average wage increase:</strong> the percentage increase from your current occupation's Indiana annual median wage to the potential occupation's Indiana annual median wage.</li>
+        <li><strong>Wage filter:</strong> when selected, results only include occupations with a higher Indiana annual median wage than your current occupation.</li>
+        <li><strong>Skills to build:</strong> clicking a potential occupation compares that target job with your current occupation and identifies the skills more important in the new job.</li>
+        <li><strong>Gap %:</strong> your current occupation's skill-importance shortfall relative to the potential target occupation: (target − current) / target.</li>
+        <li><strong>Important:</strong> this is an occupation-level career exploration tool. It does not assess an individual's actual proficiency, qualifications, education, licenses, or employer-specific requirements.</li>
+      </ul>
+    </details>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var statusBanner = document.getElementById("statusBanner");
+  function showError(message) {
+    statusBanner.textContent = message;
+    statusBanner.hidden = false;
+  }
+
+  // ---------------------------------------------------------------------
+  // Minimal Markdown -> HTML for the small vocabulary the API actually
+  // sends: "### heading", "**bold**", "*italic*", and markdown line breaks
+  // (a line ending in two spaces, or a blank line for a new paragraph).
+  // Occupation/skill names inside these strings are already HTML-escaped by
+  // the Worker before they're embedded, so building this HTML with
+  // innerHTML is safe -- the escaped entities render as literal characters.
+  // ---------------------------------------------------------------------
+  function inlineFormat(text) {
+    var out = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    return out;
+  }
+
+  function mdToHtml(md) {
+    if (!md) return "";
+    var lines = String(md).split("\n");
+    var html = "", para = [];
+    function flush() {
+      if (para.length) { html += "<p>" + para.join("<br>") + "</p>"; para = []; }
+    }
+    lines.forEach(function (raw) {
+      if (raw.indexOf("### ") === 0) {
+        flush();
+        html += "<h3>" + inlineFormat(raw.slice(4)) + "</h3>";
+        return;
+      }
+      var stripped = raw.replace(/ {2}$/, "");
+      if (stripped.trim() === "") { flush(); return; }
+      para.push(inlineFormat(stripped));
+    });
+    flush();
+    return html;
+  }
+
+  // ---------------------------------------------------------------------
+  // API helpers -- same origin now (no config.js/CORS indirection needed;
+  // the original standalone tool called a separately-hosted Worker).
+  // ---------------------------------------------------------------------
+  function apiGet(path) {
+    return fetch("/api/stars" + path).then(function (res) {
+      if (!res.ok) throw new Error(path + " failed (" + res.status + ")");
+      return res.json();
+    });
+  }
+  function apiPost(path, body) {
+    return fetch("/api/stars" + path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }).then(function (res) {
+      if (!res.ok) throw new Error(path + " failed (" + res.status + ")");
+      return res.json();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Searchable combobox
+  // ---------------------------------------------------------------------
+  function createCombobox(inputEl, listEl, titles) {
+    var filtered = [], highlighted = -1, selectedTitle = null;
+
+    function render() {
+      listEl.innerHTML = "";
+      if (!filtered.length) {
+        var empty = document.createElement("div");
+        empty.className = "combobox-empty";
+        empty.textContent = "No matching occupations.";
+        listEl.appendChild(empty);
+      } else {
+        filtered.slice(0, 200).forEach(function (title, i) {
+          var opt = document.createElement("div");
+          opt.className = "combobox-option" + (i === highlighted ? " highlighted" : "");
+          opt.textContent = title;
+          opt.addEventListener("mousedown", function (e) { e.preventDefault(); select(title); });
+          listEl.appendChild(opt);
+        });
+      }
+      listEl.classList.add("open");
+    }
+
+    function select(title) {
+      selectedTitle = title;
+      inputEl.value = title;
+      listEl.classList.remove("open");
+    }
+
+    function filterFrom(query) {
+      var q = query.trim().toLowerCase();
+      filtered = q ? titles.filter(function (t) { return t.toLowerCase().indexOf(q) !== -1; }) : titles.slice(0, 200);
+      highlighted = -1;
+    }
+
+    inputEl.addEventListener("input", function () { selectedTitle = null; filterFrom(inputEl.value); render(); });
+    inputEl.addEventListener("focus", function () { filterFrom(inputEl.value); render(); });
+    inputEl.addEventListener("blur", function () { setTimeout(function () { listEl.classList.remove("open"); }, 100); });
+    inputEl.addEventListener("keydown", function (e) {
+      if (!listEl.classList.contains("open")) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        highlighted = Math.min(highlighted + 1, Math.min(filtered.length, 200) - 1);
+        render();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        highlighted = Math.max(highlighted - 1, 0);
+        render();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (highlighted >= 0 && filtered[highlighted]) select(filtered[highlighted]);
+      } else if (e.key === "Escape") {
+        listEl.classList.remove("open");
+      }
+    });
+
+    return {
+      getSelected: function () { return selectedTitle; },
+      setValue: function (title) { select(title); },
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Panel controller shared by the Employer and Worker tabs -- same
+  // interaction pattern (pick an occupation, search, click a row to drill
+  // into skill gaps) against mirrored API endpoints.
+  // ---------------------------------------------------------------------
+  function createPanel(cfg) {
+    var input = document.getElementById(cfg.prefix + "-target-input") ||
+      document.getElementById(cfg.prefix + "-current-input");
+    var listEl = document.getElementById(cfg.prefix + "-combobox-list");
+    var resultCountEl = document.getElementById(cfg.prefix + "-result-count");
+    var resultCountValueEl = document.getElementById(cfg.prefix + "-result-count-value");
+    var wageCheckboxEl = document.getElementById(cfg.prefix + "-lower-wage-only") ||
+      document.getElementById(cfg.prefix + "-higher-wage-only");
+    var findButton = document.getElementById(cfg.prefix + "-find-button");
+    var summaryEl = document.getElementById(cfg.prefix + "-target-summary") ||
+      document.getElementById(cfg.prefix + "-current-summary");
+    var resultsBody = document.getElementById(cfg.prefix + "-results-body");
+    var gapHeadingEl = document.getElementById(cfg.prefix + "-skill-gap-heading");
+    var gapBody = document.getElementById(cfg.prefix + "-gap-body");
+    var gapNoteEl = document.getElementById(cfg.prefix + "-gap-note");
+
+    var combobox = null, resultTitles = [], activeTitle = null, selectedRowIndex = -1, requestSeq = 0;
+
+    resultCountEl.addEventListener("input", function () { resultCountValueEl.textContent = resultCountEl.value; });
+
+    function renderEmptyResults(message) {
+      resultsBody.innerHTML = '<tr><td colspan="4" class="empty-note">' + message + "</td></tr>";
+    }
+
+    function renderRows(rows) {
+      resultsBody.innerHTML = "";
+      if (!rows.length) { renderEmptyResults("No occupations met the current filter."); return; }
+      rows.forEach(function (row, i) {
+        var tr = document.createElement("tr");
+        tr.dataset.index = String(i);
+        row.forEach(function (cell) {
+          var td = document.createElement("td");
+          td.textContent = cell;
+          tr.appendChild(td);
+        });
+        tr.addEventListener("click", function () { onRowClick(i); });
+        resultsBody.appendChild(tr);
+      });
+    }
+
+    function renderGapRows(rows) {
+      gapBody.innerHTML = "";
+      rows.forEach(function (row) {
+        var tr = document.createElement("tr");
+        row.forEach(function (cell) {
+          var td = document.createElement("td");
+          td.textContent = cell;
+          tr.appendChild(td);
+        });
+        gapBody.appendChild(tr);
+      });
+    }
+
+    function highlightSelectedRow() {
+      Array.prototype.forEach.call(resultsBody.children, function (tr, i) {
+        tr.classList.toggle("selected", i === selectedRowIndex);
+      });
+    }
+
+    function runSearch() {
+      var title = combobox.getSelected() || input.value.trim();
+      if (!title) return;
+      findButton.disabled = true;
+      var mySeq = ++requestSeq;
+      var body = { resultCount: Number(resultCountEl.value) };
+      body[cfg.titleField] = title;
+      body[cfg.wageFlagField] = wageCheckboxEl.checked;
+      apiPost(cfg.searchEndpoint, body).then(function (result) {
+        if (mySeq !== requestSeq) return; // a newer search has already been issued
+        activeTitle = title;
+        resultTitles = result.resultTitles || [];
+        selectedRowIndex = resultTitles.length ? 0 : -1;
+        summaryEl.innerHTML = mdToHtml(result[cfg.summaryField]);
+        renderRows(result.rows || []);
+        gapHeadingEl.innerHTML = mdToHtml(result.gapHeading || "");
+        renderGapRows(result.gapRows || []);
+        gapNoteEl.innerHTML = mdToHtml(result.gapNote || "");
+        highlightSelectedRow();
+      }).catch(function (err) {
+        showError("Could not reach the STARs API. (" + err.message + ")");
+      }).then(function () { findButton.disabled = false; }, function () { findButton.disabled = false; });
+    }
+
+    function onRowClick(rowIndex) {
+      if (!activeTitle || !resultTitles.length) return;
+      selectedRowIndex = rowIndex;
+      highlightSelectedRow();
+      var body = { resultTitles: resultTitles, rowIndex: rowIndex };
+      body[cfg.titleField] = activeTitle;
+      apiPost(cfg.clickEndpoint, body).then(function (result) {
+        gapHeadingEl.innerHTML = mdToHtml(result.gapHeading || "");
+        renderGapRows(result.gapRows || []);
+        gapNoteEl.innerHTML = mdToHtml(result.gapNote || "");
+      }).catch(function (err) {
+        showError("Could not update the skill-gap panel. (" + err.message + ")");
+      });
+    }
+
+    findButton.addEventListener("click", runSearch);
+
+    return {
+      init: function (titles) { combobox = createCombobox(input, listEl, titles); },
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Tabs
+  // ---------------------------------------------------------------------
+  Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (btn) {
+    btn.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-panel"), function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------
+  var employerPanel = createPanel({
+    prefix: "employer", titleField: "targetTitle", wageFlagField: "lowerWageOnly",
+    summaryField: "targetSummary", searchEndpoint: "/employer/search", clickEndpoint: "/employer/skill-gap",
+  });
+  var workerPanel = createPanel({
+    prefix: "worker", titleField: "currentTitle", wageFlagField: "higherWageOnly",
+    summaryField: "currentSummary", searchEndpoint: "/worker/search", clickEndpoint: "/worker/skill-gap",
+  });
+
+  apiGet("/occupations").then(function (data) {
+    var titles = data.titles || [];
+    employerPanel.init(titles);
+    workerPanel.init(titles);
+  }).catch(function (err) {
+    showError("Could not reach the STARs API. (" + err.message + ")");
+  });
+})();
+</script>
+</body>
+</html>

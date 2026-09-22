@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STARs Talent Transfer Explorer — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M16 6l2.5 6.2L25 13l-5 4.4L21.5 24 16 20.4 10.5 24 12 17.4 7 13l6.5-.8z' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
+    --accent:#2a78d6; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
+    --accent:#3987e5; --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
+           flex-wrap:wrap; margin-bottom:18px; }
+  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  .sub { color:var(--text-secondary); font-size:13px; margin:4px 0 0; }
+  .who { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-secondary); }
+  a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
+                         font:inherit; cursor:pointer; text-decoration:none; }
+  a.link:hover, button.link:hover { text-decoration:underline; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  .card h3 { margin:0 0 4px; font-size:14px; }
+  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
+  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.small { padding:6px 11px; font-size:12.5px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
+          border-radius:999px; border:1px solid transparent; white-space:nowrap; }
+  .pill.good { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
+  .pill.warn { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
+  .pill.bad { background:rgba(208,59,59,.12); color:var(--bad); border-color:rgba(208,59,59,.3); }
+  .pill.nodata { background:var(--wash); color:var(--text-muted); border-color:var(--border); }
+  .msg { font-size:12.5px; margin:10px 0 0; }
+  .msg.err { color:var(--bad); }
+  .msg.ok { color:var(--good); }
+  .msg.muted { color:var(--text-muted); }
+  .folder-row { display:flex; align-items:center; justify-content:space-between;
+                padding:7px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .folder-row:hover { background:var(--wash); }
+  .folder-row .enter { font-size:12px; color:var(--accent); }
+  .crumb { cursor:pointer; color:var(--accent); }
+  .crumb:hover { text-decoration:underline; }
+  .crumb-sep { color:var(--text-muted); margin:0 4px; }
+  .picker { margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; }
+  pre { background:var(--wash); border-radius:8px; padding:10px 12px; font-size:12px;
+        overflow-x:auto; margin:10px 0 0; }
+  [hidden] { display:none !important; }
+  label.field { display:flex; flex-direction:column; gap:4px; font-size:12.5px;
+                color:var(--text-secondary); margin-bottom:12px; }
+  label.field:last-of-type { margin-bottom:0; }
+  input[type="file"] { font:inherit; padding:7px 9px; border-radius:8px; border:1px solid var(--border);
+                        background:var(--surface-1); color:var(--text-primary); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--text-secondary); font-weight:600; font-size:11.5px; width:40%; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>STARs Talent Transfer Explorer</h1>
+      <p class="sub">Skills-based occupation matching -- data folder and source files.</p>
+    </div>
+    <div class="who">
+      <span id="whoami"></span>
+      <a class="link" href="/stars/index.html" target="_blank" rel="noopener">Open the tool &rarr;</a>
+      <a class="link" href="/admin/index.html">&larr; Connector</a>
+      <button type="button" class="link" id="signOutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card" id="boxCard">
+    <h3>Box connection</h3>
+    <p class="desc">Uses the same Box connection every other tool here shares -- log in
+      with Box from Council Data's control panel Developer section
+      (<a href="/council-data/control-panel/index.html">/council-data/control-panel</a>)
+      if this says not connected.</p>
+    <div class="row">
+      <span id="statusPill"><span class="pill warn">Checking…</span></span>
+      <button type="button" id="refreshStatusBtn">Refresh</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Data folder</h3>
+    <p class="desc">The one Box folder holding the live <code>occupations.json</code> this
+      tool serves -- its own folder, separate from every other mini app's data. Until a
+      file is uploaded here, the tool serves a bundled default that shipped with the code
+      (the same data the original STARs repo had, so nothing changes for visitors until
+      you actually update it here).</p>
+    <p style="margin:0 0 10px">Currently: <b id="folderName">(none selected)</b></p>
+    <div class="row">
+      <button type="button" id="chooseFolderBtn">Choose folder…</button>
+      <button type="button" class="primary" id="testBtn">Test Box round-trip</button>
+    </div>
+    <div id="folderPicker" hidden class="picker"></div>
+    <pre id="testResult" hidden></pre>
+  </div>
+
+  <div class="card">
+    <h3>Data status</h3>
+    <p class="desc">What the live API is actually serving right now.</p>
+    <table>
+      <tr><th>Source</th><td id="statSource">—</td></tr>
+      <tr><th>Occupations</th><td id="statOccCount">—</td></tr>
+      <tr><th>Skills</th><td id="statSkillCount">—</td></tr>
+      <tr><th>Last updated</th><td id="statUpdated">—</td></tr>
+      <tr><th>Source files in folder</th><td id="statSourceFiles">—</td></tr>
+    </table>
+    <div class="row" style="margin-top:14px">
+      <button type="button" id="refreshDataBtn">Refresh from Box</button>
+    </div>
+    <p class="desc" style="margin:8px 0 0">Re-reads <code>occupations.json</code> from the
+      data folder above -- use this if the file was edited or replaced directly in Box,
+      outside the upload form below.</p>
+    <p class="msg" id="refreshMsg"></p>
+  </div>
+
+  <div class="card">
+    <h3>Upload data</h3>
+    <p class="desc">No Claude call here, ever -- <code>occupations.json</code> is generated
+      by a deterministic local script (<code>generate_data.py</code>, reading the O*NET
+      skill-model workbook and an Indiana wage export) and the per-skill development-focus
+      text is a static, hand-written lookup table already checked into this app's code.
+      Uploading here just moves the already-generated file into this project's Box folder
+      and refreshes what the live tool serves -- it never re-runs any extraction.</p>
+    <form id="uploadForm">
+      <label class="field">occupations.json (required) -- the file <code>generate_data.py</code> writes
+        <input type="file" id="uploadOccupations" accept=".json" required>
+      </label>
+      <label class="field">Source workbook (optional) -- the O*NET skill-model .xlsx, kept for provenance/future regeneration, never read at request time
+        <input type="file" id="uploadModel" accept=".xlsx">
+      </label>
+      <label class="field">Indiana wage CSV (optional) -- kept alongside for the same reason
+        <input type="file" id="uploadWages" accept=".csv">
+      </label>
+      <button type="submit" class="primary" id="uploadBtn" style="margin-top:4px">Upload</button>
+    </form>
+    <p class="msg" id="uploadMsg"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  if (!token) { window.location.href = "/admin/login.html"; return; }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function signOut() {
+    try { sessionStorage.removeItem("beta-token"); } catch (e) {}
+    window.location.href = "/admin/login.html";
+  }
+  el("signOutBtn").addEventListener("click", signOut);
+
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign({ "content-type": "application/json", authorization: "Bearer " + token },
+      options.headers || {});
+    return fetch("/api/stars/" + path, options).then(function (r) {
+      if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+        return body;
+      });
+    });
+  }
+
+  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
+    .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
+    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .catch(signOut);
+
+  /* ---------- Box connection + folder ---------- */
+  var currentFolderName = "(none selected)";
+
+  function loadStatus() {
+    el("statusPill").innerHTML = '<span class="pill warn">Checking…</span>';
+    return api("box/status").then(function (status) {
+      el("statusPill").innerHTML = status.connected
+        ? '<span class="pill good">Connected</span>' : '<span class="pill bad">Not connected</span>';
+      currentFolderName = (status.folder && status.folder.name) || "(none selected)";
+      el("folderName").textContent = currentFolderName;
+    }).catch(function (e) {
+      el("statusPill").innerHTML = '<span class="pill bad">Error</span>';
+    });
+  }
+  el("refreshStatusBtn").addEventListener("click", loadStatus);
+
+  el("testBtn").addEventListener("click", function () {
+    el("testBtn").disabled = true;
+    el("testBtn").textContent = "Testing…";
+    el("testResult").hidden = true;
+    api("box/test", { method: "POST" }).then(function (result) {
+      el("testResult").hidden = false;
+      el("testResult").textContent = JSON.stringify(result, null, 2);
+      el("testBtn").disabled = false;
+      el("testBtn").textContent = "Test Box round-trip";
+    }).catch(function (e) {
+      el("testResult").hidden = false;
+      el("testResult").textContent = "Error: " + e.message;
+      el("testBtn").disabled = false;
+      el("testBtn").textContent = "Test Box round-trip";
+    });
+  });
+
+  /* ---------- Box folder picker (same shape as every other mini app's) ---------- */
+  function openPicker(folderId) {
+    el("folderPicker").hidden = false;
+    el("folderPicker").innerHTML = '<p class="msg muted">Loading…</p>';
+    api("box/folders?id=" + encodeURIComponent(folderId)).then(function (data) {
+      var html = '<div class="msg" style="margin-bottom:8px" id="pickerCrumb"></div>' +
+        '<div id="pickerList" style="max-height:240px;overflow-y:auto"></div>' +
+        '<div class="row" style="margin-top:12px">' +
+        '<button class="primary small" type="button" id="pickerUseBtn">Use this folder</button>' +
+        '<button class="small" type="button" id="pickerCancelBtn">Cancel</button></div>';
+      el("folderPicker").innerHTML = html;
+      var crumbEl = el("pickerCrumb"), listEl = el("pickerList");
+      crumbEl.innerHTML = data.breadcrumb.map(function (c, i) {
+        var sep = i > 0 ? '<span class="crumb-sep">/</span>' : "";
+        return sep + '<span class="crumb" data-id="' + esc(c.id) + '">' + esc(c.name || "All Files") + "</span>";
+      }).join("");
+      Array.prototype.forEach.call(crumbEl.querySelectorAll(".crumb"), function (node) {
+        node.addEventListener("click", function () { openPicker(node.dataset.id); });
+      });
+      listEl.innerHTML = data.folders.length ? data.folders.map(function (f) {
+        return '<div class="folder-row" data-id="' + esc(f.id) + '"><span>📁 ' + esc(f.name) +
+          '</span><span class="enter">Open &rarr;</span></div>';
+      }).join("") : '<p class="msg muted">No subfolders here -- "Use this folder" picks this one.</p>';
+      Array.prototype.forEach.call(listEl.querySelectorAll(".folder-row"), function (row) {
+        row.addEventListener("click", function () { openPicker(row.dataset.id); });
+      });
+      el("pickerUseBtn").addEventListener("click", function () {
+        var crumbs = crumbEl.querySelectorAll(".crumb");
+        var name = crumbs.length ? crumbs[crumbs.length - 1].textContent : data.name;
+        api("box/select-folder", { method: "POST", body: JSON.stringify({ folderId: data.id, folderName: name }) })
+          .then(function () {
+            currentFolderName = name;
+            el("folderName").textContent = name;
+            el("folderPicker").hidden = true;
+            loadDataStatus();
+          }).catch(function (e) { window.alert(e.message); });
+      });
+      el("pickerCancelBtn").addEventListener("click", function () { el("folderPicker").hidden = true; });
+    }).catch(function (e) {
+      el("folderPicker").innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
+    });
+  }
+  el("chooseFolderBtn").addEventListener("click", function () { openPicker("0"); });
+
+  /* ---------- Data status ---------- */
+  function fileListPill(present, label) {
+    return '<span class="pill ' + (present ? "good" : "nodata") + '">' + esc(label) + "</span>";
+  }
+
+  function loadDataStatus() {
+    return api("status").then(function (status) {
+      var meta = status.meta || {};
+      el("statSource").innerHTML = meta.source === "box"
+        ? '<span class="pill good">Box data folder</span>'
+        : '<span class="pill nodata">Bundled default (no upload yet)</span>';
+      el("statOccCount").textContent = meta.occupationCount != null ? meta.occupationCount.toLocaleString("en-US") : "—";
+      el("statSkillCount").textContent = meta.skillCount != null ? meta.skillCount.toLocaleString("en-US") : "—";
+      el("statUpdated").textContent = meta.uploadedAt
+        ? new Date(meta.uploadedAt).toLocaleString("en-US") + (meta.uploadedBy ? " by " + meta.uploadedBy : "")
+        : "(bundled with the code, not uploaded)";
+      if (!status.folder) {
+        el("statSourceFiles").innerHTML = '<span class="msg muted">Choose a data folder first.</span>';
+      } else if (!status.sourceFiles) {
+        el("statSourceFiles").innerHTML = '<span class="msg muted">Could not check (Box unreachable).</span>';
+      } else {
+        el("statSourceFiles").innerHTML =
+          fileListPill(status.sourceFiles.dataFile, "occupations.json") + " " +
+          fileListPill(status.sourceFiles.modelFile, "source workbook") + " " +
+          fileListPill(status.sourceFiles.wagesFile, "wage CSV");
+      }
+    }).catch(function (e) {
+      el("statSource").innerHTML = '<span class="msg err">' + esc(e.message) + "</span>";
+    });
+  }
+
+  el("refreshDataBtn").addEventListener("click", function () {
+    el("refreshDataBtn").disabled = true;
+    el("refreshMsg").className = "msg muted";
+    el("refreshMsg").textContent = "Refreshing…";
+    api("refresh", { method: "POST" }).then(function () {
+      el("refreshMsg").className = "msg ok";
+      el("refreshMsg").textContent = "Refreshed from Box.";
+      return loadDataStatus();
+    }).catch(function (e) {
+      el("refreshMsg").className = "msg err";
+      el("refreshMsg").textContent = "Error: " + e.message;
+    }).then(function () {
+      el("refreshDataBtn").disabled = false;
+    });
+  });
+
+  /* ---------- Upload data ---------- */
+  el("uploadForm").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var occupationsFile = el("uploadOccupations").files[0];
+    if (!occupationsFile) return;
+    var form = new FormData();
+    form.append("occupationsFile", occupationsFile);
+    var modelFile = el("uploadModel").files[0];
+    if (modelFile) form.append("modelFile", modelFile);
+    var wagesFile = el("uploadWages").files[0];
+    if (wagesFile) form.append("wagesFile", wagesFile);
+
+    el("uploadBtn").disabled = true;
+    el("uploadBtn").textContent = "Uploading…";
+    el("uploadMsg").className = "msg muted";
+    el("uploadMsg").textContent = "";
+
+    // Deliberately not the shared api() helper -- it always sets a JSON
+    // content-type, which would break the multipart boundary the browser needs to
+    // set itself for a FormData body.
+    fetch("/api/stars/upload", { method: "POST", headers: { authorization: "Bearer " + token }, body: form })
+      .then(function (r) {
+        if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+        return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; });
+      })
+      .then(function () {
+        el("uploadForm").reset();
+        el("uploadMsg").className = "msg ok";
+        el("uploadMsg").textContent = "Uploaded -- the live tool is now serving this data.";
+        loadDataStatus();
+      })
+      .catch(function (e) {
+        el("uploadMsg").className = "msg err";
+        el("uploadMsg").textContent = "Error: " + e.message;
+      })
+      .then(function () {
+        el("uploadBtn").disabled = false;
+        el("uploadBtn").textContent = "Upload";
+      });
+  });
+
+  loadStatus();
+  loadDataStatus();
+})();
+</script>
+</body>
+</html>
