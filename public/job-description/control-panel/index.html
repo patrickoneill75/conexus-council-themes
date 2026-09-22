@@ -134,8 +134,13 @@
   <div class="card">
     <h3>Claude key</h3>
     <p class="desc">This app uses its own Anthropic API key (<code>job_description_claude_api</code>),
-      separate from every other mini app's — see SETUP.md for where to set it.</p>
-    <p style="margin:0"><span id="claudeKeyPill"><span class="pill warn">Checking…</span></span></p>
+      separate from every other mini app's — see SETUP.md for where to set it. A Cloudflare secret
+      takes effect immediately once "Set Cloudflare secrets" finishes -- if this still says "Not set
+      up yet" right after running that workflow, click Refresh rather than assuming it didn't take.</p>
+    <div class="row">
+      <span id="claudeKeyPill"><span class="pill warn">Checking…</span></span>
+      <button type="button" id="refreshClaudeKeyBtn">Refresh</button>
+    </div>
   </div>
   </section>
 
@@ -202,6 +207,7 @@
   el("refreshStatusBtn").addEventListener("click", loadStatus);
 
   function loadClaudeKeyStatus() {
+    el("claudeKeyPill").innerHTML = '<span class="pill warn">Checking…</span>';
     return api("status").then(function (status) {
       el("claudeKeyPill").innerHTML = status.claudeKeyConfigured
         ? '<span class="pill good">Configured</span>' : '<span class="pill bad">Not set up yet</span>';
@@ -209,6 +215,7 @@
       el("claudeKeyPill").innerHTML = '<span class="pill bad">Error</span>';
     });
   }
+  el("refreshClaudeKeyBtn").addEventListener("click", loadClaudeKeyStatus);
 
   el("testBtn").addEventListener("click", function () {
     el("testBtn").disabled = true;
