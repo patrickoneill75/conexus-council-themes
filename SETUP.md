@@ -856,9 +856,20 @@ Plus a readiness percentage for that step, with a band:
 | 60% to 84.9% | Moderate Readiness |
 | Below 60% | Build Readiness First |
 
+**Finishing an assessment takes them straight to the dashboard.** The chat says the last
+question's piece and then hands over — the score, the to-do list and the rest of the
+programme all live in one place rather than being shown twice.
+
 **The Apprenticeship Readiness Dashboard** (`/apprenticeship/dashboard.html`) is the
-respondent's own page. Each step carries **its own readiness percentage**, shown with that
-step rather than as one number at the top of the page, along with its to-do list. The combined figure across every step sits *after* them, and appears **only
+respondent's own page, and it is **a tab per step**. Every step in the programme gets a tab
+from the first day, including ones the admin hasn't built yet — so a respondent can see the
+shape of what they have taken on, not just the step in front of them. A locked tab is
+greyed and cannot be opened; an unbuilt one says "Coming soon" and keeps everything behind
+it shut.
+
+How many tabs is a project setting (**Steps**, default 3), not the number of assessments
+built. Each step carries **its own readiness percentage**, with the unlock threshold marked
+as a triangle above its bar, along with its to-do list, which opens expanded. The combined figure across every step sits *after* them, and appears **only
 once every step in the project is finished** — a combined score built from one step out of
 three is not that employer's readiness, and a percentage on screen reads as one however it
 is labelled.

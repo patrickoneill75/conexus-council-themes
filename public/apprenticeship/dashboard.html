@@ -109,7 +109,9 @@
     var summary = left
       ? left + " item" + (left === 1 ? "" : "s") + " on your to-do list"
       : "All " + total + " items done";
-    var html = '<details class="todo-pack"><summary><span>' + esc(summary) + "</span>"
+    // Open by default. The steps are tabs now, so the list is not something you scroll
+    // past on the way to the next step -- it is the working surface of the tab you are on.
+    var html = '<details class="todo-pack" open><summary><span>' + esc(summary) + "</span>"
       + '<span class="sub">' + done + " of " + total + " ticked"
       + (assessment.threshold > 0 && assessment.overall
           && assessment.overall.percent < assessment.threshold
@@ -135,12 +137,19 @@
   function assessmentHtml(a) {
     var link = "/apprenticeship/respond.html?survey=" + encodeURIComponent(a.surveyId);
     var html = '<div class="assessment' + (a.locked ? " locked" : "") + '">'
-      + '<div class="step-head"><span class="step-tag">Step ' + a.step + "</span>"
-      + '<span class="name">' + esc(a.surveyName) + "</span></div>";
+      + '<div class="step-head"><span class="name">' + esc(a.surveyName) + "</span></div>";
 
     if (a.locked) {
-      html += '<div class="lock-note"><b>Locked.</b> Reach ' + esc(a.lockedUntil)
-        + "% on " + esc(a.lockedBy) + " to open this step.</div></div>";
+      html += '<div class="lock-note"><b>Locked.</b> '
+        + (a.lockedUntil > 0
+            ? "Reach " + esc(a.lockedUntil) + "% on " + esc(a.lockedBy) + " to open this step."
+            : "Finish " + esc(a.lockedBy) + " to open this step.")
+        + "</div></div>";
+      return html;
+    }
+    if (a.placeholder) {
+      html += '<div class="lock-note">This step isn\u2019t ready yet. Conexus Indiana will '
+        + "open it when it is \u2014 there is nothing for you to do here for now.</div></div>";
       return html;
     }
 
@@ -180,10 +189,58 @@
     return html + "</div>";
   }
 
+  /**
+   * A project is a tab per step, not a page you scroll.
+   *
+   * Every step gets a tab from the first day, including ones nobody has built yet, so a
+   * respondent can see the shape of the programme rather than only the step in front of
+   * them. A locked tab is greyed and cannot be opened -- the Worker refuses a locked step
+   * anyway, so this is the courtesy, not the enforcement.
+   */
+  var selectedStep = {};
+
+  function defaultStep(project) {
+    if (selectedStep[project.id]) return selectedStep[project.id];
+    // Coming back from finishing an assessment: land on the step just completed.
+    var fromUrl = new URLSearchParams(window.location.search).get("survey");
+    if (fromUrl) {
+      var match = project.assessments.filter(function (a) { return a.surveyId === fromUrl; })[0];
+      if (match) return match.step;
+    }
+    var open = project.assessments.filter(function (a) { return !a.locked && !a.placeholder; });
+    var unfinished = open.filter(function (a) { return a.status !== "complete"; })[0];
+    return (unfinished || open[open.length - 1] || project.assessments[0] || { step: 1 }).step;
+  }
+
   function projectHtml(project) {
-    var html = '<div class="card"><h2>' + esc(project.name || "Your assessments") + "</h2>";
+    var current = defaultStep(project);
+    var html = '<div class="card" data-project="' + esc(project.id) + '">'
+      + "<h2>" + esc(project.name || "Your assessments") + "</h2>";
     if (project.description) html += '<p class="desc">' + esc(project.description) + "</p>";
-    project.assessments.forEach(function (a) { html += assessmentHtml(a); });
+
+    html += '<div class="steptabs" role="tablist">';
+    project.assessments.forEach(function (a) {
+      var state = a.locked ? "locked" : (a.step === current ? "active" : "");
+      var note = a.locked
+        ? (a.lockedUntil > 0
+            ? "Reach " + a.lockedUntil + "% on " + a.lockedBy + " to open this step"
+            : "Finish " + a.lockedBy + " to open this step")
+        : (a.placeholder ? "Not ready yet" : a.surveyName);
+      html += '<button type="button" class="steptab ' + state + '" role="tab"'
+        + ' data-project="' + esc(project.id) + '" data-step="' + a.step + '"'
+        + (a.locked ? " disabled" : "")
+        + ' title="' + esc(note) + '">'
+        + "<span>Step " + a.step + "</span>"
+        + '<span class="sub">'
+        + esc(a.locked ? "Locked" : (a.placeholder ? "Coming soon" : a.surveyName)) + "</span>"
+        + "</button>";
+    });
+    html += "</div>";
+
+    project.assessments.forEach(function (a) {
+      html += '<div class="steppanel"' + (a.step === current ? "" : " hidden")
+        + ' data-panel="' + a.step + '">' + assessmentHtml(a) + "</div>";
+    });
 
     // The combined figure sits after the steps, not above them: each step has its own
     // percentage now, and a second number at the top was being read as the one that matters.
@@ -192,15 +249,32 @@
       html += '<div class="band"><div class="score">' + esc(project.overall.percent) + "%</div>"
         + '<div class="label">' + esc(project.overall.bandLabel) + "</div>"
         + '<div class="sub">Combined across all ' + project.assessments.length
-        + " steps · " + esc(project.overall.display) + " points</div></div>";
+        + " steps \u00b7 " + esc(project.overall.display) + " points</div></div>";
     } else {
       var left = project.assessments.length - project.completedCount;
-      html += '<div class="pending"><b>Combined readiness isn’t ready yet.</b> '
+      html += '<div class="pending"><b>Combined readiness isn\u2019t ready yet.</b> '
         + "Finish the remaining " + left + " step" + (left === 1 ? "" : "s")
         + " and it will appear here.</div>";
     }
     return html + "</div></div>";
   }
+
+  // Switching tab is presentation only -- nothing is fetched, and which tab you were on
+  // survives the redraw after ticking an item.
+  el("body").addEventListener("click", function (event) {
+    var tab = event.target.closest && event.target.closest(".steptab");
+    if (!tab || tab.disabled) return;
+    var projectId = tab.getAttribute("data-project");
+    var step = Number(tab.getAttribute("data-step"));
+    selectedStep[projectId] = step;
+    var card = tab.closest("[data-project]");
+    Array.prototype.forEach.call(card.querySelectorAll(".steptab"), function (b) {
+      b.classList.toggle("active", Number(b.getAttribute("data-step")) === step && !b.disabled);
+    });
+    Array.prototype.forEach.call(card.querySelectorAll(".steppanel"), function (panel) {
+      panel.hidden = Number(panel.getAttribute("data-panel")) !== step;
+    });
+  });
 
   /** Which to-do lists were expanded, so a redraw after a tick doesn't fold them shut. */
   function openPacks() {

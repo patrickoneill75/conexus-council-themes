@@ -68,6 +68,11 @@
       <input type="text" id="pName" placeholder="e.g. 2026 Apprenticeship Readiness">
       <label for="pDesc">Description <span class="hint">(internal, optional)</span></label>
       <textarea id="pDesc"></textarea>
+      <label for="pSteps">Steps in this programme</label>
+      <input type="number" id="pSteps" min="1" max="10" step="1" value="3">
+      <p class="desc" style="margin:8px 0 0">Respondents see a tab for every step from the
+        first day, so they can see the shape of the programme. Steps you haven't built yet
+        show as &ldquo;Coming soon&rdquo; and stay locked.</p>
       <div class="row" style="margin-top:14px"><button type="button" class="primary" id="pCreate">Create project</button></div>
       <div class="msg" id="pMsg" hidden></div>
     </div>
@@ -77,6 +82,7 @@
   <div id="projectView" hidden>
     <div class="card">
       <div class="row"><h3 id="projectName" style="flex:1"></h3>
+        <button type="button" class="small" id="stepsBtn">Steps</button>
         <button type="button" class="small" id="editProjectBtn">Rename</button>
         <button type="button" class="small danger" id="deleteProjectBtn">Delete</button></div>
       <p class="desc" id="projectDesc"></p>
@@ -269,13 +275,14 @@
         el("projectList").innerHTML = '<div class="empty">No projects yet.</div>';
         return;
       }
-      var html = "<table><thead><tr><th>Project</th><th>Assessments</th><th>Created</th></tr></thead><tbody>";
+      var html = "<table><thead><tr><th>Project</th><th>Steps</th><th>Assessments built</th>"
+        + "<th>Created</th></tr></thead><tbody>";
       data.projects.forEach(function (p) {
         html += "<tr><td><a class=\"link\" href=\"#project/" + esc(p.id) + "\">"
           + esc(p.name) + "</a>"
           + (p.description ? '<div style="color:var(--text-muted);font-size:12px">'
               + esc(p.description) + "</div>" : "")
-          + "</td><td>" + p.surveyCount + "</td><td>"
+          + "</td><td>" + (p.stepCount || 3) + "</td><td>" + p.surveyCount + "</td><td>"
           + esc(String(p.createdAt || "").slice(0, 10)) + "</td></tr>";
       });
       el("projectList").innerHTML = html + "</tbody></table>";
@@ -288,7 +295,8 @@
     var name = el("pName").value.trim();
     if (!name) return say("pMsg", "Give the project a name.", "err");
     api("projects", { method: "POST", body: JSON.stringify({
-      name: name, description: el("pDesc").value.trim() }) })
+      name: name, description: el("pDesc").value.trim(),
+      stepCount: Number(el("pSteps").value) || 3 }) })
       .then(function (data) {
         el("pName").value = ""; el("pDesc").value = "";
         el("pMsg").hidden = true;
@@ -304,7 +312,8 @@
       currentProject = data.projects.filter(function (p) { return p.id === projectId; })[0];
       if (!currentProject) { window.location.hash = ""; return; }
       el("projectName").textContent = currentProject.name;
-      el("projectDesc").textContent = currentProject.description || "";
+      el("projectDesc").textContent = (currentProject.description ? currentProject.description + " \u00b7 " : "")
+        + (currentProject.stepCount || 3) + " steps";
       el("crumb").textContent = "Assessments in this project.";
       return api("surveys?projectId=" + encodeURIComponent(projectId));
     }).then(function (data) {
@@ -334,7 +343,20 @@
     var name = window.prompt("Project name", currentProject.name);
     if (name === null) return;
     api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
-      body: JSON.stringify({ name: name, description: currentProject.description || "" }) })
+      body: JSON.stringify({ name: name, description: currentProject.description || "",
+        stepCount: currentProject.stepCount || 3 }) })
+      .then(function () { openProject(currentProject.id); })
+      .catch(function (e) { say("projMsg", e.message, "err"); });
+  });
+
+  el("stepsBtn").addEventListener("click", function () {
+    if (!currentProject) return;
+    var count = window.prompt("How many steps does this programme run to? Respondents see a "
+      + "tab for each.", String(currentProject.stepCount || 3));
+    if (count === null) return;
+    api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
+      body: JSON.stringify({ name: currentProject.name,
+        description: currentProject.description || "", stepCount: Number(count) || 3 }) })
       .then(function () { openProject(currentProject.id); })
       .catch(function (e) { say("projMsg", e.message, "err"); });
   });

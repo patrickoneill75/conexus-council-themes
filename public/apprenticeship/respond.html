@@ -80,37 +80,6 @@
   .notice { margin:44px 24px; padding:22px; border:1px solid var(--border); border-radius:12px;
             background:var(--surface-1); font-size:14px; text-align:center;
             color:var(--text-secondary); }
-  /* results */
-  .band { border-radius:12px; padding:20px 22px; color:#fff; background:var(--navy);
-          border-left:6px solid var(--amber); }
-  .band .score { font-size:32px; font-weight:700; line-height:1.1; }
-  .band .label { font-size:15px; font-weight:650; margin-top:4px; }
-  .band .sub { font-size:12.5px; color:rgba(255,255,255,.76); margin-top:6px; }
-  .sec { border:1px solid var(--border); border-radius:10px; padding:16px 18px; margin-top:14px; }
-  .sec .head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
-  .sec .name { font-weight:650; color:var(--navy); font-size:14.5px; }
-  .sec .num { font-weight:700; font-size:15px; color:var(--accent); white-space:nowrap; }
-  .sec .track { height:6px; border-radius:999px; background:#e7eaf1; margin:10px 0 12px; overflow:hidden; }
-  .sec .fill { height:100%; background:var(--teal); border-radius:999px; }
-  .sec ul { margin:0; padding-left:20px; font-size:13.5px; color:var(--text-secondary); }
-  .sec li { margin:5px 0; }
-  /* The to-do list. One column, not two: an "already in place" column alongside it read
-     as a report rather than a list of work, and the list of things to do is the only
-     thing here a respondent has to act on. */
-  .col { border:1px solid var(--border); border-left:4px solid var(--amber);
-         border-radius:10px; padding:14px 16px; margin-top:14px; }
-  .col h4 { margin:0 0 2px; font-size:13.5px; font-weight:650; color:var(--navy); }
-  .col .count { font-size:11.5px; color:var(--text-muted); margin:0 0 9px; }
-  .col ul { margin:0; padding-left:18px; font-size:13px; }
-  .col li { margin:5px 0; }
-  .col .none { font-size:12.5px; color:var(--text-muted); margin:0; }
-  .todo-resource { margin-top:3px; font-size:12.5px; }
-  .todo-resource a { color:var(--accent); text-decoration:none; }
-  .todo-resource a:hover { text-decoration:underline; }
-  .callout { margin-top:16px; padding:14px 16px; border-radius:10px; font-size:13.5px;
-             background:rgba(251,174,64,.14); border:1px solid var(--amber); color:var(--text-primary); }
-  .foot { margin-top:18px; font-size:13px; }
-  .foot a { color:var(--accent); }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -152,7 +121,6 @@
     <button type="button" class="choice" data-answer="no">No</button>
   </div>
 
-  <div id="results" hidden></div>
   <div id="notice" hidden></div>
 </div>
 
@@ -352,71 +320,25 @@
 
   /* ---------- results ---------- */
 
+  /**
+   * The assessment is over. Their score, their to-do list and the rest of the programme
+   * all live on the dashboard, so they are taken there rather than shown a second copy of
+   * it here -- one place to come back to, and the tab for the step they just finished
+   * already selected.
+   *
+   * The last question's follow-on teaching is said first, because it is a reply to their
+   * final answer and there is no next question for it to precede.
+   */
   function showResults(results) {
     closeComposers();
     el("progressFill").style.width = "100%";
     el("progressLabel").textContent = "All done!";
-    // The last question's follow-on teaching has no next question to precede, so it is
-    // said here, before the results, staged the same way as anywhere else.
     stage((results.postContext ? [results.postContext] : [])
-      .concat(["That's everything \u2014 thank you. Here's where your readiness stands."]),
-      null, function () { renderResultsPanel(results); });
-  }
-
-  function renderResultsPanel(results) {
-    var html = '<div class="panel">'
-      + '<div class="band">'
-      + '<div class="score">' + esc(results.overall.percent) + "%</div>"
-      + '<div class="label">' + esc(results.overall.bandLabel) + "</div>"
-      + '<div class="sub">' + esc(results.surveyName || "") + " \u00b7 "
-      + esc(results.overall.display) + " points across " + results.sections.length
-      + " section" + (results.sections.length === 1 ? "" : "s") + "</div>"
-      + "</div>";
-
-    if (results.improvementsError) {
-      html += '<div class="callout">' + esc(results.improvementsError) + "</div>";
-    }
-
-    results.sections.forEach(function (section) {
-      // Improvements are objects once they are a to-do list; a result generated before
-      // that was a plain string, and still has to render.
-      var todos = (section.improvements || []).map(function (item) {
-        return typeof item === "string" ? { text: item } : item;
+      .concat(["That's everything \u2014 thank you. Taking you to your dashboard\u2026"]),
+      null, function () {
+        window.location.href = "/apprenticeship/dashboard.html?survey="
+          + encodeURIComponent(surveyId);
       });
-      html += '<div class="sec">'
-        + '<div class="head"><span class="name">' + esc(section.name) + "</span>"
-        + '<span class="num">' + esc(section.display) + "</span></div>"
-        + '<div class="track"><div class="fill" style="width:' + Number(section.percent) + '%"></div></div>'
-        + '<div class="col"><h4>To do</h4>'
-        + '<p class="count">' + todos.length + " item" + (todos.length === 1 ? "" : "s")
-        + " \u00b7 ticking these off raises your score</p>"
-        + (todos.length
-            ? "<ul>" + todos.map(function (t) {
-                return "<li>" + esc(t.text)
-                  + (t.resourceUrl && t.resourceName
-                      ? '<div class="todo-resource"><a href="' + esc(t.resourceUrl)
-                        + '" target="_blank" rel="noopener noreferrer">Click here to discover '
-                        + esc(t.resourceName) + "</a></div>"
-                      : "")
-                  + "</li>";
-              }).join("") + "</ul>"
-            : '<p class="none">Nothing outstanding here.</p>')
-        + "</div></div>";
-    });
-
-    if (results.contactPrompt) {
-      html += '<div class="callout">' + esc(results.contactPrompt) + "</div>";
-    }
-
-    html += '<p class="foot">These results are saved to your account. Your '
-      + '<a href="/apprenticeship/dashboard.html">readiness dashboard</a> keeps the to-do '
-      + 'list above, and ticking items off there raises this score \u2014 which is how you '
-      + 'unlock the next step without sitting this assessment again.</p>';
-    html += "</div>";
-
-    el("results").hidden = false;
-    el("results").innerHTML = html;
-    el("results").scrollIntoView({ behavior: "smooth" });
   }
 
   /* ---------- wiring ---------- */

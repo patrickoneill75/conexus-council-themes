@@ -142,6 +142,14 @@ function safeUrl(value) {
   return (parsed.protocol === "http:" || parsed.protocol === "https:") ? parsed.href : "";
 }
 
+// Three is the default because that is the shape of the programme this was built for; an
+// admin can set it to whatever their own runs to.
+const MAX_STEPS = 10;
+const stepCount = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.min(MAX_STEPS, Math.round(n)) : 3;
+};
+
 function projectKey(id) { return `${PROJECT_PREFIX}${id}`; }
 function surveyKey(id) { return `${SURVEY_PREFIX}${id}`; }
 function responseKey(surveyId, responseId) { return `${RESPONSE_PREFIX}${surveyId}:${responseId}`; }
@@ -449,9 +457,13 @@ function applyLocks(assessments) {
     // A threshold of zero is no gate at all, not "a gate everyone passes": it must not
     // require finishing this step either. Every assessment built before thresholds
     // existed has one, so this is also what keeps them all open.
+    //
+    // A step that has not been built yet is the exception: it can never be met, so
+    // nothing after it opens. Otherwise a placeholder with no threshold would quietly
+    // wave through every step behind it.
     const threshold = assessment.threshold || 0;
-    const met = threshold <= 0
-      || (assessment.status === "complete" && assessment.percentNow >= threshold);
+    const met = !assessment.placeholder && (threshold <= 0
+      || (assessment.status === "complete" && assessment.percentNow >= threshold));
     if (!met) blockedBy = assessment;
   }
   return assessments;
@@ -890,7 +902,7 @@ function ownedBy(response, account) {
  * under way, the rest of that project shows up here to be worked through.
  */
 /** One project's steps for one account, in step order, with the locks applied. */
-async function assessmentsForProject(env, account, surveys) {
+async function assessmentsForProject(env, account, surveys, stepCount) {
   // The two index keys are deterministic per account and survey, so a known project needs
   // no listing at all -- two gets per step.
   const ordered = surveys.slice().sort((a, b) => (a.step || 1) - (b.step || 1)
@@ -924,6 +936,22 @@ async function assessmentsForProject(env, account, surveys) {
       submittedAt: finished ? finished.submittedAt : null,
     });
   }
+
+  // A programme is a fixed number of steps, and the respondent should be able to see the
+  // shape of it from the first day -- which steps are coming, not just the one in front of
+  // them. Any step the admin hasn't built yet shows as a placeholder rather than as a gap.
+  const built = new Set(assessments.map((a) => a.step));
+  const total = Math.max(Number(stepCount) || 0, ...assessments.map((a) => a.step), 1);
+  for (let step = 1; step <= total; step++) {
+    if (built.has(step)) continue;
+    assessments.push({
+      surveyId: "", surveyName: `Step ${step}`, step, threshold: 0, questionCount: 0,
+      status: "not-built", placeholder: true, responseId: null,
+      baseOverall: null, overall: null, percentNow: 0, sections: [],
+      todoDone: 0, todoTotal: 0, submittedAt: null,
+    });
+  }
+  assessments.sort((a, b) => a.step - b.step);
   return applyLocks(assessments);
 }
 
@@ -945,13 +973,17 @@ async function accountDashboard(env, account) {
   for (const projectId of touchedProjectIds) {
     const project = await getProject(env, projectId);
     const assessments = await assessmentsForProject(
-      env, account, allSurveys.filter((s) => s.projectId === projectId));
+      env, account, allSurveys.filter((s) => s.projectId === projectId),
+      project ? (project.stepCount || 3) : 0);
 
     const complete = assessments.filter((a) => a.overall);
     const earned = round1(complete.reduce((n, a) => n + a.overall.earned, 0));
     const possible = complete.reduce((n, a) => n + a.overall.possible, 0);
     const percent = possible ? round1((earned / possible) * 100) : 0;
     const band = bandFor(percent);
+    // Every step in the programme, including the ones not built yet -- a combined score
+    // that appeared as soon as the built steps were done would be claiming to cover a
+    // programme the respondent has not finished.
     const allDone = assessments.length > 0 && complete.length === assessments.length;
     projects.push({
       id: projectId,
@@ -959,6 +991,7 @@ async function accountDashboard(env, account) {
       description: project ? project.description : "",
       assessments,
       completedCount: complete.length,
+      stepCount: assessments.length,
       // Withheld until every step is done. A combined readiness built from one step out
       // of three is not this employer's readiness, and a percentage on screen would be
       // read as one however it were labelled.
@@ -983,7 +1016,9 @@ async function lockedFor(env, account, survey) {
   if (!survey.projectId) return null;
   const surveys = (await listPrefix(env, SURVEY_PREFIX))
     .filter((s) => s.projectId === survey.projectId);
-  const assessments = await assessmentsForProject(env, account, surveys);
+  const project = await getProject(env, survey.projectId);
+  const assessments = await assessmentsForProject(
+    env, account, surveys, project ? (project.stepCount || 3) : 0);
   const found = assessments.find((a) => a.surveyId === survey.id);
   return found && found.locked ? found : null;
 }
@@ -1427,6 +1462,10 @@ export async function handleApprenticeshipApi(route, request, env) {
       id: crypto.randomUUID(),
       name: str(body.name),
       description: str(body.description),
+      // How many steps the programme runs to. The respondent sees a tab for each from the
+      // first day, so they can see the shape of what they have taken on rather than only
+      // the step in front of them; steps an admin hasn't built yet show as placeholders.
+      stepCount: stepCount(body.stepCount),
       createdAt: now,
       updatedAt: now,
     };
@@ -1444,6 +1483,7 @@ export async function handleApprenticeshipApi(route, request, env) {
       ...existing,
       name: str(body.name),
       description: str(body.description),
+      stepCount: body.stepCount === undefined ? (existing.stepCount || 3) : stepCount(body.stepCount),
       updatedAt: new Date().toISOString(),
     };
     await saveProject(env, project);
