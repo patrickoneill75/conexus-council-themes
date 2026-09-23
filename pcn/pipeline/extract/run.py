@@ -93,7 +93,14 @@ def extract_document(doc: NormalizedDocument) -> list[Assertion]:
                         [r for k, r in by_key_2.items() if k not in agreed_keys]
         escalate_segments = {r.get("segment_index") for r in disagreed_raw}
 
-    assertions = _to_assertions(doc.meeting_id, doc, agreed_raw, config.HAIKU_MODEL, True)
+    # An escalated segment's Sonnet result REPLACES its Haiku assertions, so drop the
+    # agreed Haiku rows for those segments before adding Sonnet's. Keeping both (which
+    # is what happened whenever a segment produced one agreed assertion AND one the two
+    # passes disagreed on) left the same causal link in the ledger twice, from two
+    # models -- inflating assertion_count, mean_weight and dispersion for that edge,
+    # the exact double-count run.py's per-meeting ledger replace exists to prevent.
+    kept_raw = [r for r in agreed_raw if r.get("segment_index") not in escalate_segments]
+    assertions = _to_assertions(doc.meeting_id, doc, kept_raw, config.HAIKU_MODEL, True)
 
     if escalate_segments:
         escalated_doc = NormalizedDocument(

@@ -6,7 +6,11 @@ from pathlib import Path
 # ---------------------------------------------------------------- models
 # Verify current model IDs at https://docs.claude.com/en/docs/about-claude/models
 EXTRACTION_MODEL = os.environ.get("EXTRACTION_MODEL", "claude-haiku-4-5")
-NARRATIVE_MODEL = os.environ.get("NARRATIVE_MODEL", "claude-sonnet-4-5")
+# Sonnet 5, not the older Sonnet 4.5 this used to pin -- every other Claude call in
+# this repo is already on the current generation (consensus/analyze.py's own narrative
+# synthesis is claude-sonnet-5, themes/ and src/job_description.js are claude-opus-5),
+# and the narrative step is the same kind of synthesis work. Still overridable per run.
+NARRATIVE_MODEL = os.environ.get("NARRATIVE_MODEL", "claude-sonnet-5")
 
 # ---------------------------------------------------------------- coverage
 MIN_YEAR = 2024

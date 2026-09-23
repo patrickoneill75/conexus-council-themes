@@ -8,11 +8,13 @@ which normalize/transcript.py already handles.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from docx import Document
 
 _HEADING_PREFIX = {f"Heading {i}": "#" * i for i in range(1, 7)}
+_BULLET_MARKER = re.compile(r"^[-*\u2022]\s*")
 
 
 def read(path: Path) -> str:
@@ -27,7 +29,10 @@ def read(path: Path) -> str:
         if heading_prefix:
             lines.append(f"{heading_prefix} {text}")
         elif style_name.startswith("List") or text.startswith(("-", "*", "•")):
-            lines.append(f"- {text.lstrip('-*• ').strip()}")
+            # Strip ONE bullet marker, not every leading character in that set:
+            # lstrip("-*• ") turned "- -20% margin" into "20% margin", silently
+            # dropping the minus sign that carried the meaning.
+            lines.append(f"- {_BULLET_MARKER.sub('', text, count=1).strip()}")
         else:
             lines.append(text)
     return "\n".join(lines)

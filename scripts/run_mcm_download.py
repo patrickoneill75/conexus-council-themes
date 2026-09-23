@@ -88,7 +88,10 @@ def main():
     if fetched:
         companies = pd.concat([companies, pd.DataFrame(fetched)], ignore_index=True)
         companies = companies.drop_duplicates("cik", keep="last")
-    state_by_cik = dict(zip(companies["cik"], companies["state"])) if not companies.empty else {}
+    # strict=True is safe and meaningful here: both are columns of the same
+    # DataFrame, so a length mismatch would be a real bug, not input variation.
+    state_by_cik = (dict(zip(companies["cik"], companies["state"], strict=True))
+                    if not companies.empty else {})
     filings["state"] = filings["cik"].map(state_by_cik).fillna("")
 
     pending = filings[(filings["downloaded"] != "1") | (filings["extracted"] != "1")]

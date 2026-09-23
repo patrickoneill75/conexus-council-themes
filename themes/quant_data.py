@@ -38,6 +38,30 @@ def _int_or_none(value: str) -> int | None:
         return None
 
 
+def _column_lookup(fieldnames) -> dict[str, str]:
+    """Normalized column name -> the RAW key csv.DictReader actually puts in each row.
+
+    Both halves matter. Matching on the stripped, lower-cased name is what lets a real
+    export whose header reads "Meeting Date " or "YEAR" still resolve. Mapping back to
+    the raw key is what makes the subsequent row.get() actually find anything: DictReader
+    keys every row by the header text verbatim, so looking a column up by its normalized
+    name returned None for every row -- the whole file resolved to zero meetings, with no
+    error, purely because of a trailing space in the header.
+    """
+    lookup: dict[str, str] = {}
+    for raw in (fieldnames or []):
+        key = (raw or "").strip().lower()
+        if key and key not in lookup:
+            lookup[key] = raw
+    return lookup
+
+
+def _cell(row: dict, columns: dict[str, str], name: str) -> str:
+    """One row's value for a normalized column name, "" when that column isn't present."""
+    key = columns.get(name)
+    return "" if key is None else (row.get(key) or "")
+
+
 def read_helper(content: bytes) -> dict[date, dict]:
     """-> { Meeting Date: {year, quarter, region, total_registrants, total_attendees} }.
 
@@ -46,8 +70,9 @@ def read_helper(content: bytes) -> dict[date, dict]:
     """
     text = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
+    columns = _column_lookup(reader.fieldnames)
     fieldnames = {(f or "").strip() for f in (reader.fieldnames or [])}
-    date_col = next((f for f in fieldnames if f.lower() == "meeting date"), None)
+    date_col = columns.get("meeting date")
     if date_col is None:
         # Every row's Meeting Date lookup below depends on this exact column existing --
         # its absence alone means the whole file resolves to zero meetings, which (since
@@ -64,6 +89,7 @@ def read_helper(content: bytes) -> dict[date, dict]:
 
     out: dict[date, dict] = {}
     unparseable: list[str] = []
+    collisions: list[tuple[date, str, str]] = []
     for row in reader:
         raw_date = row.get(date_col, "")
         meeting_date = parse_date(raw_date)
@@ -71,13 +97,33 @@ def read_helper(content: bytes) -> dict[date, dict]:
             if (raw_date or "").strip():
                 unparseable.append(raw_date)
             continue
+        previous = out.get(meeting_date)
         out[meeting_date] = {
-            "year": _int_or_none(row.get("Year", "")),
-            "quarter": (row.get("Quarter") or "").strip(),
-            "region": (row.get("Region") or "").strip(),
-            "total_registrants": _int_or_none(row.get("Total Registrants", "")),
-            "total_attendees": _int_or_none(row.get("Total Attendees", "")),
+            "year": _int_or_none(_cell(row, columns, "year")),
+            "quarter": _cell(row, columns, "quarter").strip(),
+            "region": _cell(row, columns, "region").strip(),
+            "total_registrants": _int_or_none(_cell(row, columns, "total registrants")),
+            "total_attendees": _int_or_none(_cell(row, columns, "total attendees")),
         }
+        if previous and (previous["year"], previous["quarter"], previous["region"]) != (
+                out[meeting_date]["year"], out[meeting_date]["quarter"], out[meeting_date]["region"]):
+            collisions.append((
+                meeting_date,
+                f"{previous['year']}-{previous['quarter']} {previous['region']}",
+                f"{out[meeting_date]['year']}-{out[meeting_date]['quarter']} "
+                f"{out[meeting_date]['region']}",
+            ))
+
+    for meeting_date, dropped, kept in collisions:
+        # Survey responses carry ONLY a Meeting Date, so two meetings on the same day
+        # are genuinely indistinguishable downstream -- this lookup can keep just one,
+        # and every response from that date is then attributed to it. That is a real
+        # possibility here (Central and Southern both meet most quarters), and it used
+        # to happen silently. It still can't be resolved automatically, but an operator
+        # can now see it and split the exports by hand.
+        print(f"  ! '{HELPER_FILENAME}' has more than one meeting on {meeting_date}: "
+              f"{dropped} was replaced by {kept}. Every survey response from that date "
+              f"will be attributed to {kept}.")
 
     if not out and unparseable:
         # The column exists, and rows have real values in it, but none of them matched

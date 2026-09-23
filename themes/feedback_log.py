@@ -9,6 +9,7 @@ anything Excel-specific.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 
 from . import config
@@ -38,13 +39,33 @@ def has_survey(rows: list[dict], sid: str) -> bool:
     return any(r.get("Survey ID") == sid for r in rows)
 
 
+_ITEM_ID_RE = re.compile(r"^ITEM-(\d+)$")
+
+
+def next_item_number(rows: list[dict]) -> int:
+    """One past the highest ITEM-nnn already in `rows`.
+
+    Not len(rows): scripts/remove_meetings.py deletes a meeting's entries in place,
+    which leaves gaps in the numbering. Numbering the next append off the row COUNT
+    then reissued ids that were still in use -- remove 2 of 4 items and the next
+    append was handed ITEM-003 again, colliding with the surviving entry of the
+    same name.
+    """
+    highest = 0
+    for row in rows:
+        match = _ITEM_ID_RE.match(str(row.get("Item ID") or ""))
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return highest + 1
+
+
 def append(rows: list[dict], items: list[dict], year: int, quarter: str, region: str,
            source_file: str) -> str:
     """Append extracted items as new Feedback Log entries, in place. Returns the
     Survey ID used."""
     sid = survey_id(year, quarter, region)
     today = date.today().isoformat()
-    n = len(rows)
+    n = next_item_number(rows) - 1
     for item in items:
         n += 1
         rows.append({

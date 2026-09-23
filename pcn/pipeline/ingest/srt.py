@@ -8,7 +8,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_TIMESTAMP_LINE = re.compile(r"^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}")
+# Hours optional and 3+ digits allowed, matching vtt.py -- a long recording's
+# "100:02:03,000" and a writer that omits the hours field both still register as
+# timestamps rather than falling through and being kept as cue text.
+_TIMESTAMP_LINE = re.compile(
+    r"^(?:\d{2,}:)?\d{2}:\d{2}[.,]\d{3}\s*-->\s*(?:\d{2,}:)?\d{2}:\d{2}[.,]\d{3}"
+)
 
 
 def read(path: Path) -> str:

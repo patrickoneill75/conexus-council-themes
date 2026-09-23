@@ -55,24 +55,37 @@ export const SKILL_ACTIONS = {
 // enough in practice that this difference is visible, not theoretical --
 // this replicates Python's rounding so every displayed number matches the
 // original app exactly.
+//
+// The tie test runs on the double's own EXACT decimal expansion, via
+// toFixed(20), rather than on `value * 10**ndigits`. That multiplication
+// introduces error of its own before the test ever runs: 12.35 is really
+// 12.34999999999999964..., but 12.35 * 10 evaluates to 123.50000000000001,
+// so testing the product reported a tie that isn't one and rounded 12.35 up
+// to 12.4 where Python gives 12.3 (likewise 2.675 -> 2.68 against Python's
+// 2.67). toFixed is correctly rounded from the exact binary value, so reading
+// the digits off it and deciding there matches Python for ties and non-ties
+// alike. BigInt keeps the reassembled integer exact for a large value such as
+// an annual wage.
 function pyRound(value, ndigits = 0) {
-  const factor = Math.pow(10, ndigits);
-  const scaled = value * factor;
-  const floor = Math.floor(scaled);
-  const diff = scaled - floor;
-  let roundedInt;
-  // Only treat this as a genuine tie when the double's fractional part is
-  // BIT-EXACTLY 0.5 (which is how real ties -- e.g. 0.25/2.0*100 = 12.5 --
-  // actually show up, since that arithmetic introduces no rounding error).
-  // A loose epsilon here would also catch near-misses like 9.499999999999996
-  // (an ordinary, non-tied value produced by an inexact division elsewhere)
-  // and round them the wrong way, which is exactly the bug this guards against.
-  if (diff === 0.5) {
-    roundedInt = floor % 2 === 0 ? floor : floor + 1;
-  } else {
-    roundedInt = Math.round(scaled);
+  if (!Number.isFinite(value)) return value;
+  // Past 2^53 there is no fractional part left to round, and toFixed would
+  // switch to exponential notation anyway.
+  if (Math.abs(value) >= 1e15) return value;
+
+  const negative = value < 0;
+  const [intPart, fracPart = ""] = Math.abs(value).toFixed(20).split(".");
+  const keep = fracPart.slice(0, ndigits).padEnd(ndigits, "0");
+  const rest = fracPart.slice(ndigits);
+
+  let scaled = BigInt(intPart + keep);
+  const first = rest ? rest.charCodeAt(0) - 48 : 0;
+  if (first > 5 || (first === 5 && /[1-9]/.test(rest.slice(1)))) {
+    scaled += 1n;                            // strictly past halfway: away from zero
+  } else if (first === 5 && scaled % 2n === 1n) {
+    scaled += 1n;                            // an exact tie: to even, as Python does
   }
-  return roundedInt / factor;
+  const rounded = Number(scaled) / Math.pow(10, ndigits);
+  return negative ? -rounded : rounded;
 }
 
 // Matches Python's html.escape(s, quote=True), which is what the original

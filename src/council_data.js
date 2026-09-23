@@ -42,10 +42,22 @@ const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 // The fixed names each upload target replaces in the Data Folder, wholesale, regardless
 // of the uploaded file's own name -- must match themes/quant_data.py's HELPER_FILENAME /
 // SURVEY_FILENAME exactly, since the Python side finds these files by name.
-const UPLOAD_TARGETS = {
+// Object.create(null), NOT a plain literal: the upload route looks a target up in here
+// straight from the multipart body, and a plain object inherits Object.prototype -- a
+// target of "constructor"/"toString" would resolve to a function, pass the
+// `if (!filename)` guard, and get written to Box under a garbage filename.
+const UPLOAD_TARGETS = Object.assign(Object.create(null), {
   helper: "Council Meeting Helper.csv",
   survey: "Post-Meeting Survey.csv",
-};
+});
+
+// Same reasoning, for POST run's { job } -> workflow-file allowlist.
+const RUN_WORKFLOWS = Object.assign(Object.create(null), {
+  update_dashboard: "update_dashboard.yml",
+  setup: "setup_analysis.yml",
+  refresh_dashboard: "refresh_dashboard.yml",
+  remove_meetings: "remove_meetings.yml",
+});
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -204,12 +216,10 @@ export async function handleCouncilDataApi(route, request, env) {
     let body = {};
     try { body = await request.json(); }
     catch (e) { return json({ error: "Bad request" }, 400); }
-    const job = body.job || "";
-    // Allowlist: never interpolate caller input into the workflow path.
-    const workflow = {
-      update_dashboard: "update_dashboard.yml", setup: "setup_analysis.yml",
-      refresh_dashboard: "refresh_dashboard.yml", remove_meetings: "remove_meetings.yml",
-    }[job];
+    const job = String(body.job || "");
+    // Allowlist: never interpolate caller input into the workflow path. See
+    // RUN_WORKFLOWS above for why it's a null-prototype map rather than a literal.
+    const workflow = RUN_WORKFLOWS[job];
     if (!workflow) return json({ error: "Unknown job" }, 400);
 
     const dispatchBody = { ref: env.GITHUB_BRANCH || "main" };
@@ -356,7 +366,7 @@ export async function handleCouncilDataApi(route, request, env) {
     const incoming = await request.formData();
     const file = incoming.get("file");
     if (!(file instanceof File)) return json({ error: "No file in the request." }, 400);
-    const filename = UPLOAD_TARGETS[incoming.get("target")];
+    const filename = UPLOAD_TARGETS[String(incoming.get("target") || "")];
     if (!filename) return json({ error: "Unknown upload target." }, 400);
 
     const headers = { authorization: `Bearer ${boxAuth.token}` };

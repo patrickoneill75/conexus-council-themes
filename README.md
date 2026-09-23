@@ -23,3 +23,10 @@ from the matching row in the Council Meeting Helper export. Both exports are cum
 uploading either one replaces the previous version in Box wholesale.
 
 Setup is in [SETUP.md](SETUP.md). Everything is done in a browser.
+
+## Tests
+
+`./tests/run_all.sh` runs both suites: `tests/test_pipelines.py` (the Python pipelines,
+via `unittest`) and `tests/worker_test.mjs` (the Worker's real route handlers, against an
+in-memory KV stub and a stubbed `fetch`). No network calls, no Claude calls, no extra
+dependencies. See [tests/README.md](tests/README.md).

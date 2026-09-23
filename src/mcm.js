@@ -53,11 +53,15 @@ const FOLDER_KEY = "mcm:folder";
 const RUN_DISPATCH_KEY = "mcm:run-dispatch";
 const TEST_FILE_NAME = "mcm-connection-test.json";
 
-const WORKFLOWS = {
+// Object.create(null): body.job comes straight off the request, and a plain object
+// literal inherits Object.prototype -- job "constructor"/"toString" would resolve to a
+// function, pass the `if (!workflow)` guard below, and get interpolated into the GitHub
+// API URL. A null-prototype map has no inherited keys to hit.
+const WORKFLOWS = Object.assign(Object.create(null), {
   download: "mcm_download.yml",
   analyze: "mcm_analyze.yml",
   publish: "mcm_publish.yml",
-};
+});
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -197,10 +201,16 @@ export async function handleMcmApi(route, request, env) {
     }
     // The real remaining lifetime, not env's own guess -- mcm/box_store.py caches
     // this token for up to the length of a run, same reasoning as worker.js's own
-    // box/pipeline-token route.
-    const tokens = JSON.parse(await env.BOX_KV.get("box:tokens"));
-    const age = Math.floor(Date.now() / 1000) - tokens.obtained_at;
-    const expiresIn = Math.max(60, tokens.expires_in - age);
+    // box/pipeline-token route. Re-reading the KV entry can come back null or stale
+    // (KV is eventually consistent, and boxAccessToken() may have just rewritten it),
+    // so fall back to a conservative lifetime rather than throwing on tokens.expires_in.
+    const rawTokens = await env.BOX_KV.get("box:tokens");
+    let expiresIn = 3300;
+    try {
+      const tokens = JSON.parse(rawTokens);
+      const age = Math.floor(Date.now() / 1000) - tokens.obtained_at;
+      expiresIn = Math.max(60, tokens.expires_in - age);
+    } catch (e) { /* keep the conservative default */ }
     return json({ access_token: token, folder_id: folder.id, expires_in: expiresIn });
   }
 
@@ -303,7 +313,7 @@ export async function handleMcmApi(route, request, env) {
     }
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    const workflow = WORKFLOWS[body.job];
+    const workflow = WORKFLOWS[String(body.job || "")];
     if (!workflow) return json({ error: "Unknown job" }, 400);
     await env.BOX_KV.put(RUN_DISPATCH_KEY, new Date().toISOString());
     try {

@@ -159,19 +159,37 @@ async function boxCreateSubfolder(headers, parentId, name) {
   throw new Error(`Box folder create failed (${response.status})`);
 }
 
+async function boxFindFile(headers, folderId, name) {
+  const response = await fetch(
+    `${BOX_API}/folders/${folderId}/items?fields=name,type&limit=1000`, { headers }
+  );
+  if (!response.ok) return null;
+  const items = await response.json();
+  return (items.entries || []).find((e) => e.type === "file" && e.name === name) || null;
+}
+
+/* Upserts by name: uploads a NEW VERSION when a file of this name is already in the
+ * folder, rather than always creating one. Without that, re-running generate-outputs
+ * for a session hits Box's 409 name conflict on every one of its eight output files,
+ * so the outputs were generated (and paid for) but never saved -- the second run could
+ * only ever report box.saved = false. */
 async function boxUploadFile(headers, folderId, name, blob) {
+  const existing = await boxFindFile(headers, folderId, name);
   const outgoing = new FormData();
-  outgoing.append("attributes", JSON.stringify({ name, parent: { id: folderId } }));
+  if (!existing) {
+    outgoing.append("attributes", JSON.stringify({ name, parent: { id: folderId } }));
+  }
   outgoing.append("file", blob, name);
-  const response = await fetch(`${BOX_UPLOAD_API}/files/content`, {
-    method: "POST", headers, body: outgoing,
-  });
+  const uploadUrl = existing
+    ? `${BOX_UPLOAD_API}/files/${existing.id}/content`
+    : `${BOX_UPLOAD_API}/files/content`;
+  const response = await fetch(uploadUrl, { method: "POST", headers, body: outgoing });
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`Box upload failed (${response.status}): ${detail.slice(0, 300)}`);
   }
   const body = await response.json();
-  return body.entries[0];
+  return (body.entries || [])[0];
 }
 
 /* ==================================================================================
@@ -246,30 +264,48 @@ async function extractZipEntry(arrayBuffer, entryName) {
   throw new Error(`"${entryName}" was not found in this .docx file.`);
 }
 
+// The five named entities Word writes, plus numeric character references (Word uses
+// them for curly quotes, dashes and the like -- left undecoded, they reached Claude as
+// a literal "&#8217;"). &amp; is decoded LAST: decoding it first turns the document's
+// own literal "&amp;lt;" into "&lt;", which the next replace then turns into "<" -- a
+// double-decode that silently rewrites the employer's text.
+function codePoint(value, original) {
+  // Out of Unicode range, or a surrogate half: String.fromCodePoint would throw a
+  // RangeError, and one malformed reference must not take the whole document with it.
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff
+      || (value >= 0xd800 && value <= 0xdfff)) {
+    return original;
+  }
+  return String.fromCodePoint(value);
+}
+
+function decodeXmlEntities(text) {
+  return text
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (whole, code) => codePoint(Number(code), whole))
+    .replace(/&#x([0-9a-f]+);/gi, (whole, code) => codePoint(parseInt(code, 16), whole))
+    .replace(/&amp;/g, "&");
+}
+
+// Walks each paragraph's run content in document order, keeping <w:t> text, <w:br>
+// line breaks and <w:tab> tabs. The previous version converted breaks to newlines in
+// the tag soup and then rebuilt each paragraph from its <w:t> contents alone, so
+// nothing BETWEEN two runs survived -- every manual line break was silently dropped,
+// running an address block or a break-separated duty list together into one line.
+const DOCX_RUN_TOKEN = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:br\b[^>]*>|<w:tab\b[^>]*>/g;
+
 function docxXmlToText(xml) {
-  // word/document.xml text runs live in <w:t>...</w:t>; a paragraph ends at </w:p> and
-  // a manual line break is <w:br/> -- good enough fidelity for Claude to read the
-  // document's actual content without a full OOXML parser.
-  let text = xml
-    .replace(/<w:p\b[^>]*>/g, "")
-    .replace(/<\/w:p>/g, "\n\n")
-    .replace(/<w:br\s*\/>/g, "\n")
-    .replace(/<w:tab\s*\/>/g, "\t");
-  const runs = [...text.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((m) => m[1]);
-  // Runs are the only content that matters once tags are stripped -- rebuild from just
-  // those instead of stripping all remaining tags, which would also swallow paragraph
-  // breaks already inserted above whenever a <w:p> and its first <w:t> weren't adjacent.
-  const paragraphs = text.split("\n\n");
-  let runIndex = 0;
-  const rebuilt = paragraphs.map((para) => {
-    const tCount = (para.match(/<w:t[^>]*>/g) || []).length;
-    const paraRuns = runs.slice(runIndex, runIndex + tCount);
-    runIndex += tCount;
-    return paraRuns.join("")
-      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+  const paragraphs = xml.split(/<\/w:p>/).map((chunk) => {
+    let text = "";
+    for (const match of chunk.matchAll(DOCX_RUN_TOKEN)) {
+      if (match[1] !== undefined) text += match[1];
+      else if (match[0].startsWith("<w:br")) text += "\n";
+      else text += "\t";
+    }
+    return decodeXmlEntities(text).trim();
   });
-  return rebuilt.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  return paragraphs.filter(Boolean).join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 async function extractDocxText(arrayBuffer) {
@@ -518,12 +554,17 @@ function formatConfirmedInputs(session) {
   const lines = [];
   lines.push(`Original job title: ${session.preRead.jobTitle}`);
   lines.push(`\nOriginal document, by Part 2 category:`);
-  for (const cat of session.preRead.categories) {
-    const label = PART2_CATEGORIES.find((c) => c.key === cat.key).label;
-    lines.push(`- ${label}: ${cat.extractedText || "(nothing in the original)"}`);
+  for (const cat of session.preRead.categories || []) {
+    // .find() can miss: the tool schema's enum constrains the key, but nothing
+    // guarantees it, and an unmatched key used to throw here -- turning the final
+    // (already paid for) generate-outputs call into a 500 with the session's work
+    // stranded. Fall back to the raw key instead.
+    const known = PART2_CATEGORIES.find((c) => c.key === cat.key);
+    lines.push(`- ${(known && known.label) || cat.key}: `
+               + `${cat.extractedText || "(nothing in the original)"}`);
   }
   lines.push(`\nStep 3 -- duty-by-duty answers:`);
-  for (const duty of session.preRead.duties) {
+  for (const duty of session.preRead.duties || []) {
     const a = (session.step3 && session.step3.dutyAnswers && session.step3.dutyAnswers[duty.id]) || {};
     lines.push(`- "${duty.text}" -> ${a.answer || "(unanswered)"}${a.note ? ` (${a.note})` : ""}`);
   }
@@ -536,7 +577,7 @@ function formatConfirmedInputs(session) {
     lines.push(`- Cross-training / rotation into other jobs: ${d.crossTraining || "(none given)"}`);
   }
   lines.push(`\nStep 4 -- requirement-by-requirement answers:`);
-  for (const req of session.preRead.requirements) {
+  for (const req of session.preRead.requirements || []) {
     const a = (session.step4 && session.step4.requirementAnswers && session.step4.requirementAnswers[req.id]) || {};
     lines.push(`- "${req.text}" -> ${a.tier || "(unanswered)"}, incumbents meet it: ${a.incumbentMeets == null ? "(unanswered)" : (a.incumbentMeets ? "yes" : "no")}`);
   }
@@ -591,7 +632,7 @@ function publicSession(session) {
 
 function computeMatrix(session, { screenDifferently, compChanges, overrides }) {
   overrides = overrides || {};
-  const duties = session.preRead.duties;
+  const duties = session.preRead.duties || [];
   const answers = (session.step3 && session.step3.dutyAnswers) || {};
   const changedOrGone = duties.filter((d) => {
     const a = answers[d.id];
@@ -599,7 +640,7 @@ function computeMatrix(session, { screenDifferently, compChanges, overrides }) {
   }).length;
   const majorityChanged = duties.length > 0 && changedOrGone / duties.length > 0.5;
 
-  const requirements = session.preRead.requirements;
+  const requirements = session.preRead.requirements || [];
   const reqAnswers = (session.step4 && session.step4.requirementAnswers) || {};
   const distinctCompetency = requirements.some((r) => {
     const a = reqAnswers[r.id];
@@ -734,8 +775,23 @@ export async function handleJobDescriptionApi(route, request, env) {
     if (!session) return json({ error: "Session not found" }, 404);
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    if (body.edits && typeof body.edits === "object") {
-      Object.assign(session.preRead, body.edits);
+    // This route is public (the employer's own flow has no login), so the edits are
+    // untrusted. Blindly Object.assign-ing them used to let any caller replace
+    // preRead.duties / .requirements / .categories with a non-array, which then threw
+    // deep inside computeMatrix()/findConflicts()/generate-outputs as a 500 several
+    // steps later. Only the one field the UI actually edits is taken, and it's merged
+    // onto the stored categories by key rather than replacing the array wholesale.
+    const edits = (body.edits && typeof body.edits === "object") ? body.edits : {};
+    if (Array.isArray(edits.categories) && Array.isArray(session.preRead.categories)) {
+      const editedText = new Map();
+      for (const c of edits.categories) {
+        if (c && typeof c === "object" && typeof c.key === "string") {
+          editedText.set(c.key, String(c.extractedText == null ? "" : c.extractedText));
+        }
+      }
+      for (const cat of session.preRead.categories) {
+        if (editedText.has(cat.key)) cat.extractedText = editedText.get(cat.key);
+      }
     }
     session.preRead.confirmed = true;
     await saveSession(env, session);
@@ -1022,7 +1078,7 @@ function findConflicts(session) {
   const primary = session.step3.dutyAnswers || {};
   const secondary = session.secondRespondent.step3Answers || {};
   const conflicts = [];
-  for (const duty of session.preRead.duties) {
+  for (const duty of session.preRead.duties || []) {
     const p = primary[duty.id], s = secondary[duty.id];
     if (p && s && p.answer && s.answer && p.answer !== s.answer) {
       conflicts.push({ dutyId: duty.id, text: duty.text, primaryAnswer: p.answer, secondaryAnswer: s.answer });

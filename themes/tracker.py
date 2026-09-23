@@ -95,7 +95,9 @@ class Tracker:
             raw = [c.value for c in cells]
             if not any(raw):
                 continue
-            row = dict(zip(FEEDBACK_HEADER, raw))
+            # strict=False on purpose: a sheet can carry extra trailing columns
+            # beyond the 13 this module knows about, and those are ignored.
+            row = dict(zip(FEEDBACK_HEADER, raw, strict=False))
             row["Item ID"] = f"ITEM-{cells[0].row - 1:03d}"
             if row.get("Year") is not None and row.get("Quarter") and row.get("Region"):
                 row["Survey ID"] = survey_id(row["Year"], row["Quarter"], row["Region"])

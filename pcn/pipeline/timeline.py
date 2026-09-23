@@ -1,6 +1,6 @@
 """Change-over-time: buckets the ledger's meetings by quarter (using each
-Assertion's meeting_date -- assertions with no meeting_date are left out of every
-bucket, since there's no honest way to place them in time) and derives the network
+Assertion's meeting_date -- assertions with no usable meeting_date are left out of
+every bucket, since there's no honest way to place them in time) and derives the network
 as of each bucket's cumulative cutoff, via pcn/pipeline/derive.derive_network. Like
 every other derived artifact here, this is a pure function over the ledger: rerunning
 it after new meetings are processed, or after a threshold changes, just recomputes it.
@@ -15,12 +15,9 @@ a shrinking network would -- that only happens via review rejecting an assertion
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import date
 
 from .derive import derive_network
-
-_QUARTER_MONTH = {1: 1, 2: 1, 3: 1, 4: 4, 5: 4, 6: 4, 7: 7, 8: 7, 9: 7, 10: 10, 11: 10, 12: 10}
 
 
 def _quarter_label(meeting_date: str) -> str | None:
@@ -37,17 +34,28 @@ def _is_contested(edge: dict) -> bool:
 
 
 def derive_timeline(ledger_rows: list[dict], resolutions: dict, issues: list | None = None) -> dict:
-    dated = [a for a in ledger_rows if a.get("meeting_date")]
+    # An assertion counts as "dated" only if its meeting_date actually PARSES, not just
+    # if the field is non-empty. A present-but-unparseable date (e.g. "2026-13-45", which
+    # passes the upload route's YYYY-MM-DD regex but is not a real day) made
+    # _quarter_label return None, and the cutoff comparison below then raised
+    # "TypeError: '<=' not supported between instances of 'NoneType' and 'str'",
+    # aborting the whole pipeline run. Bucketing each assertion's label once, here, is
+    # also what stops _quarter_label being re-parsed once per period per row.
+    dated: list[tuple[str, dict]] = []
+    for a in ledger_rows:
+        label = _quarter_label(a["meeting_date"]) if a.get("meeting_date") else None
+        if label is not None:
+            dated.append((label, a))
     undated_count = len(ledger_rows) - len(dated)
 
-    labels = sorted({_quarter_label(a["meeting_date"]) for a in dated} - {None})
+    labels = sorted({label for label, _ in dated})
     if not labels:
         return {"periods": [], "undated_assertion_count": undated_count}
 
     periods = []
     previous_edges: dict[tuple, dict] = {}
     for label in labels:
-        cutoff_rows = [a for a in dated if _quarter_label(a["meeting_date"]) <= label]
+        cutoff_rows = [a for row_label, a in dated if row_label <= label]
         network = derive_network(cutoff_rows, resolutions, issues)
         current_edges = {(e["from_issue_id"], e["to_issue_id"]): e for e in network["edges"]}
 

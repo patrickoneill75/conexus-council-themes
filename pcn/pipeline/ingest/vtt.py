@@ -10,7 +10,12 @@ import html
 import re
 from pathlib import Path
 
-_TIMESTAMP_LINE = re.compile(r"^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}")
+# The hours field is OPTIONAL in WebVTT ("00:05.000 --> 00:08.000" is a valid cue
+# timing), so it can't be required here: an export written that way had every timestamp
+# line fall through as if it were cue text, corrupting the transcript it produced.
+_TIMESTAMP_LINE = re.compile(
+    r"^(?:\d{2,}:)?\d{2}:\d{2}[.,]\d{3}\s*-->\s*(?:\d{2,}:)?\d{2}:\d{2}[.,]\d{3}"
+)
 _OPEN_VOICE_TAG = re.compile(r"<v\s+([^>]+)>")
 _CLOSE_VOICE_TAG = re.compile(r"</v>")
 
