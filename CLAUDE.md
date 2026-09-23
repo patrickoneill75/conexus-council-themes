@@ -1,9 +1,26 @@
 # Working preferences
 
-- After completing a series of related edits (a bug fix, a feature, a batch of
-  fixes like the PCN pipeline/edit-route/tabs work) -- commit, push, and open a
-  pull request automatically, without waiting to be asked. This applies every
-  time, not just when explicitly requested in the moment.
+## Always finish with a pull request
+
+Every time you make edits, end by preparing a PR. Commit, push, and open it
+automatically, without waiting to be asked. This applies every time, not just when
+it was requested in the moment, and it applies to a one-line fix as much as to a
+batch of work.
+
+Before opening it, check the state of any existing PR for the branch:
+
+1. **No PR for this branch** -- open one.
+2. **An open PR exists** -- push to the branch; the commits join that PR. Update its
+   title and body if the scope has changed.
+3. **The PR is already merged or closed** -- open a NEW one. A merged PR cannot pick
+   up new commits. Editing its body does not create a PR, and the work sits unmerged
+   on the branch looking finished when it is not. This has happened; do not repeat it.
+
+If the branch was merged and `main` has moved on, rebase the unmerged commits onto the
+current `main` before opening the new PR. Keep those commits -- do not reset the branch
+and discard them.
+
+Finish by stating the PR number and URL. If you did not open one, say so and why.
 
 # Standing decisions
 
