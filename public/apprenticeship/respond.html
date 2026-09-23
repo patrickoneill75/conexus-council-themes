@@ -186,39 +186,27 @@
       : "Question " + (progress.answered + 1) + " of " + progress.total;
   }
 
-  // Bubbles arrive one at a time with a short beat between them. A section's context can
-  // run to a paragraph, and dumping the whole section at once reads as a wall of text
-  // rather than someone talking you through it.
-  var BEAT_MS = 700;
-
+  // Everything this step has to say is already in hand by the time renderStep runs, so it
+  // all goes on screen at once. There is NO artificial pacing delay here on purpose: the
+  // per-answer evaluation is a real API call the respondent already waited through, and
+  // padding a further beat onto each bubble after it just makes a slow chat slower. The
+  // typing indicator is shown only while a request is genuinely in flight.
   function renderStep(step) {
     updateProgress(step.progress);
-    var queue = (step.messages || []).slice();
-    var typing = addTyping();
-    function next() {
-      if (!queue.length) {
-        typing.remove();
-        currentPrompt = step.prompt;
-        addBubble("bot", step.prompt);
-        el("composer").hidden = false;
-        el("answerInput").disabled = false;
-        el("sendBtn").disabled = false;
-        el("answerInput").value = "";
-        el("answerInput").style.height = "auto";
-        el("answerInput").focus();
-        scrollToBottom();
-        return;
-      }
-      var text = queue.shift();
+    (step.messages || []).forEach(function (text) {
       // The first message after a section boundary is the section's own name -- given
       // its own styling so a respondent can see where they are in the assessment.
-      var isSectionHeading = text === step.sectionName;
-      typing.remove();
-      addBubble(isSectionHeading ? "section" : "bot", text);
-      typing = addTyping();
-      setTimeout(next, BEAT_MS);
-    }
-    setTimeout(next, BEAT_MS);
+      addBubble(text === step.sectionName ? "section" : "bot", text);
+    });
+    currentPrompt = step.prompt;
+    addBubble("bot", step.prompt);
+    el("composer").hidden = false;
+    el("answerInput").disabled = false;
+    el("sendBtn").disabled = false;
+    el("answerInput").value = "";
+    el("answerInput").style.height = "auto";
+    el("answerInput").focus();
+    scrollToBottom();
   }
 
   function submitAnswer() {
