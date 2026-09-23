@@ -634,19 +634,28 @@ can't know (how the work has actually changed, which requirements are truly nece
 No step asks an open-ended question where a tap-to-choose answer with Claude's own guess
 prefilled will do.
 
+**The employer meets this as "Conductor".** Every user-facing string in the app names the
+assistant Conductor rather than Claude; underneath it is the same Claude call, and the key,
+the secret and the code all still say Claude. Only the copy changed.
+
 **Four screens, then the outputs.** All five toolkit parts are covered, but the employer
-answers on four screens rather than nine:
+answers on four screens rather than nine. Back works at every step: each screen's answers
+are already stored on the session, so going back re-renders the previous screen with what
+was answered rather than an empty form. Both waits that involve a model call (reading the
+document, writing the revised description) show a progress bar.
 
 | Screen | Covers | Roughly |
 |---|---|---|
 | Start | The file, plus who's answering, whether the role is hard to fill, and when the description was last updated. Claude reads the document while these are filled in. | 1 min |
-| What Claude found | The Part 2 audit of all ten categories. Only the ones Claude flagged Minor Drift or Significant Gap open by default; the aligned ones stay collapsed but are still editable. | 2 min |
-| Reality check on duties | Part 1: every duty tapped Still accurate / Changed / No longer done, plus the four drivers of role evolution, each prefilled with Claude's guess. | 4 min |
+| What Conductor found | The Part 2 audit of all ten categories. Each names a **potential problem** and a **potential fix** — the fix is concrete enough to paste in, not "consider revising". Only the ones flagged Minor Drift or Significant Gap open by default; the aligned ones stay collapsed but are still editable. | 2 min |
+| Reality check on duties | Part 1: every duty tapped Still accurate / Changed / No longer done, plus the four drivers of role evolution, each prefilled with Conductor's guess. A duty flagged vague also shows **why** it is vague and a suggested rewrite in an editable box — saving it replaces the duty itself, so the fix reaches the redline rather than sitting in a note. | 4 min |
 | Requirements test | Part 3's core question asked of every requirement, with the credentials in play for this role shown alongside. | 3 min |
 | Gaps and the decision | Pay range, physical-demand frequency and pathway, plus the two Part 4 questions Claude can't compute. The New Role Decision Matrix score updates live as they answer. | 2 min |
 
-**What the employer gets.** A plain-English summary of the biggest changes, shown on
-screen, plus three Word files:
+**What the employer gets.** A one-line headline and four to eight bullets naming what
+actually moved, shown on screen, plus three Word files. (The summary used to be three to
+five paragraphs; nobody read them after fifteen minutes of answering questions. Box still
+gets it as one flat text file.) The three files:
 
 1. **Redlined description** — real Word tracked changes, so the reviewer can Accept or
    Reject each edit in their own copy.

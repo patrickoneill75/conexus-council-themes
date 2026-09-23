@@ -383,8 +383,26 @@ const PRE_READ_TOOL = {
             },
             status: { type: "string", enum: ["aligned", "minor_drift", "significant_gap"] },
             statusReasoning: { type: "string", description: "One sentence: why this tentative status." },
+            // The employer's actual question on this screen is "what's wrong and what
+            // would you do about it". A status pill and a sentence of reasoning answered
+            // the first half and left the second to them, which is the part the toolkit
+            // says takes an hour by hand.
+            potentialProblem: {
+              type: "string",
+              description: "The specific problem with this category as the document has "
+                + "it -- name the exact wording at fault. If nothing is wrong, say so in "
+                + "a few words rather than inventing a problem.",
+            },
+            potentialFix: {
+              type: "string",
+              description: "The concrete change you would make, specific enough to act "
+                + "on: proposed replacement wording, or the exact thing to add. If there "
+                + "is no problem, say what could still be sharpened, or that nothing "
+                + "needs changing.",
+            },
           },
-          required: ["key", "extractedText", "status", "statusReasoning"],
+          required: ["key", "extractedText", "status", "statusReasoning",
+                     "potentialProblem", "potentialFix"],
           additionalProperties: false,
         },
       },
@@ -401,8 +419,23 @@ const PRE_READ_TOOL = {
               description: "Which of the four drivers this duty relates to, if any -- can be empty.",
             },
             vague: { type: "boolean", description: "True for a placeholder duty like \"support operations\" or \"other duties as assigned\"." },
+            // Flagging a duty vague and stopping there leaves the employer to work out
+            // both why and what to write instead. The suggestion is prefilled into an
+            // editable box on the duties screen, so fixing it is a read and a tweak.
+            vagueReason: {
+              type: "string",
+              description: "If vague: one sentence on why this wording tells a candidate "
+                + "nothing. Empty string if not vague.",
+            },
+            vagueFix: {
+              type: "string",
+              description: "If vague: a concrete rewrite of this duty, in the same voice "
+                + "as the rest of the document, specific about what is done and to what. "
+                + "Base it on what the rest of the document implies rather than inventing "
+                + "work. Empty string if not vague.",
+            },
           },
-          required: ["id", "text", "drivers", "vague"],
+          required: ["id", "text", "drivers", "vague", "vagueReason", "vagueFix"],
           additionalProperties: false,
         },
       },
@@ -487,6 +520,10 @@ function preReadSystemPrompt() {
     "Decision Authority and Quality, and Cross-Training and Role Convergence. Flag any " +
     "system/software/equipment named in a duty but absent from the requirements -- the " +
     "toolkit calls this the single most common gap in manufacturing job descriptions. " +
+    "For every category, give a potential problem and a potential fix -- the fix has to " +
+    "be concrete enough for the employer to paste in, not advice to \"consider revising\". " +
+    "For every duty you mark vague, say why in one sentence and write the specific " +
+    "rewrite you would use. " +
     "Everything you produce here is explicitly labeled as your inference and will be " +
     "shown to the employer to confirm, correct, or reject before it's treated as fact.";
 }
@@ -551,15 +588,21 @@ const OUTPUTS_TOOL = {
   input_schema: {
     type: "object",
     properties: {
-      summary: {
+      // Read on screen by someone who has just spent fifteen minutes answering
+      // questions. Paragraphs went unread; a line and a list of what moved does not.
+      summaryHeadline: {
         type: "string",
-        description: "The biggest changes, in plain English, for the person who just did "
-          + "this exercise to read on screen. Three to five short paragraphs, no heading, "
-          + "no bullet list, no preamble. Lead with what actually changed and why it "
-          + "matters for hiring -- not with a description of the process. Name the "
-          + "specific duty, requirement or title that moved. If the New Role Decision "
-          + "Matrix scored 3 or higher, say plainly that this now reads as a different "
-          + "job and what that means.",
+        description: "One sentence: the single biggest change and why it matters for "
+          + "hiring. No preamble, no description of the process.",
+      },
+      summaryBullets: {
+        type: "array",
+        description: "Four to eight bullets, the biggest change first. One line each, "
+          + "under about twenty words, naming the specific duty, requirement or title "
+          + "that moved and what it became -- not \"duties were updated\". If the New "
+          + "Role Decision Matrix scored 3 or higher, one bullet says plainly that this "
+          + "now reads as a different job.",
+        items: { type: "string" },
       },
       documentTitle: {
         type: "string",
@@ -609,7 +652,8 @@ const OUTPUTS_TOOL = {
         },
       },
     },
-    required: ["summary", "documentTitle", "document", "oneSheet", "credentials"],
+    required: ["summaryHeadline", "summaryBullets", "documentTitle", "document",
+               "oneSheet", "credentials"],
     additionalProperties: false,
   },
   strict: true,
@@ -710,9 +754,26 @@ function formatConfirmedInputs(session) {
   return lines.join("\n");
 }
 
+/**
+ * One plain-text rendering of the on-screen summary, for the Box copy and for anything
+ * that only wants a string. Sessions generated before the summary became a headline plus
+ * bullets still carry a single `summary` paragraph, so that is honoured as a fallback
+ * rather than being lost when an old session is re-opened.
+ */
+function composeSummary(outputs) {
+  const bullets = Array.isArray(outputs.summaryBullets) ? outputs.summaryBullets : [];
+  if (!outputs.summaryHeadline && !bullets.length) return String(outputs.summary || "");
+  return [
+    String(outputs.summaryHeadline || "").trim(),
+    ...bullets.map((b) => `- ${String(b).trim()}`),
+  ].filter(Boolean).join("\n");
+}
+
 async function runOutputs(env, session) {
   const content = [{ type: "text", text: formatConfirmedInputs(session) }];
-  return callClaude(env, { system: outputsSystemPrompt(), content, tool: OUTPUTS_TOOL });
+  const outputs = await callClaude(env, { system: outputsSystemPrompt(), content, tool: OUTPUTS_TOOL });
+  outputs.summary = composeSummary(outputs);
+  return outputs;
 }
 
 /* ==================================================================================
@@ -952,14 +1013,34 @@ export async function handleJobDescriptionApi(route, request, env) {
     return json({ ok: true, url: `${url.origin}/job-description/respond.html?token=${token}` });
   }
 
-  // POST session/<id>/step3 { dutyAnswers, driverAnswers } -> the primary respondent's
-  // reality-check on duties + what's missing. If a second respondent already answered,
-  // returns any duties where the two disagree for the primary to resolve.
+  // POST session/<id>/step3 { dutyAnswers, driverAnswers, dutyEdits } -> the primary
+  // respondent's reality-check on duties + what's missing. If a second respondent already
+  // answered, returns any duties where the two disagree for the primary to resolve.
   if (parts[0] === "session" && parts.length === 3 && parts[2] === "step3" && method === "POST") {
     const session = await getSession(env, parts[1]);
     if (!session) return json({ error: "Session not found" }, 404);
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    // A duty flagged vague can be rewritten right there on the duties screen, so the
+    // fix lands in the source of truth every later step reads rather than in a note
+    // nobody acts on. This route is public, so the edits are matched against the duty
+    // ids already in the pre-read -- an unknown id adds nothing, and a non-string is
+    // ignored rather than replacing a duty's text with an object.
+    const dutyEdits = (body.dutyEdits && typeof body.dutyEdits === "object") ? body.dutyEdits : {};
+    for (const duty of (session.preRead.duties || [])) {
+      if (!Object.prototype.hasOwnProperty.call(dutyEdits, duty.id)) continue;
+      const edited = dutyEdits[duty.id];
+      if (typeof edited !== "string") continue;
+      const trimmed = edited.trim().slice(0, 1000);
+      if (!trimmed || trimmed === duty.text) continue;
+      duty.originalText = duty.originalText || duty.text;
+      duty.text = trimmed;
+      // The employer has just replaced the placeholder wording, so the flag (and the
+      // suggestion that went with it) no longer describes what is there.
+      duty.vague = false;
+      duty.vagueReason = "";
+      duty.vagueFix = "";
+    }
     session.step3 = {
       dutyAnswers: body.dutyAnswers && typeof body.dutyAnswers === "object" ? body.dutyAnswers : {},
       driverAnswers: body.driverAnswers && typeof body.driverAnswers === "object" ? body.driverAnswers : {},
