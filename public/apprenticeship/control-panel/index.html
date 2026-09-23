@@ -102,6 +102,14 @@
         they tap an answer, it scores itself, and what the chat says next depends on which
         way they answered. Section and question context is shown to them as it goes;
         objectives and scoring criteria are private.</p>
+      <label for="sKind">What kind of step is this?</label>
+      <select id="sKind">
+        <option value="chat">Chat assessment &mdash; yes/no questions, scored</option>
+        <option value="workforce">Workforce needs assessment &mdash; roles, gap, apprentice plan</option>
+      </select>
+      <p class="desc" style="margin:8px 0 0">A workforce step has no questions to write. The
+        respondent enters their roles and the tool computes their gap and what apprentices
+        would close &mdash; see SETUP.md.</p>
       <label for="sName">Assessment name</label>
       <input type="text" id="sName" placeholder="e.g. Employer Readiness Self-Assessment">
       <label for="sIntro">Opening message <span class="hint">(shown first, optional)</span></label>
@@ -126,10 +134,27 @@
         same score.</p>
     </div>
 
-    <div id="sections"></div>
+    <div class="card" id="boxCard" hidden>
+      <h3>Where the CSV goes</h3>
+      <p class="desc">Optional. Each respondent's roles, gap and apprentice plan are written
+        to one CSV in this folder when they finish, updated in place if they come back. The
+        authoritative copy always lives in this app &mdash; Box is the export.</p>
+      <div class="row">
+        <span id="boxFolderLabel" class="sub">No folder chosen</span>
+        <span class="spacer"></span>
+        <button type="button" class="small" id="chooseFolderBtn">Choose folder&hellip;</button>
+        <button type="button" class="small ghost" id="clearFolderBtn">Clear</button>
+      </div>
+      <div id="folderPicker" hidden style="margin-top:12px"></div>
+      <div class="msg" id="boxMsg" hidden></div>
+    </div>
 
-    <div class="row" style="margin-bottom:18px">
-      <button type="button" id="addSectionBtn">Add section</button>
+    <div id="chatOnly">
+      <div id="sections"></div>
+
+      <div class="row" style="margin-bottom:18px">
+        <button type="button" id="addSectionBtn">Add section</button>
+      </div>
     </div>
 
     <div class="card">
@@ -322,15 +347,17 @@
         el("surveyList").innerHTML = '<div class="empty">No assessments in this project yet.</div>';
         return;
       }
-      var html = "<table><thead><tr><th>Step</th><th>Assessment</th><th>Unlocks next at</th>"
-        + "<th>Sections</th><th>Questions</th><th>Responses</th><th></th></tr></thead><tbody>";
+      var html = "<table><thead><tr><th>Step</th><th>Assessment</th><th>Kind</th>"
+        + "<th>Unlocks next at</th><th>Questions</th><th>Responses</th><th></th>"
+        + "</tr></thead><tbody>";
       data.surveys.forEach(function (s) {
+        var workforce = s.kind === "workforce";
         html += "<tr><td>" + (s.step || 1) + "</td>"
           + "<td><a class=\"link\" href=\"#project/" + esc(projectId) + "/survey/"
           + esc(s.id) + "\">" + esc(s.name) + "</a></td><td>"
+          + (workforce ? "Workforce" : "Chat") + "</td><td>"
           + (s.unlockThreshold ? esc(s.unlockThreshold) + "%" : "\u2014") + "</td><td>"
-          + s.sectionCount + "</td><td>"
-          + s.questionCount + "</td><td>" + s.responseCount + "</td>"
+          + (workforce ? "\u2014" : s.questionCount) + "</td><td>" + s.responseCount + "</td>"
           + "<td><a class=\"link\" href=\"/apprenticeship/control-panel/responses.html?survey="
           + encodeURIComponent(s.id) + "\">Responses &amp; issues</a></td></tr>";
       });
@@ -602,6 +629,60 @@
     });
   }
 
+  /** A workforce step has no questions to write, and a chat step has no CSV to export. */
+  var boxFolder = { id: null, name: null };
+  function syncKind() {
+    var workforce = el("sKind").value === "workforce";
+    el("chatOnly").hidden = workforce;
+    el("boxCard").hidden = !workforce;
+  }
+  el("sKind").addEventListener("change", syncKind);
+
+  function showFolder() {
+    el("boxFolderLabel").textContent = boxFolder.name
+      ? "Saving to: " + boxFolder.name : "No folder chosen";
+  }
+  el("clearFolderBtn").addEventListener("click", function () {
+    boxFolder = { id: null, name: null };
+    showFolder();
+  });
+  el("chooseFolderBtn").addEventListener("click", function () { browseFolder("0"); });
+
+  function browseFolder(id) {
+    el("folderPicker").hidden = false;
+    el("folderPicker").innerHTML = '<div class="empty">Loading\u2026</div>';
+    api("box/folders?id=" + encodeURIComponent(id)).then(function (data) {
+      var html = '<div class="sub" style="margin-bottom:8px">'
+        + data.breadcrumb.map(function (b) {
+            return '<a class="link" data-folder="' + esc(b.id) + '">' + esc(b.name) + "</a>";
+          }).join(" / ") + "</div>";
+      html += data.folders.length
+        ? data.folders.map(function (f) {
+            return '<div style="padding:5px 0"><a class="link" data-folder="' + esc(f.id)
+              + '">' + esc(f.name) + "</a></div>";
+          }).join("")
+        : '<div class="empty">No subfolders here.</div>';
+      html += '<div class="row" style="margin-top:10px">'
+        + '<button type="button" class="small primary" data-pick="' + esc(data.id) + '" '
+        + 'data-pick-name="' + esc(data.name) + '">Use \u201c' + esc(data.name) + '\u201d</button>'
+        + '<button type="button" class="small ghost" data-close-picker="1">Cancel</button></div>';
+      el("folderPicker").innerHTML = html;
+    }).catch(function (e) { say("boxMsg", e.message, "err"); el("folderPicker").hidden = true; });
+  }
+
+  el("folderPicker").addEventListener("click", function (e) {
+    var open = e.target.closest("[data-folder]");
+    if (open) return browseFolder(open.getAttribute("data-folder"));
+    var pick = e.target.closest("[data-pick]");
+    if (pick) {
+      boxFolder = { id: pick.getAttribute("data-pick"), name: pick.getAttribute("data-pick-name") };
+      showFolder();
+      el("folderPicker").hidden = true;
+      return;
+    }
+    if (e.target.closest("[data-close-picker]")) el("folderPicker").hidden = true;
+  });
+
   function openEditor(projectId, survey) {
     show("editorView");
     editing = survey;
@@ -611,6 +692,14 @@
     el("sIntro").value = survey ? (survey.intro || "") : "";
     el("sStep").value = survey ? (survey.step || 1) : 1;
     el("sThreshold").value = survey ? (survey.unlockThreshold || 0) : 0;
+    el("sKind").value = survey ? (survey.kind || "chat") : "chat";
+    boxFolder = survey
+      ? { id: survey.boxFolderId || null, name: survey.boxFolderName || null }
+      : { id: null, name: null };
+    showFolder();
+    el("folderPicker").hidden = true;
+    el("boxMsg").hidden = true;
+    syncKind();
     el("sections").innerHTML = "";
     el("sMsg").hidden = true;
     el("deleteSurveyBtn").hidden = !survey;
@@ -642,12 +731,16 @@
       intro: el("sIntro").value.trim(),
       step: Number(el("sStep").value) || 1,
       unlockThreshold: Number(el("sThreshold").value) || 0,
+      kind: el("sKind").value,
+      boxFolderId: boxFolder.id,
+      boxFolderName: boxFolder.name,
       sections: collectSections(),
     };
     if (!payload.name) return say("sMsg", "Give the assessment a name.", "err");
+    if (payload.kind === "workforce") payload.sections = [];
     // Checked here as well as in the Worker so the admin is told WHICH question is
     // missing its criteria rather than getting one flat rejection for the whole form.
-    for (var i = 0; i < payload.sections.length; i++) {
+    for (var i = 0; payload.kind !== "workforce" && i < payload.sections.length; i++) {
       var section = payload.sections[i];
       if (!section.name) return say("sMsg", "Section " + (i + 1) + " needs a name.", "err");
       for (var j = 0; j < section.questions.length; j++) {

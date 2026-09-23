@@ -2293,6 +2293,218 @@ test("apprenticeship: a project with assessments still in it is not deleted out 
   assert.equal(res.status, 409, "deleting the project would silently take every response with it");
 });
 
+
+/* =============================================== apprenticeship: workforce (step 2) */
+const workforce = await mod("apprenticeship_workforce.js");
+
+const WF_ROLES = [
+  { name: "CNC Machinist", headcount: 12, avgYearsExperience: 14, vacancies: 2,
+    retirementEligible5y: 4, anticipatedNewRoles3y: 1, hiringDifficulty: "high",
+    skillsGaps: ["Blueprint reading", "GD&T"], atRiskSkills: ["Setting up the old Mazak"] },
+  { name: "Maintenance Tech", headcount: 5, avgYearsExperience: 6, vacancies: 1,
+    retirementEligible5y: 1, anticipatedNewRoles3y: 0, hiringDifficulty: "medium",
+    skillsGaps: ["blueprint reading", "PLC troubleshooting"], atRiskSkills: ["Line history"] },
+];
+
+/** Create a workforce step, unlocked, in its own project. */
+async function makeWorkforce(env, token, over = {}) {
+  const project = await (await appr("projects", jsonReq("/api/apprenticeship/projects", "POST",
+    { name: "Project", stepCount: 1 }, token), env)).json();
+  const res = await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: project.project.id, name: "Workforce Needs", kind: "workforce",
+    step: 1, sections: [], ...over,
+  }, token), env);
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  return { projectId: project.project.id, survey: body.survey };
+}
+
+const wfReq = (surveyId, sub, method, body, token) =>
+  jsonReq(`/api/apprenticeship/workforce/${surveyId}${sub}`, method, body, token);
+
+test("workforce: a workforce step saves without questions, and keeps none", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeWorkforce(env, token);
+  assert.equal(survey.kind, "workforce");
+  assert.deepEqual(survey.sections, [], "there are no questions to write for this kind");
+  // The chat start route must not open it -- it is a form on its own page.
+  const res = await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST",
+    { surveyId: survey.id }, await respondent(env)), env);
+  assert.equal(res.status, 409);
+});
+
+test("workforce: the gap is vacancies now, plus three fifths then all of the retirements", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const { survey } = await makeWorkforce(env, token);
+  const saved = await (await appr(`workforce/${survey.id}/roles`,
+    wfReq(survey.id, "/roles", "PUT", { roles: WF_ROLES }, respondentToken), env)).json();
+  assert.equal(saved.doc.roles.length, 2);
+
+  const { summary } = await (await appr(`workforce/${survey.id}/summary`,
+    req(`/api/apprenticeship/workforce/${survey.id}/summary`,
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env)).json();
+
+  assert.equal(summary.workforce.headcount, 17);
+  // Weighted by headcount, not a flat average of 14 and 6: (12*14 + 5*6) / 17.
+  assert.equal(summary.workforce.avgYearsExperience, 11.6);
+  assert.equal(summary.gap.now, 3, "two vacancies plus one");
+  // Rounded per role -- 4 * 3/5 = 2.4 -> 2, and 1 * 3/5 = 0.6 -> 1 -- so the by-role table
+  // adds up to the headline instead of drifting from it.
+  assert.equal(summary.retirement.eligible3y, 3);
+  assert.equal(summary.gap.threeYear, 6);
+  assert.equal(summary.gap.fiveYear, 8, "three vacancies plus all five retirements");
+  // Collected but deliberately not folded into the formula the employer gave.
+  assert.equal(summary.gap.anticipatedNewRoles3y, 1);
+});
+
+test("workforce: the top skills gaps count roles, not spellings", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const { survey } = await makeWorkforce(env, token);
+  await appr(`workforce/${survey.id}/roles`,
+    wfReq(survey.id, "/roles", "PUT", { roles: WF_ROLES }, respondentToken), env);
+  const { summary } = await (await appr(`workforce/${survey.id}/summary`,
+    req(`/api/apprenticeship/workforce/${survey.id}/summary`,
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env)).json();
+  // "Blueprint reading" and "blueprint reading" are one gap named by two roles.
+  assert.equal(summary.workforce.topSkillsGaps[0].text, "Blueprint reading");
+  assert.equal(summary.workforce.topSkillsGaps[0].count, 2);
+  assert.equal(summary.workforce.topSkillsGaps.length, 3, "three named gaps in total");
+});
+
+test("workforce: an apprentice qualifies in year three, and only qualified ones fill the gap", async () => {
+  const roles = [{ id: "r1", name: "CNC", headcount: 10, avgYearsExperience: 10,
+    vacancies: 4, retirementEligible5y: 5, anticipatedNewRoles3y: 0,
+    hiringDifficulty: "high", skillsGaps: [], atRiskSkills: [] }];
+  const summary = workforce.summarise(roles.map((r) => workforce.cleanRole(r)));
+  const plan = workforce.cleanPlan({ [summary.roles[0].id]: [2, 1, 0, 0, 0] }, summary.roles);
+  const projection = workforce.projectApprentices(summary, plan);
+
+  assert.deepEqual(projection.timeline.map((y) => y.qualified), [0, 0, 2, 3, 3],
+    "a year-1 start is on staff in year 3; a year-2 start in year 4");
+  assert.deepEqual(projection.timeline.map((y) => y.inTraining), [2, 3, 1, 0, 0]);
+  assert.equal(projection.mentorsNeeded, 2, "one mentor per one to two apprentices, at the peak");
+
+  // The five-year gap is 4 vacancies + 5 retirements = 9; three have qualified by year 5.
+  assert.equal(projection.coverage.fiveYear.gap, 9);
+  assert.equal(projection.coverage.fiveYear.filled, 3);
+  assert.equal(projection.coverage.fiveYear.remaining, 6);
+  // At year 3 only the year-1 cohort has qualified; the year-2 cohort is still training and
+  // must not be counted as filling anything.
+  assert.equal(projection.coverage.threeYear.filled, 2);
+  assert.equal(projection.coverage.threeYear.inTraining, 1);
+});
+
+test("workforce: more apprentices than vacancies is growth, not 140% coverage", async () => {
+  const roles = [workforce.cleanRole({ id: "r1", name: "CNC", headcount: 4, vacancies: 2,
+    retirementEligible5y: 0 })];
+  const summary = workforce.summarise(roles);
+  const projection = workforce.projectApprentices(summary,
+    workforce.cleanPlan({ [summary.roles[0].id]: [6, 0, 0, 0, 0] }, summary.roles));
+  assert.equal(projection.coverage.fiveYear.qualified, 6);
+  assert.equal(projection.coverage.fiveYear.filled, 2, "counted only as far as the gap goes");
+  assert.equal(projection.coverage.fiveYear.percent, 100);
+  assert.equal(projection.coverage.fiveYear.remaining, 0);
+});
+
+test("workforce: submitting marks the step complete and satisfies its gate", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const { survey, projectId } = await makeWorkforce(env, token,
+    { name: "Workforce Needs", step: 1, unlockThreshold: 85 });
+  // A second step behind it, to prove "finished" reads as "passed" for an unscored step.
+  const stepTwo = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId, name: "Step Two", step: 2, sections: ONE_SECTION,
+  }, token), env)).json();
+
+  await appr(`workforce/${survey.id}/roles`,
+    wfReq(survey.id, "/roles", "PUT", { roles: WF_ROLES }, respondentToken), env);
+  const dashBefore = await (await appr("account/dashboard",
+    req("/api/apprenticeship/account/dashboard",
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env)).json();
+  assert.equal(dashBefore.projects[0].assessments[1].locked, true, "nothing finished yet");
+
+  const done = await (await appr(`workforce/${survey.id}/submit`,
+    wfReq(survey.id, "/submit", "POST", {}, respondentToken), env)).json();
+  assert.equal(done.summary.gap.fiveYear, 8);
+
+  const dash = await (await appr("account/dashboard",
+    req("/api/apprenticeship/account/dashboard",
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env)).json();
+  const step = dash.projects[0].assessments[0];
+  assert.equal(step.status, "complete");
+  assert.equal(step.scored, false, "there is nothing to score, so no percentage is claimed");
+  assert.equal(step.overall.display, "Complete");
+  assert.equal(step.workforce.summary.gap.fiveYear, 8, "the gap rides along for the tab");
+  assert.equal(dash.projects[0].assessments[1].locked, false,
+    "finishing an unscored step is what passing its gate means");
+});
+
+test("workforce: a locked step is refused, not merely greyed out", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const first = await makeAssessment(env, token, ONE_SECTION, "Step One");
+  await appr(`surveys/${first.survey.id}`,
+    jsonReq(`/api/apprenticeship/surveys/${first.survey.id}`, "PUT", {
+      projectId: first.projectId, name: "Step One", step: 1, unlockThreshold: 85,
+      sections: [{ id: first.survey.sections[0].id, ...ONE_SECTION[0],
+        questions: [{ id: first.survey.sections[0].questions[0].id, ...ONE_SECTION[0].questions[0] }] }],
+    }, token), env);
+  const second = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: first.projectId, name: "Workforce", kind: "workforce", step: 2, sections: [],
+  }, token), env)).json();
+
+  const res = await appr(`workforce/${second.survey.id}`,
+    req(`/api/apprenticeship/workforce/${second.survey.id}`,
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env);
+  assert.equal(res.status, 409, "the link to any step is just a URL");
+  assert.match((await res.json()).error, /Step One/);
+});
+
+test("workforce: one account cannot read another's roles", async () => {
+  const { env, token } = await apprEnv();
+  const mine = await respondent(env);
+  const { survey } = await makeWorkforce(env, token);
+  await appr(`workforce/${survey.id}/roles`,
+    wfReq(survey.id, "/roles", "PUT", { roles: WF_ROLES }, mine), env);
+
+  const intruder = await signUp(env, { email: "someone@else.test", company: "Else Co" });
+  const theirs = await (await appr(`workforce/${survey.id}`,
+    req(`/api/apprenticeship/workforce/${survey.id}`,
+      { headers: { authorization: `Bearer ${intruder}` } }), env)).json();
+  assert.deepEqual(theirs.doc.roles, [],
+    "the document is keyed by account, so a second employer starts from a blank sheet");
+  assert.equal((await appr(`workforce/${survey.id}`,
+    req(`/api/apprenticeship/workforce/${survey.id}`), env)).status, 401,
+    "and it is not readable at all without signing in");
+});
+
+test("workforce: junk in the role form cannot become junk in the totals", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const { survey } = await makeWorkforce(env, token);
+  const saved = await (await appr(`workforce/${survey.id}/roles`,
+    wfReq(survey.id, "/roles", "PUT", {
+      roles: [
+        { name: "  Spacing  ", headcount: "12.6", avgYearsExperience: -4,
+          vacancies: "not a number", retirementEligible5y: 1e9,
+          hiringDifficulty: "catastrophic",
+          skillsGaps: ["Welding", "welding", "  ", "Welding"] },
+        { name: "", headcount: 5 },
+      ],
+    }, respondentToken), env)).json();
+  const role = saved.doc.roles[0];
+  assert.equal(saved.doc.roles.length, 1, "a role with no name is not a role");
+  assert.equal(role.name, "Spacing");
+  assert.equal(role.headcount, 13, "rounded to whole people");
+  assert.equal(role.avgYearsExperience, 0, "negative experience is zero, not NaN downstream");
+  assert.equal(role.vacancies, 0);
+  assert.equal(role.retirementEligible5y, 100000, "capped rather than trusted");
+  assert.equal(role.hiringDifficulty, "medium", "an unknown difficulty falls back");
+  assert.deepEqual(role.skillsGaps, ["Welding"], "deduplicated case-insensitively");
+});
+
 /* ------------------------------------------------------------------------- runner */
 let failed = 0;
 for (const { name, fn } of tests) {

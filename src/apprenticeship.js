@@ -65,6 +65,10 @@ import {
   handleAccountApi, requireRespondent, publicAccount, listAccounts, adminSetPassword,
   deleteAccount, openRunKey, doneRunKey, ACCOUNT_KEY_PREFIXES,
 } from "./apprenticeship_accounts.js";
+import {
+  cleanRoles, cleanPlan, summarise, projectApprentices, getWorkforce, emptyWorkforce,
+  saveWorkforce, workforceCsv,
+} from "./apprenticeship_workforce.js";
 
 const PROJECT_PREFIX = "apprenticeship:project:";
 const SURVEY_PREFIX = "apprenticeship:survey:";
@@ -104,6 +108,13 @@ const POST_CONTEXT_MODES = ["weak", "always", "never"];
 // admin's criteria, redirects a non-answer and can trip the safety shut-off. Both exist
 // because an assessment can mix them; a step made entirely of yes/no questions costs
 // nothing per answer and cannot be shut off mid-way.
+// A "chat" assessment is the yes/no conversation this app started as. A "workforce" one
+// is step 2's Manufacturing Workforce Needs Assessment -- a structured form and a computed
+// gap, on its own page (see src/apprenticeship_workforce.js). Both are surveys so that the
+// step order, the unlock gates, the account index keys and the dashboard tab work on
+// either without a parallel set of machinery.
+const SURVEY_KINDS = ["chat", "workforce"];
+
 const QUESTION_TYPES = ["yes_no", "open"];
 const YES_NO_ANSWERS = ["yes", "no"];
 
@@ -263,11 +274,20 @@ function buildSurvey(id, body, existing) {
   const now = new Date().toISOString();
   const step = Number(body.step);
   const threshold = Number(body.unlockThreshold);
+  const kind = SURVEY_KINDS.includes(str(body.kind)) ? str(body.kind)
+    : (existing && existing.kind) || "chat";
   return {
     id,
     projectId: str(body.projectId) || (existing ? existing.projectId : ""),
     name: str(body.name) || "Untitled self-assessment",
+    kind,
     intro: str(body.intro),
+    // Where a workforce assessment's CSV lands, when an admin has picked a folder. The
+    // authoritative copy is always KV; Box is the export.
+    boxFolderId: body.boxFolderId ? str(body.boxFolderId)
+      : (existing ? existing.boxFolderId || null : null),
+    boxFolderName: body.boxFolderName ? str(body.boxFolderName)
+      : (existing ? existing.boxFolderName || null : null),
     // Which step of the programme this is. The order matters now that a step can be
     // locked behind the one before it, and creation order is not that order -- an admin
     // building Step 3 first would otherwise have built the gate backwards.
@@ -877,6 +897,71 @@ function responsesCsv(survey, responses) {
   return rows.join("\n") + "\n";
 }
 
+/* ---------- Box (the workforce CSV export) ----------
+ * The same shape every other mini app here uses: its own small token helper rather than
+ * importing another module's internals, and an upsert by name -- look the file up first
+ * and PUT a new version if it is there, because creating blindly 409s on the second run.
+ */
+
+const BOX_API = "https://api.box.com/2.0";
+const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
+
+async function boxAccessToken(env) {
+  const raw = env.BOX_KV ? await env.BOX_KV.get("box:tokens") : null;
+  if (!raw) return null;
+  const tokens = JSON.parse(raw);
+  const remaining = tokens.expires_in - (Math.floor(Date.now() / 1000) - tokens.obtained_at);
+  if (remaining > 120) return tokens.access_token;
+  const response = await fetch("https://api.box.com/oauth2/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.BOX_CLIENT_ID, client_secret: env.BOX_CLIENT_SECRET,
+      grant_type: "refresh_token", refresh_token: tokens.refresh_token,
+    }),
+  });
+  if (!response.ok) return null;
+  const body = await response.json();
+  // Box rotates the refresh token on every use, so the whole new pair is saved back --
+  // reusing one already sent once invalidates the connection for every app here.
+  const fresh = {
+    access_token: body.access_token, refresh_token: body.refresh_token,
+    obtained_at: Math.floor(Date.now() / 1000), expires_in: body.expires_in || 3600,
+  };
+  await env.BOX_KV.put("box:tokens", JSON.stringify(fresh));
+  return fresh.access_token;
+}
+
+function csvFileName(survey, account) {
+  const slug = (text) => String(text || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `${slug(survey.name) || "workforce"}-${slug(account.company) || "company"}`
+    + `-${account.id.slice(0, 8)}.csv`;
+}
+
+async function uploadWorkforceCsv(env, survey, account, csv) {
+  const token = await boxAccessToken(env);
+  if (!token) throw new Error("Box is not connected.");
+  const headers = { authorization: `Bearer ${token}` };
+  const name = csvFileName(survey, account);
+
+  const itemsRes = await fetch(
+    `${BOX_API}/folders/${survey.boxFolderId}/items?fields=name,type&limit=1000`, { headers });
+  if (!itemsRes.ok) throw new Error(`Box API error (${itemsRes.status})`);
+  const items = await itemsRes.json();
+  const existing = (items.entries || []).find((e) => e.type === "file" && e.name === name);
+
+  const form = new FormData();
+  if (!existing) {
+    form.append("attributes", JSON.stringify({ name, parent: { id: survey.boxFolderId } }));
+  }
+  form.append("file", new Blob([csv], { type: "text/csv" }), name);
+  const uploadRes = await fetch(
+    existing ? `${BOX_UPLOAD_API}/files/${existing.id}/content` : `${BOX_UPLOAD_API}/files/content`,
+    { method: "POST", headers, body: form });
+  if (!uploadRes.ok) throw new Error(`Box upload failed (${uploadRes.status})`);
+}
+
 /* ---------- the signed-in respondent's own data ---------- */
 
 /**
@@ -915,22 +1000,38 @@ async function assessmentsForProject(env, account, surveys, stepCount) {
     ]);
     const finished = doneId ? await getResponse(env, survey.id, doneId) : null;
     const todos = finished ? await getTodos(env, account.id, survey.id) : null;
-    const live = finished && finished.results ? effectiveResults(finished.results, todos) : null;
+    const isWorkforce = survey.kind === "workforce";
+    // A workforce step is a planning exercise, not a test: there is nothing to score, so
+    // finishing it reports 100%. That is what lets an admin put a threshold on it and have
+    // "finished" mean "passed"; the dashboard shows it as Complete, because a percentage
+    // here would be a number with no meaning behind it.
+    const live = !isWorkforce && finished && finished.results
+      ? effectiveResults(finished.results, todos) : null;
+    const workforceDone = isWorkforce && finished;
     assessments.push({
       surveyId: survey.id,
       surveyName: survey.name,
+      kind: survey.kind || "chat",
+      scored: !isWorkforce,
       step: survey.step || 1,
       threshold: survey.unlockThreshold || 0,
-      questionCount: questionCount(survey),
+      questionCount: isWorkforce ? 0 : questionCount(survey),
       status: finished ? "complete" : (openId ? "in-progress" : "not-started"),
       responseId: finished ? finished.id : (openId || null),
       // What they scored answering, and what it stands at now that part of the to-do list
       // is ticked off. Both, so the dashboard shows one moving toward the other rather
       // than quietly overwriting the original result.
       baseOverall: live ? live.base : null,
-      overall: live ? live.overall : null,
-      percentNow: live ? live.overall.percent : 0,
+      overall: live ? live.overall
+        : (workforceDone
+            ? { earned: 1, possible: 1, percent: 100, display: "Complete",
+                band: "strong", bandLabel: "Complete" }
+            : null),
+      percentNow: live ? live.overall.percent : (workforceDone ? 100 : 0),
       sections: live ? live.sections : [],
+      // The gap and the apprentice plan, so the dashboard tab can show the headline
+      // figures without a second round trip.
+      workforce: workforceDone ? (finished.results || null) : null,
       todoDone: live ? live.sections.reduce((n, x) => n + x.todoDone, 0) : 0,
       todoTotal: live ? live.sections.reduce((n, x) => n + x.todoTotal, 0) : 0,
       submittedAt: finished ? finished.submittedAt : null,
@@ -946,6 +1047,7 @@ async function assessmentsForProject(env, account, surveys, stepCount) {
     if (built.has(step)) continue;
     assessments.push({
       surveyId: "", surveyName: `Step ${step}`, step, threshold: 0, questionCount: 0,
+      kind: "chat", scored: true, workforce: null,
       status: "not-built", placeholder: true, responseId: null,
       baseOverall: null, overall: null, percentNow: 0, sections: [],
       todoDone: 0, todoTotal: 0, submittedAt: null,
@@ -1082,6 +1184,135 @@ export async function handleApprenticeshipApi(route, request, env) {
     return json({ error: "Not found" }, 404);
   }
 
+  /* ================= step 2: the workforce needs assessment ================= */
+
+  if (parts[0] === "workforce") {
+    const account = await requireRespondent(request, env);
+    if (!account) return json({ error: "Sign in to open this step." }, 401);
+    const surveyId = parts[1] ? str(parts[1]) : "";
+    const survey = surveyId ? await getSurvey(env, surveyId) : null;
+    if (!survey || survey.kind !== "workforce") return json({ error: "Not found" }, 404);
+
+    // Same gate as a chat step, and enforced here rather than only greyed out on the
+    // dashboard -- the link to any step is just a URL.
+    const locked = await lockedFor(env, account, survey);
+    if (locked) {
+      return json({ error: `Finish ${locked.lockedBy}`
+        + (locked.lockedUntil > 0 ? ` and reach ${locked.lockedUntil}% on it` : "")
+        + " before starting this step." }, 409);
+    }
+
+    /**
+     * Opening the step marks it as started, the same way a chat step's first question
+     * does. Without that the project would not appear on their dashboard at all until
+     * they submitted -- so an employer part-way through entering roles would have no way
+     * back to it.
+     */
+    const markStarted = async () => {
+      const finished = await env.BOX_KV.get(doneRunKey(account.id, survey.id));
+      if (!finished) await env.BOX_KV.put(openRunKey(account.id, survey.id), `workforce-${survey.id}`);
+    };
+
+    // GET workforce/<surveyId> -- the working document, created empty on first open.
+    if (parts.length === 2 && method === "GET") {
+      const doc = (await getWorkforce(env, account.id, survey.id))
+        || await saveWorkforce(env, emptyWorkforce(account.id, survey));
+      await markStarted();
+      return json({ survey: { id: survey.id, name: survey.name, intro: survey.intro }, doc });
+    }
+
+    // PUT workforce/<surveyId>/roles { roles } -- saved as they go, so an employer can
+    // add roles over several sittings rather than losing the lot by closing a tab.
+    if (parts.length === 3 && parts[2] === "roles" && method === "PUT") {
+      let body = {};
+      try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+      const doc = (await getWorkforce(env, account.id, survey.id))
+        || emptyWorkforce(account.id, survey);
+      if (doc.submittedAt) return json({ error: "This assessment is already submitted." }, 409);
+      doc.roles = cleanRoles(body.roles);
+      // A plan entry for a role that no longer exists is dropped with it.
+      doc.plan = cleanPlan(doc.plan, doc.roles);
+      await saveWorkforce(env, doc);
+      await markStarted();
+      return json({ ok: true, doc });
+    }
+
+    // PUT workforce/<surveyId>/plan { plan } -- apprentices per role per year.
+    if (parts.length === 3 && parts[2] === "plan" && method === "PUT") {
+      let body = {};
+      try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+      const doc = await getWorkforce(env, account.id, survey.id);
+      if (!doc) return json({ error: "Nothing entered yet." }, 404);
+      doc.plan = cleanPlan(body.plan, doc.roles);
+      await saveWorkforce(env, doc);
+      const summary = summarise(doc.roles);
+      return json({ ok: true, doc, summary, projection: projectApprentices(summary, doc.plan) });
+    }
+
+    // GET workforce/<surveyId>/summary -- the computed picture. Recomputed on every read
+    // rather than stored, so it can never disagree with the roles behind it.
+    if (parts.length === 3 && parts[2] === "summary" && method === "GET") {
+      const doc = await getWorkforce(env, account.id, survey.id);
+      if (!doc || !doc.roles.length) return json({ error: "Add a role first." }, 409);
+      const summary = summarise(doc.roles);
+      return json({ summary, projection: projectApprentices(summary, doc.plan), doc });
+    }
+
+    // POST workforce/<surveyId>/submit -- "I have entered all my roles". Marks the step
+    // complete, which is what opens whatever sits behind it.
+    if (parts.length === 3 && parts[2] === "submit" && method === "POST") {
+      const doc = await getWorkforce(env, account.id, survey.id);
+      if (!doc || !doc.roles.length) {
+        return json({ error: "Add at least one role before finishing." }, 409);
+      }
+      const summary = summarise(doc.roles);
+      const projection = projectApprentices(summary, doc.plan);
+      doc.submittedAt = doc.submittedAt || new Date().toISOString();
+      await saveWorkforce(env, doc);
+
+      // Written as an ordinary response record so the dashboard, the admin responses list
+      // and the account index all read it exactly as they read a chat step.
+      const existingId = await env.BOX_KV.get(doneRunKey(account.id, survey.id));
+      const response = {
+        id: existingId || crypto.randomUUID(),
+        surveyId: survey.id,
+        projectId: survey.projectId,
+        surveyName: survey.name,
+        kind: "workforce",
+        accountId: account.id,
+        respondent: { name: account.name, company: account.company, email: account.email },
+        status: "complete",
+        cursor: 0, pending: null, consecutiveNonResponsive: 0,
+        answers: [], issues: [],
+        results: { kind: "workforce", summary, projection, roleCount: doc.roles.length },
+        startedAt: doc.startedAt,
+        submittedAt: doc.submittedAt,
+      };
+      await saveResponse(env, response);
+      await env.BOX_KV.put(doneRunKey(account.id, survey.id), response.id);
+      await env.BOX_KV.delete(openRunKey(account.id, survey.id));
+      if (!existingId) {
+        survey.responseCount = (survey.responseCount || 0) + 1;
+        await saveSurvey(env, survey);
+      }
+
+      // Box is the export, never the source of truth: a failure here must not cost the
+      // employer a submission they have already made.
+      let box = { saved: false };
+      if (survey.boxFolderId) {
+        try {
+          await uploadWorkforceCsv(env, survey, account, workforceCsv(doc, summary, projection));
+          box = { saved: true };
+        } catch (e) {
+          box = { saved: false, error: str(e && e.message).slice(0, 200) };
+        }
+      }
+      return json({ ok: true, summary, projection, box });
+    }
+
+    return json({ error: "Not found" }, 404);
+  }
+
   /* ================= public (the assessment itself) ================= */
 
   // GET public/<surveyId> -- everything a respondent legitimately sees before starting,
@@ -1094,6 +1325,7 @@ export async function handleApprenticeshipApi(route, request, env) {
     return json({
       id: survey.id,
       name: survey.name,
+      kind: survey.kind || "chat",
       intro: survey.intro,
       sectionCount: survey.sections.length,
       questionCount: questionCount(survey),
@@ -1110,6 +1342,10 @@ export async function handleApprenticeshipApi(route, request, env) {
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     const survey = await getSurvey(env, str(body.surveyId));
     if (!survey) return json({ error: "Assessment not found" }, 404);
+    if (survey.kind === "workforce") {
+      return json({ error: "This step is the workforce needs assessment -- open it from "
+        + "your dashboard." }, 409);
+    }
     if (!questionCount(survey)) return json({ error: "This assessment has no questions yet." }, 409);
 
     // A later step is refused here, not merely greyed out on the dashboard: the link to
@@ -1512,8 +1748,9 @@ export async function handleApprenticeshipApi(route, request, env) {
       .filter((s) => !projectId || s.projectId === projectId);
     return json({
       surveys: surveys.sort((a, b) => (a.step || 1) - (b.step || 1)).map((s) => ({
-        id: s.id, projectId: s.projectId, name: s.name,
+        id: s.id, projectId: s.projectId, name: s.name, kind: s.kind || "chat",
         step: s.step || 1, unlockThreshold: s.unlockThreshold || 0,
+        boxFolderName: s.boxFolderName || null,
         sectionCount: s.sections.length, questionCount: questionCount(s),
         responseCount: s.responseCount || 0,
         createdAt: s.createdAt, updatedAt: s.updatedAt,
@@ -1528,9 +1765,12 @@ export async function handleApprenticeshipApi(route, request, env) {
     if (!str(body.projectId) || !(await getProject(env, str(body.projectId)))) {
       return json({ error: "Pick the project this assessment belongs to." }, 400);
     }
-    if (!cleanSections(body.sections).length) {
+    // A workforce assessment is a form, not a conversation -- there are no sections to
+    // require, and its shape lives in src/apprenticeship_workforce.js rather than in
+    // anything an admin types here.
+    if (str(body.kind) !== "workforce" && !cleanSections(body.sections).length) {
       return json({ error: "Add at least one section with a question, and give every "
-        + "question its scoring criteria." }, 400);
+        + "open question its scoring criteria." }, 400);
     }
     const survey = buildSurvey(crypto.randomUUID(), body, null);
     await saveSurvey(env, survey);
@@ -1549,9 +1789,10 @@ export async function handleApprenticeshipApi(route, request, env) {
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     if (!str(body.name)) return json({ error: "Give the assessment a name." }, 400);
-    if (!cleanSections(body.sections).length) {
+    const kind = str(body.kind) || existing.kind || "chat";
+    if (kind !== "workforce" && !cleanSections(body.sections).length) {
       return json({ error: "Add at least one section with a question, and give every "
-        + "question its scoring criteria." }, 400);
+        + "open question its scoring criteria." }, 400);
     }
     const survey = buildSurvey(parts[1], body, existing);
     await saveSurvey(env, survey);
@@ -1638,6 +1879,33 @@ export async function handleApprenticeshipApi(route, request, env) {
         name, earned: t.earned, possible: t.possible,
         percent: t.possible ? Math.round((t.earned / t.possible) * 1000) / 10 : 0,
       })),
+    });
+  }
+
+  // GET box/folders?id=0 -- the folder picker for a workforce assessment's CSV export.
+  // Its own small copy rather than a route shared across mini app files, gated by
+  // requireBetaAuth like everything else admin-side here.
+  if (route === "box/folders" && method === "GET") {
+    const token = await boxAccessToken(env);
+    if (!token) return json({ error: "Box is not connected yet." }, 409);
+    const id = new URL(request.url).searchParams.get("id") || "0";
+    const headers = { authorization: `Bearer ${token}` };
+    const [infoRes, itemsRes] = await Promise.all([
+      fetch(`${BOX_API}/folders/${id}?fields=name,path_collection`, { headers }),
+      fetch(`${BOX_API}/folders/${id}/items?fields=name,type&limit=1000`, { headers }),
+    ]);
+    if (!infoRes.ok || !itemsRes.ok) {
+      return json({ error: `Box API error (${infoRes.status}/${itemsRes.status})` }, 502);
+    }
+    const info = await infoRes.json();
+    const items = await itemsRes.json();
+    const breadcrumb = [...((info.path_collection && info.path_collection.entries) || [])
+      .map((e) => ({ id: e.id, name: e.name })), { id, name: info.name }];
+    return json({
+      id, name: info.name, breadcrumb,
+      folders: (items.entries || []).filter((e) => e.type === "folder")
+        .map((e) => ({ id: e.id, name: e.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
     });
   }
 
