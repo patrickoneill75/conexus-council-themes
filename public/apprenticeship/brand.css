@@ -57,6 +57,12 @@
 .todo-group:first-child { margin-top:0; }
 .todo-group h5 { margin:0 0 2px; font-size:12px; font-weight:650; color:var(--text-secondary);
                  text-transform:none; letter-spacing:normal; }
+.todo-resource { margin:-3px 0 9px 24px; font-size:12.5px; }
+.todo-resource a { color:var(--accent); text-decoration:none; }
+.todo-resource a:hover { text-decoration:underline; }
+/* A done item's resource is still there to go back to, but it should not be the brightest
+   thing in a list of work that is still outstanding. */
+.todo-item.done + .todo-resource a { color:var(--text-muted); }
 .todo-empty { padding:0 16px 14px; font-size:12.5px; color:var(--text-muted); }
 
 /* The gate the admin set, marked above the bar so a respondent can see how far short of

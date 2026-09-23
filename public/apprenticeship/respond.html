@@ -104,6 +104,9 @@
   .col ul { margin:0; padding-left:18px; font-size:13px; }
   .col li { margin:5px 0; }
   .col .none { font-size:12.5px; color:var(--text-muted); margin:0; }
+  .todo-resource { margin-top:3px; font-size:12.5px; }
+  .todo-resource a { color:var(--accent); text-decoration:none; }
+  .todo-resource a:hover { text-decoration:underline; }
   .callout { margin-top:16px; padding:14px 16px; border-radius:10px; font-size:13.5px;
              background:rgba(251,174,64,.14); border:1px solid var(--amber); color:var(--text-primary); }
   .foot { margin-top:18px; font-size:13px; }
@@ -388,7 +391,15 @@
         + '<p class="count">' + todos.length + " item" + (todos.length === 1 ? "" : "s")
         + " \u00b7 ticking these off raises your score</p>"
         + (todos.length
-            ? "<ul>" + todos.map(function (t) { return "<li>" + esc(t.text) + "</li>"; }).join("") + "</ul>"
+            ? "<ul>" + todos.map(function (t) {
+                return "<li>" + esc(t.text)
+                  + (t.resourceUrl && t.resourceName
+                      ? '<div class="todo-resource"><a href="' + esc(t.resourceUrl)
+                        + '" target="_blank" rel="noopener noreferrer">Click here to discover '
+                        + esc(t.resourceName) + "</a></div>"
+                      : "")
+                  + "</li>";
+              }).join("") + "</ul>"
             : '<p class="none">Nothing outstanding here.</p>')
         + "</div></div>";
     });

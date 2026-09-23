@@ -418,6 +418,21 @@
       + ' data-f="postContextBelow" value="60"><span class="pct-suffix">%</span></div>'
       + "</div></div>"
       + "</div>"
+      + '<label>To-do if they don\u2019t meet it <span class="hint">\u2014 optional. One '
+      + "action, the thing this question asked about. Leave it empty and it is written from "
+      + "the question: \u201cDoes your organization understand Indiana youth employment "
+      + "rules?\u201d becomes \u201cGain an understanding of Indiana youth employment "
+      + "rules.\u201d</span></label>"
+      + '<textarea data-f="todoText"></textarea>'
+      + '<label>Resource <span class="hint">\u2014 optional. Never shown in the chat. It '
+      + "appears beside this question\u2019s to-do as \u201cClick here to discover "
+      + "\u2039name\u203a\u201d.</span></label>"
+      + '<div class="row" style="align-items:flex-start; gap:14px">'
+      + '<div style="flex:1 1 200px"><input type="text" data-f="resourceName" '
+      + 'placeholder="Resource name"></div>'
+      + '<div style="flex:1 1 240px"><input type="text" data-f="resourceUrl" '
+      + 'placeholder="https://\u2026"></div>'
+      + "</div>"
       + '<label>Weight <span class="hint">\u2014 how much this question counts toward the '
       + "step\u2019s percentage. Leave every question at 1 and the percentage is simply the "
       + "share answered yes.</span></label>"
@@ -468,6 +483,9 @@
       node.querySelector('[data-f="postContextMode"]').value = data.postContextMode || "weak";
       node.querySelector('[data-f="postContextBelow"]').value = data.postContextBelow || 60;
       node.querySelector('[data-f="criteria"]').value = data.criteria || "";
+      node.querySelector('[data-f="todoText"]').value = data.todoText || "";
+      node.querySelector('[data-f="resourceName"]').value = data.resourceName || "";
+      node.querySelector('[data-f="resourceUrl"]').value = data.resourceUrl || "";
       node.querySelector('[data-f="maxPoints"]').value = data.maxPoints || 1;
     }
     syncQuestionType(node);
@@ -552,6 +570,9 @@
               postContextMode: question.querySelector('[data-f="postContextMode"]').value,
               postContextBelow: Number(question.querySelector('[data-f="postContextBelow"]').value) || 60,
               criteria: question.querySelector('[data-f="criteria"]').value.trim(),
+              todoText: question.querySelector('[data-f="todoText"]').value.trim(),
+              resourceName: question.querySelector('[data-f="resourceName"]').value.trim(),
+              resourceUrl: question.querySelector('[data-f="resourceUrl"]').value.trim(),
               maxPoints: Number(question.querySelector('[data-f="maxPoints"]').value) || 1,
             };
           }),
@@ -611,6 +632,14 @@
         var q = section.questions[j];
         if (!q.text) return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
           + " has no question text.", "err");
+        if (q.resourceUrl && !/^https?:\/\/\S+$/i.test(q.resourceUrl)) {
+          return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
+            + ": the resource link needs to start with http:// or https://.", "err");
+        }
+        if (q.resourceUrl && !q.resourceName) {
+          return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
+            + ": give the resource a name \u2014 it is what the link says.", "err");
+        }
         if (q.type === "open" && !q.criteria) {
           return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
             + " is an open question, so it needs scoring criteria.", "err");

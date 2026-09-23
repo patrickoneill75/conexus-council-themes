@@ -1306,9 +1306,14 @@ function claudeStub(handler) {
 const evaluation = (over) => ({ responsive: true, score: 5, scoreReason: "fine", redirect: "", ...over });
 
 /** improvements for however many sections the prompt described, in order. */
-function improvementsFor(body, todos = ["Do a thing.", "Do another thing."]) {
-  const names = [...body.messages[0].content.matchAll(/^SECTION: (.+?) --/gm)].map((m) => m[1]);
-  return { sections: names.map((name) => ({ sectionName: name, improvements: todos })) };
+/**
+ * The rewrite call is handed one id per outstanding question and must hand the same ids
+ * back. Echoing them is what pins the checklist to the questions rather than to whatever
+ * a model felt like writing.
+ */
+function improvementsFor(body) {
+  const ids = [...body.messages[0].content.matchAll(/^\d+\. id: (.+)$/gm)].map((m) => m[1].trim());
+  return { items: ids.map((id) => ({ id, text: `Rewritten action for ${id}` })) };
 }
 
 async function makeAssessment(env, token, sections, name = "Readiness") {
@@ -1517,20 +1522,27 @@ test("apprenticeship: a response cannot be replayed against a different assessme
   assert.equal(res.status, 404, "the stored record's own surveyId is re-checked, so B cannot score A's run");
 });
 
-test("apprenticeship: a failed improvement write-up still returns the earned scores", async () => {
+test("apprenticeship: a failed rewrite costs the wording, never the checklist", async () => {
   const { env, token } = await apprEnv();
   const { survey } = await makeAssessment(env, token, ONE_SECTION);
   const started = await startResponse(env, survey.id);
   await withFetch((url, init) => {
     const body = JSON.parse(init.body);
-    if (body.tools[0].name === "record_improvements") return new Response("boom", { status: 500 });
-    return okJson({ content: [{ type: "tool_use", name: "record_evaluation", input: evaluation({ score: 4 }) }] });
+    if (body.tools[0].name === "record_items") return new Response("boom", { status: 500 });
+    return okJson({ content: [{ type: "tool_use", name: "record_evaluation",
+                                input: evaluation({ score: 4 }) }] });
   }, async () => {
-    const res = await postAnswer(env, survey.id, started.responseId, "An answer.");
+    const res = await appr("public/answer",
+      answerReq(survey.id, started.responseId, "An answer.", await respondent(env)), env);
     const body = await res.json();
-    assert.equal(res.status, 200, "the scores are earned — a failed write-up must not lose them");
+    assert.equal(res.status, 200, "the scores are earned -- a failed rewrite must not lose them");
     assert.equal(body.results.overall.display, "4/5");
-    assert.ok(body.results.improvementsError, "the respondent is told the advice is missing");
+    // The checklist is decided in code from the answers, so losing the model only costs
+    // the phrasing: the item is still there, as the question it came from.
+    const items = body.results.sections[0].improvements;
+    assert.equal(items.length, 1);
+    assert.equal(items[0].text, "Who owns apprenticeship internally?");
+    assert.equal(items[0].points, 1, "worth exactly what that question fell short by");
   });
 });
 
@@ -1723,23 +1735,105 @@ test("apprenticeship: a yes/no question scores itself, with no model call", asyn
     questions: [{ text: "Do you have leadership support?", context: "", maxPoints: 1 }],
   }];
 
-  for (const [said, percent] of [["yes", 100], ["no", 0]]) {
-    const { survey } = await makeAssessment(env, token, sections, `Said ${said}`);
-    const started = await startResponse(env, survey.id);
-    let claudeCalls = 0;
-    await withFetch((url, init) => {
-      claudeCalls++;
-      const tool = JSON.parse(init.body).tools[0];
-      assert.equal(tool.name, "record_improvements",
-        "a yes/no answer must not cost a scoring call -- the answer is the score");
-      return okJson({ content: [{ type: "tool_use", name: tool.name,
-                                  input: improvementsFor(JSON.parse(init.body)) }] });
-    }, async () => {
-      const body = await (await postAnswer(env, survey.id, started.responseId, said)).json();
-      assert.equal(body.results.overall.percent, percent);
-    });
-    assert.equal(claudeCalls, 1, "only the end-of-assessment write-up");
+  // Answered yes: nothing is outstanding, so there is nothing to rewrite and the
+  // assessment costs no API call at all.
+  const yes = await makeAssessment(env, token, sections, "Said yes");
+  const yesRun = await startResponse(env, yes.survey.id);
+  await withFetch(() => { throw new Error("no API call should be made"); }, async () => {
+    const body = await (await postAnswer(env, yes.survey.id, yesRun.responseId, "yes")).json();
+    assert.equal(body.results.overall.percent, 100);
+    assert.deepEqual(body.results.sections[0].improvements, [],
+      "nothing to do, because they answered yes to everything");
+  });
+
+  // Answered no: one call, and it is the rewrite -- never a call to score the answer,
+  // because the answer is the score.
+  const no = await makeAssessment(env, token, sections, "Said no");
+  const noRun = await startResponse(env, no.survey.id);
+  let calls = 0;
+  await withFetch((url, init) => {
+    calls++;
+    const tool = JSON.parse(init.body).tools[0];
+    assert.equal(tool.name, "record_items", "a yes/no answer must not cost a scoring call");
+    return okJson({ content: [{ type: "tool_use", name: tool.name,
+                                input: improvementsFor(JSON.parse(init.body)) }] });
+  }, async () => {
+    const body = await (await postAnswer(env, no.survey.id, noRun.responseId, "no")).json();
+    assert.equal(body.results.overall.percent, 0);
+    assert.equal(body.results.sections[0].improvements.length, 1);
+  });
+  assert.equal(calls, 1);
+});
+
+test("apprenticeship: the checklist is exactly the questions they could not answer yes to", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [1, 2, 3, 4, 5].map((n) => ({ text: `Question ${n}?`, context: "" })),
+  }]);
+  const started = await startResponse(env, survey.id);
+  const answers = ["yes", "no", "yes", "no", "yes"];
+  let asked = "";
+  await withFetch((url, init) => {
+    const body = JSON.parse(init.body);
+    asked = body.messages[0].content;
+    return okJson({ content: [{ type: "tool_use", name: "record_items", input: improvementsFor(body) }] });
+  }, async () => {
+    let last = null;
+    for (const said of answers) {
+      last = await (await postAnswer(env, survey.id, started.responseId, said)).json();
+    }
+    const items = last.results.sections[0].improvements;
+    // Five questions, three answered yes: two to-dos, and they are the other two.
+    assert.equal(items.length, 2);
+    assert.deepEqual(items.map((i) => i.questionId),
+      [survey.sections[0].questions[1].id, survey.sections[0].questions[3].id]);
+    assert.equal(last.results.overall.display, "3/5");
+  });
+  // The model is only handed the questions that fell short -- it never gets the chance to
+  // invent an item for one they already answered yes to.
+  assert.ok(asked.includes("Question 2?") && asked.includes("Question 4?"));
+  for (const answered of ["Question 1?", "Question 3?", "Question 5?"]) {
+    assert.ok(!asked.includes(answered), `${answered} was answered yes and must not be sent`);
   }
+});
+
+test("apprenticeship: admin wording for a to-do wins, and skips the model entirely", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [{
+      text: "Does your organization understand Indiana youth employment rules?",
+      context: "",
+      todoText: "Gain an understanding of Indiana youth employment rules.",
+      resourceName: "Indiana youth employment guide",
+      resourceUrl: "https://example.test/youth-rules",
+    }],
+  }]);
+  const started = await startResponse(env, survey.id);
+  await withFetch(() => { throw new Error("no API call should be made"); }, async () => {
+    const body = await (await postAnswer(env, survey.id, started.responseId, "no")).json();
+    const item = body.results.sections[0].improvements[0];
+    assert.equal(item.text, "Gain an understanding of Indiana youth employment rules.");
+    assert.equal(item.resourceName, "Indiana youth employment guide");
+    assert.equal(item.resourceUrl, "https://example.test/youth-rules");
+  });
+});
+
+test("apprenticeship: a resource link that isn't http is dropped, not rendered", async () => {
+  const { env, token } = await apprEnv();
+  const saved = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [
+      { text: "Q1?", context: "", resourceName: "Bad", resourceUrl: "javascript:alert(1)" },
+      { text: "Q2?", context: "", resourceName: "Also bad", resourceUrl: "not a url at all" },
+      { text: "Q3?", context: "", resourceName: "Fine", resourceUrl: "https://example.test/x" },
+    ],
+  }]);
+  const urls = saved.survey.sections[0].questions.map((q) => q.resourceUrl);
+  // This URL ends up in an href on a page an employer opens, so a javascript: link there
+  // would run in their session.
+  assert.deepEqual(urls, ["", "", "https://example.test/x"]);
 });
 
 test("apprenticeship: a yes/no question branches its follow-on context on the answer", async () => {
@@ -1908,13 +2002,48 @@ test("apprenticeship: the results come back as a to-do list with stable ids", as
   await withFetch(claudeStub((name, body) => name === "record_evaluation"
     ? evaluation({ score: 3 }) : improvementsFor(body)), async () => {
     const body = await (await postAnswer(env, survey.id, started.responseId, "An answer.")).json();
-    const section = body.results.sections[0];
-    assert.equal(section.improvements.length, 2);
-    // Ids, not bare strings: a ticked item has to still mean the same item when they
-    // come back to the dashboard days later.
-    assert.ok(section.improvements.every((i) => i.id && i.text));
-    assert.equal(new Set(section.improvements.map((i) => i.id)).size, 2);
+    const items = body.results.sections[0].improvements;
+    assert.equal(items.length, 1, "one item per question that fell short, and one only");
+    // The id is the question's own, so a ticked item still means the same item when they
+    // come back to the dashboard days later -- and says which question it came from.
+    assert.equal(items[0].id, `todo-${survey.sections[0].questions[0].id}`);
+    assert.equal(items[0].questionId, survey.sections[0].questions[0].id);
+    assert.equal(items[0].points, 2, "the 2 points that question fell short by, not the section's");
   });
+});
+
+test("apprenticeship: ticking a to-do restores exactly what that question lost", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  // Two questions worth 10 each. One answered yes, one no, so one to-do worth 10.
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [{ text: "Q1?", context: "", maxPoints: 10 },
+                { text: "Q2?", context: "", maxPoints: 10 }],
+  }]);
+  const started = await startResponse(env, survey.id);
+  let items = [];
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({}) : improvementsFor(body)), async () => {
+    await postAnswer(env, survey.id, started.responseId, "yes");
+    const body = await (await postAnswer(env, survey.id, started.responseId, "no")).json();
+    assert.equal(body.results.overall.percent, 50);
+    items = body.results.sections[0].improvements;
+  });
+  assert.equal(items.length, 1);
+
+  const tick = (itemId, done) => appr("account/todo",
+    jsonReq("/api/apprenticeship/account/todo", "POST",
+      { surveyId: survey.id, itemId, done }, respondentToken), env).then((r) => r.json());
+
+  const after = await tick(items[0].id, true);
+  assert.equal(after.projects[0].assessments[0].overall.percent, 100,
+    "the one thing they fell short on, closed");
+  assert.equal(after.projects[0].assessments[0].baseOverall.percent, 50,
+    "what they scored answering is kept, not overwritten");
+
+  const undone = await tick(items[0].id, false);
+  assert.equal(undone.projects[0].assessments[0].overall.percent, 50, "unticking gives it back");
 });
 
 test("apprenticeship: the unlock gate is a percentage of the step's points, not points", async () => {
@@ -1956,41 +2085,6 @@ test("apprenticeship: the unlock gate is a percentage of the step's points, not 
     "85 points would have failed a 17/20 score; 85 per cent passes it exactly");
   assert.equal((await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST",
     { surveyId: stepTwo.survey.id }, respondentToken), env)).status, 200);
-});
-
-test("apprenticeship: ticking the to-do list raises the score, and clearing it restores it", async () => {
-  const { env, token } = await apprEnv();
-  const respondentToken = await respondent(env);
-  // One section worth 10, scored 6. Two to-do items, so each is worth half the 4-point
-  // shortfall -- tick both and the section reaches full marks.
-  const { survey } = await makeAssessment(env, token, [{
-    name: "S", objective: "o", context: "c",
-    questions: [{ text: "Q?", context: "", type: "open", criteria: "c", maxPoints: 10 }],
-  }]);
-  const started = await startResponse(env, survey.id);
-  let items = [];
-  await withFetch(claudeStub((name, body) => name === "record_evaluation"
-    ? evaluation({ score: 6 }) : improvementsFor(body)), async () => {
-    const body = await (await postAnswer(env, survey.id, started.responseId, "An answer.")).json();
-    assert.equal(body.results.overall.percent, 60);
-    items = body.results.sections[0].improvements;
-  });
-
-  const tick = (itemId, done) => appr("account/todo",
-    jsonReq("/api/apprenticeship/account/todo", "POST",
-      { surveyId: survey.id, itemId, done }, respondentToken), env).then((r) => r.json());
-
-  const afterOne = await tick(items[0].id, true);
-  assert.equal(afterOne.projects[0].assessments[0].overall.percent, 80, "half the shortfall");
-  assert.equal(afterOne.projects[0].assessments[0].baseOverall.percent, 60,
-    "what they scored answering is kept, not overwritten");
-
-  const afterBoth = await tick(items[1].id, true);
-  assert.equal(afterBoth.projects[0].assessments[0].overall.percent, 100,
-    "the whole list closes the whole shortfall");
-
-  const afterUntick = await tick(items[0].id, false);
-  assert.equal(afterUntick.projects[0].assessments[0].overall.percent, 80, "unticking gives it back");
 });
 
 test("apprenticeship: a to-do id that is not on this account's list is refused", async () => {
