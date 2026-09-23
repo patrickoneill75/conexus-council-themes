@@ -733,6 +733,84 @@ test("job_description: the flow runs end to end in two Claude calls", async () =
   assert.equal(claudeCalls, 2, "the whole flow costs exactly two Claude calls");
 });
 
+test("job_description: a vague duty rewritten on the duties screen replaces the duty everywhere", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  const res = await handleJobDescriptionApi(`session/${session.id}/step3`,
+    jsonReq(`/api/job-description/session/${session.id}/step3`, "POST", {
+      dutyAnswers: { "duty-2": { answer: "still_accurate" } },
+      dutyEdits: {
+        "duty-2": "  Clean and 5S the cell at the end of each shift  ",
+        "duty-1": "Set up and operate CNC lathes and mills to print", // unchanged
+        "duty-404": "an id that isn't in this pre-read",
+        "duty-1-again": { not: "a string" },
+      },
+    }), env);
+  const body = await res.json();
+  const duties = body.session.preRead.duties;
+  const rewritten = duties.find((d) => d.id === "duty-2");
+  assert.equal(rewritten.text, "Clean and 5S the cell at the end of each shift", "trimmed and applied");
+  assert.equal(rewritten.vague, false, "the placeholder wording is gone, so the flag is too");
+  assert.equal(rewritten.originalText, "Sweep the department", "the original is kept for the redline");
+  assert.equal(duties.find((d) => d.id === "duty-1").text,
+    "Set up and operate CNC lathes and mills to print");
+  assert.ok(!duties.find((d) => d.id === "duty-404"), "an unknown duty id must not add a duty");
+  assert.equal(duties.length, 2);
+});
+
+test("job_description: a non-string duty edit cannot replace a duty's text", async () => {
+  // This route is public, so the edits are untrusted: an object here used to be able to
+  // land in preRead.duties[].text and blow up much later, inside generate-outputs.
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  const body = await (await handleJobDescriptionApi(`session/${session.id}/step3`,
+    jsonReq(`/api/job-description/session/${session.id}/step3`, "POST", {
+      dutyAnswers: {}, dutyEdits: { "duty-2": { evil: true } },
+    }), env)).json();
+  assert.equal(body.session.preRead.duties.find((d) => d.id === "duty-2").text, "Sweep the department");
+});
+
+test("job_description: the on-screen summary is a headline plus bullets, flattened for Box", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session, step6: { matrix: [], score: 1, recommendation: "Update the existing description." },
+  }));
+  const withBullets = {
+    ...OUTPUTS_RESULT,
+    summary: undefined,
+    summaryHeadline: "Inspection is now part of the job.",
+    summaryBullets: ["First-article inspection added to the duties", "Associate degree dropped to preferred"],
+  };
+  delete withBullets.summary;
+
+  const body = await (await withFetch(async () => claudeResponse(withBullets),
+    () => handleJobDescriptionApi(`session/${session.id}/generate-outputs`,
+      jsonReq(`/api/job-description/session/${session.id}/generate-outputs`, "POST", {}), env))).json();
+
+  const outputs = body.session.outputs;
+  assert.deepEqual(outputs.summaryBullets, withBullets.summaryBullets, "the bullets reach the screen");
+  // Box gets one text file, so the structured summary has to flatten to a string rather
+  // than writing "undefined" into summary-of-changes.txt.
+  assert.equal(outputs.summary,
+    "Inspection is now part of the job.\n"
+    + "- First-article inspection added to the duties\n"
+    + "- Associate degree dropped to preferred");
+});
+
+test("job_description: a session generated before bullets existed keeps its prose summary", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session, step6: { matrix: [], score: 1, recommendation: "Update the existing description." },
+  }));
+  const body = await (await withFetch(async () => claudeResponse(OUTPUTS_RESULT),
+    () => handleJobDescriptionApi(`session/${session.id}/generate-outputs`,
+      jsonReq(`/api/job-description/session/${session.id}/generate-outputs`, "POST", {}), env))).json();
+  assert.equal(body.session.outputs.summary, OUTPUTS_RESULT.summary,
+    "the old single-paragraph shape must survive, not be blanked by the new one");
+});
+
 test("job_description: the shortlist is what the outputs prompt offers, and nothing wider", async () => {
   const env = docxFormEnv();
   const session = await startSession(env);

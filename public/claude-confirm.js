@@ -11,6 +11,10 @@
  *   var ok = await confirmClaudeSpend("This will process 3 pending meeting(s).");
  *   if (!ok) return; // admin cancelled -- skip the action entirely
  *
+ * An optional second argument renames the assistant in the dialog, for an app that
+ * presents Claude to its users under its own name (see the Job Description Updater):
+ *   await confirmClaudeSpend("…", "Conductor");
+ *
  * The optional `detail` argument is appended as a second line, plain text (never
  * HTML) -- use it to say roughly how much work this click triggers ("one call per
  * pending meeting", "3 SEC filings", etc.) when that's known up front.
@@ -49,15 +53,21 @@
     document.head.appendChild(style);
   }
 
-  window.confirmClaudeSpend = function (detail) {
+  /**
+   * `productName` renames the assistant in this one dialog. The Job Description Updater
+   * presents itself to employers as Conductor, so "Claude API call" there names something
+   * they have never been shown. Every other app leaves it out and keeps the default.
+   */
+  window.confirmClaudeSpend = function (detail, productName) {
+    var product = productName || "Claude";
     ensureStyle();
     return new Promise(function (resolve) {
       var backdrop = document.createElement("div");
       backdrop.className = "cc-backdrop";
       backdrop.innerHTML =
         '<div class="cc-modal" role="alertdialog" aria-modal="true" aria-labelledby="ccTitle">' +
-          '<h3 class="cc-title" id="ccTitle"><span class="cc-icon">⚠️</span>Claude API call</h3>' +
-          '<p class="cc-body">Warning: this action will result in a Claude API call, spending money ' +
+          '<h3 class="cc-title" id="ccTitle"><span class="cc-icon">⚠️</span>' + product + ' API call</h3>' +
+          '<p class="cc-body">Warning: this action will result in a ' + product + ' API call, spending money ' +
             'from the API Token Budget. Would you like to proceed?' +
             (detail ? '<span class="cc-detail"></span>' : "") +
           "</p>" +

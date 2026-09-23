@@ -24,7 +24,7 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--page); color:var(--text-primary);
          font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:820px; margin:0 auto; padding:32px 20px 80px; }
+  .wrap { max-width:980px; margin:0 auto; padding:32px 20px 80px; }
   header { margin-bottom:22px; }
   h1 { font-size:22px; font-weight:650; margin:0 0 4px; letter-spacing:-0.01em; }
   .sub { color:var(--text-secondary); font-size:13px; margin:0; max-width:70ch; }
@@ -56,7 +56,12 @@
     width:100%; font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--page); color:var(--text-primary); margin-top:8px;
   }
-  textarea { resize:vertical; min-height:44px; }
+  /* Every textarea, not just the ones inside a .field or a duty card. The extracted-text
+     boxes on the pre-read screen sit inside a <details>, so they were falling through to
+     the browser's default textarea font (monospace) and its default ~20-column width. */
+  textarea, input[type=text] { font:inherit; width:100%; }
+  textarea { resize:vertical; min-height:44px; padding:8px 10px; border-radius:8px;
+             border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
   .pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 9px; border-radius:999px;
           border:1px solid transparent; white-space:nowrap; }
   .pill.good { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
@@ -74,10 +79,6 @@
   .msg.err { color:var(--bad); }
   .msg.ok { color:var(--good); }
   .msg.muted { color:var(--text-muted); }
-  .spin { display:inline-block; width:12px; height:12px; border:2px solid currentColor;
-          border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite;
-          vertical-align:-2px; margin-right:6px; }
-  @keyframes spin { to { transform:rotate(360deg); } }
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
   th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
   th { color:var(--text-secondary); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
@@ -89,6 +90,27 @@
   .redline-item .after { color:var(--good); }
   input[type=file] { font:inherit; padding:7px 9px; border-radius:8px; border:1px solid var(--border);
                       background:var(--surface-1); color:var(--text-primary); }
+  /* An honest-ish progress bar. Nothing downstream reports real progress -- a single
+     Anthropic call either hasn't returned or has -- so this eases toward a ceiling it
+     never reaches on its own and only completes when the response actually lands. The
+     label says what is happening rather than claiming a percentage. */
+  .progress { margin:12px 0 0; }
+  .progress-track { height:7px; border-radius:999px; background:var(--wash); overflow:hidden;
+                    border:1px solid var(--border); }
+  .progress-fill { height:100%; width:0; background:var(--accent); border-radius:999px;
+                   transition:width .45s ease; }
+  .progress-label { font-size:12px; color:var(--text-secondary); margin-top:7px; }
+  /* Potential problem / potential fix, per category. */
+  .finding { border-left:3px solid var(--border); padding:2px 0 2px 12px; margin:0 0 10px; }
+  .finding + .finding { margin-top:12px; }
+  .finding.problem { border-left-color:var(--warn); }
+  .finding.fix { border-left-color:var(--good); }
+  .finding h4 { margin:0 0 3px; font-size:11px; font-weight:700; letter-spacing:.04em;
+                text-transform:uppercase; color:var(--text-muted); }
+  .finding p { margin:0; font-size:13px; }
+  .extracted-label { display:block; font-weight:600; font-size:12px; margin:14px 0 4px; }
+  .nav { display:flex; gap:10px; align-items:center; margin-top:14px; }
+  .nav .spacer { flex:1; }
   .score-badge { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px;
                  border-radius:50%; background:var(--accent-wash); color:var(--accent); font-weight:700;
                  font-size:17px; }
@@ -98,8 +120,8 @@
 <div class="wrap">
   <header>
     <h1>Job Description Updater</h1>
-    <p class="sub">Upload a job description and Claude does the reading -- you just confirm what
-      changed and supply what the document can't know. About 15 minutes, start to finish.</p>
+    <p class="sub">Upload a job description and Conductor does the reading -- you just confirm
+      what changed and supply what the document can't know. About 15 minutes, start to finish.</p>
   </header>
 
   <div id="statusBanner" class="msg err" hidden></div>
@@ -107,7 +129,7 @@
   <!-- ===================== Start ===================== -->
   <section id="screen-upload" class="card">
     <h2>Start with the current job description</h2>
-    <p class="desc">PDF or Word (.docx). Claude reads the whole document before asking you
+    <p class="desc">PDF or Word (.docx). Conductor reads the whole document before asking you
       anything &mdash; answer the three questions below while it does.</p>
     <div class="field">
       <input type="file" id="uploadFile" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
@@ -124,23 +146,27 @@
       <input type="text" id="startLastUpdated" placeholder="e.g. 2 years ago, not sure">
     </div>
     <button type="button" class="primary" id="uploadBtn">Read the document</button>
+    <div class="progress" id="uploadProgress" hidden>
+      <div class="progress-track"><div class="progress-fill" id="uploadProgressFill"></div></div>
+      <div class="progress-label" id="uploadProgressLabel"></div>
+    </div>
     <p class="msg" id="uploadMsg"></p>
   </section>
 
   <!-- ===================== Pre-read review ===================== -->
   <section id="screen-preread" class="card" hidden>
-    <p class="step-label">1 of 4 &middot; What Claude found</p>
-    <h2 id="prereadHeading">Here&rsquo;s what Claude found</h2>
-    <p class="desc">Claude audited all ten toolkit categories. The ones that need attention are
-      open below; the rest matched the work as written and are collapsed. Everything here is
-      Claude&rsquo;s inference &mdash; nothing counts as fact until you confirm it.</p>
-    <p class="infer-note">Likely O*NET-SOC match: <span id="prereadOnet"></span></p>
-    <div id="prereadFlags"></div>
+    <p class="step-label">1 of 4 &middot; What Conductor found</p>
+    <h2 id="prereadHeading">Here&rsquo;s what Conductor found</h2>
+    <p class="desc">Conductor audited all ten toolkit categories. Each one below names the
+      potential problem and a potential fix. The ones that need attention are open; the rest
+      matched the work as written and are collapsed. Everything here is Conductor&rsquo;s
+      inference &mdash; nothing counts as fact until you confirm it.</p>
     <div id="prereadCategories" style="margin-top:12px"></div>
     <p class="desc" style="margin:14px 0 8px">If you&rsquo;re not the supervisor closest to this
       work day to day, the next answers will be more accurate coming from them. You can send
       them a link and pick this back up later, or carry on yourself.</p>
     <div class="row">
+      <button type="button" class="ghost" data-back="1" hidden>Back</button>
       <button type="button" id="inviteSupervisorBtn">Send to a supervisor</button>
       <button type="button" class="primary" id="prereadConfirmBtn">Looks right &mdash; continue</button>
     </div>
@@ -160,7 +186,7 @@
       everything that follows, so it&rsquo;s worth being blunt.</p>
     <div id="dutiesList"></div>
     <h3 style="margin-top:18px">What's missing</h3>
-    <p class="desc">Each is prefilled with Claude's guess from the document -- correct it.</p>
+    <p class="desc">Each is prefilled with Conductor's guess from the document -- correct it.</p>
     <div class="field">
       <label>Systems used on a typical shift (MES, ERP, quality, maintenance)</label>
       <textarea id="driverSystems"></textarea>
@@ -177,7 +203,11 @@
       <label>Do they regularly cover or rotate into other jobs?</label>
       <textarea id="driverCrossTraining"></textarea>
     </div>
-    <button type="button" class="primary" id="step3ContinueBtn" style="margin-top:6px">Continue to Step 4</button>
+    <div class="nav">
+      <button type="button" class="ghost" data-back="1" hidden>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="step3ContinueBtn">Continue</button>
+    </div>
     <p class="msg" id="step3Msg"></p>
   </section>
 
@@ -187,7 +217,11 @@
     <h2>Your supervisor answered some of these differently</h2>
     <p class="desc">Only the duties where you disagreed are shown. Pick the answer that's right.</p>
     <div id="conflictsList"></div>
-    <button type="button" class="primary" id="conflictsContinueBtn" style="margin-top:10px">Continue to Step 4</button>
+    <div class="nav">
+      <button type="button" class="ghost" data-back="1" hidden>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="conflictsContinueBtn">Continue</button>
+    </div>
     <p class="msg" id="conflictsMsg"></p>
   </section>
 
@@ -200,7 +234,11 @@
       onboarding or apprenticeship period? If yes, it isn&rsquo;t a requirement.</p>
     <div id="requirementsList"></div>
     <div id="credentialBox" style="margin-top:18px"></div>
-    <button type="button" class="primary" id="step4ContinueBtn" style="margin-top:14px">Continue</button>
+    <div class="nav">
+      <button type="button" class="ghost" data-back="1" hidden>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="step4ContinueBtn">Continue</button>
+    </div>
     <p class="msg" id="step4Msg"></p>
   </section>
 
@@ -242,7 +280,11 @@
       </div>
     </div>
     <div id="finalizeMatrix" style="margin-top:14px"></div>
-    <button type="button" class="primary" id="finalizeContinueBtn" style="margin-top:12px">Continue</button>
+    <div class="nav">
+      <button type="button" class="ghost" data-back="1" hidden>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="finalizeContinueBtn">Continue</button>
+    </div>
     <p class="msg" id="finalizeMsg"></p>
   </section>
 
@@ -255,7 +297,15 @@
         a redlined description with tracked changes, the clean final version, and a career-fair
         one-pager. No more questions.</p>
       <div id="outputsMatrix" style="margin-bottom:14px"></div>
-      <button type="button" class="primary" id="generateBtn">Generate</button>
+      <div class="nav">
+        <button type="button" class="ghost" data-back="1" hidden>Back</button>
+        <span class="spacer"></span>
+        <button type="button" class="primary" id="generateBtn">Generate</button>
+      </div>
+      <div class="progress" id="generateProgress" hidden>
+        <div class="progress-track"><div class="progress-fill" id="generateProgressFill"></div></div>
+        <div class="progress-label" id="generateProgressLabel"></div>
+      </div>
       <p class="msg" id="generateMsg"></p>
     </div>
     <div id="outputsResults" hidden></div>
@@ -295,6 +345,81 @@
     window.scrollTo(0, 0);
   }
 
+  /* ---------------------------------------------------------------------
+   * Going back
+   *
+   * Every screen's answers are already stored on the session by the time the next one
+   * opens, so Back is a re-render of the previous screen from that same session rather
+   * than a second copy of the state held in the page. That is why each render function
+   * below restores what was answered instead of drawing an empty form: without it,
+   * stepping back and forward once would quietly wipe the answers.
+   * --------------------------------------------------------------------- */
+  var screenStack = [];
+  var lastConflicts = [];
+
+  function currentScreen() {
+    for (var i = 0; i < SCREENS.length; i++) {
+      if (!el("screen-" + SCREENS[i]).hidden) return SCREENS[i];
+    }
+    return null;
+  }
+  function updateBackButtons() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-back]"), function (b) {
+      b.hidden = !screenStack.length;
+    });
+  }
+  function goTo(name) {
+    var from = currentScreen();
+    if (from && from !== name) screenStack.push(from);
+    showScreen(name);
+    updateBackButtons();
+  }
+  function rerender(name) {
+    if (name === "preread") return renderPreRead();
+    if (name === "step3") return renderStep3();
+    if (name === "conflicts") return renderConflicts(lastConflicts);
+    if (name === "step4") return renderStep4();
+    if (name === "finalize") return renderFinalize();
+    if (name === "outputs") return renderMatrix("outputsMatrix", session.step6);
+  }
+  function goBack() {
+    var previous = screenStack.pop();
+    if (!previous) return;
+    rerender(previous);
+    showScreen(previous);
+    updateBackButtons();
+  }
+  document.addEventListener("click", function (event) {
+    var button = event.target && event.target.closest && event.target.closest("[data-back]");
+    if (button) goBack();
+  });
+
+  /**
+   * A progress bar for a step whose only real signal is "the call hasn't returned yet".
+   * It eases toward a ceiling it never reaches on its own and only fills when the
+   * response actually lands, so it never claims to be finished before it is.
+   */
+  function startProgress(prefix, label) {
+    var box = el(prefix + "Progress");
+    var fill = el(prefix + "ProgressFill");
+    el(prefix + "ProgressLabel").textContent = label;
+    box.hidden = false;
+    fill.style.width = "0%";
+    var pct = 0;
+    var timer = setInterval(function () {
+      pct = Math.min(92, pct + Math.max(0.4, (92 - pct) * 0.06));
+      fill.style.width = pct + "%";
+    }, 300);
+    return {
+      done: function () {
+        clearInterval(timer);
+        fill.style.width = "100%";
+        setTimeout(function () { box.hidden = true; }, 500);
+      },
+      fail: function () { clearInterval(timer); box.hidden = true; },
+    };
+  }
+
   var session = null;
 
   function setUrlSession(id) {
@@ -309,12 +434,13 @@
   el("uploadBtn").addEventListener("click", function () {
     var file = el("uploadFile").files[0];
     if (!file) { el("uploadMsg").className = "msg err"; el("uploadMsg").textContent = "Choose a file first."; return; }
-    confirmClaudeSpend("Claude reads the full document and produces the pre-read analysis -- one " +
-      "Claude call.").then(function (ok) {
+    confirmClaudeSpend("Conductor reads the full document and produces the pre-read analysis " +
+      "-- one API call.", "Conductor").then(function (ok) {
       if (!ok) return;
       el("uploadBtn").disabled = true;
-      el("uploadMsg").className = "msg muted";
-      el("uploadMsg").innerHTML = '<span class="spin"></span>Reading the document…';
+      el("uploadMsg").textContent = "";
+      var progress = startProgress("upload", "Reading the document\u2026 this usually takes "
+        + "under a minute for a typical job description.");
       var form = new FormData();
       form.append("file", file);
       // Sent with the document rather than on a screen of their own: three fields the
@@ -325,12 +451,14 @@
       fetch("/api/job-description/upload", { method: "POST", body: form })
         .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; }); })
         .then(function (body) {
+          progress.done();
           session = body.session;
           setUrlSession(session.id);
           renderPreRead();
-          showScreen("preread");
+          goTo("preread");
         })
         .catch(function (e) {
+          progress.fail();
           el("uploadMsg").className = "msg err";
           el("uploadMsg").textContent = "Error: " + e.message;
         })
@@ -359,11 +487,10 @@
 
   function renderPreRead() {
     var pr = session.preRead;
-    el("prereadOnet").textContent = pr.onetMatch.title + " (" + pr.onetMatch.code + ") -- " + pr.onetMatch.reasoning;
 
     // All ten toolkit categories are still audited and still editable, but only the ones
-    // Claude flagged open by default. Reading ten boxes to find the three that moved is
-    // exactly the friction that makes the manual toolkit take 60-90 minutes.
+    // Conductor flagged open by default. Reading ten boxes to find the three that moved
+    // is exactly the friction that makes the manual toolkit take 60-90 minutes.
     var drifted = pr.categories.filter(function (c) { return c.status !== "aligned"; }).length;
     el("prereadHeading").textContent = drifted
       ? drifted + " of " + pr.categories.length + " categories need attention"
@@ -371,23 +498,22 @@
 
     el("prereadCategories").innerHTML = pr.categories.map(function (c, i) {
       var needsWork = c.status !== "aligned";
+      // A session generated before the pre-read carried a problem and a fix falls back
+      // to the one-sentence reasoning rather than showing two empty headings.
+      var problem = c.potentialProblem || c.statusReasoning || "";
+      var fix = c.potentialFix || "";
       return '<details class="output"' + (needsWork ? " open" : "") + '>' +
         '<summary><span style="display:inline-flex; gap:8px; align-items:center">' +
         esc(CATEGORY_LABEL[c.key] || c.key) + (STATUS_PILL[c.status] || "") + '</span></summary>' +
         '<div class="body">' +
-        '<p class="infer-note" style="margin-top:0">' + esc(c.statusReasoning) + '</p>' +
-        '<textarea data-cat="' + i + '" rows="3">' + esc(c.extractedText) + '</textarea>' +
+        (problem ? '<div class="finding problem"><h4>Potential problem</h4><p>' +
+          esc(problem) + '</p></div>' : "") +
+        (fix ? '<div class="finding fix"><h4>Potential fix</h4><p>' + esc(fix) + '</p></div>' : "") +
+        '<label class="extracted-label" for="cat-' + i + '">What the document says now ' +
+        '&mdash; edit it if this isn\u2019t right</label>' +
+        '<textarea id="cat-' + i + '" data-cat="' + i + '" rows="4">' + esc(c.extractedText) + '</textarea>' +
         '</div></details>';
     }).join("");
-
-    var flags = [];
-    var vague = pr.duties.filter(function (d) { return d.vague; });
-    if (vague.length) flags.push('<p class="msg warn" style="color:var(--warn)">Vague placeholder duties: ' +
-      vague.map(function (d) { return esc(d.text); }).join("; ") + '</p>');
-    if (pr.systemGaps && pr.systemGaps.length) flags.push('<p class="msg warn" style="color:var(--warn)">' +
-      'Named in the duties but missing from the requirements &mdash; the toolkit calls this the single ' +
-      'most common gap: ' + pr.systemGaps.map(esc).join(", ") + '</p>');
-    el("prereadFlags").innerHTML = flags.length ? flags.join("") : '<p class="msg muted">No flags.</p>';
   }
 
   el("prereadConfirmBtn").addEventListener("click", function () {
@@ -399,7 +525,7 @@
     apiPost("session/" + session.id + "/confirm-pre-read", { edits: edits }).then(function (body) {
       session = body.session;
       renderStep3();
-      showScreen("step3");
+      goTo("step3");
     }).catch(function (e) {
       el("prereadMsg").className = "msg err";
       el("prereadMsg").textContent = "Error: " + e.message;
@@ -428,12 +554,28 @@
 
   function renderStep3() {
     var pr = session.preRead;
-    el("dutiesList").innerHTML = pr.duties.map(function (d, i) {
+    var priorAnswers = (session.step3 && session.step3.dutyAnswers) || {};
+    var priorDrivers = (session.step3 && session.step3.driverAnswers) || {};
+
+    el("dutiesList").innerHTML = pr.duties.map(function (d) {
       var chips = (d.drivers || []).map(function (k) { return '<span class="chip">' + esc(DRIVER_LABEL[k] || k) + '</span>'; }).join("");
+      // A duty flagged vague is the one place on this screen where confirming is not
+      // enough: "other duties as assigned" is still "still accurate" and still tells a
+      // candidate nothing. So the reason and a concrete rewrite are shown, and the
+      // rewrite is editable right here -- it replaces the duty everything downstream
+      // reads, rather than becoming a note nobody acts on.
+      var improvement = d.vague
+        ? '<div class="finding problem"><h4>Potential improvement</h4><p>' +
+            esc(d.vagueReason || "This wording is a placeholder \u2014 it doesn\u2019t say what is " +
+              "actually done, so a candidate can\u2019t tell whether they can do it.") + '</p></div>' +
+          '<label class="extracted-label">Suggested rewrite &mdash; edit it, or clear it to keep the original</label>' +
+          '<textarea class="duty-rewrite" rows="2">' + esc(d.vagueFix || "") + '</textarea>'
+        : "";
       return '<div class="duty-card" data-duty="' + esc(d.id) + '">' +
         '<p class="text">' + esc(d.text) + (d.vague ? ' <span class="pill warn">Vague</span>' : "") + '</p>' +
         (chips ? '<div style="margin-bottom:8px">' + chips + '</div>' : "") +
-        '<div class="choices duty-choices">' + DUTY_CHOICES.map(function (c) {
+        improvement +
+        '<div class="choices duty-choices" style="margin-top:10px">' + DUTY_CHOICES.map(function (c) {
           return '<button type="button" class="choice-btn" data-value="' + c[0] + '">' + c[1] + '</button>';
         }).join("") + '</div>' +
         '<textarea class="duty-note" placeholder="How did it change?" hidden></textarea>' +
@@ -449,12 +591,21 @@
           note.hidden = btn.dataset.value !== "changed";
         });
       });
+      // Restore what was answered last time through, so stepping Back and forward again
+      // doesn't silently blank the screen's answers.
+      var prior = priorAnswers[card.dataset.duty];
+      if (!prior) return;
+      var match = card.querySelector('.duty-choices .choice-btn[data-value="' + prior.answer + '"]');
+      if (match) match.classList.add("selected");
+      note.value = prior.note || "";
+      note.hidden = prior.answer !== "changed";
     });
 
-    el("driverSystems").value = pr.driverGuesses.systems || "";
-    el("driverAutomation").value = pr.driverGuesses.automation || "";
-    el("driverDecisionAuthority").value = pr.driverGuesses.decisionAuthority || "";
-    el("driverCrossTraining").value = pr.driverGuesses.crossTraining || "";
+    var guesses = pr.driverGuesses || {};
+    el("driverSystems").value = priorDrivers.systems || guesses.systems || "";
+    el("driverAutomation").value = priorDrivers.automation || guesses.automation || "";
+    el("driverDecisionAuthority").value = priorDrivers.decisionAuthority || guesses.decisionAuthority || "";
+    el("driverCrossTraining").value = priorDrivers.crossTraining || guesses.crossTraining || "";
   }
 
   function collectDutyAnswers() {
@@ -467,10 +618,21 @@
     return answers;
   }
 
+  /** Rewritten vague duties, keyed by duty id. An untouched or emptied box sends nothing. */
+  function collectDutyEdits() {
+    var edits = {};
+    Array.prototype.forEach.call(el("dutiesList").querySelectorAll(".duty-card"), function (card) {
+      var rewrite = card.querySelector(".duty-rewrite");
+      if (rewrite && rewrite.value.trim()) edits[card.dataset.duty] = rewrite.value.trim();
+    });
+    return edits;
+  }
+
   el("step3ContinueBtn").addEventListener("click", function () {
     el("step3ContinueBtn").disabled = true;
     apiPost("session/" + session.id + "/step3", {
       dutyAnswers: collectDutyAnswers(),
+      dutyEdits: collectDutyEdits(),
       driverAnswers: {
         systems: el("driverSystems").value, automation: el("driverAutomation").value,
         decisionAuthority: el("driverDecisionAuthority").value, crossTraining: el("driverCrossTraining").value,
@@ -478,11 +640,12 @@
     }).then(function (body) {
       session = body.session;
       if (body.conflicts && body.conflicts.length) {
-        renderConflicts(body.conflicts);
-        showScreen("conflicts");
+        lastConflicts = body.conflicts;
+        renderConflicts(lastConflicts);
+        goTo("conflicts");
       } else {
         renderStep4();
-        showScreen("step4");
+        goTo("step4");
       }
     }).catch(function (e) {
       el("step3Msg").className = "msg err"; el("step3Msg").textContent = "Error: " + e.message;
@@ -520,7 +683,7 @@
     apiPost("session/" + session.id + "/resolve-conflicts", { resolutions: resolutions }).then(function (body) {
       session = body.session;
       renderStep4();
-      showScreen("step4");
+      goTo("step4");
     }).catch(function (e) {
       el("conflictsMsg").className = "msg err"; el("conflictsMsg").textContent = "Error: " + e.message;
     }).then(function () { el("conflictsContinueBtn").disabled = false; });
@@ -542,7 +705,7 @@
       '<p class="desc">Scored against your duties from the Conexus credential reference. Where a ' +
       'requirement really is necessary, the toolkit asks you to name one of these rather than say ' +
       '&ldquo;technical background preferred&rdquo; &mdash; that is what a school can teach toward. ' +
-      'Claude picks the ones that genuinely fit at the end.</p>' +
+      'Conductor picks the ones that genuinely fit at the end.</p>' +
       '<div>' + list.slice(0, 5).map(function (c) {
         return '<span class="chip" title="' + esc(c.signals) + '">' + esc(c.name) + '</span>';
       }).join("") + '</div>';
@@ -562,6 +725,7 @@
         '<button type="button" class="choice-btn" data-value="false">No</button>' +
         '</div></div></div>';
     }).join("");
+    var prior = (session.step4 && session.step4.requirementAnswers) || {};
     Array.prototype.forEach.call(el("requirementsList").querySelectorAll(".req-card"), function (card) {
       [".req-choices", ".incumbent-choices"].forEach(function (sel) {
         var group = card.querySelector(sel);
@@ -572,6 +736,16 @@
           });
         });
       });
+      // Same reason as the duties screen: Back has to come back to what was answered.
+      var answered = prior[card.dataset.req];
+      if (!answered) return;
+      var tier = card.querySelector('.req-choices .choice-btn[data-value="' + answered.tier + '"]');
+      if (tier) tier.classList.add("selected");
+      if (answered.incumbentMeets === true || answered.incumbentMeets === false) {
+        var meets = card.querySelector('.incumbent-choices .choice-btn[data-value="'
+          + (answered.incumbentMeets ? "true" : "false") + '"]');
+        if (meets) meets.classList.add("selected");
+      }
     });
   }
 
@@ -589,7 +763,7 @@
     apiPost("session/" + session.id + "/step4", { requirementAnswers: answers }).then(function (body) {
       session = body.session;
       renderFinalize();
-      showScreen("finalize");
+      goTo("finalize");
     }).catch(function (e) {
       el("step4Msg").className = "msg err"; el("step4Msg").textContent = "Error: " + e.message;
     }).then(function () { el("step4ContinueBtn").disabled = false; });
@@ -648,6 +822,24 @@
   bindYesNo("finalizeCompChoices", refreshLiveMatrix);
 
   function renderFinalize() {
+    var prior = session.step5 || {};
+    el("finalizePay").value = prior.payRange || "";
+    el("finalizePhysical").value = prior.physicalFrequency || "";
+    el("finalizePathway").value = prior.pathway || "";
+    // The two Part 4 answers are stored on the matrix rather than in step5, so they are
+    // read back from there -- again so Back doesn't reset a score the employer watched move.
+    var stored = (session.step6 && session.step6.matrix) || [];
+    stored.forEach(function (m) {
+      var groupId = m.id === "screen_differently" ? "finalizeScreenChoices"
+        : m.id === "comp_changes" ? "finalizeCompChoices" : null;
+      if (!groupId) return;
+      var button = el(groupId).querySelector('.choice-btn[data-value="' + (m.value ? "true" : "false") + '"]');
+      if (button) {
+        Array.prototype.forEach.call(el(groupId).querySelectorAll(".choice-btn"),
+          function (b) { b.classList.remove("selected"); });
+        button.classList.add("selected");
+      }
+    });
     apiGet("session/" + session.id + "/matrix").then(function (data) {
       baseMatrix = data;
       refreshLiveMatrix();
@@ -665,7 +857,7 @@
     }).then(function (body) {
       session = body.session;
       renderMatrix("outputsMatrix", session.step6);
-      showScreen("outputs");
+      goTo("outputs");
     }).catch(function (e) {
       el("finalizeMsg").className = "msg err"; el("finalizeMsg").textContent = "Error: " + e.message;
     }).then(function () { el("finalizeContinueBtn").disabled = false; });
@@ -675,16 +867,25 @@
    * Outputs
    * --------------------------------------------------------------------- */
   el("generateBtn").addEventListener("click", function () {
-    confirmClaudeSpend("Claude drafts the summary, the redlined description and the career-fair " +
-      "one-pager -- one Claude call.").then(function (ok) {
+    confirmClaudeSpend("Conductor drafts the summary, the redlined description and the " +
+      "career-fair one-pager -- one API call.", "Conductor").then(function (ok) {
       if (!ok) return;
       el("generateBtn").disabled = true;
-      el("generateMsg").className = "msg muted";
-      el("generateMsg").innerHTML = '<span class="spin"></span>Writing the revised description…';
+      el("generateMsg").textContent = "";
+      // The longest wait in the whole flow: a full redlined description plus a one-pager
+      // is a lot of output tokens, so this one is worth a bar rather than a spinner.
+      var progress = startProgress("generate", "Writing the revised description\u2026 this is "
+        + "the longest step, usually one to two minutes.");
       apiPost("session/" + session.id + "/generate-outputs").then(function (body) {
+        progress.done();
         session = body.session;
+        // The flow is finished -- there is nothing useful to go back to, and re-answering
+        // would not change outputs that have already been generated.
+        screenStack = [];
+        updateBackButtons();
         renderOutputs();
       }).catch(function (e) {
+        progress.fail();
         el("generateMsg").className = "msg err"; el("generateMsg").textContent = "Error: " + e.message;
       }).then(function () { el("generateBtn").disabled = false; });
     });
@@ -705,9 +906,23 @@
     results.hidden = false;
 
     var html = "";
-    // 1. The summary, read on screen.
-    html += '<h3>What changed</h3><div style="white-space:pre-wrap; font-size:13.5px; margin-bottom:20px">' +
-      esc(o.summary) + "</div>";
+    // 1. What changed: a line and a list. This is read by someone who has just spent
+    // fifteen minutes answering questions, and paragraphs at that point go unread.
+    // Sessions generated before the summary became a headline plus bullets still carry a
+    // single block of prose, so that is rendered as it always was.
+    var bullets = o.summaryBullets || [];
+    html += "<h3>What changed</h3>";
+    if (bullets.length) {
+      if (o.summaryHeadline) {
+        html += '<p style="font-size:14px; margin:0 0 10px">' + esc(o.summaryHeadline) + "</p>";
+      }
+      html += '<ul style="font-size:13.5px; margin:0 0 20px; padding-left:20px">' +
+        bullets.map(function (b) { return "<li style=\"margin:5px 0\">" + esc(b) + "</li>"; }).join("") +
+        "</ul>";
+    } else {
+      html += '<div style="white-space:pre-wrap; font-size:13.5px; margin-bottom:20px">' +
+        esc(o.summary) + "</div>";
+    }
 
     // 2-4. The three Word files.
     html += '<h3>Download</h3><div style="margin-bottom:18px">' + DOWNLOADS.map(function (d) {
@@ -740,6 +955,8 @@
   /* ---------------------------------------------------------------------
    * Resume from ?session=<id>
    * --------------------------------------------------------------------- */
+  // Resuming lands on the screen the session had reached. There is no back history to
+  // rebuild from a reload, so Back stays hidden until the employer moves forward again.
   var resumeId = new URL(window.location.href).searchParams.get("session");
   if (resumeId) {
     apiGet("session/" + resumeId).then(function (body) {
