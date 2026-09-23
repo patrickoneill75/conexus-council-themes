@@ -6,6 +6,7 @@ import { handleCouncilDataApi } from "./council_data.js";
 import { handleStarsApi } from "./stars.js";
 import { handleArtifactsApi } from "./artifacts.js";
 import { handleJobDescriptionApi } from "./job_description.js";
+import { handleApprenticeshipApi } from "./apprenticeship.js";
 
 /**
  * Worker entry point: serves every mini app's public/ pages and delegates /api/*.
@@ -24,6 +25,7 @@ import { handleJobDescriptionApi } from "./job_description.js";
  *   /api/stars/*        -- STARs Talent Transfer Explorer (see src/stars.js).
  *   /api/artifacts/*    -- Artifact Catalogue (see src/artifacts.js).
  *   /api/job-description/* -- Job Description Updater (see src/job_description.js).
+ *   /api/apprenticeship/*  -- Apprenticeship Readiness Toolbox (see src/apprenticeship.js).
  *   /api/config-check   -- which Worker secrets are set (unauthenticated diagnostic).
  *   /api/box/authorize-url, /api/box/callback -- the ONE shared Box OAuth login flow.
  *     Every mini app reads the resulting box:tokens KV entry itself (each duplicates
@@ -134,6 +136,11 @@ async function handleApi(route, request, env) {
   // ---- /api/job-description/* ------------------------------------------------------------
   if (route === "job-description" || route.startsWith("job-description/")) {
     return handleJobDescriptionApi(route.slice("job-description".length).replace(/^\/+/, ""), request, env);
+  }
+
+  // ---- /api/apprenticeship/* -------------------------------------------------------------
+  if (route === "apprenticeship" || route.startsWith("apprenticeship/")) {
+    return handleApprenticeshipApi(route.slice("apprenticeship".length).replace(/^\/+/, ""), request, env);
   }
 
   // ---- GET /api/config-check ---------------------------------------------------------

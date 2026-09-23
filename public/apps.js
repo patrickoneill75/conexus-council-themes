@@ -82,4 +82,14 @@ const APPS = [
     baseUrl: "/job-description",
     controlPanelUrl: "/job-description/control-panel",
   },
+  {
+    id: "apprenticeship",
+    name: "Apprenticeship Readiness Toolbox",
+    description: "Chat-style self-assessments that teach as they ask, score an employer's " +
+      "apprenticeship readiness section by section, and roll up into one dashboard with " +
+      "Claude-written improvement areas. No single public URL -- each assessment gets its " +
+      "own respondent link from the control panel.",
+    baseUrl: "/apprenticeship",
+    controlPanelUrl: "/apprenticeship/control-panel",
+  },
 ];
