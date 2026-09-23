@@ -1,47 +1,60 @@
 /**
  * Job Description Updater: an employer uploads a job description (PDF or Word), and a
- * Claude-powered chat walks them through updating it using the Conexus Job Description
- * Toolkit -- a ~60-90 minute manual exercise, compressed to ~15 minutes by having Claude
- * do all the reading and the employer only confirm/correct/supply what the document
- * can't know. Mounted under /api/job-description/*.
+ * Claude-powered flow walks them through updating it with the Conexus Job Description
+ * Toolkit -- a 60-90 minute manual exercise (the toolkit's own estimate), compressed to
+ * about ten minutes by having Claude do all the reading and the employer only confirm,
+ * correct, or supply what the document cannot know. Mounted under /api/job-description/*.
  *
- * NOTE ON SOURCE MATERIAL: no toolkit file was actually attached to the request that
- * asked for this app -- everything below (the ten Part 2 categories, the four drivers of
- * role evolution, Part 3's core test question, Part 4's decision matrix and scoring
- * thresholds, Part 5's five communication outputs, and the Credential and Pathway
- * Reference list) is built directly from the detailed structure given in that request.
- * If the real toolkit document's exact wording differs, the prompts below (PART2_*,
- * DRIVERS, CREDENTIALS, and every system prompt) are the place to correct it.
+ * SOURCE MATERIAL. Built against the toolkit PDF itself. Its five parts map onto this
+ * app one for one: Part 1 role evolution (the four drivers), Part 2 the ten-category
+ * audit with an Aligned / Minor Drift / Significant Gap status each, Part 3 the
+ * requirements test ("if a candidate did not have this, could they still learn to do
+ * the job well within a reasonable onboarding or apprenticeship period?") tied to a
+ * named credential, Part 4 the five-question New Role Decision Matrix and its 0-1 / 2 /
+ * 3+ scoring bands, Part 5 communicating the update. PART2_CATEGORIES and DRIVERS below
+ * are the toolkit's own category and driver names.
  *
- * Both live Claude calls in this file (the pre-read on upload, and the final outputs on
- * generate-outputs) run synchronously in the Worker itself, the same way Consensus's
- * live follow-up-question call does (see src/consensus.js's own module docstring) --
- * raw fetch() to the Messages API, no SDK, this app's own dedicated key
- * (env.job_description_claude_api). Unlike Consensus's one-sentence Haiku call, both
- * calls here do substantial structured extraction/drafting, so they use Claude Opus 5 --
- * still a single non-streaming request each, same shape as Consensus's call, just a
- * bigger model and a bigger tool schema. Steps 2-6 never call Claude at all: they're
- * just the employer confirming/correcting/answering against what the pre-read already
- * extracted, which is what keeps the whole flow to ~15 minutes instead of waiting on a
- * fresh model call at every step.
+ * WHAT THE EMPLOYER GETS. Four things, per the toolkit's Part 5 and Next Steps:
+ *   1. a short plain-English summary of the biggest changes, shown in the browser;
+ *   2. a REDLINED job description, as a Word file with real tracked changes;
+ *   3. the same description clean, with the redlines accepted;
+ *   4. a career-fair one-pager.
+ * The last three download as .docx -- see src/docx.js for why Word rather than PDF, and
+ * for why the clean version is derived from the redline rather than generated twice.
+ *
+ * CREDENTIALS. Part 3 asks for a real, portable credential rather than "technical
+ * background preferred". Which one is chosen deterministically first: src/credentials.js
+ * scores all 30 credentials in the reference matrix against this role's own duties, with
+ * no API call, and only the closest handful reach the model. See that file.
+ *
+ * TWO CLAUDE CALLS, TOTAL. The pre-read on upload, and the outputs at the end. Steps in
+ * between never call Claude: they are the employer confirming or correcting what the
+ * pre-read already extracted, which is what keeps the whole flow to minutes rather than
+ * a wait at every screen. Both calls run synchronously in the Worker, as raw fetch()
+ * against the Messages API with no SDK -- the same way src/consensus.js's live call
+ * does, and for the same reason (this repo's Worker code carries no npm runtime
+ * dependency by design).
+ *
+ * No prompt caching on either call, deliberately. A cache write costs 1.25x and a read
+ * 0.1x, against a five-minute TTL; employer sessions here are minutes to days apart, so
+ * a cached prefix would almost always be paid for and never read -- caching this
+ * workload would raise the bill, not lower it.
  *
  * PDF is handed to Claude directly as a native "document" content block (no separate
  * parsing needed -- Claude reads it). Word (.docx) has no equivalent native support in
- * the Messages API, and this repo has zero npm runtime dependencies in its Worker code
- * by design (see consensus.js), so DOCX text is extracted right here with a small,
- * dependency-free ZIP + DEFLATE reader (Cloudflare Workers' built-in
- * DecompressionStream('deflate-raw') does the actual inflating) that pulls
- * word/document.xml out of the archive and strips it to plain text. It covers the
- * standard case (Word/Office-written .docx); a .docx that uses ZIP64 or an unusual
- * writer could fail to parse -- the upload route returns a clear error rather than a
- * silent wrong extraction if that happens.
+ * the Messages API, so DOCX text is extracted right here with a small, dependency-free
+ * ZIP + DEFLATE reader (Cloudflare Workers' built-in DecompressionStream('deflate-raw')
+ * does the actual inflating) that pulls word/document.xml out of the archive and strips
+ * it to plain text. It covers the standard case (Word/Office-written .docx); a .docx
+ * that uses ZIP64 or an unusual writer could fail to parse -- the upload route returns a
+ * clear error rather than a silent wrong extraction if that happens.
  *
  * Storage: BOX_KV under a "jobdesc:" prefix, same shared KV namespace and Box connection
  * every other mini app here uses.
  *   jobdesc:folder        -> JSON { id, name } -- the Box folder holding every uploaded
  *     source file and every session's generated outputs, in a per-session subfolder.
- *   jobdesc:session:<id>  -> JSON, the full session record (see buildSession() below) --
- *     source file info, the pre-read, every step's answers, the second respondent's
+ *   jobdesc:session:<id>  -> JSON, the full session record -- source file info, the
+ *     pre-read, the credential shortlist, every step's answers, the second respondent's
  *     answers if any, and the generated outputs once produced. This is what makes a
  *     session resumable: the client only ever needs the session id back.
  *   jobdesc:invite:<token> -> JSON { sessionId, createdAt } -- the shareable
@@ -50,6 +63,8 @@
  */
 
 import { requireBetaAuth } from "./beta_auth.js";
+import { shortlistCredentials, formatShortlist } from "./credentials.js";
+import { buildDocx, cleanCopy } from "./docx.js";
 
 const SESSION_PREFIX = "jobdesc:session:";
 const INVITE_PREFIX = "jobdesc:invite:";
@@ -58,6 +73,9 @@ const MODEL = "claude-opus-5"; // both calls here do real structured extraction/
                                 // not a one-sentence follow-up -- see module docstring.
 const MAX_TOKENS_PREREAD = 16000;
 const MAX_TOKENS_OUTPUTS = 16000;
+// How many of the 30 credentials in the reference matrix reach the model. See
+// src/credentials.js for why the shortlist is scored here rather than sent whole.
+const CREDENTIAL_SHORTLIST_SIZE = 8;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -94,15 +112,6 @@ const DRIVERS = [
 ];
 const DRIVER_KEYS = DRIVERS.map((d) => d.key);
 
-const CREDENTIALS = [
-  "Polymechanic or Advanced Manufacturing Technician",
-  "MSSC CPT",
-  "NIMS",
-  "OSHA 10 or 30",
-  "Registered Apprenticeship through INCAP or another sponsor",
-  "Indiana CTE pathway completion",
-  "Ivy Tech or Vincennes certificate or degree (program area named)",
-];
 
 /* ==================================================================================
  * Box (same shape every other mini app here duplicates)
@@ -414,6 +423,10 @@ const PRE_READ_TOOL = {
         description: "Any system, software, or equipment mentioned in the duties but never mentioned in the requirements -- the toolkit's single most common gap.",
         items: { type: "string" },
       },
+      technologySummary: {
+        type: "string",
+        description: "Every system, machine, control, software package and piece of equipment named anywhere in the document, as a plain comma-separated list. Used to match this role against credential competencies, so name the specific thing (\"CNC lathe\", \"hydraulics\", \"MES\") rather than a category.",
+      },
       requirements: {
         type: "array",
         description: "Every listed requirement (education, experience, certifications, skills), split into individual items.",
@@ -422,12 +435,12 @@ const PRE_READ_TOOL = {
           properties: {
             id: { type: "string", description: "A short stable slug, e.g. \"req-1\"." },
             text: { type: "string" },
-            suggestedCredential: {
-              type: "string",
-              description: `If this requirement survives, the single best-fit credential from exactly this list: ${CREDENTIALS.join(" | ")}. Empty string if none fits.`,
+            kind: {
+              type: "string", enum: ["education", "experience", "certification", "skill", "other"],
+              description: "Which Part 2 requirement category this belongs to.",
             },
           },
-          required: ["id", "text", "suggestedCredential"],
+          required: ["id", "text", "kind"],
           additionalProperties: false,
         },
       },
@@ -450,10 +463,15 @@ const PRE_READ_TOOL = {
     },
     required: [
       "jobTitle", "categories", "duties", "driverGuesses", "systemGaps",
-      "requirements", "onetMatch", "currentTitleOnetGuess",
+      "technologySummary", "requirements", "onetMatch", "currentTitleOnetGuess",
     ],
     additionalProperties: false,
   },
+  // Constrains generation to the schema itself rather than merely asking for it, so an
+  // out-of-enum status or a missing field cannot come back at all. Requires
+  // additionalProperties:false and a complete `required` at every object level, which is
+  // why every property above is listed.
+  strict: true,
 };
 
 function preReadSystemPrompt() {
@@ -485,74 +503,158 @@ async function runPreRead(env, { text, pdfBase64 }) {
   return callClaude(env, { system: preReadSystemPrompt(), content, tool: PRE_READ_TOOL });
 }
 
+/* A document block, shared by the redlined description and the one-pager. Matches
+ * src/docx.js's own model exactly, so what Claude returns renders straight to Word with
+ * no translation layer in between. */
+function documentBlockSchema({ tracked }) {
+  // No `bold`: strict mode wants every property in `required`, so an optional formatting
+  // flag would cost a field on every single run of the document for something the block
+  // styles already handle. src/docx.js still supports bold; the tool just never asks
+  // for it.
+  const run = {
+    type: "object",
+    properties: {
+      text: { type: "string" },
+      ...(tracked ? {
+        change: {
+          type: "string", enum: ["none", "ins", "del"],
+          description: "\"none\" for text carried over from the original unchanged, "
+            + "\"ins\" for text you are adding, \"del\" for original text you are removing. "
+            + "Split a sentence into several runs so an edit marks only the words that "
+            + "actually change, not the whole sentence.",
+        },
+      } : {}),
+    },
+    required: tracked ? ["text", "change"] : ["text"],
+    additionalProperties: false,
+  };
+  return {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string", enum: ["title", "heading1", "heading2", "paragraph", "bullet"],
+          description: "One title at the very top; heading1 per major section; bullet for list items.",
+        },
+        runs: { type: "array", items: run },
+      },
+      required: ["type", "runs"],
+      additionalProperties: false,
+    },
+  };
+}
+
 const OUTPUTS_TOOL = {
   name: "submit_outputs",
-  description: "Submit every Step 7 output for this job description update.",
+  description: "Submit the four deliverables for this job description update.",
   input_schema: {
     type: "object",
     properties: {
-      revisedDescription: {
+      summary: {
         type: "string",
-        description: "The complete revised job description, in Markdown, organized under the ten Part 2 categories, reflecting every answer the employer gave.",
+        description: "The biggest changes, in plain English, for the person who just did "
+          + "this exercise to read on screen. Three to five short paragraphs, no heading, "
+          + "no bullet list, no preamble. Lead with what actually changed and why it "
+          + "matters for hiring -- not with a description of the process. Name the "
+          + "specific duty, requirement or title that moved. If the New Role Decision "
+          + "Matrix scored 3 or higher, say plainly that this now reads as a different "
+          + "job and what that means.",
       },
-      redline: {
+      documentTitle: {
+        type: "string",
+        description: "The revised job title. If the title itself is changing, this is the new one.",
+      },
+      document: {
+        ...documentBlockSchema({ tracked: true }),
+        description: "The complete revised job description AS A REDLINE against the "
+          + "original: every run marked \"none\", \"ins\" or \"del\". Organize it under the "
+          + "ten Part 2 categories. Carry unchanged original wording through as \"none\" "
+          + "runs rather than rewriting it -- a redline in which everything is new is "
+          + "useless to a reviewer. Every change must trace to something the employer "
+          + "actually told you.",
+      },
+      oneSheet: {
+        ...documentBlockSchema({ tracked: false }),
+        description: "A one-page career-fair handout for this role, per Part 5's talent "
+          + "pipeline row: plain-language day in the life, what you will train versus "
+          + "what they need on day one, pay range if given, and where the role leads. "
+          + "Written for a job seeker or a school counselor, not for HR. No jargon, no "
+          + "internal acronyms. Must fit on one page.",
+      },
+      credentials: {
         type: "array",
-        description: "Every substantive change from the original, traceable to a specific employer answer.",
+        description: "The credentials worth naming in this description, chosen ONLY from "
+          + "the shortlist given to you. One to five, fewest first -- if only one "
+          + "genuinely fits, return one. Do not pad the list: a credential that is merely "
+          + "plausible is worse than no credential, because a school will teach toward it.",
         items: {
           type: "object",
           properties: {
-            section: { type: "string" },
-            before: { type: "string" },
-            after: { type: "string" },
-            reason: { type: "string", description: "Which employer answer this change traces to." },
+            name: { type: "string", description: "Copied exactly from the shortlist." },
+            tier: {
+              type: "string", enum: ["required", "preferred", "we-provide"],
+              description: "Per Part 3: required only if the job genuinely cannot be done "
+                + "without it, we-provide when you would rather train or pay for it than "
+                + "screen on it.",
+            },
+            whyItFits: {
+              type: "string",
+              description: "One sentence tying it to a specific duty or requirement of "
+                + "THIS role. If you cannot name one, the credential does not belong here.",
+            },
           },
-          required: ["section", "before", "after", "reason"],
+          required: ["name", "tier", "whyItFits"],
           additionalProperties: false,
         },
       },
-      worksheet: {
-        type: "string",
-        description: "The completed Consolidated Job Description Analysis Worksheet, in Markdown, covering Part 1 (Role Evolution), Part 2 (category-by-category status), Part 3 (Requirements test results), and Part 4 (New Role Decision Matrix, with the score and reasoning).",
-      },
-      comms: {
-        type: "object",
-        description: "The five Part 5 communication drafts.",
-        properties: {
-          screeningRubric: { type: "string", description: "Screening/interview rubric changes for the internal hiring team." },
-          incumbentUpdate: { type: "string", description: "A short update for current incumbents in this role." },
-          educationProvidersNote: { type: "string", description: "A note on credential/competency shifts for education and training providers." },
-          careerFairOneSheet: { type: "string", description: "A plain-language one-sheet for career fairs." },
-          apprenticeshipCheckNote: { type: "string", description: "A work-process check note for apprenticeship sponsors." },
-        },
-        required: [
-          "screeningRubric", "incumbentUpdate", "educationProvidersNote",
-          "careerFairOneSheet", "apprenticeshipCheckNote",
-        ],
-        additionalProperties: false,
-      },
     },
-    required: ["revisedDescription", "redline", "worksheet", "comms"],
+    required: ["summary", "documentTitle", "document", "oneSheet", "credentials"],
     additionalProperties: false,
   },
+  strict: true,
 };
 
 function outputsSystemPrompt() {
-  return "You are producing the final Step 7 outputs of the Conexus Job Description " +
-    "Toolkit update -- no further questions, generate everything now from what's already " +
-    "been confirmed. Every change in the revised description and the redline must trace " +
-    "to something the employer actually said (a Step 3 duty answer, a Step 4 requirement " +
-    "answer, a Step 5 fact, or a Step 6 decision) -- never introduce a change that isn't " +
-    "grounded in an answer you were given. If the New Role Decision Matrix score is 3 or " +
-    "higher, the revised description should read as a genuinely new title anchored to an " +
-    "O*NET-SOC code, apprenticeship.gov, or an AML ITA competency framework, not a " +
-    "reshuffled version of the old one -- keep the toolkit's distinction between a wrong " +
-    "title (a naming fix) and a genuinely new role. Keep every communication draft in " +
-    "plain language suited to HR leaders and plant supervisors.";
+  return "You are producing the final outputs of a Conexus Job Description Toolkit "
+    + "update. No further questions -- generate everything now from what the employer "
+    + "has already confirmed.\n\n"
+    + "GROUNDING. Every change in the redline must trace to something the employer "
+    + "actually told you: a duty they marked changed or no longer done, a requirement "
+    + "they moved to preferred or on-the-job, a fact they supplied, or a decision they "
+    + "made. Never introduce a change you were not given grounds for, and never invent a "
+    + "duty, a system, a pay figure or a credential. Where the employer skipped "
+    + "something, leave the original wording alone rather than filling the gap.\n\n"
+    + "THE REDLINE IS A REDLINE. Most of the document should come through as unchanged "
+    + "runs. Mark an insertion or a deletion only where the employer's answers actually "
+    + "move the text, and split sentences so the marks land on the words that change "
+    + "rather than on whole paragraphs. A reviewer has to be able to see, at a glance, "
+    + "what is different.\n\n"
+    + "NEW ROLE VS WRONG TITLE. If the New Role Decision Matrix scored 3 or higher, the "
+    + "revised description should read as a genuinely new title, anchored to the O*NET-SOC "
+    + "occupation the duties actually match, to apprenticeship.gov, or to an AML ITA "
+    + "competency framework -- not a reshuffle of the old one. Below 3 it is the same job "
+    + "described better. The toolkit is explicit that a mismatched title is a naming "
+    + "problem and a new role is not; do not blur them.\n\n"
+    + "REQUIREMENTS. Anything the employer moved out of required must read as preferred, "
+    + "or as something you will train, and must not reappear as a screen elsewhere in the "
+    + "document. This is the single change with the largest effect on who applies.\n\n"
+    + "CREDENTIALS. Choose only from the shortlist you are given, and only what genuinely "
+    + "fits this role's duties. One well-matched credential beats four plausible ones: a "
+    + "school builds curriculum against what you name here.\n\n"
+    + "Plain language throughout, suited to HR leaders, plant supervisors, job seekers "
+    + "and school counselors. No consulting register.";
 }
 
 function formatConfirmedInputs(session) {
   const lines = [];
   lines.push(`Original job title: ${session.preRead.jobTitle}`);
+  if (session.respondent) {
+    const r = session.respondent;
+    lines.push(`Answered by: ${r.role || "(not given)"}`
+      + `${r.hardToFill ? " -- they report this is a HARD-TO-FILL position" : ""}`
+      + `${r.lastUpdated ? `. Description last updated: ${r.lastUpdated}` : ""}`);
+  }
   lines.push(`\nOriginal document, by Part 2 category:`);
   for (const cat of session.preRead.categories || []) {
     // .find() can miss: the tool schema's enum constrains the key, but nothing
@@ -597,6 +699,14 @@ function formatConfirmedInputs(session) {
   if (session.secondRespondent && session.secondRespondent.step3Answers) {
     lines.push(`\nA second respondent (${session.secondRespondent.role}) also reviewed the duties; any disagreements were resolved by the primary respondent above.`);
   }
+
+  // The shortlist, already narrowed from all 30 credentials in the reference matrix by
+  // src/credentials.js against this role's own duties. Presented as candidates, not as
+  // an answer: the instruction is still to drop any that do not genuinely fit.
+  lines.push(`\nCredential shortlist for this role -- the closest ${(session.credentialShortlist || []).length} `
+    + `of the reference matrix, scored against the duties above. Choose ONLY from these, `
+    + `and only the ones that genuinely fit:\n`);
+  lines.push(formatShortlist(session.credentialShortlist || []));
   return lines.join("\n");
 }
 
@@ -640,12 +750,24 @@ function computeMatrix(session, { screenDifferently, compChanges, overrides }) {
   }).length;
   const majorityChanged = duties.length > 0 && changedOrGone / duties.length > 0.5;
 
+  // "A distinct technical competency set the original title does not imply", per the
+  // toolkit's Part 4. It used to be read off a per-requirement credential guess the
+  // pre-read made before the employer had answered anything; now it comes from two
+  // things that are actually known by this point -- the employer keeping a technical
+  // requirement as must-have, and the credential scorer finding a specific credential
+  // (a named NIMS, MSSC or Ivy Tech program, not a general pathway) that matches the
+  // duties closely. Both together are what "distinct competency set" means.
   const requirements = session.preRead.requirements || [];
   const reqAnswers = (session.step4 && session.step4.requirementAnswers) || {};
-  const distinctCompetency = requirements.some((r) => {
+  const keptTechnicalRequirement = requirements.some((r) => {
     const a = reqAnswers[r.id];
-    return a && a.tier === "must_have" && !/^\s*$/.test(r.suggestedCredential || "");
+    return a && a.tier === "must_have"
+      && (r.kind === "certification" || r.kind === "skill" || r.kind === "experience");
   });
+  const shortlist = session.credentialShortlist || [];
+  const namedCredentialFits = shortlist.length > 0
+    && shortlist[0].family !== "Pathway" && shortlist[0].score >= 0.12;
+  const distinctCompetency = keptTechnicalRequirement && namedCredentialFits;
 
   const differentOnet = session.preRead.onetMatch && session.preRead.currentTitleOnetGuess
     && session.preRead.onetMatch.code !== session.preRead.currentTitleOnetGuess.code;
@@ -662,8 +784,10 @@ function computeMatrix(session, { screenDifferently, compChanges, overrides }) {
       computed: true, value: overrides.distinct_competency != null ? overrides.distinct_competency : distinctCompetency,
       overridden: overrides.distinct_competency != null,
       reasoning: distinctCompetency
-        ? "At least one must-have requirement maps to a specific credential not implied by the original title."
-        : "No must-have requirement points to a distinct credentialed competency.",
+        ? `A must-have technical requirement was kept, and the duties map closely to ${shortlist[0].name}.`
+        : (keptTechnicalRequirement
+          ? "A must-have technical requirement was kept, but the duties do not map closely to any one named credential."
+          : "No technical requirement was kept as must-have."),
     },
     {
       id: "screen_differently", label: "Would screen and interview differently",
@@ -741,7 +865,25 @@ export async function handleJobDescriptionApi(route, request, env) {
     const session = {
       id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       status: "pre_read", sourceFile: { name: file.name, mimeType: file.type || "", boxFileId: null },
-      preRead, respondent: null, supervisorInvite: null, secondRespondent: null,
+      preRead,
+      // Collected on the upload screen rather than on one of its own: three fields the
+      // employer can answer while the pre-read is still running, which removes a whole
+      // screen from the flow without losing the toolkit's "who is answering" context.
+      respondent: {
+        role: String(incoming.get("role") || "").trim(),
+        hardToFill: String(incoming.get("hardToFill") || "") === "true",
+        lastUpdated: String(incoming.get("lastUpdated") || "").trim(),
+      },
+      // Scored once, here, from the pre-read's own extraction -- no API call. Stored on
+      // the session so the requirements screen can show it and the outputs call can
+      // choose from it without recomputing.
+      credentialShortlist: shortlistCredentials({
+        title: preRead.jobTitle,
+        duties: (preRead.duties || []).map((d) => d.text),
+        requirements: (preRead.requirements || []).map((r) => r.text),
+        technology: preRead.technologySummary || "",
+      }, CREDENTIAL_SHORTLIST_SIZE),
+      supervisorInvite: null, secondRespondent: null,
       step3: null, step4: null, step5: null, step6: null, outputs: null,
     };
 
@@ -798,22 +940,6 @@ export async function handleJobDescriptionApi(route, request, env) {
     return json({ ok: true, session: publicSession(session) });
   }
 
-  // POST session/<id>/step2 { role, hardToFill, lastUpdated }
-  if (parts[0] === "session" && parts.length === 3 && parts[2] === "step2" && method === "POST") {
-    const session = await getSession(env, parts[1]);
-    if (!session) return json({ error: "Session not found" }, 404);
-    let body = {};
-    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    session.respondent = {
-      role: String(body.role || "").trim(),
-      hardToFill: !!body.hardToFill,
-      lastUpdated: String(body.lastUpdated || "").trim(),
-    };
-    session.status = "step3";
-    await saveSession(env, session);
-    return json({ ok: true, session: publicSession(session) });
-  }
-
   // POST session/<id>/invite-supervisor -> creates a shareable link for Steps 3-4.
   if (parts[0] === "session" && parts.length === 3 && parts[2] === "invite-supervisor" && method === "POST") {
     const session = await getSession(env, parts[1]);
@@ -838,7 +964,7 @@ export async function handleJobDescriptionApi(route, request, env) {
       dutyAnswers: body.dutyAnswers && typeof body.dutyAnswers === "object" ? body.dutyAnswers : {},
       driverAnswers: body.driverAnswers && typeof body.driverAnswers === "object" ? body.driverAnswers : {},
     };
-    session.status = "step4";
+    session.status = "requirements";
     const conflicts = findConflicts(session);
     await saveSession(env, session);
     return json({ ok: true, session: publicSession(session), conflicts });
@@ -865,13 +991,27 @@ export async function handleJobDescriptionApi(route, request, env) {
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     session.step4 = { requirementAnswers: body.requirementAnswers && typeof body.requirementAnswers === "object" ? body.requirementAnswers : {} };
-    session.status = "step5";
+    session.status = "finalize";
     await saveSession(env, session);
     return json({ ok: true, session: publicSession(session) });
   }
 
-  // POST session/<id>/step5 { payRange, physicalFrequency, pathway }
-  if (parts[0] === "session" && parts.length === 3 && parts[2] === "step5" && method === "POST") {
+  // GET session/<id>/matrix -> the New Role Decision Matrix as it currently stands.
+  // Three of its five questions are computed from answers already given, so the screen
+  // can show a live score while the employer answers the other two.
+  if (parts[0] === "session" && parts.length === 3 && parts[2] === "matrix" && method === "GET") {
+    const session = await getSession(env, parts[1]);
+    if (!session) return json({ error: "Session not found" }, 404);
+    return json(computeMatrix(session, {}));
+  }
+
+  // POST session/<id>/finalize { payRange, physicalFrequency, pathway,
+  //                              screenDifferently, compChanges, overrides }
+  // The toolkit's Part 3 missing facts and its Part 4 decision, answered together.
+  // They used to be two screens; they are five short questions between them, and asking
+  // them on one screen is what lets the employer see the matrix score move as they
+  // answer rather than after.
+  if (parts[0] === "session" && parts.length === 3 && parts[2] === "finalize" && method === "POST") {
     const session = await getSession(env, parts[1]);
     if (!session) return json({ error: "Session not found" }, 404);
     let body = {};
@@ -881,32 +1021,17 @@ export async function handleJobDescriptionApi(route, request, env) {
       physicalFrequency: String(body.physicalFrequency || "").trim(),
       pathway: String(body.pathway || "").trim(),
     };
-    session.status = "step6";
-    await saveSession(env, session);
-    return json({ ok: true, session: publicSession(session) });
-  }
-
-  // GET session/<id>/step6 -> the computed matrix (using whatever's been answered so
-  // far); POST to save the 2 asked items (+ any overrides) as final.
-  if (parts[0] === "session" && parts.length === 3 && parts[2] === "step6" && method === "GET") {
-    const session = await getSession(env, parts[1]);
-    if (!session) return json({ error: "Session not found" }, 404);
-    return json(computeMatrix(session, {}));
-  }
-  if (parts[0] === "session" && parts.length === 3 && parts[2] === "step6" && method === "POST") {
-    const session = await getSession(env, parts[1]);
-    if (!session) return json({ error: "Session not found" }, 404);
-    let body = {};
-    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     session.step6 = computeMatrix(session, {
-      screenDifferently: body.screenDifferently, compChanges: body.compChanges, overrides: body.overrides,
+      screenDifferently: body.screenDifferently, compChanges: body.compChanges,
+      overrides: body.overrides,
     });
-    session.status = "step7";
+    session.status = "outputs";
     await saveSession(env, session);
     return json({ ok: true, session: publicSession(session) });
   }
 
-  // POST session/<id>/generate-outputs -> the final Claude call, saved to Box.
+  // POST session/<id>/generate-outputs -> the final Claude call. Builds the three Word
+  // files and saves them to Box alongside the source document.
   if (parts[0] === "session" && parts.length === 3 && parts[2] === "generate-outputs" && method === "POST") {
     if (!env.job_description_claude_api) {
       return json({ error: "The Job Description Updater's Claude key isn't set up yet "
@@ -914,7 +1039,9 @@ export async function handleJobDescriptionApi(route, request, env) {
     }
     const session = await getSession(env, parts[1]);
     if (!session) return json({ error: "Session not found" }, 404);
-    if (!session.step6) return json({ error: "Finish Step 6 first." }, 409);
+    if (!session.step6) {
+      return json({ error: "Answer the last few questions first." }, 409);
+    }
     let outputs;
     try {
       outputs = await runOutputs(env, session);
@@ -923,31 +1050,53 @@ export async function handleJobDescriptionApi(route, request, env) {
     }
     outputs.generatedAt = new Date().toISOString();
     outputs.box = { saved: false };
+    session.outputs = outputs;
 
     const token = await boxAccessToken(env);
     if (token && session.boxSubfolderId) {
       try {
         const headers = { authorization: `Bearer ${token}` };
-        await Promise.all([
-          boxUploadFile(headers, session.boxSubfolderId, "revised-job-description.md", new Blob([outputs.revisedDescription], { type: "text/markdown" })),
-          boxUploadFile(headers, session.boxSubfolderId, "redline.md", new Blob([redlineToMarkdown(outputs.redline)], { type: "text/markdown" })),
-          boxUploadFile(headers, session.boxSubfolderId, "analysis-worksheet.md", new Blob([outputs.worksheet], { type: "text/markdown" })),
-          boxUploadFile(headers, session.boxSubfolderId, "comms-screening-rubric.md", new Blob([outputs.comms.screeningRubric], { type: "text/markdown" })),
-          boxUploadFile(headers, session.boxSubfolderId, "comms-incumbent-update.md", new Blob([outputs.comms.incumbentUpdate], { type: "text/markdown" })),
-          boxUploadFile(headers, session.boxSubfolderId, "comms-education-providers.md", new Blob([outputs.comms.educationProvidersNote], { type: "text/markdown" })),
-          boxUploadFile(headers, session.boxSubfolderId, "comms-career-fair-one-sheet.md", new Blob([outputs.comms.careerFairOneSheet], { type: "text/markdown" })),
-          boxUploadFile(headers, session.boxSubfolderId, "comms-apprenticeship-check-note.md", new Blob([outputs.comms.apprenticeshipCheckNote], { type: "text/markdown" })),
-        ]);
+        // Same three files the employer downloads, so Box holds the deliverables rather
+        // than only the source document.
+        await Promise.all(DOWNLOADS.map(({ kind }) => {
+          const { filename, bytes } = renderDownload(session, kind);
+          return boxUploadFile(headers, session.boxSubfolderId, filename,
+            new Blob([bytes], { type: DOCX_MIME }));
+        }).concat([
+          boxUploadFile(headers, session.boxSubfolderId, "summary-of-changes.txt",
+            new Blob([outputs.summary || ""], { type: "text/plain" })),
+        ]));
         outputs.box = { saved: true };
       } catch (e) {
         outputs.box = { saved: false, error: e.message };
       }
     }
 
-    session.outputs = outputs;
     session.status = "complete";
     await saveSession(env, session);
     return json({ ok: true, session: publicSession(session) });
+  }
+
+  // GET session/<id>/download/<kind> -> one of the three Word files.
+  //
+  // Rebuilt from the stored document model on each request rather than kept as bytes in
+  // KV: the model is a fraction of the size, and it means a fix to src/docx.js applies
+  // to sessions that were generated before it.
+  if (parts[0] === "session" && parts.length === 4 && parts[2] === "download" && method === "GET") {
+    const session = await getSession(env, parts[1]);
+    if (!session) return json({ error: "Session not found" }, 404);
+    if (!session.outputs) return json({ error: "Nothing has been generated for this session yet." }, 409);
+    if (!DOWNLOAD_KINDS.has(parts[3])) return json({ error: "Unknown download." }, 404);
+    const { filename, bytes } = renderDownload(session, parts[3]);
+    return new Response(bytes, {
+      headers: {
+        "content-type": DOCX_MIME,
+        // The quoted filename is what the browser saves it as. No user-controlled text
+        // reaches this header unescaped -- see slugify() in renderDownload.
+        "content-disposition": `attachment; filename="${filename}"`,
+        "cache-control": "no-store",
+      },
+    });
   }
 
   /* ==================== Public (supervisor/incumbent shareable link) ==================== */
@@ -1087,8 +1236,49 @@ function findConflicts(session) {
   return conflicts;
 }
 
-function redlineToMarkdown(redline) {
-  return (redline || []).map((r) =>
-    `### ${r.section}\n\n**Before:** ${r.before}\n\n**After:** ${r.after}\n\n_Why: ${r.reason}_\n`
-  ).join("\n---\n\n");
+/* ==================================================================================
+ * The three Word downloads
+ * ================================================================================== */
+
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// The redline is generated; the final version is the redline with its deletions dropped
+// and its insertions accepted (see src/docx.js's cleanCopy). Generating the description
+// twice would have doubled the output tokens of the most expensive call in the app and
+// let the two documents drift apart; deriving one from the other makes that impossible.
+const DOWNLOADS = [
+  { kind: "redline", suffix: "redline", tracked: true },
+  { kind: "final", suffix: "final", tracked: false },
+  { kind: "one-pager", suffix: "career-fair-one-pager", tracked: false },
+];
+const DOWNLOAD_KINDS = new Set(DOWNLOADS.map((d) => d.kind));
+
+/* A filename-safe slug. Also what keeps the Content-Disposition header free of
+   user-controlled quotes, newlines or semicolons -- the job title reaches it. */
+function slugify(title) {
+  return String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "").slice(0, 60) || "job-description";
+}
+
+function renderDownload(session, kind) {
+  const outputs = session.outputs || {};
+  const slug = slugify(outputs.documentTitle || (session.preRead && session.preRead.jobTitle));
+  const document = Array.isArray(outputs.document) ? outputs.document : [];
+  const spec = DOWNLOADS.find((d) => d.kind === kind);
+
+  if (kind === "one-pager") {
+    const oneSheet = Array.isArray(outputs.oneSheet) ? outputs.oneSheet : [];
+    return {
+      filename: `${slug}-${spec.suffix}.docx`,
+      bytes: buildDocx({ blocks: oneSheet }),
+    };
+  }
+  return {
+    filename: `${slug}-${spec.suffix}.docx`,
+    bytes: buildDocx({
+      blocks: spec.tracked ? document : cleanCopy(document),
+      author: "Conexus Job Description Updater",
+      date: outputs.generatedAt || null,
+    }),
+  };
 }

@@ -67,22 +67,24 @@ const okJson = (body) => new Response(JSON.stringify(body), {
 });
 
 /* --------------------------------------------------------- src/ under bare Node ----
- * src/stars.js does `import data from "./data/stars-occupations.json"`. Wrangler
- * resolves that bare; Node needs an explicit import attribute. So mirror src/ into a
- * temp directory verbatim, add the attribute to that one line, and import the modules
+ * Worker modules import JSON data bare (`import data from "./data/x.json"`). Wrangler
+ * resolves that; Node needs an explicit import attribute. So mirror src/ into a temp
+ * directory verbatim, add the attribute to those import lines, and load the modules
  * from there -- the code under test is otherwise byte-for-byte what ships.
  */
 const MIRROR = fs.mkdtempSync(path.join(os.tmpdir(), "connector-src-"));
 fs.cpSync(SRC, MIRROR, { recursive: true });
 {
-  const starsPath = path.join(MIRROR, "stars.js");
-  const before = fs.readFileSync(starsPath, "utf8");
-  const after = before.replace(
-    'import bundledOccupationData from "./data/stars-occupations.json";',
-    'import bundledOccupationData from "./data/stars-occupations.json" with { type: "json" };',
-  );
-  assert.notEqual(after, before, "the JSON import in src/stars.js moved -- update this shim");
-  fs.writeFileSync(starsPath, after);
+  const JSON_IMPORT = /(import\s+\w+\s+from\s+"\.[^"]*\.json")(?!\s+with)/g;
+  let patched = 0;
+  for (const entry of fs.readdirSync(MIRROR)) {
+    if (!entry.endsWith(".js")) continue;
+    const file = path.join(MIRROR, entry);
+    const before = fs.readFileSync(file, "utf8");
+    const after = before.replace(JSON_IMPORT, '$1 with { type: "json" }');
+    if (after !== before) { fs.writeFileSync(file, after); patched++; }
+  }
+  assert.ok(patched >= 2, `expected to patch the JSON imports in src/, patched ${patched}`);
 }
 const mod = (name) => import(pathToFileURL(path.join(MIRROR, name)).href);
 
@@ -509,23 +511,79 @@ test("consensus: the relay refuses a wrong shared secret", async () => {
 const { handleJobDescriptionApi } = await mod("job_description.js");
 
 const PRE_READ_RESULT = {
-  jobTitle: "CNC Operator",
-  categories: [{ key: "job_title", extractedText: "CNC Operator", status: "aligned", statusReasoning: "r" }],
-  duties: [{ id: "duty-1", text: "Run the machine", drivers: [], vague: false }],
-  driverGuesses: { systems: "", automation: "", decisionAuthority: "", crossTraining: "" },
-  systemGaps: [],
-  requirements: [{ id: "req-1", text: "HS diploma", suggestedCredential: "" }],
-  onetMatch: { code: "51-4011", title: "CNC Tool Operators", reasoning: "r" },
+  jobTitle: "CNC Machining Technician",
+  categories: [
+    { key: "job_title", extractedText: "CNC Machining Technician", status: "aligned", statusReasoning: "Matches." },
+    { key: "essential_duties", extractedText: "Runs lathes.", status: "significant_gap", statusReasoning: "Omits inspection." },
+    { key: "education", extractedText: "Associate degree required", status: "minor_drift", statusReasoning: "Possibly a proxy." },
+  ],
+  duties: [
+    { id: "duty-1", text: "Set up and operate CNC lathes and mills to print", drivers: [], vague: false },
+    { id: "duty-2", text: "Sweep the department", drivers: [], vague: true },
+  ],
+  driverGuesses: { systems: "MES", automation: "None stated", decisionAuthority: "Unclear", crossTraining: "Unclear" },
+  systemGaps: ["CMM"],
+  technologySummary: "CNC lathe, CNC mill, micrometers, calipers, CMM, Fanuc controls",
+  requirements: [
+    { id: "req-1", text: "Associate degree", kind: "education" },
+    { id: "req-2", text: "Blueprint and GD&T reading", kind: "skill" },
+  ],
+  onetMatch: { code: "51-4011", title: "CNC Tool Operators", reasoning: "Duties match." },
   currentTitleOnetGuess: { code: "51-4011", title: "CNC Tool Operators" },
 };
 
+const OUTPUTS_RESULT = {
+  summary: "The biggest change is that inspection is now part of the job.",
+  documentTitle: "CNC Machining Technician",
+  document: [
+    { type: "title", runs: [{ text: "CNC Machining Technician", change: "none" }] },
+    { type: "heading1", runs: [{ text: "Essential Duties", change: "none" }] },
+    { type: "bullet", runs: [
+      { text: "Set up and operate CNC lathes and mills to print", change: "none" },
+      { text: ", and inspect first articles", change: "ins" },
+    ] },
+    { type: "bullet", runs: [{ text: "Sweep the department", change: "del" }] },
+  ],
+  oneSheet: [
+    { type: "title", runs: [{ text: "CNC Machining Technician" }] },
+    { type: "paragraph", runs: [{ text: "You run the machines that make the parts." }] },
+  ],
+  credentials: [
+    { name: "NIMS Machining — Milling I (Level I)", tier: "preferred", whyItFits: "The duties are milling to print." },
+  ],
+};
+
 const claudeResponse = (input) => okJson({ content: [{ type: "tool_use", input }] });
+const docxFormEnv = () => makeEnv({ job_description_claude_api: "key" });
+
+function docxUploadForm(extra = {}) {
+  const xml = "<w:document><w:body><w:p><w:r><w:t>Runs lathes.</w:t></w:r></w:p></w:body></w:document>";
+  const form = new FormData();
+  form.append("file", new File([buildDocx(xml)], "jd.docx"));
+  for (const [k, v] of Object.entries(extra)) form.append(k, v);
+  return form;
+}
+
+/** Upload a session with a stubbed pre-read, returning { env, session }. */
+async function startSession(env, formExtras = {}) {
+  let session;
+  await withFetch(async () => claudeResponse(PRE_READ_RESULT), async () => {
+    const res = await handleJobDescriptionApi("upload",
+      req("/api/job-description/upload", { method: "POST", body: docxUploadForm(formExtras) }), env);
+    // Read the body ONCE: a Response body is a stream, so calling .text() for the
+    // assertion message and then .json() throws "Body has already been read".
+    const body = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(body));
+    session = body.session;
+  });
+  return session;
+}
 
 test("job_description: .docx entities are decoded once, not twice", async () => {
   // BUG: docxXmlToText() decoded &amp; FIRST, so the document's own literal "&amp;lt;"
   // became "&lt;" and the very next replace turned it into "<" -- silently rewriting
   // the employer's text before Claude ever saw it.
-  const env = makeEnv({ job_description_claude_api: "key" });
+  const env = docxFormEnv();
   const xml = "<w:document><w:body>"
     + "<w:p><w:r><w:t>Q&amp;A about &amp;lt;tags&amp;gt; and 5 &lt; 6</w:t></w:r></w:p>"
     + "<w:p><w:r><w:t>Line one</w:t></w:r><w:r><w:br w:type=\"textWrapping\"/><w:t>Line two</w:t></w:r></w:p>"
@@ -547,21 +605,47 @@ test("job_description: .docx entities are decoded once, not twice", async () => 
   assert.ok(promptSent.includes("Q&A about &lt;tags&gt; and 5 < 6"),
     `entities must decode exactly once -- got: ${JSON.stringify(promptSent.slice(-160))}`);
   assert.ok(promptSent.includes("Line one\nLine two"), "an attributed <w:br> is still a line break");
-  assert.ok(promptSent.includes("don\u2019t"), "numeric character references are decoded");
+  assert.ok(promptSent.includes("don’t"), "numeric character references are decoded");
+});
+
+test("job_description: the upload carries the employer context, so there is no extra screen", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env, {
+    role: "Plant Supervisor", hardToFill: "true", lastUpdated: "3 years ago",
+  });
+  assert.deepEqual(session.respondent,
+    { role: "Plant Supervisor", hardToFill: true, lastUpdated: "3 years ago" });
+  assert.equal(session.status, "pre_read");
+});
+
+test("job_description: a credential shortlist is scored on upload, with no extra API call", async () => {
+  const env = docxFormEnv();
+  let claudeCalls = 0;
+  let session;
+  await withFetch(async (url) => {
+    if (url.includes("api.anthropic.com")) claudeCalls++;
+    return claudeResponse(PRE_READ_RESULT);
+  }, async () => {
+    const res = await handleJobDescriptionApi("upload",
+      req("/api/job-description/upload", { method: "POST", body: docxUploadForm() }), env);
+    session = (await res.json()).session;
+  });
+
+  assert.equal(claudeCalls, 1, "the pre-read is the only call the upload makes");
+  assert.ok(session.credentialShortlist.length > 0 && session.credentialShortlist.length <= 8);
+  // These duties are machining, so NIMS machining should lead.
+  assert.match(session.credentialShortlist[0].name, /NIMS Machining/);
+  for (const c of session.credentialShortlist) {
+    assert.ok(c.name && c.signals && typeof c.score === "number");
+  }
 });
 
 test("job_description: confirm-pre-read ignores junk from the public client", async () => {
   // BUG: this public route Object.assign-ed the request body straight onto preRead, so
   // any caller could replace duties/requirements/categories with a non-array -- which
   // then threw deep inside computeMatrix()/generate-outputs as a 500 several steps on.
-  const env = makeEnv({ job_description_claude_api: "key" });
-  const form = new FormData();
-  form.append("file", new File([buildDocx("<w:document><w:body><w:p><w:r><w:t>x</w:t></w:r></w:p></w:body></w:document>")], "jd.docx"));
-  let session;
-  await withFetch(async () => claudeResponse(PRE_READ_RESULT), async () => {
-    session = (await (await handleJobDescriptionApi("upload",
-      req("/api/job-description/upload", { method: "POST", body: form }), env)).json()).session;
-  });
+  const env = docxFormEnv();
+  const session = await startSession(env);
 
   const res = await handleJobDescriptionApi(`session/${session.id}/confirm-pre-read`,
     jsonReq(`/api/job-description/session/${session.id}/confirm-pre-read`, "POST", {
@@ -569,49 +653,190 @@ test("job_description: confirm-pre-read ignores junk from the public client", as
         duties: "not an array",
         requirements: null,
         jobTitle: "Injected Title",
-        categories: [{ key: "job_title", extractedText: "Edited by the employer" }],
+        categories: [{ key: "essential_duties", extractedText: "Edited by the employer" }],
       },
     }), env);
   const updated = (await res.json()).session;
 
   assert.ok(Array.isArray(updated.preRead.duties), "duties must stay an array");
   assert.ok(Array.isArray(updated.preRead.requirements), "requirements must stay an array");
-  assert.equal(updated.preRead.jobTitle, "CNC Operator", "only the edited field may change");
-  assert.equal(updated.preRead.categories[0].extractedText, "Edited by the employer");
+  assert.equal(updated.preRead.jobTitle, "CNC Machining Technician", "only the edited field may change");
+  assert.equal(updated.preRead.categories[1].extractedText, "Edited by the employer");
   assert.equal(updated.preRead.confirmed, true);
 
-  // The step that used to blow up on a clobbered preRead.
-  const matrix = await handleJobDescriptionApi(`session/${session.id}/step6`,
-    req(`/api/job-description/session/${session.id}/step6`), env);
+  const matrix = await handleJobDescriptionApi(`session/${session.id}/matrix`,
+    req(`/api/job-description/session/${session.id}/matrix`), env);
   assert.equal(matrix.status, 200);
   assert.equal((await matrix.json()).matrix.length, 5);
 });
 
+test("job_description: the flow runs end to end in two Claude calls", async () => {
+  // The whole point of the streamlining: the pre-read and the outputs are the only two
+  // model calls; every step in between is the employer confirming what is already there.
+  const env = docxFormEnv();
+  let claudeCalls = 0;
+  const countingFetch = async (u, init) => {
+    if (u.includes("api.anthropic.com")) {
+      claudeCalls++;
+      return claudeResponse(JSON.parse(init.body).tools[0].name === "submit_pre_read"
+        ? PRE_READ_RESULT : OUTPUTS_RESULT);
+    }
+    return okJson({});
+  };
+
+  // Everything from the upload onward runs under one stub, so the count covers the
+  // WHOLE flow rather than only the part after the session exists.
+  await withFetch(countingFetch, async () => {
+    const uploaded = await handleJobDescriptionApi("upload",
+      req("/api/job-description/upload", { method: "POST", body: docxUploadForm({ role: "HR Manager" }) }), env);
+    const uploadedBody = await uploaded.json();
+    assert.equal(uploaded.status, 200, JSON.stringify(uploadedBody));
+    const session = uploadedBody.session;
+    const at = (sub) => `session/${session.id}/${sub}`;
+    const url = (sub) => `/api/job-description/${at(sub)}`;
+
+    assert.equal((await handleJobDescriptionApi(at("confirm-pre-read"),
+      jsonReq(url("confirm-pre-read"), "POST", {}), env)).status, 200);
+
+    const step3 = await handleJobDescriptionApi(at("step3"), jsonReq(url("step3"), "POST", {
+      dutyAnswers: { "duty-1": { answer: "changed", note: "now inspects too" },
+                     "duty-2": { answer: "no_longer_done" } },
+      driverAnswers: { systems: "MES", automation: "", decisionAuthority: "Can stop the line", crossTraining: "" },
+    }), env);
+    assert.equal((await step3.json()).session.status, "requirements");
+
+    const step4 = await handleJobDescriptionApi(at("step4"), jsonReq(url("step4"), "POST", {
+      requirementAnswers: { "req-1": { tier: "would_train", incumbentMeets: false },
+                            "req-2": { tier: "must_have", incumbentMeets: true } },
+    }), env);
+    assert.equal((await step4.json()).session.status, "finalize");
+
+    const finalized = await handleJobDescriptionApi(at("finalize"), jsonReq(url("finalize"), "POST", {
+      payRange: "$22-28/hr", physicalFrequency: "Lifting up to 40 lbs, a few times a shift",
+      pathway: "Lead machinist in 3 years", screenDifferently: true, compChanges: false,
+    }), env);
+    const afterFinalize = (await finalized.json()).session;
+    assert.equal(afterFinalize.status, "outputs");
+    assert.equal(afterFinalize.step5.payRange, "$22-28/hr");
+    assert.equal(afterFinalize.step6.matrix.length, 5);
+
+    const generated = await handleJobDescriptionApi(at("generate-outputs"),
+      jsonReq(url("generate-outputs"), "POST", {}), env);
+    const generatedBody = await generated.json();
+    assert.equal(generated.status, 200, JSON.stringify(generatedBody));
+    const done = generatedBody.session;
+    assert.equal(done.status, "complete");
+    assert.equal(done.outputs.summary, OUTPUTS_RESULT.summary);
+    assert.equal(done.outputs.credentials.length, 1);
+  });
+
+  assert.equal(claudeCalls, 2, "the whole flow costs exactly two Claude calls");
+});
+
+test("job_description: the shortlist is what the outputs prompt offers, and nothing wider", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session, step6: { matrix: [], score: 1, recommendation: "Update the existing description." },
+  }));
+
+  let prompt = "";
+  await withFetch(async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.tools[0].name === "submit_outputs") prompt = body.messages[0].content[0].text;
+    return claudeResponse(OUTPUTS_RESULT);
+  }, () => handleJobDescriptionApi(`session/${session.id}/generate-outputs`,
+    jsonReq(`/api/job-description/session/${session.id}/generate-outputs`, "POST", {}), env));
+
+  assert.ok(prompt.includes("Credential shortlist for this role"), "the shortlist reaches the prompt");
+  for (const c of session.credentialShortlist) {
+    assert.ok(prompt.includes(c.name), `${c.name} should be offered`);
+  }
+  // 30 credentials exist; the prompt must not be a catalogue of all of them.
+  assert.ok(session.credentialShortlist.length <= 8);
+  assert.ok(!prompt.includes("OSHA 10-Hour — Construction Industry"),
+    "a construction card has no business on a machining role");
+});
+
+test("job_description: the three downloads are real Word files and agree with each other", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session,
+    step6: { matrix: [], score: 1, recommendation: "Update the existing description." },
+    outputs: { ...OUTPUTS_RESULT, generatedAt: "2026-09-23T10:00:00Z", box: { saved: false } },
+    status: "complete",
+  }));
+
+  const files = {};
+  for (const kind of ["redline", "final", "one-pager"]) {
+    const res = await handleJobDescriptionApi(`session/${session.id}/download/${kind}`,
+      req(`/api/job-description/session/${session.id}/download/${kind}`), env);
+    assert.equal(res.status, 200, kind);
+    assert.equal(res.headers.get("content-type"),
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document", kind);
+    assert.match(res.headers.get("content-disposition"),
+      new RegExp(`attachment; filename="cnc-machining-technician-[a-z-]+\\.docx"`), kind);
+    files[kind] = new Uint8Array(await res.arrayBuffer());
+    // PK\x03\x04 -- a real ZIP, which is what a .docx is.
+    assert.deepEqual([...files[kind].slice(0, 4)], [0x50, 0x4b, 0x03, 0x04], kind);
+  }
+
+  const text = (bytes) => new TextDecoder().decode(bytes);
+  assert.ok(text(files.redline).includes("<w:ins "), "the redline carries tracked insertions");
+  assert.ok(text(files.redline).includes("<w:delText"), "the redline carries tracked deletions");
+  assert.ok(!text(files.final).includes("<w:ins "), "the final version has no revision marks");
+  assert.ok(!text(files.final).includes("Sweep the department"),
+    "a deleted duty must not survive into the clean version");
+  assert.ok(text(files.final).includes("and inspect first articles"),
+    "an inserted phrase must survive into the clean version");
+  assert.ok(text(files["one-pager"]).includes("You run the machines"));
+});
+
+test("job_description: an unknown download and a session with no outputs are refused", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  assert.equal((await handleJobDescriptionApi(`session/${session.id}/download/redline`,
+    req(`/api/job-description/session/${session.id}/download/redline`), env)).status, 409);
+
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session, outputs: { ...OUTPUTS_RESULT, box: { saved: false } },
+  }));
+  assert.equal((await handleJobDescriptionApi(`session/${session.id}/download/everything`,
+    req(`/api/job-description/session/${session.id}/download/everything`), env)).status, 404);
+});
+
+test("job_description: a job title cannot break out of the download filename", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session,
+    outputs: { ...OUTPUTS_RESULT, documentTitle: 'Bad"; rm -rf /\r\nX-Injected: yes', box: { saved: false } },
+  }));
+  const res = await handleJobDescriptionApi(`session/${session.id}/download/final`,
+    req(`/api/job-description/session/${session.id}/download/final`), env);
+  const disposition = res.headers.get("content-disposition");
+  assert.ok(!/["\r\n]/.test(disposition.slice("attachment; filename=".length + 1, -1)),
+    `the filename must carry no quotes or newlines: ${disposition}`);
+  assert.match(disposition, /^attachment; filename="[a-z0-9-]+\.docx"$/);
+});
+
 test("job_description: re-running generate-outputs still saves to Box", async () => {
   // BUG: boxUploadFile() always created a NEW file, so a second run hit Box's 409 name
-  // conflict on all eight outputs -- generated and paid for, but never saved.
-  const env = makeEnv({ job_description_claude_api: "key" });
-  const session = {
-    id: "sess-1", status: "step7", boxSubfolderId: "sub-1",
-    sourceFile: { name: "jd.docx" }, preRead: { ...PRE_READ_RESULT, confirmed: true },
-    step3: { dutyAnswers: {}, driverAnswers: {} }, step4: { requirementAnswers: {} },
-    step5: {}, step6: { matrix: [], score: 1, recommendation: "Update the existing description." },
-  };
-  await env.BOX_KV.put("jobdesc:session:sess-1", JSON.stringify(session));
+  // conflict on every output -- generated and paid for, but never saved.
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session, boxSubfolderId: "sub-1",
+    step6: { matrix: [], score: 1, recommendation: "Update the existing description." },
+  }));
   await env.BOX_KV.put("box:tokens", JSON.stringify({
     access_token: "t", refresh_token: "r", obtained_at: Math.floor(Date.now() / 1000), expires_in: 3600,
   }));
 
-  const outputs = {
-    revisedDescription: "# Revised", redline: [{ section: "s", before: "b", after: "a", reason: "r" }],
-    worksheet: "# Worksheet",
-    comms: { screeningRubric: "a", incumbentUpdate: "b", educationProvidersNote: "c",
-             careerFairOneSheet: "d", apprenticeshipCheckNote: "e" },
-  };
   const existingInBox = new Set();
-
   const run = () => withFetch(async (url, init) => {
-    if (url.includes("api.anthropic.com")) return claudeResponse(outputs);
+    if (url.includes("api.anthropic.com")) return claudeResponse(OUTPUTS_RESULT);
     if (url.includes("/items?")) {
       return okJson({ entries: [...existingInBox].map((name, i) => ({ id: `f${i}`, type: "file", name })) });
     }
@@ -625,12 +850,13 @@ test("job_description: re-running generate-outputs still saves to Box", async ()
       return okJson({ entries: [{ id: "f", name: "x" }] });
     }
     return okJson({});
-  }, () => handleJobDescriptionApi("session/sess-1/generate-outputs",
-      jsonReq("/api/job-description/session/sess-1/generate-outputs", "POST", {}), env));
+  }, () => handleJobDescriptionApi(`session/${session.id}/generate-outputs`,
+      jsonReq(`/api/job-description/session/${session.id}/generate-outputs`, "POST", {}), env));
 
   const first = (await (await run()).json()).session;
   assert.equal(first.outputs.box.saved, true, "first run should save");
-  assert.equal(existingInBox.size, 8, "eight output files");
+  assert.equal(existingInBox.size, 4, "three Word files plus the summary");
+  assert.ok([...existingInBox].some((n) => n.endsWith("-redline.docx")));
 
   const second = (await (await run()).json()).session;
   assert.equal(second.outputs.box.saved, true, "a re-run must upload new VERSIONS, not 409");
@@ -639,38 +865,30 @@ test("job_description: re-running generate-outputs still saves to Box", async ()
 test("job_description: generate-outputs survives a category key outside the known list", async () => {
   // BUG: formatConfirmedInputs() did PART2_CATEGORIES.find(...).label with no guard, so
   // an unexpected key threw -- turning the final, already-paid-for call into a 500.
-  const env = makeEnv({ job_description_claude_api: "key" });
-  const session = {
-    id: "sess-2", status: "step7",
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  await env.BOX_KV.put(`jobdesc:session:${session.id}`, JSON.stringify({
+    ...session,
     preRead: { ...PRE_READ_RESULT, categories: [{ key: "not_a_real_category", extractedText: "text" }] },
-    step3: null, step4: null, step5: null,
     step6: { matrix: [], score: 0, recommendation: "Update the existing description." },
-  };
-  await env.BOX_KV.put("jobdesc:session:sess-2", JSON.stringify(session));
-
-  await withFetch(async () => claudeResponse({
-    revisedDescription: "x", redline: [], worksheet: "y",
-    comms: { screeningRubric: "a", incumbentUpdate: "b", educationProvidersNote: "c",
-             careerFairOneSheet: "d", apprenticeshipCheckNote: "e" },
-  }), async () => {
-    const res = await handleJobDescriptionApi("session/sess-2/generate-outputs",
-      jsonReq("/api/job-description/session/sess-2/generate-outputs", "POST", {}), env);
+  }));
+  await withFetch(async () => claudeResponse(OUTPUTS_RESULT), async () => {
+    const res = await handleJobDescriptionApi(`session/${session.id}/generate-outputs`,
+      jsonReq(`/api/job-description/session/${session.id}/generate-outputs`, "POST", {}), env);
     assert.equal(res.status, 200, await res.text());
   });
 });
 
-test("job_description: generate-outputs refuses to run before Step 6", async () => {
-  const env = makeEnv({ job_description_claude_api: "key" });
-  await env.BOX_KV.put("jobdesc:session:sess-3", JSON.stringify({
-    id: "sess-3", status: "step5", preRead: PRE_READ_RESULT, step6: null,
-  }));
-  const res = await handleJobDescriptionApi("session/sess-3/generate-outputs",
-    jsonReq("/api/job-description/session/sess-3/generate-outputs", "POST", {}), env);
+test("job_description: generate-outputs refuses to run before the final questions", async () => {
+  const env = docxFormEnv();
+  const session = await startSession(env);
+  const res = await handleJobDescriptionApi(`session/${session.id}/generate-outputs`,
+    jsonReq(`/api/job-description/session/${session.id}/generate-outputs`, "POST", {}), env);
   assert.equal(res.status, 409);
 });
 
 test("job_description: only PDF and .docx are accepted", async () => {
-  const env = makeEnv({ job_description_claude_api: "key" });
+  const env = docxFormEnv();
   const form = new FormData();
   form.append("file", new File(["hello"], "jd.txt", { type: "text/plain" }));
   const res = await handleJobDescriptionApi("upload",
@@ -678,29 +896,220 @@ test("job_description: only PDF and .docx are accepted", async () => {
   assert.equal(res.status, 400);
 });
 
-test("job_description: the Step 6 matrix scores from the answers actually given", async () => {
+test("job_description: the decision matrix scores from the answers actually given", async () => {
   const env = makeEnv();
-  await env.BOX_KV.put("jobdesc:session:sess-4", JSON.stringify({
-    id: "sess-4",
+  await env.BOX_KV.put("jobdesc:session:sess-matrix", JSON.stringify({
+    id: "sess-matrix",
     preRead: {
       duties: [{ id: "d1" }, { id: "d2" }, { id: "d3" }],
-      requirements: [{ id: "r1", suggestedCredential: "NIMS" }],
+      requirements: [{ id: "r1", kind: "certification" }],
       onetMatch: { code: "51-4011", title: "A" },
       currentTitleOnetGuess: { code: "51-9999", title: "B" },
       categories: [],
     },
     step3: { dutyAnswers: { d1: { answer: "changed" }, d2: { answer: "no_longer_done" }, d3: { answer: "same" } } },
     step4: { requirementAnswers: { r1: { tier: "must_have" } } },
+    credentialShortlist: [{ name: "NIMS Machining — Milling I (Level I)", family: "NIMS", score: 0.27 }],
   }));
-  const res = await handleJobDescriptionApi("session/sess-4/step6",
-    req("/api/job-description/session/sess-4/step6"), env);
-  const body = await res.json();
+  const body = await (await handleJobDescriptionApi("session/sess-matrix/matrix",
+    req("/api/job-description/session/sess-matrix/matrix"), env)).json();
   const byId = Object.fromEntries(body.matrix.map((m) => [m.id, m.value]));
   assert.equal(byId.duties_changed, true, "2 of 3 duties changed is a majority");
-  assert.equal(byId.distinct_competency, true);
+  assert.equal(byId.distinct_competency, true, "a kept certification plus a close NIMS match");
   assert.equal(byId.different_onet, true);
   assert.equal(body.score, 3);
   assert.match(body.recommendation, /^Create a new title/);
+});
+
+test("job_description: a general pathway alone is not a distinct competency set", async () => {
+  // Part 4 asks whether the role needs "a distinct technical competency set". A generic
+  // pathway (apprenticeship, CTE completion) is not one -- only a specifically named
+  // credential is, so it must not tip the score on its own.
+  const env = makeEnv();
+  await env.BOX_KV.put("jobdesc:session:sess-pathway", JSON.stringify({
+    id: "sess-pathway",
+    preRead: {
+      duties: [{ id: "d1" }], requirements: [{ id: "r1", kind: "certification" }],
+      onetMatch: { code: "51-4011", title: "A" }, currentTitleOnetGuess: { code: "51-4011", title: "A" },
+      categories: [],
+    },
+    step3: { dutyAnswers: {} },
+    step4: { requirementAnswers: { r1: { tier: "must_have" } } },
+    credentialShortlist: [{ name: "Registered Apprenticeship", family: "Pathway", score: 0.4 }],
+  }));
+  const body = await (await handleJobDescriptionApi("session/sess-pathway/matrix",
+    req("/api/job-description/session/sess-pathway/matrix"), env)).json();
+  const byId = Object.fromEntries(body.matrix.map((m) => [m.id, m.value]));
+  assert.equal(byId.distinct_competency, false);
+});
+
+/* ======================================================================== docx.js */
+const docx = await mod("docx.js");
+
+test("docx: output is a ZIP carrying every part Word requires", async () => {
+  const bytes = docx.buildDocx({ blocks: [{ type: "paragraph", runs: [{ text: "Hello" }] }] });
+  assert.deepEqual([...bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+  const text = new TextDecoder().decode(bytes);
+  for (const part of ["[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels",
+                      "word/document.xml", "word/styles.xml", "word/numbering.xml"]) {
+    assert.ok(text.includes(part), `missing part: ${part}`);
+  }
+  // End of central directory, so the archive is terminated properly.
+  assert.ok(text.includes("PK\u0005\u0006"));
+});
+
+test("docx: insertions and deletions become Word revision markup", async () => {
+  const bytes = docx.buildDocx({
+    blocks: [{ type: "paragraph", runs: [
+      { text: "Keeps ", change: "none" },
+      { text: "old ", change: "del" },
+      { text: "new", change: "ins" },
+    ] }],
+    author: "Tester", date: "2026-09-23T10:00:00Z",
+  });
+  const xml = new TextDecoder().decode(bytes);
+  assert.match(xml, /<w:ins w:id="\d+" w:author="Tester" w:date="2026-09-23T10:00:00Z">/);
+  assert.match(xml, /<w:del w:id="\d+" w:author="Tester" w:date="2026-09-23T10:00:00Z">/);
+  // A deletion's text must be <w:delText>, not <w:t>, or Word rejects the revision.
+  assert.ok(xml.includes("<w:delText xml:space=\"preserve\">old </w:delText>"));
+  // Every run keeps its spaces, or inserted text runs into the word before it.
+  assert.ok(xml.includes('<w:t xml:space="preserve">Keeps </w:t>'));
+});
+
+test("docx: cleanCopy accepts the insertions and drops the deletions", async () => {
+  const blocks = [
+    { type: "paragraph", runs: [
+      { text: "Keeps ", change: "none" }, { text: "old ", change: "del" }, { text: "new", change: "ins" },
+    ] },
+    { type: "bullet", runs: [{ text: "Entirely removed", change: "del" }] },
+  ];
+  const clean = docx.cleanCopy(blocks);
+  assert.equal(clean.length, 1, "a block whose every run was deleted disappears");
+  assert.equal(docx.toPlainText(clean), "Keeps new");
+  assert.ok(!clean[0].runs.some((r) => "change" in r), "no revision marks survive into the clean copy");
+});
+
+test("docx: XML metacharacters and control characters cannot corrupt the file", async () => {
+  const bytes = docx.buildDocx({
+    blocks: [{ type: "paragraph", runs: [{ text: 'A & B <tag> "q" \u0007bell' }] }],
+  });
+  const xml = new TextDecoder().decode(bytes);
+  assert.ok(xml.includes("A &amp; B &lt;tag&gt; &quot;q&quot; bell"),
+    "metacharacters escape and the control character is dropped");
+  // Scoped to the text run, not the whole archive: a ZIP's own length and CRC fields
+  // routinely contain bytes that decode as control characters, so searching the whole
+  // file would fail on a correct document.
+  const run = xml.slice(xml.indexOf("<w:t "), xml.indexOf("</w:t>"));
+  assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(run),
+    "a control character inside a run would make Word reject the whole file");
+});
+
+test("docx: the same input always produces the same bytes", async () => {
+  const blocks = [{ type: "paragraph", runs: [{ text: "Stable" }] }];
+  const a = docx.buildDocx({ blocks, date: "2026-09-23T10:00:00Z" });
+  const b = docx.buildDocx({ blocks, date: "2026-09-23T10:00:00Z" });
+  assert.deepEqual([...a], [...b]);
+});
+
+/* ================================================================= credentials.js */
+const credentials = await mod("credentials.js");
+
+const ROLES = {
+  machinist: {
+    title: "CNC Machinist",
+    duties: ["Set up and operate CNC lathes and mills to produce parts to print",
+             "Read blueprints and interpret GD&T callouts",
+             "Inspect first articles using calipers and micrometers"],
+    requirements: ["2 years machining experience"],
+    technology: "Fanuc controls, CMM",
+  },
+  maintenance: {
+    title: "Industrial Maintenance Technician",
+    duties: ["Troubleshoot and repair hydraulic and pneumatic systems",
+             "Perform preventive maintenance on conveyors, pumps, gearboxes and motors",
+             "Diagnose electrical faults using multimeters and schematics"],
+    requirements: ["Associate degree preferred"],
+    technology: "CMMS, PLC fault screens",
+  },
+  welder: {
+    title: "Welder",
+    duties: ["MIG and TIG weld steel and aluminum assemblies to drawing",
+             "Grind and finish welds, inspect for porosity and undercut"],
+    requirements: ["Weld test required"],
+    technology: "Welding power supplies",
+  },
+  entry: {
+    title: "Production Associate",
+    duties: ["Load and unload parts from an automated cell",
+             "Follow lockout tagout procedures and wear required personal protective equipment",
+             "Record production counts and scrap"],
+    requirements: ["High school diploma"],
+    technology: "MES terminal",
+  },
+};
+
+test("credentials: each role's closest credential is the right one", async () => {
+  const best = (role) => credentials.shortlistCredentials(ROLES[role])[0].name;
+  assert.match(best("machinist"), /NIMS Machining/);
+  assert.match(best("maintenance"), /Industrial Technology Maintenance/);
+  assert.match(best("welder"), /Welding Technology/);
+  assert.match(best("entry"), /MSSC CPT/, "the toolkit calls CPT the entry-level baseline");
+});
+
+test("credentials: the shortlist is short, scored and ordered best-first", async () => {
+  const list = credentials.shortlistCredentials(ROLES.machinist, 8);
+  assert.ok(list.length > 0 && list.length <= 8, `got ${list.length}`);
+  assert.ok(list.length < credentials.CREDENTIAL_COUNT,
+    `${credentials.CREDENTIAL_COUNT} credentials exist; the shortlist must narrow them`);
+  for (let i = 1; i < list.length; i++) {
+    assert.ok(list[i - 1].score >= list[i].score, "scores must descend");
+  }
+});
+
+test("credentials: General Industry OSHA outranks the Construction card on a plant role", async () => {
+  // The workbook documents both; the toolkit's reference names General Industry. On raw
+  // term overlap the Construction cards scored higher, which would have had the app
+  // recommending the wrong OSHA card to a manufacturer.
+  const list = credentials.shortlistCredentials(ROLES.entry, 30);
+  const gi = list.findIndex((c) => c.name === "OSHA 10-Hour — General Industry");
+  const construction = list.findIndex((c) => c.name === "OSHA 10-Hour — Construction Industry");
+  assert.ok(gi >= 0, "OSHA General Industry should be a candidate for a role with LOTO and PPE duties");
+  assert.ok(construction === -1 || gi < construction,
+    "General Industry must rank above Construction for a plant floor role");
+});
+
+test("credentials: no single family can monopolise the shortlist", async () => {
+  // NIMS publishes fourteen machining cards, so a machinist's raw top eight was eight
+  // NIMS cards -- the model never saw MSSC, Ivy Tech or a pathway as an option.
+  const list = credentials.shortlistCredentials(ROLES.machinist, 8);
+  const families = new Set(list.map((c) => c.family));
+  assert.ok(families.size >= 2, `expected a spread of families, got ${[...families]}`);
+});
+
+test("credentials: a role with no recognisable vocabulary returns nothing to recommend", async () => {
+  assert.deepEqual(credentials.shortlistCredentials({ title: "", duties: [], requirements: [] }), []);
+  const nonsense = credentials.shortlistCredentials({
+    title: "Zzz", duties: ["Qqqq wwww eeee"], requirements: [],
+  });
+  assert.equal(nonsense.length, 0, "no overlap means no candidates, not a padded list");
+});
+
+test("credentials: the prompt rendering names each candidate and why it matched", async () => {
+  const list = credentials.shortlistCredentials(ROLES.maintenance, 4);
+  const text = credentials.formatShortlist(list);
+  for (const c of list) assert.ok(text.includes(c.name), c.name);
+  assert.ok(text.includes("Signals:"), "each candidate carries what it signals");
+  assert.ok(text.includes("Matched on:"), "and the terms that put it on the list");
+  assert.equal(credentials.formatShortlist([]),
+    "(no credential in the reference matrix matched this role's wording)");
+});
+
+test("credentials: the tokenizer drops noise and keeps the short terms that discriminate", async () => {
+  const tokens = credentials.tokenize("Operate the CNC lathe and perform PPE checks");
+  assert.ok(tokens.includes("cnc"), "a three-letter term on the keep list survives");
+  assert.ok(tokens.includes("lathe"));
+  assert.ok(!tokens.includes("the"), "stopwords are dropped");
+  assert.ok(!tokens.includes("perform"), "workbook boilerplate verbs are dropped");
 });
 
 /* ======================================================================= worker.js */
