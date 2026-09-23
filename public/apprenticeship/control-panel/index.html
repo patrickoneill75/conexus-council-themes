@@ -92,9 +92,10 @@
   <div id="editorView" hidden>
     <div class="card">
       <h3 id="editorTitle">New assessment</h3>
-      <p class="desc">The respondent meets this as a chat. Section and question context is
-        shown to them as it goes; objectives and scoring criteria are private and are what
-        Claude scores against.</p>
+      <p class="desc">The respondent meets this as a chat. Questions are yes/no by default:
+        they tap an answer, it scores itself, and what the chat says next depends on which
+        way they answered. Section and question context is shown to them as it goes;
+        objectives and scoring criteria are private.</p>
       <label for="sName">Assessment name</label>
       <input type="text" id="sName" placeholder="e.g. Employer Readiness Self-Assessment">
       <label for="sIntro">Opening message <span class="hint">(shown first, optional)</span></label>
@@ -371,22 +372,39 @@
   }
 
   function questionHtml(index) {
+    // Order on screen is the order the respondent meets it: the context that sets the
+    // question up, then the question, then what each answer earns in reply.
     return '<div class="question-card" data-question="' + index + '">'
       + '<div class="row"><h5 style="flex:1">Question ' + (index + 1) + "</h5>"
       + '<button type="button" class="small" data-qmove="up">Up</button>'
       + '<button type="button" class="small" data-qmove="down">Down</button>'
       + '<button type="button" class="small danger" data-remove-question="1">Remove</button></div>'
-      + "<label>Question</label><textarea data-f=\"text\"></textarea>"
-      + '<label>Context before the question <span class="hint">\u2014 the teaching half of '
-      + "the chat. Untick the box below for a question that reads better cold: context in "
-      + "front of \u201cDo you have leadership support?\u201d telegraphs the answer.</span></label>"
+      + '<label>Context before the question <span class="hint">\u2014 optional. Shown just '
+      + "before it is asked. Leave it empty to ask cold: context in front of \u201cDo you "
+      + "have leadership support?\u201d telegraphs the answer.</span></label>"
       + '<textarea data-f="context"></textarea>'
-      + '<label style="text-transform:none; letter-spacing:0; font-size:12.5px; font-weight:500;'
-      + ' color:var(--text-primary)"><input type="checkbox" data-f="showPreContext" checked'
-      + ' style="width:auto; margin-right:7px; vertical-align:-2px">Show this before asking</label>'
-      + '<label>Context after they answer <span class="hint">\u2014 shown in reply to what '
-      + "they said. A \u201cno\u201d earns the case for leadership support; a \u201cyes\u201d "
-      + "does not need it.</span></label>"
+      + "<label>Question</label><textarea data-f=\"text\"></textarea>"
+      + '<label>Answer</label>'
+      + '<select data-f="type">'
+      + '<option value="yes_no">Yes / no</option>'
+      + '<option value="open">Open \u2014 they type an answer, Claude scores it</option>'
+      + "</select>"
+      + '<div data-yesno>'
+      + '<label>If they answer yes, show <span class="hint">\u2014 optional. Leave it empty '
+      + "to move straight on.</span></label>"
+      + '<textarea data-f="yesContext"></textarea>'
+      + '<label>If they answer no, show <span class="hint">\u2014 optional. This is where '
+      + "the teaching belongs: they have just told you they don\u2019t have it.</span></label>"
+      + '<textarea data-f="noContext"></textarea>'
+      + "</div>"
+      + '<div data-open>'
+      + '<label>Scoring criteria <span class="hint">\u2014 required for an open question, '
+      + "private. Say what a full-score answer looks like and what a weak one looks like. "
+      + "Without it the same answer scores differently for different people.</span></label>"
+      + '<textarea data-f="criteria"></textarea>'
+      + '<label>Context after they answer <span class="hint">\u2014 optional. An open '
+      + "question has no yes or no to branch on, so this is shown on the score "
+      + "instead.</span></label>"
       + '<textarea data-f="postContext"></textarea>'
       + '<div class="row" style="align-items:flex-start; gap:14px">'
       + '<div style="flex:2 1 210px"><label>Show it</label>'
@@ -399,13 +417,20 @@
       + '<div class="pct-field"><input class="points" type="number" min="1" max="100" step="1"'
       + ' data-f="postContextBelow" value="60"><span class="pct-suffix">%</span></div>'
       + "</div></div>"
-      + '<label>Scoring criteria <span class="hint">— required, private. Say what a full-score '
-      + "answer looks like and what a weak one looks like. Without it the same answer scores "
-      + "differently for different people.</span></label>"
-      + '<textarea data-f="criteria"></textarea>'
-      + '<label>Points available</label>'
-      + '<input class="points" type="number" min="1" max="10" step="1" data-f="maxPoints" value="5">'
+      + "</div>"
+      + '<label>Weight <span class="hint">\u2014 how much this question counts toward the '
+      + "step\u2019s percentage. Leave every question at 1 and the percentage is simply the "
+      + "share answered yes.</span></label>"
+      + '<input class="points" type="number" min="1" max="10" step="1" data-f="maxPoints" value="1">'
       + "</div>";
+  }
+
+  /** Only one of the two answer blocks applies at a time. */
+  function syncQuestionType(questionNode) {
+    var type = questionNode.querySelector('[data-f="type"]').value;
+    questionNode.querySelector("[data-yesno]").hidden = type !== "yes_no";
+    questionNode.querySelector("[data-open]").hidden = type !== "open";
+    syncBelow(questionNode);
   }
 
   function addSection(data) {
@@ -436,14 +461,16 @@
       node.dataset.id = data.id || ""; // see addSection() on why ids round-trip
       node.querySelector('[data-f="text"]').value = data.text || "";
       node.querySelector('[data-f="context"]').value = data.context || "";
-      node.querySelector('[data-f="showPreContext"]').checked = data.showPreContext !== false;
+      node.querySelector('[data-f="type"]').value = data.type || "yes_no";
+      node.querySelector('[data-f="yesContext"]').value = data.yesContext || "";
+      node.querySelector('[data-f="noContext"]').value = data.noContext || "";
       node.querySelector('[data-f="postContext"]').value = data.postContext || "";
       node.querySelector('[data-f="postContextMode"]').value = data.postContextMode || "weak";
       node.querySelector('[data-f="postContextBelow"]').value = data.postContextBelow || 60;
       node.querySelector('[data-f="criteria"]').value = data.criteria || "";
-      node.querySelector('[data-f="maxPoints"]').value = data.maxPoints || 5;
+      node.querySelector('[data-f="maxPoints"]').value = data.maxPoints || 1;
     }
-    syncBelow(node);
+    syncQuestionType(node);
     renumber();
   }
 
@@ -467,9 +494,9 @@
   }
 
   el("sections").addEventListener("change", function (e) {
-    if (e.target && e.target.getAttribute("data-f") === "postContextMode") {
-      syncBelow(e.target.closest(".question-card"));
-    }
+    var field = e.target && e.target.getAttribute("data-f");
+    if (field === "postContextMode") syncBelow(e.target.closest(".question-card"));
+    if (field === "type") syncQuestionType(e.target.closest(".question-card"));
   });
 
   el("sections").addEventListener("click", function (e) {
@@ -518,12 +545,14 @@
               id: question.dataset.id || "",
               text: question.querySelector('[data-f="text"]').value.trim(),
               context: question.querySelector('[data-f="context"]').value.trim(),
-              showPreContext: question.querySelector('[data-f="showPreContext"]').checked,
+              type: question.querySelector('[data-f="type"]').value,
+              yesContext: question.querySelector('[data-f="yesContext"]').value.trim(),
+              noContext: question.querySelector('[data-f="noContext"]').value.trim(),
               postContext: question.querySelector('[data-f="postContext"]').value.trim(),
               postContextMode: question.querySelector('[data-f="postContextMode"]').value,
               postContextBelow: Number(question.querySelector('[data-f="postContextBelow"]').value) || 60,
               criteria: question.querySelector('[data-f="criteria"]').value.trim(),
-              maxPoints: Number(question.querySelector('[data-f="maxPoints"]').value) || 5,
+              maxPoints: Number(question.querySelector('[data-f="maxPoints"]').value) || 1,
             };
           }),
       };
@@ -582,8 +611,10 @@
         var q = section.questions[j];
         if (!q.text) return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
           + " has no question text.", "err");
-        if (!q.criteria) return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
-          + " needs scoring criteria.", "err");
+        if (q.type === "open" && !q.criteria) {
+          return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
+            + " is an open question, so it needs scoring criteria.", "err");
+        }
       }
     }
     var path = editing ? "surveys/" + encodeURIComponent(editing.id) : "surveys";
