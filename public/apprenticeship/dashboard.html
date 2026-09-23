@@ -78,6 +78,18 @@
   }
 
   /**
+   * Somewhere to go and read up on the thing they just said they don't have. The Worker
+   * only ever stores an http or https link (see safeUrl in src/apprenticeship.js), and
+   * the link opens in its own tab so it doesn't take them out of the dashboard.
+   */
+  function resourceHtml(item) {
+    if (!item.resourceUrl || !item.resourceName) return "";
+    return '<div class="todo-resource"><a href="' + esc(item.resourceUrl)
+      + '" target="_blank" rel="noopener noreferrer">Click here to discover '
+      + esc(item.resourceName) + "</a></div>";
+  }
+
+  /**
    * Every to-do item across the step, grouped by the section it came from, behind one
    * collapsed summary. The count is the headline because that is what someone checks when
    * they open the dashboard; the list itself is one click away.
@@ -110,7 +122,8 @@
         html += '<label class="todo-item' + (item.done ? " done" : "") + '">'
           + '<input type="checkbox" data-survey="' + esc(assessment.surveyId) + '"'
           + ' data-item="' + esc(item.id) + '"' + (item.done ? " checked" : "") + ">"
-          + "<span>" + esc(item.text) + "</span></label>";
+          + "<span>" + esc(item.text) + "</span></label>"
+          + resourceHtml(item);
       });
       html += "</div>";
     });

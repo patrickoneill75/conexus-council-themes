@@ -826,10 +826,27 @@ answers count toward that streak — an honest low score can never trigger it.
 
 **What they get at the end.** While the last answer is being scored and written up, a
 progress bar says what is happening rather than a spinner. Then, per section, a **to-do
-list**: 2 to 4 items, each ONE action in twelve words or fewer, starting with a verb. No
-rationale, no praise, no explanation — the item is the task. "Name who signs off apprentice
-hours", not a paragraph about why governance matters. These are a real checklist, not
-advice: they carry over to the dashboard and ticking them off raises the score.
+list**.
+
+**The checklist is exactly the questions they could not answer yes to.** One question, one
+item. Five questions in a section answered yes three times produces two to-dos, and they
+are the other two — nothing is invented, and nothing appears for something they already
+have. Each item is worth precisely what its own question fell short by, so ticking it back
+off restores that and no more.
+
+The wording is the only part a model touches, and only when the admin has not written it:
+it rewrites the question as the action that would answer it yes. *"Does your organization
+understand Indiana and federal labor regulations regarding youth employment in
+manufacturing?"* becomes *"Gain an understanding of Indiana and federal labor regulations
+regarding youth employment in manufacturing."* It does not choose what goes on the list,
+how many there are, or which section they sit in. If every outstanding question has
+admin-written wording, no call is made at all; if the call fails, every item still appears,
+phrased as the question it came from.
+
+**Resources.** Each question can carry a resource name and link. Neither is ever shown in
+the chat — the link appears beside that question's to-do as *"Click here to discover
+‹name›"*. Only `http`/`https` links are stored: this URL ends up in an `href` on a page an
+employer opens, so a `javascript:` link there would run in their session.
 
 Plus a readiness percentage for that step, with a band:
 
