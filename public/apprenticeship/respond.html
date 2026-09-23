@@ -15,6 +15,10 @@
     --text-secondary:#4a5663; --text-muted:#7c8794; --border:#e1e2e9;
     --wash:#f3f5f9; --accent:#325eae; --teal:#108fc2; --amber:#fbae40; --bad:#f26b43;
     --bot-bg:#eef1f7; --user-bg:rgba(50,94,174,.12);
+    /* The one colour outside the brand list. Green carries "nothing to do here" in a way
+       no brand colour does, and the alternative was using teal for both that and the
+       secondary accent. Chosen muted enough to sit beside navy and amber. */
+    --green:#1f8a5b;
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
@@ -51,6 +55,15 @@
   .composer button { font:inherit; font-weight:600; border-radius:10px; border:1px solid var(--accent);
                      cursor:pointer; padding:0 22px; background:var(--accent); color:#fff; }
   .composer button:disabled { opacity:.5; cursor:not-allowed; }
+  /* The wait after the last answer is the longest in the assessment -- scoring plus the
+     written improvement list -- so it gets a bar and a plain description of what is
+     happening, not a "…" that could equally mean the page has hung. */
+  .analyzing { width:100%; max-width:100%; }
+  .an-label { font-weight:650; font-size:14px; }
+  .an-track { height:6px; border-radius:999px; background:#dfe3ec; overflow:hidden; margin:9px 0 7px; }
+  .an-fill { height:100%; width:0; background:var(--accent); border-radius:999px;
+             transition:width .45s ease; }
+  .an-sub { font-size:12.5px; color:var(--text-secondary); }
   .panel { margin:22px; padding:22px; border:1px solid var(--border); border-radius:12px;
            background:var(--surface-1); }
   .panel h2 { margin:0 0 6px; font-size:16px; color:var(--navy); }
@@ -82,6 +95,21 @@
   .sec .fill { height:100%; background:var(--teal); border-radius:999px; }
   .sec ul { margin:0; padding-left:20px; font-size:13.5px; color:var(--text-secondary); }
   .sec li { margin:5px 0; }
+  /* Two columns: what is already fine on the right in green, what to do next on the left
+     in amber. Stacked on a phone, done side by side wherever there is room. */
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+  @media (max-width:660px) { .cols { grid-template-columns:1fr; } }
+  .col { border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .col h4 { margin:0 0 3px; font-size:12px; font-weight:700; letter-spacing:.04em;
+            text-transform:uppercase; }
+  .col .count { font-size:11.5px; color:var(--text-muted); margin:0 0 9px; }
+  .col ul { margin:0; padding-left:18px; font-size:13px; }
+  .col li { margin:5px 0; }
+  .col.todo { border-left:4px solid var(--amber); }
+  .col.todo h4 { color:#8a5c05; }
+  .col.strength { border-left:4px solid var(--green); }
+  .col.strength h4 { color:#146b48; }
+  .col .none { font-size:12.5px; color:var(--text-muted); margin:0; }
   .callout { margin-top:16px; padding:14px 16px; border-radius:10px; font-size:13.5px;
              background:rgba(251,174,64,.14); border:1px solid var(--amber); color:var(--text-primary); }
   .foot { margin-top:18px; font-size:13px; }
@@ -160,6 +188,36 @@
   }
   function addTyping() { return addBubble("typing", "…"); }
 
+  /**
+   * The wait after the final answer, which is scoring plus a written improvement list --
+   * several seconds, not the second or so every other answer takes. It eases toward a
+   * ceiling it never reaches on its own and only fills when the results actually land, so
+   * it never claims to be finished before it is.
+   */
+  function addAnalyzing() {
+    var b = document.createElement("div");
+    b.className = "bubble bot analyzing";
+    b.innerHTML = '<div class="an-label">Analysing your responses\u2026</div>'
+      + '<div class="an-track"><div class="an-fill"></div></div>'
+      + '<div class="an-sub">Scoring each section and writing your improvement list.</div>';
+    el("messages").appendChild(b);
+    scrollToBottom();
+    var fill = b.querySelector(".an-fill");
+    var pct = 0;
+    var timer = setInterval(function () {
+      pct = Math.min(90, pct + Math.max(0.5, (90 - pct) * 0.07));
+      fill.style.width = pct + "%";
+    }, 300);
+    return {
+      remove: function () { clearInterval(timer); b.remove(); },
+      done: function () {
+        clearInterval(timer);
+        fill.style.width = "100%";
+        setTimeout(function () { b.remove(); }, 450);
+      },
+    };
+  }
+
   var session = window.ApprenticeshipSession;
   function api(path, body) {
     return session.api(path, { method: "POST", body: JSON.stringify(body) });
@@ -168,6 +226,7 @@
   /* ---------- chat ---------- */
 
   var currentPrompt = "";
+  var currentProgress = null;
 
   function updateProgress(progress) {
     if (!progress || !progress.total) { el("progressBar").hidden = true; return; }
@@ -185,6 +244,7 @@
   // padding a further beat onto each bubble after it just makes a slow chat slower. The
   // typing indicator is shown only while a request is genuinely in flight.
   function renderStep(step) {
+    currentProgress = step.progress;
     updateProgress(step.progress);
     (step.messages || []).forEach(function (text) {
       // The first message after a section boundary is the section's own name -- given
@@ -207,16 +267,22 @@
     if (!answer) return;
     addBubble("user", answer);
     el("composer").hidden = true;
-    var typing = addTyping();
+    // On the last question this answer triggers the scoring and the written improvement
+    // list, so it gets the bar rather than the same "…" every other answer gets. A
+    // non-responsive answer here is redirected instead, and the bar simply comes away.
+    var isLast = currentProgress && (currentProgress.answered + 1) >= currentProgress.total;
+    var waiting = isLast ? addAnalyzing() : addTyping();
+    // Both a typing bubble and the analysing bar answer to .remove().
+    var clear = function () { waiting.remove(); };
     api("public/answer", { surveyId: surveyId, responseId: responseId, answer: answer })
       .then(function (data) {
-        typing.remove();
+        if (data.done && isLast) waiting.done(); else clear();
         if (data.halted) { el("progressBar").hidden = true; return showHalt(data.message); }
         if (data.done) return showResults(data.results);
         renderStep(data.step);
       })
       .catch(function (e) {
-        typing.remove();
+        clear();
         addBubble("bot", "Sorry, something went wrong (" + e.message + "). Please try "
           + "sending that again.");
         el("composer").hidden = false;
@@ -237,14 +303,15 @@
     el("composer").hidden = true;
     el("progressFill").style.width = "100%";
     el("progressLabel").textContent = "All done!";
-    addBubble("bot", "That's everything — thank you. Here's where your readiness stands.");
+    addBubble("bot", "That's everything \u2014 thank you. Here's where your readiness stands.");
 
     var html = '<div class="panel">'
       + '<div class="band">'
       + '<div class="score">' + esc(results.overall.percent) + "%</div>"
       + '<div class="label">' + esc(results.overall.bandLabel) + "</div>"
-      + '<div class="sub">' + esc(results.overall.display) + " points across "
-      + results.sections.length + " section" + (results.sections.length === 1 ? "" : "s") + "</div>"
+      + '<div class="sub">' + esc(results.surveyName || "") + " \u00b7 "
+      + esc(results.overall.display) + " points across " + results.sections.length
+      + " section" + (results.sections.length === 1 ? "" : "s") + "</div>"
       + "</div>";
 
     if (results.improvementsError) {
@@ -252,16 +319,32 @@
     }
 
     results.sections.forEach(function (section) {
+      var strengths = section.strengths || [];
+      // Improvements are objects once they are a to-do list; a result generated before
+      // that was a plain string, and still has to render.
+      var todos = (section.improvements || []).map(function (item) {
+        return typeof item === "string" ? { text: item } : item;
+      });
       html += '<div class="sec">'
         + '<div class="head"><span class="name">' + esc(section.name) + "</span>"
         + '<span class="num">' + esc(section.display) + "</span></div>"
-        + '<div class="track"><div class="fill" style="width:' + Number(section.percent) + '%"></div></div>';
-      if (section.improvements && section.improvements.length) {
-        html += "<ul>";
-        section.improvements.forEach(function (item) { html += "<li>" + esc(item) + "</li>"; });
-        html += "</ul>";
-      }
-      html += "</div>";
+        + '<div class="track"><div class="fill" style="width:' + Number(section.percent) + '%"></div></div>'
+        + '<div class="cols">'
+        + '<div class="col todo"><h4>To do</h4>'
+        + '<p class="count">' + todos.length + " item" + (todos.length === 1 ? "" : "s")
+        + " \u00b7 ticking these off raises your score</p>"
+        + (todos.length
+            ? "<ul>" + todos.map(function (t) { return "<li>" + esc(t.text) + "</li>"; }).join("") + "</ul>"
+            : '<p class="none">Nothing outstanding here.</p>')
+        + "</div>"
+        + '<div class="col strength"><h4>Already in place</h4>'
+        + '<p class="count">' + strengths.length + " item"
+        + (strengths.length === 1 ? "" : "s") + " \u00b7 no work needed</p>"
+        + (strengths.length
+            ? "<ul>" + strengths.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>"
+            : '<p class="none">Nothing to credit in this section yet.</p>')
+        + "</div>"
+        + "</div></div>";
     });
 
     if (results.contactPrompt) {
@@ -269,9 +352,9 @@
     }
 
     html += '<p class="foot">These results are saved to your account. Your '
-      + '<a href="/apprenticeship/dashboard.html">readiness dashboard</a> shows them '
-      + 'alongside the other assessments in this programme, and combines them once you '
-      + 'have finished all of them.</p>';
+      + '<a href="/apprenticeship/dashboard.html">readiness dashboard</a> keeps the to-do '
+      + 'list above, and ticking items off there raises this score \u2014 which is how you '
+      + 'unlock the next step without sitting this assessment again.</p>';
     html += "</div>";
 
     el("results").hidden = false;

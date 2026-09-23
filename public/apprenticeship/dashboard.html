@@ -8,19 +8,18 @@
 <link rel="stylesheet" href="/apprenticeship/brand.css">
 <script src="/apprenticeship/session.js"></script>
 <style>
-  .wrap { max-width:780px; }
-  .assessment { border:1px solid var(--border); border-radius:10px; padding:16px 18px; margin-top:12px; }
-  .assessment .head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
-  .assessment .name { font-weight:650; color:var(--navy); font-size:14.5px; }
-  .assessment .num { font-weight:700; font-size:15px; color:var(--accent); white-space:nowrap; }
-  .assessment .meta { font-size:12.5px; color:var(--text-muted); margin-top:6px; }
-  .assessment ul { margin:10px 0 0; padding-left:20px; font-size:13px; color:var(--text-secondary); }
-  .assessment li { margin:4px 0; }
+  .wrap { max-width:860px; }
+  .assessment { border:1px solid var(--border); border-radius:12px; padding:18px 20px;
+                margin-top:14px; background:var(--surface-1); }
+  .assessment .name { font-weight:650; color:var(--navy); font-size:15.5px; }
+  .assessment .meta { font-size:12.5px; color:var(--text-muted); margin-top:8px; }
+  .section-block { margin-top:16px; }
+  .section-block .head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .section-block .n { font-weight:650; font-size:13.5px; color:var(--navy); }
+  .section-block .v { font-weight:700; font-size:13.5px; color:var(--accent); white-space:nowrap; }
+  .combined { margin-top:22px; }
   .pending { border-left:4px solid var(--amber); background:rgba(251,174,64,.10);
-             border-radius:10px; padding:14px 16px; font-size:13.5px; margin-bottom:4px; }
-  .sec-line { display:flex; justify-content:space-between; font-size:12.5px; margin-top:8px; }
-  .sec-line .n { color:var(--text-secondary); }
-  .sec-line .v { font-weight:650; color:var(--accent); }
+             border-radius:10px; padding:14px 16px; font-size:13.5px; }
 </style>
 </head>
 <body>
@@ -56,31 +55,90 @@
 
   if (!session.token()) { session.requireSignIn("/apprenticeship/dashboard.html"); return; }
 
+  /* ---------- one section, as two columns ---------- */
+
+  function sectionHtml(assessment, section) {
+    var strengths = section.strengths || [];
+    var todos = section.improvements || [];
+    var html = '<div class="section-block">'
+      + '<div class="head"><span class="n">' + esc(section.name) + "</span>"
+      + '<span class="v">' + esc(section.displayNow) + "</span></div>"
+      + '<div class="track"><div class="fill" style="width:' + Number(section.percentNow) + '%"></div></div>'
+      + '<div class="cols">';
+
+    // Left, amber: the to-do list. Each box is a real checkbox because ticking it is what
+    // moves the score, so it has to be reachable by keyboard and read out as a checkbox.
+    html += '<div class="col todo"><h4>To do</h4><p class="count">'
+      + section.todoDone + " of " + section.todoTotal + " done"
+      + (section.credit ? " · +" + section.credit + " credited" : "")
+      + "</p>";
+    if (todos.length) {
+      todos.forEach(function (item) {
+        html += '<label class="todo-item' + (item.done ? " done" : "") + '">'
+          + '<input type="checkbox" data-survey="' + esc(assessment.surveyId) + '"'
+          + ' data-item="' + esc(item.id) + '"' + (item.done ? " checked" : "") + ">"
+          + "<span>" + esc(item.text) + "</span></label>";
+      });
+    } else {
+      html += '<p class="none">Nothing outstanding here.</p>';
+    }
+    html += "</div>";
+
+    // Right, green: what needs no work.
+    html += '<div class="col strength"><h4>Already in place</h4><p class="count">'
+      + strengths.length + " item" + (strengths.length === 1 ? "" : "s") + " · no work needed</p>"
+      + (strengths.length
+          ? "<ul>" + strengths.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>"
+          : '<p class="none">Nothing to credit in this section yet.</p>')
+      + "</div></div></div>";
+    return html;
+  }
+
+  /* ---------- one step ---------- */
+
   function assessmentHtml(a) {
     var link = "/apprenticeship/respond.html?survey=" + encodeURIComponent(a.surveyId);
-    var html = '<div class="assessment"><div class="head"><span class="name">'
-      + esc(a.surveyName) + "</span>";
+    var html = '<div class="assessment' + (a.locked ? " locked" : "") + '">'
+      + '<div class="step-head"><span class="step-tag">Step ' + a.step + "</span>"
+      + '<span class="name">' + esc(a.surveyName) + "</span></div>";
+
+    if (a.locked) {
+      html += '<div class="lock-note"><b>Locked.</b> Reach ' + esc(a.lockedUntil)
+        + "% on " + esc(a.lockedBy) + " to open this step.</div></div>";
+      return html;
+    }
 
     if (a.status === "complete" && a.overall) {
-      html += '<span class="num">' + esc(a.overall.display) + " · "
-        + esc(a.overall.percent) + "%</span></div>"
-        + '<div class="track"><div class="fill" style="width:' + Number(a.overall.percent) + '%"></div></div>'
-        + '<div class="meta"><span class="pill ' + esc(a.overall.band) + '">'
-        + esc(a.overall.bandLabel) + "</span> · finished "
-        + esc(String(a.submittedAt || "").slice(0, 10))
+      // The readiness percentage belongs to the step, and sits with it -- not as one
+      // number at the top of the page that could be read as applying to everything.
+      html += '<div class="step-score"><span class="pct">' + esc(a.overall.percent) + "%</span>"
+        + '<span class="pill ' + esc(a.overall.band) + '">' + esc(a.overall.bandLabel) + "</span>"
+        + '<span class="of">' + esc(a.overall.display) + " points</span></div>"
+        + '<div class="track"><div class="fill" style="width:' + Number(a.overall.percent) + '%"></div></div>';
+
+      if (a.threshold > 0) {
+        var met = a.overall.percent >= a.threshold;
+        html += '<div class="threshold-note' + (met ? " met" : "") + '">'
+          + (met
+              ? "You have passed the " + esc(a.threshold) + "% needed to open the next step."
+              : "You need " + esc(a.threshold) + "% to open the next step. Tick items off "
+                + "the to-do list below and this rises — you do not have to sit it again.")
+          + "</div>";
+      }
+      if (a.baseOverall && a.baseOverall.percent !== a.overall.percent) {
+        html += '<div class="meta">Scored ' + esc(a.baseOverall.percent)
+          + "% when you answered; " + esc(a.overall.percent) + "% with what you have ticked off since.</div>";
+      }
+      html += '<div class="meta">Finished ' + esc(String(a.submittedAt || "").slice(0, 10))
         + ' · <a class="link" href="' + link + '">Take it again</a></div>';
-      (a.sections || []).forEach(function (section) {
-        html += '<div class="sec-line"><span class="n">' + esc(section.name)
-          + '</span><span class="v">' + esc(section.display) + "</span></div>";
-      });
+      (a.sections || []).forEach(function (section) { html += sectionHtml(a, section); });
     } else if (a.status === "in-progress") {
-      html += '<span class="num" style="color:var(--amber)">In progress</span></div>'
-        + '<div class="meta"><a class="link" href="' + link + '">Pick up where you left off</a></div>';
+      html += '<div class="meta"><a class="link" href="' + link
+        + '">Pick up where you left off</a></div>';
     } else {
-      html += '<span class="num" style="color:var(--text-muted)">Not started</span></div>'
-        + '<div class="meta">' + a.questionCount + " question"
+      html += '<div class="meta">' + a.questionCount + " question"
         + (a.questionCount === 1 ? "" : "s") + ' · <a class="link" href="' + link
-        + '">Start this assessment</a></div>';
+        + '">Start this step</a></div>';
     }
     return html + "</div>";
   }
@@ -88,28 +146,26 @@
   function projectHtml(project) {
     var html = '<div class="card"><h2>' + esc(project.name || "Your assessments") + "</h2>";
     if (project.description) html += '<p class="desc">' + esc(project.description) + "</p>";
+    project.assessments.forEach(function (a) { html += assessmentHtml(a); });
 
+    // The combined figure sits after the steps, not above them: each step has its own
+    // percentage now, and a second number at the top was being read as the one that matters.
+    html += '<div class="combined">';
     if (project.overall) {
       html += '<div class="band"><div class="score">' + esc(project.overall.percent) + "%</div>"
         + '<div class="label">' + esc(project.overall.bandLabel) + "</div>"
-        + '<div class="sub">' + esc(project.overall.display) + " points across "
-        + project.assessments.length + " assessment"
-        + (project.assessments.length === 1 ? "" : "s") + "</div></div>";
+        + '<div class="sub">Combined across all ' + project.assessments.length
+        + " steps · " + esc(project.overall.display) + " points</div></div>";
     } else {
-      // Said plainly rather than shown as a provisional number. A combined readiness
-      // built from one assessment out of three is not this employer's readiness, and a
-      // percentage on screen would be read as one however it were labelled.
       var left = project.assessments.length - project.completedCount;
-      html += '<div class="pending"><b>Your combined readiness isn’t ready yet.</b> '
-        + "Finish the remaining " + left + " assessment" + (left === 1 ? "" : "s")
-        + " below and it will appear here.</div>";
+      html += '<div class="pending"><b>Combined readiness isn’t ready yet.</b> '
+        + "Finish the remaining " + left + " step" + (left === 1 ? "" : "s")
+        + " and it will appear here.</div>";
     }
-
-    project.assessments.forEach(function (a) { html += assessmentHtml(a); });
-    return html + "</div>";
+    return html + "</div></div>";
   }
 
-  session.api("account/dashboard").then(function (data) {
+  function render(data) {
     el("whoami").textContent = data.account.name + " · " + data.account.company;
     if (!data.projects.length) {
       el("subline").textContent = "";
@@ -120,10 +176,35 @@
     }
     var totalDone = data.projects.reduce(function (n, p) { return n + p.completedCount; }, 0);
     var totalAll = data.projects.reduce(function (n, p) { return n + p.assessments.length; }, 0);
-    el("subline").textContent = totalDone + " of " + totalAll + " assessment"
+    el("subline").textContent = totalDone + " of " + totalAll + " step"
       + (totalAll === 1 ? "" : "s") + " complete.";
     el("body").innerHTML = data.projects.map(projectHtml).join("");
-  }).catch(function (e) {
+  }
+
+  // Ticking an item can open the next step, so the server sends the whole dashboard back
+  // and the page redraws from it. The box is disabled meanwhile and restored on failure,
+  // so it never sits ticked next to a score that did not move.
+  el("body").addEventListener("change", function (event) {
+    var box = event.target;
+    if (!box || box.type !== "checkbox" || !box.getAttribute("data-item")) return;
+    var wanted = box.checked;
+    box.disabled = true;
+    session.api("account/todo", {
+      method: "POST",
+      body: JSON.stringify({
+        surveyId: box.getAttribute("data-survey"),
+        itemId: box.getAttribute("data-item"),
+        done: wanted,
+      }),
+    }).then(render).catch(function (e) {
+      if (e && e.message === "Not signed in") return;
+      box.checked = !wanted;
+      box.disabled = false;
+      window.alert(e.message);
+    });
+  });
+
+  session.api("account/dashboard").then(render).catch(function (e) {
     if (e && e.message === "Not signed in") return; // api() is already redirecting
     el("subline").textContent = "";
     el("body").innerHTML = '<div class="card">' + esc(e.message) + "</div>";
