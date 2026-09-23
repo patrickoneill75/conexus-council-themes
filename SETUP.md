@@ -765,10 +765,30 @@ consequences, both deliberate:
    send. Adding one later needs an email-sending secret and two more routes, not a
    different storage model.
 
-**The respondent's experience.** They sign in, then the assessment runs as a chat. Each section leads with its own context, each question leads with
-its own, and the person answers in their own words — nothing is multiple choice, because
+**The respondent's experience.** They sign in, then the assessment runs as a chat. Each
+section leads with its own context, and the person answers in their own words — nothing is multiple choice, because
 the point is to find out what an employer actually has in place rather than what they can
 recognise from a list.
+
+**Where a question's context goes is a per-question setting.** Each question has two
+context boxes and the admin decides which are used:
+
+| Box | What it is for |
+|---|---|
+| **Before the question** | The teaching half of the chat. It can be switched off per question without deleting the text: context in front of *"Do you have leadership support?"* telegraphs the answer the tool is hoping for, and a respondent who reads the case for it first is being led rather than asked. |
+| **After they answer** | Shown in reply to what they said, and normally only when the answer was weak. A "no" earns the case for leadership support — that is the moment it is worth reading, because they have just noticed they don't have it. A "yes" is not made to sit through it. |
+
+The post-answer box has three modes: **when they answer poorly** (the default, with an
+admin-set score threshold), **however they answer**, and **never** — which parks the text
+without showing it rather than making an admin delete what they wrote. On the last
+question it travels with the results, since there is no next question for it to precede.
+
+**Pacing.** Messages that would otherwise land in the same instant are staged, so a
+section's context and the question behind it read as someone talking rather than a wall of
+text. The first bubble is always immediate and nothing delays a reply — an earlier version
+paused before the first bubble too, on top of an API call the respondent had already
+waited through, and it made every answer feel slow. The gap scales with how much there is
+to read.
 
 **When an answer isn't an answer.** Claude reads each answer as it arrives and decides
 two separate things: whether the person engaged with the question at all, and how far
@@ -788,12 +808,11 @@ the assessment with an apology and a note to contact Conexus staff. Only non-res
 answers count toward that streak — an honest low score can never trigger it.
 
 **What they get at the end.** While the last answer is being scored and written up, a
-progress bar says what is happening rather than a spinner. Then, per section, two columns:
-
-- **Already in place** (green) — very short bullets naming what needs no work.
-- **To do** (amber) — 2 to 4 one-line items, each starting with a verb and finishable in
-  a few weeks. These are a real to-do list, not advice: they carry over to the dashboard
-  and ticking them off raises the score.
+progress bar says what is happening rather than a spinner. Then, per section, a **to-do
+list**: 2 to 4 items, each ONE action in twelve words or fewer, starting with a verb. No
+rationale, no praise, no explanation — the item is the task. "Name who signs off apprentice
+hours", not a paragraph about why governance matters. These are a real checklist, not
+advice: they carry over to the dashboard and ticking them off raises the score.
 
 Plus a readiness percentage for that step, with a band:
 
@@ -805,14 +824,14 @@ Plus a readiness percentage for that step, with a band:
 
 **The Apprenticeship Readiness Dashboard** (`/apprenticeship/dashboard.html`) is the
 respondent's own page. Each step carries **its own readiness percentage**, shown with that
-step rather than as one number at the top of the page, along with its two columns and its
-to-do list. The combined figure across every step sits *after* them, and appears **only
+step rather than as one number at the top of the page, along with its to-do list. The combined figure across every step sits *after* them, and appears **only
 once every step in the project is finished** — a combined score built from one step out of
 three is not that employer's readiness, and a percentage on screen reads as one however it
 is labelled.
 
 **Steps unlock on a score the admin sets.** Each assessment has a step number and a
-threshold ("score needed to open the next step", 0 for no gate). Step 2 stays locked, and
+threshold — a **percentage** of that step's total points, not a number of points, so 85
+means 85%. Zero means no gate. Step 2 stays locked, and
 starting it is refused by the Worker rather than merely greyed out, until step 1 is
 finished and has reached its threshold.
 

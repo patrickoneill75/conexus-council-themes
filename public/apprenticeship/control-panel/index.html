@@ -17,6 +17,12 @@
   .question-card h5 { margin:0 0 2px; font-size:12px; color:var(--text-muted);
                       letter-spacing:.04em; text-transform:uppercase; }
   .points { max-width:110px; }
+  /* Both gates are percentages of the points on offer, not raw points. The sign is on the
+     field itself because a bare "85" in a box next to a 5-point question invites reading
+     it as points. */
+  .pct-field { display:flex; align-items:center; gap:7px; }
+  .pct-field input { flex:0 1 110px; }
+  .pct-suffix { font-size:13px; color:var(--text-muted); font-weight:600; }
   .linkbox { display:flex; gap:8px; align-items:center; margin-top:10px; }
   .linkbox input { font-size:12.5px; }
 </style>
@@ -99,14 +105,18 @@
           <input type="number" id="sStep" min="1" step="1" value="1">
         </div>
         <div style="flex:2 1 260px">
-          <label for="sThreshold">Score needed to open the next step
+          <label for="sThreshold">Percentage needed to open the next step
             <span class="hint">— 0 for no gate</span></label>
-          <input type="number" id="sThreshold" min="0" max="100" step="1" value="0">
+          <div class="pct-field">
+            <input type="number" id="sThreshold" min="0" max="100" step="1" value="0">
+            <span class="pct-suffix">%</span>
+          </div>
         </div>
       </div>
-      <p class="desc" style="margin:10px 0 0">A respondent reaches the threshold either by
-        answering well enough first time, or by coming back and ticking items off this
-        step's to-do list — both move the same score.</p>
+      <p class="desc" style="margin:10px 0 0">A percentage of this step's total points, so
+        85 means 85%. A respondent reaches it either by answering well enough first time,
+        or by coming back and ticking items off this step's to-do list — both move the
+        same score.</p>
     </div>
 
     <div id="sections"></div>
@@ -367,9 +377,28 @@
       + '<button type="button" class="small" data-qmove="down">Down</button>'
       + '<button type="button" class="small danger" data-remove-question="1">Remove</button></div>'
       + "<label>Question</label><textarea data-f=\"text\"></textarea>"
-      + '<label>Question context <span class="hint">— shown to the respondent just before '
-      + "this question. This is the teaching half of the chat.</span></label>"
+      + '<label>Context before the question <span class="hint">\u2014 the teaching half of '
+      + "the chat. Untick the box below for a question that reads better cold: context in "
+      + "front of \u201cDo you have leadership support?\u201d telegraphs the answer.</span></label>"
       + '<textarea data-f="context"></textarea>'
+      + '<label style="text-transform:none; letter-spacing:0; font-size:12.5px; font-weight:500;'
+      + ' color:var(--text-primary)"><input type="checkbox" data-f="showPreContext" checked'
+      + ' style="width:auto; margin-right:7px; vertical-align:-2px">Show this before asking</label>'
+      + '<label>Context after they answer <span class="hint">\u2014 shown in reply to what '
+      + "they said. A \u201cno\u201d earns the case for leadership support; a \u201cyes\u201d "
+      + "does not need it.</span></label>"
+      + '<textarea data-f="postContext"></textarea>'
+      + '<div class="row" style="align-items:flex-start; gap:14px">'
+      + '<div style="flex:2 1 210px"><label>Show it</label>'
+      + '<select data-f="postContextMode">'
+      + '<option value="weak">When they answer poorly</option>'
+      + '<option value="always">However they answer</option>'
+      + '<option value="never">Never \u2014 keep the text, don\u2019t show it</option>'
+      + "</select></div>"
+      + '<div style="flex:1 1 150px" data-below><label>Below this percentage</label>'
+      + '<div class="pct-field"><input class="points" type="number" min="1" max="100" step="1"'
+      + ' data-f="postContextBelow" value="60"><span class="pct-suffix">%</span></div>'
+      + "</div></div>"
       + '<label>Scoring criteria <span class="hint">— required, private. Say what a full-score '
       + "answer looks like and what a weak one looks like. Without it the same answer scores "
       + "differently for different people.</span></label>"
@@ -407,10 +436,22 @@
       node.dataset.id = data.id || ""; // see addSection() on why ids round-trip
       node.querySelector('[data-f="text"]').value = data.text || "";
       node.querySelector('[data-f="context"]').value = data.context || "";
+      node.querySelector('[data-f="showPreContext"]').checked = data.showPreContext !== false;
+      node.querySelector('[data-f="postContext"]').value = data.postContext || "";
+      node.querySelector('[data-f="postContextMode"]').value = data.postContextMode || "weak";
+      node.querySelector('[data-f="postContextBelow"]').value = data.postContextBelow || 60;
       node.querySelector('[data-f="criteria"]').value = data.criteria || "";
       node.querySelector('[data-f="maxPoints"]').value = data.maxPoints || 5;
     }
+    syncBelow(node);
     renumber();
+  }
+
+  /** The score threshold only means anything in "weak" mode, so it hides otherwise. */
+  function syncBelow(questionNode) {
+    var mode = questionNode.querySelector('[data-f="postContextMode"]');
+    var below = questionNode.querySelector("[data-below]");
+    if (mode && below) below.hidden = mode.value !== "weak";
   }
 
   // Section and question headings are positional, so every add, remove or move has to
@@ -424,6 +465,12 @@
         });
     });
   }
+
+  el("sections").addEventListener("change", function (e) {
+    if (e.target && e.target.getAttribute("data-f") === "postContextMode") {
+      syncBelow(e.target.closest(".question-card"));
+    }
+  });
 
   el("sections").addEventListener("click", function (e) {
     var button = e.target.closest("button");
@@ -471,6 +518,10 @@
               id: question.dataset.id || "",
               text: question.querySelector('[data-f="text"]').value.trim(),
               context: question.querySelector('[data-f="context"]').value.trim(),
+              showPreContext: question.querySelector('[data-f="showPreContext"]').checked,
+              postContext: question.querySelector('[data-f="postContext"]').value.trim(),
+              postContextMode: question.querySelector('[data-f="postContextMode"]').value,
+              postContextBelow: Number(question.querySelector('[data-f="postContextBelow"]').value) || 60,
               criteria: question.querySelector('[data-f="criteria"]').value.trim(),
               maxPoints: Number(question.querySelector('[data-f="maxPoints"]').value) || 5,
             };
