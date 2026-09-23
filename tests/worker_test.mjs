@@ -1648,8 +1648,12 @@ test("apprenticeship: the dashboard combines a project, and withholds the total 
   const { env, token } = await apprEnv();
   const respondentToken = await respondent(env);
   const first = await makeAssessment(env, token, ONE_SECTION, "One");
+  // A two-step programme, so the combined figure is due once both are done.
+  await appr(`projects/${first.projectId}`,
+    jsonReq(`/api/apprenticeship/projects/${first.projectId}`, "PUT",
+      { name: "Project", stepCount: 2 }, token), env);
   const second = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
-    projectId: first.projectId, name: "Two", sections: ONE_SECTION,
+    projectId: first.projectId, name: "Two", step: 2, sections: ONE_SECTION,
   }, token), env)).json();
 
   const dash = () => appr("account/dashboard", req("/api/apprenticeship/account/dashboard",
@@ -1679,6 +1683,56 @@ test("apprenticeship: the dashboard combines a project, and withholds the total 
   assert.equal(finished.projects[0].complete, true);
   assert.equal(finished.projects[0].overall.display, "9/10", "4 of 5 plus 5 of 5");
   assert.equal(finished.projects[0].overall.bandLabel, "Strong Readiness");
+});
+
+test("apprenticeship: a programme shows a tab for every step, built or not", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  // Only step 1 exists; the project runs to three.
+  const { survey, projectId } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [{ text: "Q1?", context: "", maxPoints: 10 },
+                { text: "Q2?", context: "", maxPoints: 10 }],
+  }], "Step One");
+  const questions = survey.sections[0].questions;
+  await appr(`surveys/${survey.id}`, jsonReq(`/api/apprenticeship/surveys/${survey.id}`, "PUT", {
+    projectId, name: "Step One", step: 1, unlockThreshold: 85,
+    sections: [{ id: survey.sections[0].id, name: "S", objective: "o", context: "",
+      questions: questions.map((q) => ({ id: q.id, text: q.text, maxPoints: 10 })) }],
+  }, token), env);
+
+  // One yes and one no: 10 of 20, well short of the 85% gate.
+  const started = await startResponse(env, survey.id);
+  let items = [];
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({}) : improvementsFor(body)), async () => {
+    await postAnswer(env, survey.id, started.responseId, "yes");
+    items = (await (await postAnswer(env, survey.id, started.responseId, "no")).json())
+      .results.sections[0].improvements;
+  });
+
+  const dash = () => appr("account/dashboard", req("/api/apprenticeship/account/dashboard",
+    { headers: { authorization: `Bearer ${respondentToken}` } }), env).then((r) => r.json());
+
+  const before = (await dash()).projects[0];
+  assert.equal(before.assessments.length, 3, "three steps, so three tabs");
+  assert.deepEqual(before.assessments.map((a) => a.step), [1, 2, 3]);
+  assert.deepEqual(before.assessments.map((a) => Boolean(a.placeholder)), [false, true, true]);
+  assert.equal(before.assessments[1].locked, true, "50% is short of the 85% gate on step one");
+  assert.equal(before.assessments[2].locked, true);
+  assert.equal(before.overall, null,
+    "a combined score must not appear while two of the three steps do not exist yet");
+
+  // Ticking the outstanding item closes the shortfall, which opens step two -- and only
+  // step two, because step three sits behind a step nobody has built.
+  for (const item of items) {
+    await appr("account/todo", jsonReq("/api/apprenticeship/account/todo", "POST",
+      { surveyId: survey.id, itemId: item.id, done: true }, respondentToken), env);
+  }
+  const after = (await dash()).projects[0];
+  assert.equal(after.assessments[1].locked, false, "step two opens");
+  assert.equal(after.assessments[2].locked, true,
+    "step three stays shut behind a step that does not exist yet");
 });
 
 test("apprenticeship: signing up claims the assessments that person finished before accounts existed", async () => {
