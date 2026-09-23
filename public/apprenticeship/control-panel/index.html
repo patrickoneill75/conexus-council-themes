@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apprenticeship Readiness Toolbox — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/apprenticeship/brand.css">
+<style>
+  .section-card { border:1px solid var(--border); border-radius:10px; padding:16px;
+                  margin-bottom:14px; background:var(--wash); }
+  .section-card > .row.title { margin-bottom:6px; }
+  .section-card h4 { margin:0; font-size:13px; color:var(--navy); letter-spacing:.02em;
+                     text-transform:uppercase; }
+  .question-card { border:1px solid var(--border); border-radius:9px; padding:14px;
+                   margin-top:12px; background:var(--surface-1); }
+  .question-card h5 { margin:0 0 2px; font-size:12px; color:var(--text-muted);
+                      letter-spacing:.04em; text-transform:uppercase; }
+  .points { max-width:110px; }
+  .linkbox { display:flex; gap:8px; align-items:center; margin-top:10px; }
+  .linkbox input { font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <span id="whoami"></span>
+    <a class="link" href="/admin/index.html">All apps</a>
+    <button type="button" class="link" id="signOutBtn">Sign out</button>
+  </div>
+
+  <header>
+    <div class="title-block">
+      <h1>Apprenticeship Readiness Toolbox</h1>
+      <p class="sub" id="crumb">Projects hold the self-assessments a cohort works through.</p>
+    </div>
+    <a class="btn" href="/apprenticeship/control-panel/index.html" id="backBtn" hidden>Back to projects</a>
+  </header>
+
+  <!-- ============ projects ============ -->
+  <div id="projectsView">
+    <div class="card">
+      <h3>Projects</h3>
+      <p class="desc">A project is one programme of self-assessments. Everything a
+        respondent completes inside a project rolls up into a single readiness dashboard
+        for them.</p>
+      <div id="projectList"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h3>New project</h3>
+      <label for="pName">Name</label>
+      <input type="text" id="pName" placeholder="e.g. 2026 Apprenticeship Readiness">
+      <label for="pDesc">Description <span class="hint">(internal, optional)</span></label>
+      <textarea id="pDesc"></textarea>
+      <div class="row" style="margin-top:14px"><button type="button" class="primary" id="pCreate">Create project</button></div>
+      <div class="msg" id="pMsg" hidden></div>
+    </div>
+  </div>
+
+  <!-- ============ one project: its assessments ============ -->
+  <div id="projectView" hidden>
+    <div class="card">
+      <div class="row"><h3 id="projectName" style="flex:1"></h3>
+        <button type="button" class="small" id="editProjectBtn">Rename</button>
+        <button type="button" class="small danger" id="deleteProjectBtn">Delete</button></div>
+      <p class="desc" id="projectDesc"></p>
+      <div id="surveyList"><div class="empty">Loading…</div></div>
+      <div class="row" style="margin-top:16px">
+        <button type="button" class="primary" id="newSurveyBtn">New assessment</button>
+      </div>
+      <div class="msg" id="projMsg" hidden></div>
+    </div>
+  </div>
+
+  <!-- ============ assessment editor ============ -->
+  <div id="editorView" hidden>
+    <div class="card">
+      <h3 id="editorTitle">New assessment</h3>
+      <p class="desc">The respondent meets this as a chat. Section and question context is
+        shown to them as it goes; objectives and scoring criteria are private and are what
+        Claude scores against.</p>
+      <label for="sName">Assessment name</label>
+      <input type="text" id="sName" placeholder="e.g. Employer Readiness Self-Assessment">
+      <label for="sIntro">Opening message <span class="hint">(shown first, optional)</span></label>
+      <textarea id="sIntro" placeholder="One or two sentences setting up what this covers."></textarea>
+    </div>
+
+    <div id="sections"></div>
+
+    <div class="row" style="margin-bottom:18px">
+      <button type="button" id="addSectionBtn">Add section</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button type="button" class="primary" id="saveSurveyBtn">Save assessment</button>
+        <button type="button" class="ghost" id="cancelEditBtn">Cancel</button>
+        <span class="spacer"></span>
+        <button type="button" class="small danger" id="deleteSurveyBtn" hidden>Delete assessment</button>
+      </div>
+      <div class="msg" id="sMsg" hidden></div>
+      <div id="shareBox" hidden>
+        <label>Respondent link</label>
+        <div class="linkbox">
+          <input type="text" id="shareLink" readonly>
+          <button type="button" class="small" id="copyLinkBtn">Copy</button>
+          <a class="btn" id="responsesLink" href="#">Responses</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
+  if (!token) { window.location.href = "/admin/login.html"; return; }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function signOut() {
+    try { sessionStorage.removeItem("beta-token"); } catch (e) {}
+    window.location.href = "/admin/login.html";
+  }
+  el("signOutBtn").addEventListener("click", signOut);
+
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign(
+      { "content-type": "application/json", authorization: "Bearer " + token },
+      options.headers || {});
+    return fetch("/api/apprenticeship/" + path, options).then(function (r) {
+      if (r.status === 401) { signOut(); throw new Error("Not signed in"); }
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+        return body;
+      });
+    });
+  }
+  function say(id, text, kind) {
+    el(id).hidden = false;
+    el(id).className = "msg " + (kind || "ok");
+    el(id).textContent = text;
+  }
+
+  fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
+    .then(function (r) { if (!r.ok) throw new Error("no"); return r.json(); })
+    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .catch(signOut);
+
+  /* ---------- view switching. The project id and assessment id live in the URL hash so
+     a control panel page can be bookmarked and reloaded without losing its place. ---- */
+
+  var currentProject = null;
+  var editing = null; // the survey being edited, or null for a new one
+
+  function show(view) {
+    ["projectsView", "projectView", "editorView"].forEach(function (id) {
+      el(id).hidden = (id !== view);
+    });
+    el("backBtn").hidden = (view === "projectsView");
+  }
+
+  function route() {
+    var hash = window.location.hash.replace(/^#/, "");
+    var parts = hash.split("/").filter(Boolean);
+    if (parts[0] === "project" && parts[1]) {
+      if (parts[2] === "new") return openEditor(parts[1], null);
+      if (parts[2] === "survey" && parts[3]) return loadSurveyForEdit(parts[1], parts[3]);
+      return openProject(parts[1]);
+    }
+    loadProjects();
+  }
+  window.addEventListener("hashchange", route);
+
+  /* ---------- projects ---------- */
+
+  function loadProjects() {
+    show("projectsView");
+    el("crumb").textContent = "Projects hold the self-assessments a cohort works through.";
+    api("projects").then(function (data) {
+      if (!data.projects.length) {
+        el("projectList").innerHTML = '<div class="empty">No projects yet.</div>';
+        return;
+      }
+      var html = "<table><thead><tr><th>Project</th><th>Assessments</th><th>Created</th></tr></thead><tbody>";
+      data.projects.forEach(function (p) {
+        html += "<tr><td><a class=\"link\" href=\"#project/" + esc(p.id) + "\">"
+          + esc(p.name) + "</a>"
+          + (p.description ? '<div style="color:var(--text-muted);font-size:12px">'
+              + esc(p.description) + "</div>" : "")
+          + "</td><td>" + p.surveyCount + "</td><td>"
+          + esc(String(p.createdAt || "").slice(0, 10)) + "</td></tr>";
+      });
+      el("projectList").innerHTML = html + "</tbody></table>";
+    }).catch(function (e) {
+      el("projectList").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+    });
+  }
+
+  el("pCreate").addEventListener("click", function () {
+    var name = el("pName").value.trim();
+    if (!name) return say("pMsg", "Give the project a name.", "err");
+    api("projects", { method: "POST", body: JSON.stringify({
+      name: name, description: el("pDesc").value.trim() }) })
+      .then(function (data) {
+        el("pName").value = ""; el("pDesc").value = "";
+        el("pMsg").hidden = true;
+        window.location.hash = "project/" + data.project.id;
+      })
+      .catch(function (e) { say("pMsg", e.message, "err"); });
+  });
+
+  function openProject(projectId) {
+    show("projectView");
+    el("surveyList").innerHTML = '<div class="empty">Loading…</div>';
+    api("projects").then(function (data) {
+      currentProject = data.projects.filter(function (p) { return p.id === projectId; })[0];
+      if (!currentProject) { window.location.hash = ""; return; }
+      el("projectName").textContent = currentProject.name;
+      el("projectDesc").textContent = currentProject.description || "";
+      el("crumb").textContent = "Assessments in this project.";
+      return api("surveys?projectId=" + encodeURIComponent(projectId));
+    }).then(function (data) {
+      if (!data) return;
+      if (!data.surveys.length) {
+        el("surveyList").innerHTML = '<div class="empty">No assessments in this project yet.</div>';
+        return;
+      }
+      var html = "<table><thead><tr><th>Assessment</th><th>Sections</th><th>Questions</th>"
+        + "<th>Responses</th><th></th></tr></thead><tbody>";
+      data.surveys.forEach(function (s) {
+        html += "<tr><td><a class=\"link\" href=\"#project/" + esc(projectId) + "/survey/"
+          + esc(s.id) + "\">" + esc(s.name) + "</a></td><td>" + s.sectionCount + "</td><td>"
+          + s.questionCount + "</td><td>" + s.responseCount + "</td>"
+          + "<td><a class=\"link\" href=\"/apprenticeship/control-panel/responses.html?survey="
+          + encodeURIComponent(s.id) + "\">Responses &amp; issues</a></td></tr>";
+      });
+      el("surveyList").innerHTML = html + "</tbody></table>";
+    }).catch(function (e) { say("projMsg", e.message, "err"); });
+  }
+
+  el("editProjectBtn").addEventListener("click", function () {
+    if (!currentProject) return;
+    var name = window.prompt("Project name", currentProject.name);
+    if (name === null) return;
+    api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
+      body: JSON.stringify({ name: name, description: currentProject.description || "" }) })
+      .then(function () { openProject(currentProject.id); })
+      .catch(function (e) { say("projMsg", e.message, "err"); });
+  });
+
+  el("deleteProjectBtn").addEventListener("click", function () {
+    if (!currentProject) return;
+    if (!window.confirm("Delete the project “" + currentProject.name + "”?")) return;
+    api("projects/" + encodeURIComponent(currentProject.id), { method: "DELETE" })
+      .then(function () { window.location.hash = ""; loadProjects(); })
+      .catch(function (e) { say("projMsg", e.message, "err"); });
+  });
+
+  el("newSurveyBtn").addEventListener("click", function () {
+    if (currentProject) window.location.hash = "project/" + currentProject.id + "/new";
+  });
+
+  /* ---------- assessment editor ---------- */
+
+  function sectionHtml(index) {
+    return '<div class="section-card" data-section="' + index + '">'
+      + '<div class="row title"><h4 style="flex:1">Section ' + (index + 1) + "</h4>"
+      + '<button type="button" class="small" data-move="up">Move up</button>'
+      + '<button type="button" class="small" data-move="down">Move down</button>'
+      + '<button type="button" class="small danger" data-remove-section="1">Remove</button></div>'
+      + "<label>Section name</label><input type=\"text\" data-f=\"name\" placeholder=\"e.g. Organizational Commitment\">"
+      + '<label>Objective <span class="hint">— private. What this section is trying to establish. '
+      + "Claude scores and writes advice against it; respondents never see it.</span></label>"
+      + '<textarea data-f="objective"></textarea>'
+      + '<label>Section context <span class="hint">— shown to the respondent before the first '
+      + "question in this section.</span></label>"
+      + '<textarea data-f="context"></textarea>'
+      + '<div data-questions></div>'
+      + '<div class="row" style="margin-top:12px"><button type="button" data-add-question="1">Add question</button></div>'
+      + "</div>";
+  }
+
+  function questionHtml(index) {
+    return '<div class="question-card" data-question="' + index + '">'
+      + '<div class="row"><h5 style="flex:1">Question ' + (index + 1) + "</h5>"
+      + '<button type="button" class="small" data-qmove="up">Up</button>'
+      + '<button type="button" class="small" data-qmove="down">Down</button>'
+      + '<button type="button" class="small danger" data-remove-question="1">Remove</button></div>'
+      + "<label>Question</label><textarea data-f=\"text\"></textarea>"
+      + '<label>Question context <span class="hint">— shown to the respondent just before '
+      + "this question. This is the teaching half of the chat.</span></label>"
+      + '<textarea data-f="context"></textarea>'
+      + '<label>Scoring criteria <span class="hint">— required, private. Say what a full-score '
+      + "answer looks like and what a weak one looks like. Without it the same answer scores "
+      + "differently for different people.</span></label>"
+      + '<textarea data-f="criteria"></textarea>'
+      + '<label>Points available</label>'
+      + '<input class="points" type="number" min="1" max="10" step="1" data-f="maxPoints" value="5">'
+      + "</div>";
+  }
+
+  function addSection(data) {
+    var host = el("sections");
+    var index = host.children.length;
+    host.insertAdjacentHTML("beforeend", sectionHtml(index));
+    var node = host.lastElementChild;
+    if (data) {
+      // The saved id is carried back on every edit. Without it the Worker mints fresh
+      // ids on save, which would orphan every answer already collected against the old
+      // ones -- the responses would still exist but no longer match any question.
+      node.dataset.id = data.id || "";
+      node.querySelector('[data-f="name"]').value = data.name || "";
+      node.querySelector('[data-f="objective"]').value = data.objective || "";
+      node.querySelector('[data-f="context"]').value = data.context || "";
+      (data.questions || []).forEach(function (q) { addQuestion(node, q); });
+    } else {
+      addQuestion(node, null);
+    }
+    renumber();
+  }
+
+  function addQuestion(sectionNode, data) {
+    var host = sectionNode.querySelector("[data-questions]");
+    host.insertAdjacentHTML("beforeend", questionHtml(host.children.length));
+    var node = host.lastElementChild;
+    if (data) {
+      node.dataset.id = data.id || ""; // see addSection() on why ids round-trip
+      node.querySelector('[data-f="text"]').value = data.text || "";
+      node.querySelector('[data-f="context"]').value = data.context || "";
+      node.querySelector('[data-f="criteria"]').value = data.criteria || "";
+      node.querySelector('[data-f="maxPoints"]').value = data.maxPoints || 5;
+    }
+    renumber();
+  }
+
+  // Section and question headings are positional, so every add, remove or move has to
+  // rewrite them -- otherwise "Section 3" stays on a card that is now second.
+  function renumber() {
+    Array.prototype.forEach.call(el("sections").children, function (section, i) {
+      section.querySelector("h4").textContent = "Section " + (i + 1);
+      Array.prototype.forEach.call(section.querySelector("[data-questions]").children,
+        function (question, j) {
+          question.querySelector("h5").textContent = "Question " + (j + 1);
+        });
+    });
+  }
+
+  el("sections").addEventListener("click", function (e) {
+    var button = e.target.closest("button");
+    if (!button) return;
+    var section = button.closest(".section-card");
+    var question = button.closest(".question-card");
+    if (button.hasAttribute("data-add-question")) { addQuestion(section, null); return; }
+    if (button.hasAttribute("data-remove-section")) { section.remove(); renumber(); return; }
+    if (button.hasAttribute("data-remove-question")) {
+      if (section.querySelector("[data-questions]").children.length <= 1) {
+        return say("sMsg", "A section needs at least one question.", "err");
+      }
+      question.remove(); renumber(); return;
+    }
+    if (button.hasAttribute("data-move")) {
+      var dir = button.getAttribute("data-move");
+      var sibling = dir === "up" ? section.previousElementSibling : section.nextElementSibling;
+      if (!sibling) return;
+      if (dir === "up") section.parentNode.insertBefore(section, sibling);
+      else section.parentNode.insertBefore(sibling, section);
+      renumber(); return;
+    }
+    if (button.hasAttribute("data-qmove")) {
+      var qdir = button.getAttribute("data-qmove");
+      var qsibling = qdir === "up" ? question.previousElementSibling : question.nextElementSibling;
+      if (!qsibling) return;
+      if (qdir === "up") question.parentNode.insertBefore(question, qsibling);
+      else question.parentNode.insertBefore(qsibling, question);
+      renumber();
+    }
+  });
+
+  el("addSectionBtn").addEventListener("click", function () { addSection(null); });
+
+  function collectSections() {
+    return Array.prototype.map.call(el("sections").children, function (section) {
+      return {
+        id: section.dataset.id || "",
+        name: section.querySelector('[data-f="name"]').value.trim(),
+        objective: section.querySelector('[data-f="objective"]').value.trim(),
+        context: section.querySelector('[data-f="context"]').value.trim(),
+        questions: Array.prototype.map.call(
+          section.querySelector("[data-questions]").children, function (question) {
+            return {
+              id: question.dataset.id || "",
+              text: question.querySelector('[data-f="text"]').value.trim(),
+              context: question.querySelector('[data-f="context"]').value.trim(),
+              criteria: question.querySelector('[data-f="criteria"]').value.trim(),
+              maxPoints: Number(question.querySelector('[data-f="maxPoints"]').value) || 5,
+            };
+          }),
+      };
+    });
+  }
+
+  function openEditor(projectId, survey) {
+    show("editorView");
+    editing = survey;
+    el("crumb").textContent = survey ? "Editing an assessment." : "New assessment.";
+    el("editorTitle").textContent = survey ? "Edit assessment" : "New assessment";
+    el("sName").value = survey ? survey.name : "";
+    el("sIntro").value = survey ? (survey.intro || "") : "";
+    el("sections").innerHTML = "";
+    el("sMsg").hidden = true;
+    el("deleteSurveyBtn").hidden = !survey;
+    el("shareBox").hidden = !survey;
+    if (survey) {
+      survey.sections.forEach(function (s) { addSection(s); });
+      var link = window.location.origin + "/apprenticeship/respond.html?survey="
+        + encodeURIComponent(survey.id);
+      el("shareLink").value = link;
+      el("responsesLink").href = "/apprenticeship/control-panel/responses.html?survey="
+        + encodeURIComponent(survey.id);
+    } else {
+      addSection(null);
+    }
+    el("editorView").dataset.projectId = projectId;
+  }
+
+  function loadSurveyForEdit(projectId, surveyId) {
+    api("surveys/" + encodeURIComponent(surveyId))
+      .then(function (survey) { openEditor(projectId, survey); })
+      .catch(function () { window.location.hash = "project/" + projectId; });
+  }
+
+  el("saveSurveyBtn").addEventListener("click", function () {
+    var projectId = el("editorView").dataset.projectId;
+    var payload = {
+      projectId: projectId,
+      name: el("sName").value.trim(),
+      intro: el("sIntro").value.trim(),
+      sections: collectSections(),
+    };
+    if (!payload.name) return say("sMsg", "Give the assessment a name.", "err");
+    // Checked here as well as in the Worker so the admin is told WHICH question is
+    // missing its criteria rather than getting one flat rejection for the whole form.
+    for (var i = 0; i < payload.sections.length; i++) {
+      var section = payload.sections[i];
+      if (!section.name) return say("sMsg", "Section " + (i + 1) + " needs a name.", "err");
+      for (var j = 0; j < section.questions.length; j++) {
+        var q = section.questions[j];
+        if (!q.text) return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
+          + " has no question text.", "err");
+        if (!q.criteria) return say("sMsg", "Section " + (i + 1) + ", question " + (j + 1)
+          + " needs scoring criteria.", "err");
+      }
+    }
+    var path = editing ? "surveys/" + encodeURIComponent(editing.id) : "surveys";
+    api(path, { method: editing ? "PUT" : "POST", body: JSON.stringify(payload) })
+      .then(function (data) {
+        say("sMsg", "Saved.", "ok");
+        window.location.hash = "project/" + projectId + "/survey/" + data.survey.id;
+      })
+      .catch(function (e) { say("sMsg", e.message, "err"); });
+  });
+
+  el("cancelEditBtn").addEventListener("click", function () {
+    window.location.hash = "project/" + el("editorView").dataset.projectId;
+  });
+
+  el("deleteSurveyBtn").addEventListener("click", function () {
+    if (!editing) return;
+    if (!window.confirm("Delete “" + editing.name + "”?")) return;
+    api("surveys/" + encodeURIComponent(editing.id), { method: "DELETE" })
+      .then(function () { window.location.hash = "project/" + el("editorView").dataset.projectId; })
+      .catch(function (e) { say("sMsg", e.message, "err"); });
+  });
+
+  el("copyLinkBtn").addEventListener("click", function () {
+    el("shareLink").select();
+    try { document.execCommand("copy"); say("sMsg", "Link copied.", "ok"); }
+    catch (e) { say("sMsg", "Copy that link manually.", "err"); }
+  });
+
+  route();
+})();
+</script>
+</body>
+</html>

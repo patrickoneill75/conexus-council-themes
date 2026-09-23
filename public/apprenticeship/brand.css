@@ -1,0 +1,84 @@
+/**
+ * Shared styling for the Apprenticeship Readiness Toolbox's admin and dashboard pages.
+ *
+ * Every other mini app in this repo carries its palette inline in each page. Three of
+ * this app's four pages are long enough that inlining it a third time would be forty
+ * duplicated lines with three chances to drift, so the shared parts live here instead.
+ * The respondent chat page (respond.html) deliberately stays self-contained -- it is the
+ * one page a stranger loads cold, and it should not wait on a second request to render.
+ *
+ * Colours are the Conexus Indiana brand: navy for titles and headers, brand blue for
+ * links and accents, teal as the secondary, amber used sparingly as the one standout.
+ * The variable names match what every other control panel in this repo uses, so
+ * /claude-confirm.js themes itself correctly here with no extra setup.
+ */
+:root {
+  color-scheme: light;
+  --page:#f3f5f9; --surface-1:#ffffff; --navy:#07214e; --text-primary:#16202b;
+  --text-secondary:#4a5663; --text-muted:#7c8794; --border:#e1e2e9; --grid:#e1e2e9;
+  --wash:#f3f5f9; --accent:#325eae; --teal:#108fc2; --sky:#00b0f0; --amber:#fbae40;
+  --good:#108fc2; --warn:#fbae40; --bad:#f26b43;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--text-primary);
+       font:14px/1.55 Aptos,"Segoe UI",Arial,sans-serif; }
+.wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
+.topbar { display:flex; align-items:center; justify-content:flex-end; gap:16px;
+          font-size:12.5px; color:var(--text-secondary); margin-bottom:16px; }
+header { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+header .title-block { flex:1 1 240px; min-width:160px; }
+h1 { font-size:20px; font-weight:700; margin:0; color:var(--navy); letter-spacing:-0.01em; }
+h2 { font-size:16px; font-weight:650; margin:0 0 6px; color:var(--navy); }
+.sub { color:var(--text-secondary); font-size:13px; margin:5px 0 0; }
+a.link, button.link { color:var(--accent); background:none; border:0; padding:0;
+                      font:inherit; cursor:pointer; text-decoration:none; }
+a.link:hover, button.link:hover { text-decoration:underline; }
+a.btn { display:inline-flex; align-items:center; font:inherit; border-radius:8px;
+        border:1px solid var(--border); cursor:pointer; padding:9px 16px;
+        background:var(--surface-1); color:var(--text-primary); text-decoration:none;
+        white-space:nowrap; }
+a.btn:hover { background:var(--wash); }
+.card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+        padding:20px; margin-bottom:16px; }
+.card h3 { margin:0 0 4px; font-size:15px; color:var(--navy); }
+.card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
+label { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+        color:var(--text-muted); font-weight:700; margin:12px 0 6px; }
+label .hint { text-transform:none; letter-spacing:0; font-weight:500; color:var(--text-muted); }
+input[type=text], input[type=number], input[type=email], textarea, select {
+  width:100%; font:inherit; padding:9px 11px; border-radius:8px;
+  border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+textarea { resize:vertical; min-height:56px; }
+button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
+         padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
+button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+button.ghost { background:transparent; }
+button.small { padding:6px 11px; font-size:12.5px; }
+button.danger { color:var(--bad); border-color:var(--bad); background:transparent; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.spacer { flex:1; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { text-align:left; padding:9px 10px; vertical-align:top; }
+th { font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:var(--text-muted);
+     font-weight:700; border-bottom:1px solid var(--border); }
+td { border-bottom:1px solid var(--border); }
+tr:last-child td { border-bottom:0; }
+.pill { display:inline-block; font-size:11px; font-weight:700; padding:3px 9px;
+        border-radius:999px; white-space:nowrap; }
+.pill.strong { background:rgba(16,143,194,.14); color:#0b6e95; }
+.pill.moderate { background:rgba(251,174,64,.18); color:#8a5c05; }
+.pill.build { background:rgba(242,107,67,.15); color:#a63d1c; }
+.pill.nodata { background:var(--wash); color:var(--text-muted); }
+.msg { font-size:13px; margin-top:12px; }
+.msg.err { color:var(--bad); }
+.msg.ok { color:var(--accent); }
+.empty { color:var(--text-muted); font-size:13px; padding:10px 0; }
+.band { border-radius:12px; padding:20px 22px; color:#fff; background:var(--navy);
+        border-left:6px solid var(--amber); }
+.band .score { font-size:32px; font-weight:700; line-height:1.1; }
+.band .label { font-size:15px; font-weight:650; margin-top:4px; }
+.band .sub { font-size:12.5px; color:rgba(255,255,255,.76); margin-top:6px; }
+.track { height:6px; border-radius:999px; background:#e7eaf1; margin:9px 0; overflow:hidden; }
+.track .fill { height:100%; background:var(--teal); border-radius:999px; }
+[hidden] { display:none !important; }

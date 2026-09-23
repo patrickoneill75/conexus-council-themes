@@ -1199,6 +1199,311 @@ test("stars_logic: currency and percent match Python's banker's rounding", async
   assert.equal(logic.currency(1.5), "$2");
 });
 
+
+/* ============================================================== apprenticeship */
+const { handleApprenticeshipApi } = await mod("apprenticeship.js");
+
+const appr = (route, request, env) => handleApprenticeshipApi(route, request, env);
+
+/** A signed-in env with this app's Claude key present. */
+async function apprEnv() {
+  const { env, token } = await signedInEnv();
+  env.apprenticeship_claude_api = "test-key";
+  return { env, token };
+}
+
+/**
+ * Stub the Anthropic API. `handler(toolName, requestBody)` returns the tool input to
+ * hand back, so a test can decide per call what the evaluator "said".
+ */
+function claudeStub(handler) {
+  return (url, init) => {
+    assert.ok(url.startsWith("https://api.anthropic.com/"), `unexpected fetch to ${url}`);
+    const body = JSON.parse(init.body);
+    const tool = body.tools[0];
+    return okJson({ content: [{ type: "tool_use", name: tool.name, input: handler(tool.name, body) }] });
+  };
+}
+
+const evaluation = (over) => ({ responsive: true, score: 5, scoreReason: "fine", redirect: "", ...over });
+
+/** improvements for however many sections the prompt described, in order. */
+function improvementsFor(body) {
+  const names = [...body.messages[0].content.matchAll(/^SECTION: (.+?) --/gm)].map((m) => m[1]);
+  return { sections: names.map((name) => ({ sectionName: name, improvements: ["Do a thing."] })) };
+}
+
+async function makeAssessment(env, token, sections, name = "Readiness") {
+  const project = await (await appr("projects", jsonReq("/api/apprenticeship/projects", "POST",
+    { name: "Project" }, token), env)).json();
+  const res = await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST",
+    { projectId: project.project.id, name, intro: "Welcome.", sections }, token), env);
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  return { projectId: project.project.id, survey: body.survey };
+}
+
+const ONE_SECTION = [{
+  name: "Organizational Commitment",
+  objective: "SECRET OBJECTIVE",
+  context: "Some teaching context.",
+  questions: [
+    { text: "Who owns apprenticeship internally?", context: "Shown context.",
+      criteria: "SECRET CRITERIA", maxPoints: 5 },
+  ],
+}];
+
+async function startResponse(env, surveyId) {
+  const res = await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST", {
+    surveyId, name: "Pat", company: "Acme", email: "pat@acme.test",
+  }), env);
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  return body;
+}
+
+const answerReq = (surveyId, responseId, answer) =>
+  jsonReq("/api/apprenticeship/public/answer", "POST", { surveyId, responseId, answer });
+
+test("apprenticeship: the public view never leaks objectives, criteria or point values", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const view = await (await appr(`public/${survey.id}`, req(`/api/apprenticeship/public/${survey.id}`), env)).json();
+  const serialized = JSON.stringify(view);
+  for (const secret of ["SECRET OBJECTIVE", "SECRET CRITERIA", "maxPoints", "criteria", "objective"]) {
+    assert.ok(!serialized.includes(secret), `${secret} must not reach a respondent — it is the answer key`);
+  }
+});
+
+test("apprenticeship: a question with no scoring criteria is rejected, not saved unscored", async () => {
+  const { env, token } = await apprEnv();
+  const project = await (await appr("projects", jsonReq("/api/apprenticeship/projects", "POST",
+    { name: "Project" }, token), env)).json();
+  const res = await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: project.project.id, name: "No criteria",
+    sections: [{ name: "S", questions: [{ text: "Q?", criteria: "" }] }],
+  }, token), env);
+  assert.equal(res.status, 400, "criteria is what keeps scoring consistent, so it is mandatory");
+});
+
+test("apprenticeship: an honest low score is never flagged and never trips the shut-off", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 0, scoreReason: "Nothing in place." })
+    : improvementsFor(body)), async () => {
+    const res = await appr("public/answer",
+      answerReq(survey.id, started.responseId, "Honestly, nobody owns it yet."), env);
+    const body = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.ok(body.done, "a one-question assessment finishes on the first answer");
+    assert.equal(body.results.flaggedCount, 0, "a responsive answer is never flagged");
+    assert.equal(body.results.contactPrompt, "", "no flags means no 'talk to Conexus' callout");
+    assert.equal(body.results.overall.bandLabel, "Build Readiness First");
+  });
+  const stored = JSON.parse(await env.BOX_KV.get(`apprenticeship:response:${survey.id}:${started.responseId}`));
+  assert.equal(stored.consecutiveNonResponsive, 0, "an honest answer must not advance the shut-off counter");
+  assert.equal(stored.issues.length, 0, "an honest answer must not reach the issue log");
+});
+
+test("apprenticeship: a non-responsive answer is redirected once, then flagged with the full issue log", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ responsive: false, score: 0, scoreReason: "Off topic.",
+                   redirect: "To put it another way — who signs off on it?" })
+    : improvementsFor(body)), async () => {
+    const first = await (await appr("public/answer",
+      answerReq(survey.id, started.responseId, "what's for lunch"), env)).json();
+    assert.ok(first.step.isFollowUp, "the first miss gets one redirect, not a flag");
+    assert.equal(first.step.prompt, "To put it another way — who signs off on it?");
+
+    const second = await (await appr("public/answer",
+      answerReq(survey.id, started.responseId, "still not answering"), env)).json();
+    assert.ok(second.done, "the second miss ends the question rather than badgering again");
+    assert.equal(second.results.flaggedCount, 1);
+    assert.match(second.results.contactPrompt, /Conexus Indiana staff/);
+  });
+  const stored = JSON.parse(await env.BOX_KV.get(`apprenticeship:response:${survey.id}:${started.responseId}`));
+  assert.equal(stored.issues.length, 1);
+  assert.deepEqual({
+    originalQuestion: stored.issues[0].originalQuestion,
+    originalResponse: stored.issues[0].originalResponse,
+    followUpQuestion: stored.issues[0].followUpQuestion,
+    followUpResponse: stored.issues[0].followUpResponse,
+  }, {
+    originalQuestion: "Who owns apprenticeship internally?",
+    originalResponse: "what's for lunch",
+    followUpQuestion: "To put it another way — who signs off on it?",
+    followUpResponse: "still not answering",
+  }, "the issue log has to carry all four halves or an admin cannot judge the exchange");
+});
+
+test("apprenticeship: three non-responsive questions in a row shut the assessment off", async () => {
+  const { env, token } = await apprEnv();
+  const questions = [1, 2, 3, 4].map((n) => ({
+    text: `Q${n}?`, context: "", criteria: "Anything concrete.", maxPoints: 5,
+  }));
+  const { survey } = await makeAssessment(env, token, [{ name: "S", objective: "o", context: "c", questions }]);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ responsive: false, score: 0, scoreReason: "no", redirect: "Try again?" })
+    : improvementsFor(body)), async () => {
+    let last = null;
+    // Two turns per question: the miss, then the miss on the redirect.
+    for (let i = 0; i < 8; i++) {
+      last = await (await appr("public/answer", answerReq(survey.id, started.responseId, "no"), env)).json();
+      if (last.halted) break;
+    }
+    assert.ok(last.halted, "three consecutive non-responsive questions must stop the assessment");
+    assert.match(last.message, /Conexus Indiana staff/);
+    assert.ok(!last.results, "a halted assessment shows no readiness score");
+  });
+  const stored = JSON.parse(await env.BOX_KV.get(`apprenticeship:response:${survey.id}:${started.responseId}`));
+  assert.equal(stored.status, "halted");
+  assert.equal(stored.cursor, 3, "it halts on the third question, not after working through all four");
+});
+
+test("apprenticeship: a score above the question's maximum is clamped, not trusted", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 99 }) : improvementsFor(body)), async () => {
+    const body = await (await appr("public/answer",
+      answerReq(survey.id, started.responseId, "A real answer."), env)).json();
+    assert.equal(body.results.overall.display, "5/5",
+      "a strict schema constrains shape, not range — an out-of-range score would inflate the section");
+    assert.equal(body.results.overall.percent, 100);
+  });
+});
+
+test("apprenticeship: the readiness bands land exactly on 85 and 60", async () => {
+  const { env, token } = await apprEnv();
+  // Two questions worth 10 each, so a whole-number score can land exactly on a boundary.
+  // MAX_POINTS_CEILING caps any single question at 10, so 85% needs two questions.
+  const cases = [
+    { scores: [10, 7], percent: 85, label: "Strong Readiness" },
+    { scores: [10, 6], percent: 80, label: "Moderate Readiness" },
+    { scores: [6, 6], percent: 60, label: "Moderate Readiness" },
+    { scores: [6, 5], percent: 55, label: "Build Readiness First" },
+  ];
+  for (const testCase of cases) {
+    const { survey } = await makeAssessment(env, token, [{
+      name: "S", objective: "o", context: "c",
+      questions: [
+        { text: "Q1?", context: "", criteria: "c", maxPoints: 10 },
+        { text: "Q2?", context: "", criteria: "c", maxPoints: 10 },
+      ],
+    }], `Band ${testCase.percent}`);
+    const started = await startResponse(env, survey.id);
+    const scores = testCase.scores.slice();
+    await withFetch(claudeStub((name, body) => name === "record_evaluation"
+      ? evaluation({ score: scores.shift() }) : improvementsFor(body)), async () => {
+      await appr("public/answer", answerReq(survey.id, started.responseId, "An answer."), env);
+      const body = await (await appr("public/answer",
+        answerReq(survey.id, started.responseId, "Another answer."), env)).json();
+      assert.equal(body.results.overall.percent, testCase.percent);
+      assert.equal(body.results.overall.bandLabel, testCase.label,
+        `${testCase.percent}% should be ${testCase.label}`);
+    });
+  }
+});
+
+test("apprenticeship: a response cannot be replayed against a different assessment", async () => {
+  const { env, token } = await apprEnv();
+  const a = await makeAssessment(env, token, ONE_SECTION, "A");
+  const b = await makeAssessment(env, token, ONE_SECTION, "B");
+  const started = await startResponse(env, a.survey.id);
+  const res = await appr("public/answer",
+    answerReq(b.survey.id, started.responseId, "An answer."), env);
+  assert.equal(res.status, 404, "the stored record's own surveyId is re-checked, so B cannot score A's run");
+});
+
+test("apprenticeship: a failed improvement write-up still returns the earned scores", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const started = await startResponse(env, survey.id);
+  await withFetch((url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.tools[0].name === "record_improvements") return new Response("boom", { status: 500 });
+    return okJson({ content: [{ type: "tool_use", name: "record_evaluation", input: evaluation({ score: 4 }) }] });
+  }, async () => {
+    const res = await appr("public/answer", answerReq(survey.id, started.responseId, "An answer."), env);
+    const body = await res.json();
+    assert.equal(res.status, 200, "the scores are earned — a failed write-up must not lose them");
+    assert.equal(body.results.overall.display, "4/5");
+    assert.ok(body.results.improvementsError, "the respondent is told the advice is missing");
+  });
+});
+
+test("apprenticeship: starting needs name, company and a real email", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  for (const body of [
+    { surveyId: survey.id, name: "", company: "Acme", email: "pat@acme.test" },
+    { surveyId: survey.id, name: "Pat", company: "", email: "pat@acme.test" },
+    { surveyId: survey.id, name: "Pat", company: "Acme", email: "" },
+    { surveyId: survey.id, name: "Pat", company: "Acme", email: "not-an-email" },
+  ]) {
+    const res = await appr("public/start",
+      jsonReq("/api/apprenticeship/public/start", "POST", body), env);
+    assert.equal(res.status, 400, `should have been rejected: ${JSON.stringify(body)}`);
+  }
+});
+
+test("apprenticeship: the issue log and dashboard are admin-only", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  for (const path of [`surveys/${survey.id}/issues`, `surveys/${survey.id}/dashboard`,
+                      `surveys/${survey.id}/responses`, "projects", "surveys"]) {
+    const res = await appr(path, req(`/api/apprenticeship/${path}`), env);
+    assert.equal(res.status, 401, `${path} must not be readable without signing in`);
+  }
+});
+
+test("apprenticeship: editing keeps question ids, and a duplicate id is not allowed to collide", async () => {
+  const { env, token } = await apprEnv();
+  const { projectId, survey } = await makeAssessment(env, token, ONE_SECTION);
+  const originalId = survey.sections[0].questions[0].id;
+
+  // An ordinary edit round-trips the ids -- minting new ones here would orphan every
+  // answer already collected against the old ones.
+  const edited = await (await appr(`surveys/${survey.id}`,
+    jsonReq(`/api/apprenticeship/surveys/${survey.id}`, "PUT", {
+      projectId, name: "Readiness", sections: [{
+        ...ONE_SECTION[0], id: survey.sections[0].id,
+        questions: [{ ...ONE_SECTION[0].questions[0], id: originalId, text: "Reworded?" }],
+      }],
+    }, token), env)).json();
+  assert.equal(edited.survey.sections[0].questions[0].id, originalId, "an edit must keep the id");
+
+  // Two questions claiming the same id would share one score slot.
+  const collided = await (await appr(`surveys/${survey.id}`,
+    jsonReq(`/api/apprenticeship/surveys/${survey.id}`, "PUT", {
+      projectId, name: "Readiness", sections: [{
+        ...ONE_SECTION[0], id: survey.sections[0].id,
+        questions: [
+          { text: "A?", criteria: "c", maxPoints: 5, id: "same" },
+          { text: "B?", criteria: "c", maxPoints: 5, id: "same" },
+        ],
+      }],
+    }, token), env)).json();
+  const ids = collided.survey.sections[0].questions.map((q) => q.id);
+  assert.notEqual(ids[0], ids[1], "a duplicate id must be replaced, not accepted");
+});
+
+test("apprenticeship: a project with assessments still in it is not deleted out from under them", async () => {
+  const { env, token } = await apprEnv();
+  const { projectId } = await makeAssessment(env, token, ONE_SECTION);
+  const res = await appr(`projects/${projectId}`,
+    req(`/api/apprenticeship/projects/${projectId}`, { method: "DELETE",
+      headers: { authorization: `Bearer ${token}` } }), env);
+  assert.equal(res.status, 409, "deleting the project would silently take every response with it");
+});
+
 /* ------------------------------------------------------------------------- runner */
 let failed = 0;
 for (const { name, fn } of tests) {

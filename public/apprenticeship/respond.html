@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apprenticeship Readiness</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>
+  /* Conexus Indiana brand palette -- navy headings, brand blue accent, amber used once
+     as the standout. Aptos with the documented fallbacks. */
+  :root {
+    color-scheme: light;
+    --page:#f3f5f9; --surface-1:#ffffff; --navy:#07214e; --text-primary:#16202b;
+    --text-secondary:#4a5663; --text-muted:#7c8794; --border:#e1e2e9;
+    --wash:#f3f5f9; --accent:#325eae; --teal:#108fc2; --amber:#fbae40; --bad:#f26b43;
+    --bot-bg:#eef1f7; --user-bg:rgba(50,94,174,.12);
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--page); color:var(--text-primary);
+         font:15px/1.55 Aptos,"Segoe UI",Arial,sans-serif; display:flex; flex-direction:column; }
+  .wrap { max-width:680px; margin:0 auto; width:100%; flex:1; display:flex; flex-direction:column;
+          min-height:100vh; background:var(--surface-1); }
+  header { padding:18px 22px 15px; border-bottom:1px solid var(--border); background:var(--navy);
+           color:#fff; }
+  .brand-name { font-weight:700; font-size:19px; letter-spacing:.01em; }
+  .brand-sub { font-size:11px; font-weight:600; color:rgba(255,255,255,.72);
+               text-transform:uppercase; letter-spacing:.06em; margin:3px 0 9px; }
+  h1 { font-size:15px; font-weight:400; margin:0; color:rgba(255,255,255,.92); }
+  .progress-bar { padding:11px 22px; border-bottom:1px solid var(--border); background:var(--wash); }
+  .progress-bar-track { width:100%; height:6px; border-radius:999px; background:#dfe3ec; overflow:hidden; }
+  .progress-bar-fill { height:100%; width:0; background:var(--accent); border-radius:999px;
+                       transition:width .4s ease; }
+  .progress-bar-label { font-size:11.5px; color:var(--text-secondary); margin-top:6px; font-weight:600; }
+  .messages { flex:1; overflow-y:auto; padding:22px; display:flex; flex-direction:column; gap:12px; }
+  .bubble { max-width:84%; padding:11px 15px; border-radius:14px; font-size:14.5px; white-space:pre-wrap; }
+  .bubble.bot { align-self:flex-start; background:var(--bot-bg); border-bottom-left-radius:4px; }
+  .bubble.section { align-self:stretch; max-width:100%; background:var(--navy); color:#fff;
+                    font-weight:650; border-radius:10px; border-left:4px solid var(--amber); }
+  .bubble.user { align-self:flex-end; background:var(--user-bg); border-bottom-right-radius:4px; }
+  .bubble.typing { align-self:flex-start; background:var(--bot-bg); border-bottom-left-radius:4px;
+                   color:var(--text-muted); font-style:italic; }
+  .composer { border-top:1px solid var(--border); padding:14px 22px; display:flex; gap:10px;
+              background:var(--wash); }
+  .composer textarea { flex:1; font:inherit; padding:10px 13px; border-radius:10px;
+                       border:1px solid var(--border); background:var(--surface-1);
+                       color:var(--text-primary); resize:none; min-height:44px; max-height:150px; }
+  .composer button { font:inherit; font-weight:600; border-radius:10px; border:1px solid var(--accent);
+                     cursor:pointer; padding:0 22px; background:var(--accent); color:#fff; }
+  .composer button:disabled { opacity:.5; cursor:not-allowed; }
+  .panel { margin:22px; padding:22px; border:1px solid var(--border); border-radius:12px;
+           background:var(--surface-1); }
+  .panel h2 { margin:0 0 6px; font-size:16px; color:var(--navy); }
+  .panel p.desc { margin:0 0 16px; font-size:13.5px; color:var(--text-secondary); }
+  label { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+          color:var(--text-muted); font-weight:700; margin:14px 0 6px; }
+  label:first-of-type { margin-top:0; }
+  input[type=text], input[type=email] { width:100%; font:inherit; padding:10px 12px;
+    border-radius:8px; border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  button.primary { font:inherit; font-weight:600; border-radius:9px; border:1px solid var(--accent);
+                   cursor:pointer; padding:11px 22px; background:var(--accent); color:#fff;
+                   margin-top:18px; }
+  button.primary:disabled { opacity:.5; cursor:not-allowed; }
+  .err { color:var(--bad); font-size:13px; margin-top:12px; }
+  .notice { margin:44px 24px; padding:22px; border:1px solid var(--border); border-radius:12px;
+            background:var(--surface-1); font-size:14px; text-align:center;
+            color:var(--text-secondary); }
+  /* results */
+  .band { border-radius:12px; padding:20px 22px; color:#fff; background:var(--navy);
+          border-left:6px solid var(--amber); }
+  .band .score { font-size:32px; font-weight:700; line-height:1.1; }
+  .band .label { font-size:15px; font-weight:650; margin-top:4px; }
+  .band .sub { font-size:12.5px; color:rgba(255,255,255,.76); margin-top:6px; }
+  .sec { border:1px solid var(--border); border-radius:10px; padding:16px 18px; margin-top:14px; }
+  .sec .head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .sec .name { font-weight:650; color:var(--navy); font-size:14.5px; }
+  .sec .num { font-weight:700; font-size:15px; color:var(--accent); white-space:nowrap; }
+  .sec .track { height:6px; border-radius:999px; background:#e7eaf1; margin:10px 0 12px; overflow:hidden; }
+  .sec .fill { height:100%; background:var(--teal); border-radius:999px; }
+  .sec ul { margin:0; padding-left:20px; font-size:13.5px; color:var(--text-secondary); }
+  .sec li { margin:5px 0; }
+  .callout { margin-top:16px; padding:14px 16px; border-radius:10px; font-size:13.5px;
+             background:rgba(251,174,64,.14); border:1px solid var(--amber); color:var(--text-primary); }
+  .foot { margin-top:18px; font-size:13px; }
+  .foot a { color:var(--accent); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand-name">Apprenticeship Readiness Toolbox</div>
+    <div class="brand-sub">Conexus Indiana</div>
+    <h1 id="surveyTitle">Loading…</h1>
+  </header>
+
+  <div class="progress-bar" id="progressBar" hidden>
+    <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+    <div class="progress-bar-label" id="progressLabel"></div>
+  </div>
+
+  <!-- Every form in this app starts with name, company and email. -->
+  <div class="panel" id="intake" hidden>
+    <h2 id="intakeHeading">Before we start</h2>
+    <p class="desc" id="intakeIntro"></p>
+    <label for="nameInput">Your name</label>
+    <input type="text" id="nameInput" autocomplete="name">
+    <label for="companyInput">Company</label>
+    <input type="text" id="companyInput" autocomplete="organization">
+    <label for="emailInput">Email</label>
+    <input type="email" id="emailInput" autocomplete="email">
+    <div class="err" id="intakeError" hidden></div>
+    <button type="button" class="primary" id="startBtn">Start the assessment</button>
+  </div>
+
+  <div class="messages" id="messages"></div>
+
+  <div class="composer" id="composer" hidden>
+    <textarea id="answerInput" placeholder="Type your answer…" rows="1"></textarea>
+    <button type="button" id="sendBtn">Send</button>
+  </div>
+
+  <div id="results" hidden></div>
+  <div id="notice" hidden></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(window.location.search);
+  var surveyId = params.get("survey");
+  var responseId = null;
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function showNotice(text) {
+    el("intake").hidden = true;
+    el("composer").hidden = true;
+    el("notice").hidden = false;
+    el("notice").innerHTML = '<div class="notice">' + esc(text) + "</div>";
+  }
+  if (!surveyId) { showNotice("No assessment specified."); return; }
+
+  // .messages is a flex:1 sibling of .composer, so showing or hiding the composer (and
+  // the textarea growing to a second line) changes how much of .messages is visible --
+  // every one of those has to scroll again afterwards or the newest bubble sits behind
+  // the composer instead of above it.
+  function scrollToBottom() { el("messages").scrollTop = el("messages").scrollHeight; }
+
+  function addBubble(kind, text) {
+    var b = document.createElement("div");
+    b.className = "bubble " + kind;
+    b.textContent = text;
+    el("messages").appendChild(b);
+    scrollToBottom();
+    return b;
+  }
+  function addTyping() { return addBubble("typing", "…"); }
+
+  function api(path, body) {
+    return fetch("/api/apprenticeship/" + path, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+        return data;
+      });
+    });
+  }
+
+  /* ---------- chat ---------- */
+
+  var currentPrompt = "";
+
+  function updateProgress(progress) {
+    if (!progress || !progress.total) { el("progressBar").hidden = true; return; }
+    var pct = Math.round((progress.answered / progress.total) * 100);
+    el("progressBar").hidden = false;
+    el("progressFill").style.width = pct + "%";
+    el("progressLabel").textContent = progress.answered >= progress.total
+      ? "All done!"
+      : "Question " + (progress.answered + 1) + " of " + progress.total;
+  }
+
+  // Bubbles arrive one at a time with a short beat between them. A section's context can
+  // run to a paragraph, and dumping the whole section at once reads as a wall of text
+  // rather than someone talking you through it.
+  var BEAT_MS = 700;
+
+  function renderStep(step) {
+    updateProgress(step.progress);
+    var queue = (step.messages || []).slice();
+    var typing = addTyping();
+    function next() {
+      if (!queue.length) {
+        typing.remove();
+        currentPrompt = step.prompt;
+        addBubble("bot", step.prompt);
+        el("composer").hidden = false;
+        el("answerInput").disabled = false;
+        el("sendBtn").disabled = false;
+        el("answerInput").value = "";
+        el("answerInput").style.height = "auto";
+        el("answerInput").focus();
+        scrollToBottom();
+        return;
+      }
+      var text = queue.shift();
+      // The first message after a section boundary is the section's own name -- given
+      // its own styling so a respondent can see where they are in the assessment.
+      var isSectionHeading = text === step.sectionName;
+      typing.remove();
+      addBubble(isSectionHeading ? "section" : "bot", text);
+      typing = addTyping();
+      setTimeout(next, BEAT_MS);
+    }
+    setTimeout(next, BEAT_MS);
+  }
+
+  function submitAnswer() {
+    var answer = el("answerInput").value.trim();
+    if (!answer) return;
+    addBubble("user", answer);
+    el("composer").hidden = true;
+    var typing = addTyping();
+    api("public/answer", { surveyId: surveyId, responseId: responseId, answer: answer })
+      .then(function (data) {
+        typing.remove();
+        if (data.halted) { el("progressBar").hidden = true; return showHalt(data.message); }
+        if (data.done) return showResults(data.results);
+        renderStep(data.step);
+      })
+      .catch(function (e) {
+        typing.remove();
+        addBubble("bot", "Sorry, something went wrong (" + e.message + "). Please try "
+          + "sending that again.");
+        el("composer").hidden = false;
+        el("answerInput").disabled = false;
+        el("sendBtn").disabled = false;
+        scrollToBottom();
+      });
+  }
+
+  function showHalt(message) {
+    el("composer").hidden = true;
+    addBubble("bot", message);
+  }
+
+  /* ---------- results ---------- */
+
+  function showResults(results) {
+    el("composer").hidden = true;
+    el("progressFill").style.width = "100%";
+    el("progressLabel").textContent = "All done!";
+    addBubble("bot", "That's everything — thank you. Here's where your readiness stands.");
+
+    var html = '<div class="panel">'
+      + '<div class="band">'
+      + '<div class="score">' + esc(results.overall.percent) + "%</div>"
+      + '<div class="label">' + esc(results.overall.bandLabel) + "</div>"
+      + '<div class="sub">' + esc(results.overall.display) + " points across "
+      + results.sections.length + " section" + (results.sections.length === 1 ? "" : "s") + "</div>"
+      + "</div>";
+
+    if (results.improvementsError) {
+      html += '<div class="callout">' + esc(results.improvementsError) + "</div>";
+    }
+
+    results.sections.forEach(function (section) {
+      html += '<div class="sec">'
+        + '<div class="head"><span class="name">' + esc(section.name) + "</span>"
+        + '<span class="num">' + esc(section.display) + "</span></div>"
+        + '<div class="track"><div class="fill" style="width:' + Number(section.percent) + '%"></div></div>';
+      if (section.improvements && section.improvements.length) {
+        html += "<ul>";
+        section.improvements.forEach(function (item) { html += "<li>" + esc(item) + "</li>"; });
+        html += "</ul>";
+      }
+      html += "</div>";
+    });
+
+    if (results.contactPrompt) {
+      html += '<div class="callout">' + esc(results.contactPrompt) + "</div>";
+    }
+
+    html += '<p class="foot">Taking more than one assessment? Your combined readiness '
+      + 'across this programme is on your <a href="/apprenticeship/dashboard.html?survey='
+      + encodeURIComponent(surveyId) + "&response=" + encodeURIComponent(responseId)
+      + '">readiness dashboard</a>. Keep this link — it is the only way back to these results.</p>';
+    html += "</div>";
+
+    el("results").hidden = false;
+    el("results").innerHTML = html;
+    el("results").scrollIntoView({ behavior: "smooth" });
+  }
+
+  /* ---------- wiring ---------- */
+
+  el("sendBtn").addEventListener("click", submitAnswer);
+  el("answerInput").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitAnswer(); }
+  });
+  el("answerInput").addEventListener("input", function () {
+    el("answerInput").style.height = "auto";
+    el("answerInput").style.height = Math.min(150, el("answerInput").scrollHeight) + "px";
+    scrollToBottom();
+  });
+
+  el("startBtn").addEventListener("click", function () {
+    var payload = {
+      surveyId: surveyId,
+      name: el("nameInput").value.trim(),
+      company: el("companyInput").value.trim(),
+      email: el("emailInput").value.trim(),
+    };
+    if (!payload.name || !payload.company || !payload.email) {
+      el("intakeError").hidden = false;
+      el("intakeError").textContent = "Name, company and email are all needed to start.";
+      return;
+    }
+    el("intakeError").hidden = true;
+    el("startBtn").disabled = true;
+    api("public/start", payload)
+      .then(function (data) {
+        responseId = data.responseId;
+        el("intake").hidden = true;
+        renderStep(data.step);
+      })
+      .catch(function (e) {
+        el("startBtn").disabled = false;
+        el("intakeError").hidden = false;
+        el("intakeError").textContent = e.message;
+      });
+  });
+
+  fetch("/api/apprenticeship/public/" + encodeURIComponent(surveyId))
+    .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+    .then(function (survey) {
+      el("surveyTitle").textContent = survey.name;
+      document.title = survey.name + " — Apprenticeship Readiness";
+      el("intakeIntro").textContent = survey.questionCount + " question"
+        + (survey.questionCount === 1 ? "" : "s") + " across " + survey.sectionCount
+        + " section" + (survey.sectionCount === 1 ? "" : "s") + ". Answer in your own words —"
+        + " there is nothing to look up, and an honest “we don’t do that yet” is"
+        + " the most useful answer you can give.";
+      el("intake").hidden = false;
+      el("nameInput").focus();
+    })
+    .catch(function () {
+      el("surveyTitle").textContent = "Assessment not found";
+      showNotice("This link doesn't look right. Double-check it and try again.");
+    });
+})();
+</script>
+</body>
+</html>

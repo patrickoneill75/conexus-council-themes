@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Readiness dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/apprenticeship/brand.css">
+<style>
+  .wrap { max-width:760px; }
+  .assessment { border:1px solid var(--border); border-radius:10px; padding:16px 18px; margin-top:12px; }
+  .assessment .head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .assessment .name { font-weight:650; color:var(--navy); font-size:14.5px; }
+  .assessment .num { font-weight:700; font-size:15px; color:var(--accent); white-space:nowrap; }
+  .assessment .meta { font-size:12.5px; color:var(--text-muted); margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title-block">
+      <h1>Readiness dashboard</h1>
+      <p class="sub" id="subline">Loading…</p>
+    </div>
+  </header>
+  <div id="body"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(window.location.search);
+  var surveyId = params.get("survey");
+  var responseId = params.get("response");
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  if (!surveyId || !responseId) {
+    el("subline").textContent = "";
+    el("body").innerHTML = '<div class="card">This dashboard link is incomplete. Use the '
+      + "link shown at the end of an assessment.</div>";
+    return;
+  }
+
+  // The respondent is identified from the stored record behind these two ids, never from
+  // anything typed into the URL -- see the dashboard route in src/apprenticeship.js.
+  fetch("/api/apprenticeship/public/dashboard/" + encodeURIComponent(surveyId)
+        + "/" + encodeURIComponent(responseId))
+    .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+    .then(function (data) {
+      el("subline").textContent = data.respondent.name + " · " + data.respondent.company
+        + (data.projectName ? " · " + data.projectName : "");
+
+      var done = data.assessments.filter(function (a) { return a.overall; });
+      var html = "";
+
+      if (data.overall) {
+        html += '<div class="card"><div class="band">'
+          + '<div class="score">' + esc(data.overall.percent) + "%</div>"
+          + '<div class="label">' + esc(data.overall.bandLabel) + "</div>"
+          + '<div class="sub">' + esc(data.overall.display) + " points across "
+          + done.length + " completed assessment" + (done.length === 1 ? "" : "s") + "</div>"
+          + "</div></div>";
+      }
+
+      html += '<div class="card"><h2>Assessments in this programme</h2>'
+        + '<p class="desc">Each assessment you finish is added here. Where you have taken '
+        + "one more than once, the most recent attempt is the one that counts.</p>";
+
+      data.assessments.forEach(function (a) {
+        html += '<div class="assessment"><div class="head">'
+          + '<span class="name">' + esc(a.surveyName) + "</span>";
+        if (a.overall) {
+          html += '<span class="num">' + esc(a.overall.display) + " · "
+            + esc(a.overall.percent) + "%</span></div>"
+            + '<div class="track"><div class="fill" style="width:'
+            + Number(a.overall.percent) + '%"></div></div>'
+            + '<div class="meta"><span class="pill ' + esc(a.overall.band) + '">'
+            + esc(a.overall.bandLabel) + "</span> · completed "
+            + esc(String(a.submittedAt || "").slice(0, 10))
+            + ' · <a class="link" href="/apprenticeship/respond.html?survey='
+            + encodeURIComponent(a.surveyId) + '">retake</a></div>';
+        } else {
+          html += '<span class="num" style="color:var(--text-muted)">Not started</span></div>'
+            + '<div class="meta"><a class="link" href="/apprenticeship/respond.html?survey='
+            + encodeURIComponent(a.surveyId) + '">Take this assessment</a></div>';
+        }
+        html += "</div>";
+      });
+
+      html += "</div>";
+      el("body").innerHTML = html;
+    })
+    .catch(function () {
+      el("subline").textContent = "";
+      el("body").innerHTML = '<div class="card">We couldn’t find that dashboard. '
+        + "Double-check the link you were given at the end of your assessment.</div>";
+    });
+})();
+</script>
+</body>
+</html>
