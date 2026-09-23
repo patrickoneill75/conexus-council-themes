@@ -51,6 +51,9 @@
   .composer button { font:inherit; font-weight:600; border-radius:10px; border:1px solid var(--accent);
                      cursor:pointer; padding:0 22px; background:var(--accent); color:#fff; }
   .composer button:disabled { opacity:.5; cursor:not-allowed; }
+  .composer button.choice { flex:1; padding:12px 0; font-size:15px; background:var(--surface-1);
+                            color:var(--navy); border:1px solid var(--border); }
+  .composer button.choice:hover { background:var(--bot-bg); }
   /* The wait after the last answer is the longest in the assessment -- scoring plus the
      written improvement list -- so it gets a bar and a plain description of what is
      happening, not a "…" that could equally mean the page has hung. */
@@ -139,6 +142,13 @@
     <button type="button" id="sendBtn">Send</button>
   </div>
 
+  <!-- Most questions are yes or no. Two buttons answer them in one tap, with no text to
+       type and nothing for a model to interpret. -->
+  <div class="composer" id="choiceComposer" hidden>
+    <button type="button" class="choice" data-answer="yes">Yes</button>
+    <button type="button" class="choice" data-answer="no">No</button>
+  </div>
+
   <div id="results" hidden></div>
   <div id="notice" hidden></div>
 </div>
@@ -155,9 +165,33 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
+  /** Two buttons for a yes/no question, the text box for an open one. */
+  function openComposer(answerType) {
+    var yesNo = answerType !== "open";
+    el("choiceComposer").hidden = !yesNo;
+    el("composer").hidden = yesNo;
+    if (yesNo) {
+      Array.prototype.forEach.call(el("choiceComposer").querySelectorAll("button"),
+        function (b) { b.disabled = false; });
+    } else {
+      el("answerInput").disabled = false;
+      el("sendBtn").disabled = false;
+      el("answerInput").value = "";
+      el("answerInput").style.height = "auto";
+      el("answerInput").focus();
+    }
+    // Un-hiding a composer shrinks .messages, so the newest bubble has to be scrolled to
+    // again or it ends up behind it.
+    scrollToBottom();
+  }
+  function closeComposers() {
+    el("composer").hidden = true;
+    el("choiceComposer").hidden = true;
+  }
+
   function showNotice(text) {
     el("intake").hidden = true;
-    el("composer").hidden = true;
+    closeComposers();
     el("notice").hidden = false;
     el("notice").innerHTML = '<div class="notice">' + esc(text) + "</div>";
   }
@@ -218,6 +252,9 @@
 
   var currentPrompt = "";
   var currentProgress = null;
+  // Which control was on screen, so a failed send puts the same one back rather than
+  // dropping a yes/no question into a text box.
+  var lastAnswerType = "yes_no";
 
   function updateProgress(progress) {
     if (!progress || !progress.total) { el("progressBar").hidden = true; return; }
@@ -262,6 +299,7 @@
 
   function renderStep(step) {
     currentProgress = step.progress;
+    lastAnswerType = step.answerType || "yes_no";
     updateProgress(step.progress);
     stage(step.messages || [], function (text) {
       // The section's own name is styled as a heading so a respondent can see where they
@@ -270,21 +308,18 @@
     }, function () {
       currentPrompt = step.prompt;
       addBubble("bot", step.prompt);
-      el("composer").hidden = false;
-      el("answerInput").disabled = false;
-      el("sendBtn").disabled = false;
-      el("answerInput").value = "";
-      el("answerInput").style.height = "auto";
-      el("answerInput").focus();
-      scrollToBottom();
+      openComposer(step.answerType);
     });
   }
 
-  function submitAnswer() {
-    var answer = el("answerInput").value.trim();
+  /** `value` is set when a Yes/No button was tapped; otherwise the answer is typed. */
+  function submitAnswer(value) {
+    var tapped = value != null;
+    var answer = String(tapped ? value : el("answerInput").value).trim();
     if (!answer) return;
-    addBubble("user", answer);
-    el("composer").hidden = true;
+    // A tapped answer shows as "Yes"; typed text is shown exactly as they wrote it.
+    addBubble("user", tapped ? answer.charAt(0).toUpperCase() + answer.slice(1) : answer);
+    closeComposers();
     // On the last question this answer triggers the scoring and the written improvement
     // list, so it gets the bar rather than the same "…" every other answer gets. A
     // non-responsive answer here is redirected instead, and the bar simply comes away.
@@ -302,23 +337,20 @@
       .catch(function (e) {
         clear();
         addBubble("bot", "Sorry, something went wrong (" + e.message + "). Please try "
-          + "sending that again.");
-        el("composer").hidden = false;
-        el("answerInput").disabled = false;
-        el("sendBtn").disabled = false;
-        scrollToBottom();
+          + "answering again.");
+        openComposer(lastAnswerType);
       });
   }
 
   function showHalt(message) {
-    el("composer").hidden = true;
+    closeComposers();
     addBubble("bot", message);
   }
 
   /* ---------- results ---------- */
 
   function showResults(results) {
-    el("composer").hidden = true;
+    closeComposers();
     el("progressFill").style.width = "100%";
     el("progressLabel").textContent = "All done!";
     // The last question's follow-on teaching has no next question to precede, so it is
@@ -378,9 +410,16 @@
 
   /* ---------- wiring ---------- */
 
-  el("sendBtn").addEventListener("click", submitAnswer);
+  el("sendBtn").addEventListener("click", function () { submitAnswer(); });
   el("answerInput").addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitAnswer(); }
+  });
+  el("choiceComposer").addEventListener("click", function (e) {
+    var button = e.target.closest("button[data-answer]");
+    if (!button || button.disabled) return;
+    Array.prototype.forEach.call(el("choiceComposer").querySelectorAll("button"),
+      function (b) { b.disabled = true; });
+    submitAnswer(button.getAttribute("data-answer"));
   });
   el("answerInput").addEventListener("input", function () {
     el("answerInput").style.height = "auto";

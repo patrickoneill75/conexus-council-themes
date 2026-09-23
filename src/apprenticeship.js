@@ -98,6 +98,15 @@ const SHUT_OFF_AFTER_NON_RESPONSIVE = 3;
 // without showing it, so an admin can park one without deleting what they wrote.
 const POST_CONTEXT_MODES = ["weak", "always", "never"];
 
+// "yes_no" is the default and needs no model call at all: the answer is the score, and
+// which follow-on context to show is decided by the answer rather than by a judgement.
+// "open" is the original free-text question -- Claude reads it, scores it against the
+// admin's criteria, redirects a non-answer and can trip the safety shut-off. Both exist
+// because an assessment can mix them; a step made entirely of yes/no questions costs
+// nothing per answer and cannot be shut off mid-way.
+const QUESTION_TYPES = ["yes_no", "open"];
+const YES_NO_ANSWERS = ["yes", "no"];
+
 const MAX_POINTS_CEILING = 10;
 const MAX_ANSWER_CHARS = 4000;
 
@@ -168,35 +177,43 @@ function cleanSections(raw) {
     const questions = (Array.isArray(section.questions) ? section.questions : []).map((q, j) => {
       const question = q && typeof q === "object" ? q : {};
       const points = Number(question.maxPoints);
+      const type = QUESTION_TYPES.includes(str(question.type)) ? str(question.type) : "yes_no";
       return {
         id: uniqueId(str(question.id), `q${j + 1}-${crypto.randomUUID().slice(0, 8)}`),
         text: str(question.text),
-        // Shown to the respondent BEFORE the question is asked -- this is the
-        // "educate, then ask" half of the design, not private guidance.
+        type,
+        // Optional, and shown BEFORE the question is asked. Leaving it empty is how you
+        // ask a question cold -- which some questions need: context in front of "Do you
+        // have leadership support?" telegraphs the answer the tool is hoping for.
         context: str(question.context),
-        // Whether to show it at all. Some questions read better cold: context in front
-        // of "Do you have leadership support?" telegraphs the answer the tool wants, and
-        // a respondent who reads the case for it first is being led rather than asked.
-        showPreContext: !(question.showPreContext === false),
-        // Shown AFTER they answer, and normally only when the answer was weak. This is
-        // where teaching belongs for a question like that one: a "no" earns the case for
-        // leadership support, a "yes" does not need it and is not made to sit through it.
+        // Yes/no questions branch on the answer itself. Either box can be left empty, in
+        // which case that answer simply moves on to the next question.
+        yesContext: str(question.yesContext),
+        noContext: str(question.noContext),
+        // Open questions have no yes or no to branch on, so theirs is shown on a score
+        // threshold instead. Ignored entirely for a yes/no question.
         postContext: str(question.postContext),
         postContextMode: POST_CONTEXT_MODES.includes(str(question.postContextMode))
           ? str(question.postContextMode) : "weak",
-        // Used by the "weak" mode: show the post-answer context when the answer scored
-        // below this percentage of the question's points.
         postContextBelow: (() => {
           const below = Number(question.postContextBelow);
           return Number.isFinite(below) ? Math.max(1, Math.min(100, Math.round(below))) : 60;
         })(),
-        // Private. Scored against, never shown.
-        criteria: str(question.criteria),
+        // Private, and only an open question has any use for it: a yes/no question scores
+        // itself, so there is nothing for a model to judge and nothing to write criteria
+        // against.
+        criteria: type === "open" ? str(question.criteria) : "",
+        // A weight, not a mark. A yes is worth all of it and a no none of it, so equal
+        // weights make a step's percentage simply the share of questions answered yes --
+        // which is what "reach 85% by answering 85% yes" means. Raise it on a question
+        // that should count for more than one.
         maxPoints: Number.isFinite(points)
           ? Math.max(1, Math.min(MAX_POINTS_CEILING, Math.round(points)))
-          : 5,
+          : 1,
       };
-    }).filter((q) => q.text && q.criteria);
+      // An open question is only scoreable against criteria, so one without them is
+      // dropped. A yes/no question needs nothing but its text.
+    }).filter((q) => q.text && (q.type !== "open" || q.criteria));
     return {
       id: uniqueId(str(section.id), `s${i + 1}-${crypto.randomUUID().slice(0, 8)}`),
       name: str(section.name) || `Section ${i + 1}`,
@@ -666,9 +683,7 @@ function nextStep(survey, response) {
     messages.push(`${at.section.name}`);
     if (at.section.context) messages.push(at.section.context);
   }
-  if (at.question.context && at.question.showPreContext !== false) {
-    messages.push(at.question.context);
-  }
+  if (at.question.context) messages.push(at.question.context);
 
   return {
     sectionId: at.section.id,
@@ -676,6 +691,8 @@ function nextStep(survey, response) {
     questionId: at.question.id,
     messages,
     prompt: at.question.text,
+    // Which control the chat puts in front of them: two buttons, or a text box.
+    answerType: at.question.type === "open" ? "open" : "yes_no",
     isFollowUp: false,
     progress: { answered: response.cursor, total: flat.length },
   };
@@ -996,7 +1013,8 @@ export async function handleApprenticeshipApi(route, request, env) {
             ? {
                 sectionId: "", sectionName: "",
                 questionId: existing.pending.questionId,
-                messages: [], prompt: existing.pending.followUpQuestion, isFollowUp: true,
+                messages: [], prompt: existing.pending.followUpQuestion,
+                answerType: "open", isFollowUp: true,
                 progress: { answered: existing.cursor, total: flatQuestions(survey).length },
               }
             : nextStep(survey, existing),
@@ -1052,24 +1070,45 @@ export async function handleApprenticeshipApi(route, request, env) {
     if (response.status === "halted") return json(haltPayload());
     if (response.status === "complete") return json({ done: true, results: response.results });
 
-    const answer = str(body.answer).slice(0, MAX_ANSWER_CHARS);
-    if (!answer) return json({ error: "Type an answer first." }, 400);
+    let answer = str(body.answer).slice(0, MAX_ANSWER_CHARS);
+    if (!answer) return json({ error: "Answer the question first." }, 400);
 
     const flat = flatQuestions(survey);
     const at = flat[response.cursor];
     if (!at) return json({ error: "This assessment has changed since you started it." }, 409);
 
     const isFollowUp = Boolean(response.pending);
+    // A yes/no question needs no model call: the answer is the score. It also cannot be
+    // non-responsive, so none of the redirect, flag or shut-off machinery below can fire
+    // on one -- a step made entirely of yes/no questions costs nothing per answer and
+    // cannot strand someone mid-way.
+    const isYesNo = at.question.type !== "open";
     let evaluation;
-    try {
-      evaluation = await evaluateAnswer(env, {
-        survey, section: at.section, question: at.question, answer,
-        askedText: isFollowUp ? response.pending.followUpQuestion : at.question.text,
-        isFollowUp,
-        originalAnswer: isFollowUp ? response.pending.originalResponse : "",
-      });
-    } catch (e) {
-      return json({ error: e.message || "Could not read that answer. Please try again." }, 502);
+    let saidYes = false;
+    if (isYesNo) {
+      const said = answer.trim().toLowerCase();
+      if (!YES_NO_ANSWERS.includes(said)) return json({ error: "Answer yes or no." }, 400);
+      saidYes = said === "yes";
+      evaluation = {
+        responsive: true,
+        score: saidYes ? at.question.maxPoints : 0,
+        scoreReason: saidYes ? "Answered yes." : "Answered no.",
+        redirect: "",
+      };
+      // Stored normalised, so the admin view and the CSV read the same however the
+      // client happened to send it.
+      answer = saidYes ? "Yes" : "No";
+    } else {
+      try {
+        evaluation = await evaluateAnswer(env, {
+          survey, section: at.section, question: at.question, answer,
+          askedText: isFollowUp ? response.pending.followUpQuestion : at.question.text,
+          isFollowUp,
+          originalAnswer: isFollowUp ? response.pending.originalResponse : "",
+        });
+      } catch (e) {
+        return json({ error: e.message || "Could not read that answer. Please try again." }, 502);
+      }
     }
 
     // Whatever this question's answer earns it by way of follow-on teaching, decided the
@@ -1092,7 +1131,11 @@ export async function handleApprenticeshipApi(route, request, env) {
       response.consecutiveNonResponsive = 0;
       response.pending = null;
       response.cursor += 1;
-      afterContext = postContextFor(at.question, evaluation.score);
+      // A yes/no question branches on the answer itself; an open one has no yes or no to
+      // branch on, so it falls back to the score threshold.
+      afterContext = isYesNo
+        ? str(saidYes ? at.question.yesContext : at.question.noContext)
+        : postContextFor(at.question, evaluation.score);
     } else if (!isFollowUp && MAX_FOLLOW_UPS_PER_QUESTION > 0 && evaluation.redirect) {
       // First miss: add context and re-ask. Nothing is recorded or flagged yet -- a
       // respondent who simply misread the question deserves a clean second go.
@@ -1111,6 +1154,8 @@ export async function handleApprenticeshipApi(route, request, env) {
           questionId: at.question.id,
           messages: [],
           prompt: evaluation.redirect,
+          // Only an open question can be redirected, so this is always the text box.
+          answerType: "open",
           isFollowUp: true,
           progress: { answered: response.cursor, total: flat.length },
         },

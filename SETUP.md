@@ -770,18 +770,35 @@ section leads with its own context, and the person answers in their own words �
 the point is to find out what an employer actually has in place rather than what they can
 recognise from a list.
 
-**Where a question's context goes is a per-question setting.** Each question has two
-context boxes and the admin decides which are used:
+**Questions are yes/no by default.** The respondent taps Yes or No; there is nothing to
+type and nothing for a model to interpret. A yes/no question:
 
-| Box | What it is for |
+- **costs no API call.** The answer is the score: yes earns the question's full weight, no
+  earns none. A step made entirely of yes/no questions costs nothing per answer.
+- **cannot be non-responsive**, so none of the redirect, flagging or shut-off machinery can
+  fire on one, and nobody can be stranded mid-assessment.
+- **needs no scoring criteria.** There is nothing to judge.
+
+Each question is built in the order the respondent meets it:
+
+| | |
 |---|---|
-| **Before the question** | The teaching half of the chat. It can be switched off per question without deleting the text: context in front of *"Do you have leadership support?"* telegraphs the answer the tool is hoping for, and a respondent who reads the case for it first is being led rather than asked. |
-| **After they answer** | Shown in reply to what they said, and normally only when the answer was weak. A "no" earns the case for leadership support — that is the moment it is worth reading, because they have just noticed they don't have it. A "yes" is not made to sit through it. |
+| **Context before the question** | Optional. Leave it empty to ask cold — context in front of *"Do you have leadership support?"* telegraphs the answer the tool is hoping for, and a respondent who reads the case for it first is being led rather than asked. |
+| **The question** | |
+| **If they answer yes, show** | Optional. Empty means that answer moves straight on. |
+| **If they answer no, show** | Optional. This is where the teaching belongs: they have just told you they don't have it. |
+| **Weight** | How much the question counts toward the step's percentage. Leave every question at 1 and the percentage is simply the share answered yes. |
 
-The post-answer box has three modes: **when they answer poorly** (the default, with an
-admin-set score threshold), **however they answer**, and **never** — which parks the text
-without showing it rather than making an admin delete what they wrote. On the last
-question it travels with the results, since there is no next question for it to precede.
+**Open questions still exist** for anything a yes/no cannot capture. Switch a question's
+answer type to *Open* and it behaves as before: the respondent types, Claude scores it
+against admin-written **scoring criteria** (required for this type only), a non-answer is
+redirected once and then flagged, and three non-responsive questions in a row trip the
+safety shut-off. An open question has no yes or no to branch on, so its follow-on context
+is shown on a score threshold instead, with three modes: **when they answer poorly** (the
+default), **however they answer**, and **never**.
+
+Either way, the follow-on context travels with the results on the last question, since
+there is no next question for it to precede.
 
 **Pacing.** Messages that would otherwise land in the same instant are staged, so a
 section's context and the question behind it read as someone talking rather than a wall of

@@ -1327,7 +1327,7 @@ const ONE_SECTION = [{
   context: "Some teaching context.",
   questions: [
     { text: "Who owns apprenticeship internally?", context: "Shown context.",
-      criteria: "SECRET CRITERIA", maxPoints: 5 },
+      type: "open", criteria: "SECRET CRITERIA", maxPoints: 5 },
   ],
 }];
 
@@ -1382,7 +1382,7 @@ test("apprenticeship: a question with no scoring criteria is rejected, not saved
     { name: "Project" }, token), env)).json();
   const res = await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
     projectId: project.project.id, name: "No criteria",
-    sections: [{ name: "S", questions: [{ text: "Q?", criteria: "" }] }],
+    sections: [{ name: "S", questions: [{ text: "Q?", type: "open", criteria: "" }] }],
   }, token), env);
   assert.equal(res.status, 400, "criteria is what keeps scoring consistent, so it is mandatory");
 });
@@ -1442,7 +1442,7 @@ test("apprenticeship: a non-responsive answer is redirected once, then flagged w
 test("apprenticeship: three non-responsive questions in a row shut the assessment off", async () => {
   const { env, token } = await apprEnv();
   const questions = [1, 2, 3, 4].map((n) => ({
-    text: `Q${n}?`, context: "", criteria: "Anything concrete.", maxPoints: 5,
+    text: `Q${n}?`, context: "", type: "open", criteria: "Anything concrete.", maxPoints: 5,
   }));
   const { survey } = await makeAssessment(env, token, [{ name: "S", objective: "o", context: "c", questions }]);
   const started = await startResponse(env, survey.id);
@@ -1491,8 +1491,8 @@ test("apprenticeship: the readiness bands land exactly on 85 and 60", async () =
     const { survey } = await makeAssessment(env, token, [{
       name: "S", objective: "o", context: "c",
       questions: [
-        { text: "Q1?", context: "", criteria: "c", maxPoints: 10 },
-        { text: "Q2?", context: "", criteria: "c", maxPoints: 10 },
+        { text: "Q1?", context: "", type: "open", criteria: "c", maxPoints: 10 },
+        { text: "Q2?", context: "", type: "open", criteria: "c", maxPoints: 10 },
       ],
     }], `Band ${testCase.percent}`);
     const started = await startResponse(env, survey.id);
@@ -1617,8 +1617,8 @@ test("apprenticeship: an unfinished assessment resumes instead of starting over"
   const { env, token } = await apprEnv();
   const { survey } = await makeAssessment(env, token, [{
     name: "S", objective: "o", context: "c",
-    questions: [{ text: "Q1?", context: "", criteria: "c", maxPoints: 5 },
-                { text: "Q2?", context: "", criteria: "c", maxPoints: 5 }],
+    questions: [{ text: "Q1?", context: "", type: "open", criteria: "c", maxPoints: 5 },
+                { text: "Q2?", context: "", type: "open", criteria: "c", maxPoints: 5 }],
   }]);
   const started = await startResponse(env, survey.id);
   await withFetch(claudeStub((name, body) => name === "record_evaluation"
@@ -1696,31 +1696,119 @@ test("apprenticeship: signing up claims the assessments that person finished bef
     "work done before sign-up must not look like a blank slate");
 });
 
-test("apprenticeship: context before the question can be switched off without deleting it", async () => {
+test("apprenticeship: pre-question context is optional, and an empty box shows nothing", async () => {
   const { env, token } = await apprEnv();
   const { survey } = await makeAssessment(env, token, [{
     name: "S", objective: "o", context: "Section context.",
     questions: [
-      { text: "Do you have leadership support?", context: "PRE CONTEXT", showPreContext: false,
-        criteria: "c", maxPoints: 5 },
-      { text: "Q2?", context: "SHOWN PRE CONTEXT", criteria: "c", maxPoints: 5 },
+      // Left empty on purpose: context in front of "Do you have leadership support?"
+      // telegraphs the answer the tool is hoping for, so that question is asked cold.
+      { text: "Do you have leadership support?", context: "" },
+      { text: "Q2?", context: "SHOWN PRE CONTEXT" },
     ],
   }]);
   const started = await startResponse(env, survey.id);
-  assert.ok(!started.step.messages.includes("PRE CONTEXT"),
-    "context in front of that question telegraphs the answer, so it must stay hidden");
-  assert.ok(started.step.messages.includes("Section context."), "the section's own context still shows");
-  // The text is kept on the survey, not thrown away -- switching it back on restores it.
-  const stored = await (await appr(`surveys/${survey.id}`,
-    req(`/api/apprenticeship/surveys/${survey.id}`, { headers: { authorization: `Bearer ${token}` } }),
-    env)).json();
-  assert.equal(stored.sections[0].questions[0].context, "PRE CONTEXT");
+  assert.deepEqual(started.step.messages, ["Welcome.", "S", "Section context."],
+    "the intro and the section's own context still show; the question's is simply absent");
+  assert.equal(started.step.answerType, "yes_no", "questions are yes/no unless told otherwise");
 
-  await withFetch(claudeStub((name, body) => name === "record_evaluation"
-    ? evaluation({ score: 5 }) : improvementsFor(body)), async () => {
-    const next = await (await postAnswer(env, survey.id, started.responseId, "Yes, fully.")).json();
-    assert.ok(next.step.messages.includes("SHOWN PRE CONTEXT"), "and it defaults to showing");
-  });
+  const next = await (await postAnswer(env, survey.id, started.responseId, "yes")).json();
+  assert.ok(next.step.messages.includes("SHOWN PRE CONTEXT"));
+});
+
+test("apprenticeship: a yes/no question scores itself, with no model call", async () => {
+  const { env, token } = await apprEnv();
+  const sections = [{
+    name: "S", objective: "o", context: "",
+    questions: [{ text: "Do you have leadership support?", context: "", maxPoints: 1 }],
+  }];
+
+  for (const [said, percent] of [["yes", 100], ["no", 0]]) {
+    const { survey } = await makeAssessment(env, token, sections, `Said ${said}`);
+    const started = await startResponse(env, survey.id);
+    let claudeCalls = 0;
+    await withFetch((url, init) => {
+      claudeCalls++;
+      const tool = JSON.parse(init.body).tools[0];
+      assert.equal(tool.name, "record_improvements",
+        "a yes/no answer must not cost a scoring call -- the answer is the score");
+      return okJson({ content: [{ type: "tool_use", name: tool.name,
+                                  input: improvementsFor(JSON.parse(init.body)) }] });
+    }, async () => {
+      const body = await (await postAnswer(env, survey.id, started.responseId, said)).json();
+      assert.equal(body.results.overall.percent, percent);
+    });
+    assert.equal(claudeCalls, 1, "only the end-of-assessment write-up");
+  }
+});
+
+test("apprenticeship: a yes/no question branches its follow-on context on the answer", async () => {
+  const { env, token } = await apprEnv();
+  const sections = [{
+    name: "S", objective: "o", context: "",
+    questions: [
+      { text: "Do you have leadership support?", context: "",
+        yesContext: "GOOD, HERE IS WHAT TO DO NEXT", noContext: "WHY LEADERSHIP MATTERS" },
+      { text: "Q2?", context: "" },
+    ],
+  }];
+  for (const [said, expected] of [["no", "WHY LEADERSHIP MATTERS"], ["yes", "GOOD, HERE IS WHAT TO DO NEXT"]]) {
+    const { survey } = await makeAssessment(env, token, sections, `Branch ${said}`);
+    const started = await startResponse(env, survey.id);
+    const next = await (await postAnswer(env, survey.id, started.responseId, said)).json();
+    assert.equal(next.step.messages[0], expected,
+      "it leads, so it reads as a reply to what they just said");
+  }
+});
+
+test("apprenticeship: either branch can be left empty, and that answer just moves on", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [
+      { text: "Do you have leadership support?", context: "", noContext: "ONLY ON NO" },
+      { text: "Q2?", context: "" },
+    ],
+  }]);
+  const started = await startResponse(env, survey.id);
+  const next = await (await postAnswer(env, survey.id, started.responseId, "yes")).json();
+  assert.deepEqual(next.step.messages, [], "a yes with no context of its own simply moves on");
+  assert.equal(next.step.prompt, "Q2?");
+});
+
+test("apprenticeship: a yes/no question takes yes or no and nothing else", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [{ text: "Do you have leadership support?", context: "" },
+                { text: "Q2?", context: "" }],
+  }]);
+  const started = await startResponse(env, survey.id);
+  const res = await postAnswer(env, survey.id, started.responseId, "sort of, it depends");
+  assert.equal(res.status, 400, "there is nothing to interpret, so there is nothing to accept");
+  // Case and spacing are not the respondent's problem.
+  const ok = await (await postAnswer(env, survey.id, started.responseId, "  YES ")).json();
+  assert.equal(ok.step.prompt, "Q2?");
+  const stored = JSON.parse(await env.BOX_KV.get(
+    `apprenticeship:response:${survey.id}:${started.responseId}`));
+  assert.equal(stored.answers[0].answer, "Yes", "stored normalised, so the CSV reads the same");
+});
+
+test("apprenticeship: a yes/no question needs no scoring criteria, an open one still does", async () => {
+  const { env, token } = await apprEnv();
+  const project = await (await appr("projects", jsonReq("/api/apprenticeship/projects", "POST",
+    { name: "Project" }, token), env)).json();
+  const saved = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: project.project.id, name: "Mixed",
+    sections: [{ name: "S", questions: [
+      { text: "Do you have leadership support?" },
+      { text: "Tell us about it", type: "open" },
+    ] }],
+  }, token), env)).json();
+  const questions = saved.survey.sections[0].questions;
+  assert.equal(questions.length, 1, "the open question had no criteria, so it was dropped");
+  assert.equal(questions[0].type, "yes_no");
+  assert.equal(questions[0].criteria, "", "and a yes/no question carries none");
 });
 
 test("apprenticeship: a weak answer earns the post-answer context, a strong one moves on", async () => {
@@ -1730,8 +1818,8 @@ test("apprenticeship: a weak answer earns the post-answer context, a strong one 
     questions: [
       { text: "Do you have leadership support?", context: "", showPreContext: false,
         postContext: "WHY LEADERSHIP MATTERS", postContextMode: "weak", postContextBelow: 60,
-        criteria: "c", maxPoints: 5 },
-      { text: "Q2?", context: "", criteria: "c", maxPoints: 5 },
+        type: "open", criteria: "c", maxPoints: 5 },
+      { text: "Q2?", context: "", type: "open", criteria: "c", maxPoints: 5 },
     ],
   }];
 
@@ -1762,8 +1850,8 @@ test("apprenticeship: post-answer context can be set to always, or parked withou
       name: "S", objective: "o", context: "",
       questions: [
         { text: "Q1?", context: "", postContext: "ALWAYS TEXT", postContextMode: mode,
-          criteria: "c", maxPoints: 5 },
-        { text: "Q2?", context: "", criteria: "c", maxPoints: 5 },
+          type: "open", criteria: "c", maxPoints: 5 },
+        { text: "Q2?", context: "", type: "open", criteria: "c", maxPoints: 5 },
       ],
     }], `Mode ${mode}`);
     const started = await startResponse(env, survey.id);
@@ -1781,7 +1869,7 @@ test("apprenticeship: the last question's post-answer context rides along with t
   const { survey } = await makeAssessment(env, token, [{
     name: "S", objective: "o", context: "",
     questions: [{ text: "Q1?", context: "", postContext: "CLOSING LESSON",
-                  postContextMode: "weak", postContextBelow: 60, criteria: "c", maxPoints: 5 }],
+                  postContextMode: "weak", postContextBelow: 60, type: "open", criteria: "c", maxPoints: 5 }],
   }]);
   const started = await startResponse(env, survey.id);
   await withFetch(claudeStub((name, body) => name === "record_evaluation"
@@ -1799,8 +1887,8 @@ test("apprenticeship: a pending follow-up does not trigger the post-answer conte
   const { survey } = await makeAssessment(env, token, [{
     name: "S", objective: "o", context: "",
     questions: [{ text: "Q1?", context: "", postContext: "TOO SOON", postContextMode: "always",
-                  criteria: "c", maxPoints: 5 },
-                { text: "Q2?", context: "", criteria: "c", maxPoints: 5 }],
+                  type: "open", criteria: "c", maxPoints: 5 },
+                { text: "Q2?", context: "", type: "open", criteria: "c", maxPoints: 5 }],
   }]);
   const started = await startResponse(env, survey.id);
   await withFetch(claudeStub((name, body) => name === "record_evaluation"
@@ -1836,8 +1924,8 @@ test("apprenticeship: the unlock gate is a percentage of the step's points, not 
   // as a percentage it is exactly 85% and passes.
   const stepOne = await makeAssessment(env, token, [{
     name: "S", objective: "o", context: "c",
-    questions: [{ text: "Q1?", context: "", criteria: "c", maxPoints: 10 },
-                { text: "Q2?", context: "", criteria: "c", maxPoints: 10 }],
+    questions: [{ text: "Q1?", context: "", type: "open", criteria: "c", maxPoints: 10 },
+                { text: "Q2?", context: "", type: "open", criteria: "c", maxPoints: 10 }],
   }], "Gate One");
   await appr(`surveys/${stepOne.survey.id}`,
     jsonReq(`/api/apprenticeship/surveys/${stepOne.survey.id}`, "PUT", {
@@ -1845,7 +1933,7 @@ test("apprenticeship: the unlock gate is a percentage of the step's points, not 
       sections: [{
         id: stepOne.survey.sections[0].id, name: "S", objective: "o", context: "c",
         questions: stepOne.survey.sections[0].questions.map((q) => ({
-          id: q.id, text: q.text, criteria: "c", maxPoints: 10 })),
+          id: q.id, text: q.text, type: "open", criteria: "c", maxPoints: 10 })),
       }],
     }, token), env);
   const stepTwo = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
@@ -1877,7 +1965,7 @@ test("apprenticeship: ticking the to-do list raises the score, and clearing it r
   // shortfall -- tick both and the section reaches full marks.
   const { survey } = await makeAssessment(env, token, [{
     name: "S", objective: "o", context: "c",
-    questions: [{ text: "Q?", context: "", criteria: "c", maxPoints: 10 }],
+    questions: [{ text: "Q?", context: "", type: "open", criteria: "c", maxPoints: 10 }],
   }]);
   const started = await startResponse(env, survey.id);
   let items = [];
@@ -1926,14 +2014,14 @@ test("apprenticeship: step two stays locked until step one reaches its threshold
   const respondentToken = await respondent(env);
   const stepOne = await makeAssessment(env, token, [{
     name: "S", objective: "o", context: "c",
-    questions: [{ text: "Q?", context: "", criteria: "c", maxPoints: 10 }],
+    questions: [{ text: "Q?", context: "", type: "open", criteria: "c", maxPoints: 10 }],
   }], "Step One");
   await appr(`surveys/${stepOne.survey.id}`,
     jsonReq(`/api/apprenticeship/surveys/${stepOne.survey.id}`, "PUT", {
       projectId: stepOne.projectId, name: "Step One", step: 1, unlockThreshold: 85,
       sections: [{ id: stepOne.survey.sections[0].id, name: "S", objective: "o", context: "c",
         questions: [{ id: stepOne.survey.sections[0].questions[0].id, text: "Q?",
-                      criteria: "c", maxPoints: 10 }] }],
+                      type: "open", criteria: "c", maxPoints: 10 }] }],
     }, token), env);
   const stepTwo = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
     projectId: stepOne.projectId, name: "Step Two", step: 2, sections: ONE_SECTION,
@@ -2039,8 +2127,8 @@ test("apprenticeship: editing keeps question ids, and a duplicate id is not allo
       projectId, name: "Readiness", sections: [{
         ...ONE_SECTION[0], id: survey.sections[0].id,
         questions: [
-          { text: "A?", criteria: "c", maxPoints: 5, id: "same" },
-          { text: "B?", criteria: "c", maxPoints: 5, id: "same" },
+          { text: "A?", type: "open", criteria: "c", maxPoints: 5, id: "same" },
+          { text: "B?", type: "open", criteria: "c", maxPoints: 5, id: "same" },
         ],
       }],
     }, token), env)).json();
