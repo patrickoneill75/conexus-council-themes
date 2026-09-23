@@ -524,5 +524,87 @@ class ConsensusGroupingTests(unittest.TestCase):
             _group_by_question(["Response ID"], [["r1"]])
 
 
+# ------------------------------------------------------- scripts/build_credentials
+class CredentialBuildTests(unittest.TestCase):
+    """The workbook -> src/data/credentials.json reduction. The output is committed, so
+    these check the committed artifact as well as the code that produces it."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        from pathlib import Path as P
+        cls.data = json.loads((P(__file__).resolve().parent.parent
+                               / "src" / "data" / "credentials.json").read_text())
+
+    def test_every_toolkit_pathway_is_recommendable(self):
+        """The toolkit's Credential & Pathway Reference lists seven things. Three have no
+        workbook rows at all, so they have to be carried by hand or they could never be
+        recommended."""
+        names = " | ".join(c["name"] for c in self.data["credentials"])
+        for expected in ["MSSC", "NIMS", "OSHA", "Ivy Tech", "Polymechanic",
+                         "Registered Apprenticeship", "Indiana CTE"]:
+            self.assertIn(expected, names, f"{expected} must be recommendable")
+
+    def test_every_credential_carries_terms_and_a_signal(self):
+        for credential in self.data["credentials"]:
+            self.assertTrue(credential["terms"], f"{credential['name']} has no terms to match on")
+            self.assertTrue(credential["signals"], f"{credential['name']} has no signal sentence")
+            self.assertLessEqual(len(credential["terms"]), 70, credential["name"])
+
+    def test_osha_vectors_carry_safety_content_not_scheduling_boilerplate(self):
+        """BUG: the OSHA cards' performance indicators are almost entirely "Minimum time:
+        >= 30 min (elective -- trainer must select...)". Tokenized as-is, "least", "time",
+        "trainer" and "totaling" became the highest-weighted terms in every OSHA vector,
+        an order of magnitude above "lockout" and "ppe", and OSHA ranked below every NIMS
+        machining card for every role."""
+        osha = next(c for c in self.data["credentials"]
+                    if c["name"] == "OSHA 10-Hour — General Industry")
+        top = list(osha["terms"])[:8]
+        for noise in ("least", "trainer", "totaling", "time", "select"):
+            self.assertNotIn(noise, osha["terms"], f"{noise!r} is scheduling boilerplate")
+        self.assertTrue(any(t in top for t in ("protection", "fall", "fire", "guarding")),
+                        f"OSHA's strongest terms should be safety topics, got {top}")
+
+    def test_the_indicator_cleaner_keeps_real_content(self):
+        import importlib.util
+        from pathlib import Path as P
+        spec = importlib.util.spec_from_file_location(
+            "build_credentials", P(__file__).resolve().parent.parent / "scripts" / "build_credentials.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        self.assertEqual(module.clean_indicator("Minimum time: 1 hour."), "")
+        self.assertEqual(
+            module.clean_indicator("Minimum time: ≥ 30 min (elective — trainer must select "
+                                   "at least 2 elective topics totaling at least 2 hours)."), "")
+        self.assertEqual(
+            module.clean_indicator("Minimum time: 1 hour. Worker rights, employer "
+                                   "responsibilities, filing a complaint, OSHA's role."),
+            "Worker rights, employer responsibilities, filing a complaint, OSHA's role")
+        # A genuine competency statement must pass through untouched.
+        self.assertEqual(
+            module.clean_indicator("Locate and use Safety Data Sheets (SDS)"),
+            "Locate and use Safety Data Sheets (SDS)")
+
+    def test_the_two_tokenizers_agree(self):
+        """scripts/build_credentials.py builds the vectors and src/credentials.js scores
+        against them. A term one keeps and the other drops can never match."""
+        import re
+        from pathlib import Path as P
+        root = P(__file__).resolve().parent.parent
+        py = (root / "scripts" / "build_credentials.py").read_text()
+        js = (root / "src" / "credentials.js").read_text()
+
+        py_stop = set(re.findall(r'"([^"]+)"', py.split("STOPWORDS = {", 1)[1].split("}", 1)[0]))
+        js_stop = set(re.findall(r'"([^"]+)"', js.split("const STOPWORDS = new Set([", 1)[1]
+                                                 .split("]);", 1)[0]))
+        self.assertEqual(py_stop, js_stop, "the stopword lists have drifted apart")
+
+        py_short = set(re.findall(r'"([^"]+)"', py.split("KEEP_SHORT = {", 1)[1].split("}", 1)[0]))
+        js_short = set(re.findall(r'"([^"]+)"', js.split("const KEEP_SHORT = new Set([", 1)[1]
+                                                  .split("]);", 1)[0]))
+        self.assertEqual(py_short, js_short, "the short-term keep lists have drifted apart")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

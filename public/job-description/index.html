@@ -104,66 +104,60 @@
 
   <div id="statusBanner" class="msg err" hidden></div>
 
-  <!-- ===================== Upload ===================== -->
+  <!-- ===================== Start ===================== -->
   <section id="screen-upload" class="card">
-    <h2>Upload the current job description</h2>
-    <p class="desc">PDF or Word (.docx). Claude reads the whole document before asking you anything.</p>
+    <h2>Start with the current job description</h2>
+    <p class="desc">PDF or Word (.docx). Claude reads the whole document before asking you
+      anything &mdash; answer the three questions below while it does.</p>
     <div class="field">
       <input type="file" id="uploadFile" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
     </div>
-    <button type="button" class="primary" id="uploadBtn">Upload &amp; start</button>
+    <div class="field">
+      <label for="startRole">Your role</label>
+      <input type="text" id="startRole" placeholder="e.g. HR Manager, Plant Supervisor, Line Lead">
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="startHardToFill"> This is a hard-to-fill position</label>
+    </div>
+    <div class="field">
+      <label for="startLastUpdated">Roughly when was this description last updated?</label>
+      <input type="text" id="startLastUpdated" placeholder="e.g. 2 years ago, not sure">
+    </div>
+    <button type="button" class="primary" id="uploadBtn">Read the document</button>
     <p class="msg" id="uploadMsg"></p>
   </section>
 
   <!-- ===================== Pre-read review ===================== -->
   <section id="screen-preread" class="card" hidden>
-    <p class="step-label">Step 1 &middot; Pre-read</p>
-    <h2>Here's what Claude found</h2>
-    <p class="desc">Everything below is Claude's inference from the document -- nothing here is
-      treated as fact until you confirm it. Edit anything that's wrong, then continue.</p>
+    <p class="step-label">1 of 4 &middot; What Claude found</p>
+    <h2 id="prereadHeading">Here&rsquo;s what Claude found</h2>
+    <p class="desc">Claude audited all ten toolkit categories. The ones that need attention are
+      open below; the rest matched the work as written and are collapsed. Everything here is
+      Claude&rsquo;s inference &mdash; nothing counts as fact until you confirm it.</p>
     <p class="infer-note">Likely O*NET-SOC match: <span id="prereadOnet"></span></p>
-    <div id="prereadCategories"></div>
-    <h3 style="margin-top:18px">Flags</h3>
     <div id="prereadFlags"></div>
-    <button type="button" class="primary" id="prereadConfirmBtn" style="margin-top:10px">Looks good -- continue</button>
-    <p class="msg" id="prereadMsg"></p>
-  </section>
-
-  <!-- ===================== Step 2: who's answering ===================== -->
-  <section id="screen-step2" class="card" hidden>
-    <p class="step-label">Step 2 &middot; Who's answering</p>
-    <h2>About one minute</h2>
-    <div class="field">
-      <label for="step2Role">Your role</label>
-      <input type="text" id="step2Role" placeholder="e.g. HR Manager, Plant Supervisor, Line Lead">
-    </div>
-    <div class="field">
-      <label><input type="checkbox" id="step2HardToFill"> This is a hard-to-fill position</label>
-    </div>
-    <div class="field">
-      <label for="step2LastUpdated">Roughly when was this description last updated?</label>
-      <input type="text" id="step2LastUpdated" placeholder="e.g. 2 years ago, not sure">
-    </div>
-    <p class="desc" style="margin-top:4px">If you're not the supervisor closest to this work day to
-      day, the answers below will be more accurate coming from them. You can send them a link now
-      and pick this back up once they've answered, or continue yourself.</p>
+    <div id="prereadCategories" style="margin-top:12px"></div>
+    <p class="desc" style="margin:14px 0 8px">If you&rsquo;re not the supervisor closest to this
+      work day to day, the next answers will be more accurate coming from them. You can send
+      them a link and pick this back up later, or carry on yourself.</p>
     <div class="row">
       <button type="button" id="inviteSupervisorBtn">Send to a supervisor</button>
-      <button type="button" class="primary" id="step2ContinueBtn">Continue to Step 3</button>
+      <button type="button" class="primary" id="prereadConfirmBtn">Looks right &mdash; continue</button>
     </div>
     <div id="inviteBox" hidden style="margin-top:12px">
       <label style="font-weight:600; font-size:12.5px; display:block; margin-bottom:4px">Shareable link</label>
       <div class="row"><code id="inviteLink" style="flex:1 1 260px; word-break:break-all"></code>
         <button type="button" class="small" id="copyInviteBtn">Copy</button></div>
     </div>
-    <p class="msg" id="step2Msg"></p>
+    <p class="msg" id="prereadMsg"></p>
   </section>
 
   <!-- ===================== Step 3: reality check ===================== -->
   <section id="screen-step3" class="card" hidden>
-    <p class="step-label">Step 3 &middot; Reality check on duties</p>
-    <h2>About five minutes</h2>
-    <p class="desc">For each duty, is it still accurate?</p>
+    <p class="step-label">2 of 4 &middot; Reality check on duties</p>
+    <h2>About four minutes</h2>
+    <p class="desc">For each duty, is it still accurate? This is the evidence base for
+      everything that follows, so it&rsquo;s worth being blunt.</p>
     <div id="dutiesList"></div>
     <h3 style="margin-top:18px">What's missing</h3>
     <p class="desc">Each is prefilled with Claude's guess from the document -- correct it.</p>
@@ -199,72 +193,69 @@
 
   <!-- ===================== Step 4: requirements test ===================== -->
   <section id="screen-step4" class="card" hidden>
-    <p class="step-label">Step 4 &middot; Requirements test</p>
-    <h2>About five minutes</h2>
-    <p class="desc">If a candidate didn't have this, could they still learn it within a reasonable
-      onboarding or apprenticeship period?</p>
+    <p class="step-label">3 of 4 &middot; Requirements test</p>
+    <h2>About three minutes</h2>
+    <p class="desc">The toolkit&rsquo;s core question, asked of every requirement: if a candidate
+      didn&rsquo;t have this, could they still learn to do the job well within a reasonable
+      onboarding or apprenticeship period? If yes, it isn&rsquo;t a requirement.</p>
     <div id="requirementsList"></div>
-    <button type="button" class="primary" id="step4ContinueBtn" style="margin-top:10px">Continue to Step 5</button>
+    <div id="credentialBox" style="margin-top:18px"></div>
+    <button type="button" class="primary" id="step4ContinueBtn" style="margin-top:14px">Continue</button>
     <p class="msg" id="step4Msg"></p>
   </section>
 
-  <!-- ===================== Step 5: missing facts ===================== -->
-  <section id="screen-step5" class="card" hidden>
-    <p class="step-label">Step 5 &middot; Missing facts</p>
-    <h2>About two minutes</h2>
-    <p class="desc">These are rarely in a job description -- each can be skipped.</p>
+  <!-- ===================== Gaps and the new-role decision ===================== -->
+  <section id="screen-finalize" class="card" hidden>
+    <p class="step-label">4 of 4 &middot; Gaps and the decision</p>
+    <h2>Last few &mdash; about two minutes</h2>
+    <p class="desc">The first three are rarely in a job description and each can be skipped. The
+      last two complete the toolkit&rsquo;s New Role Decision Matrix; the score updates as you
+      answer.</p>
     <div class="field">
-      <label for="step5Pay">Pay range</label>
-      <div class="hint">Without it, the posting can't set candidate expectations up front.</div>
-      <input type="text" id="step5Pay" placeholder="e.g. $19-24/hr, or skip">
+      <label for="finalizePay">Pay range</label>
+      <div class="hint">Without it, the posting can&rsquo;t set expectations up front.</div>
+      <input type="text" id="finalizePay" placeholder="e.g. $19-24/hr, or skip">
     </div>
     <div class="field">
-      <label for="step5Physical">How often do the physical demands occur (not just the maximums)?</label>
-      <div class="hint">Without it, "up to 50 lbs" reads as constant even if it's rare.</div>
-      <textarea id="step5Physical"></textarea>
+      <label for="finalizePhysical">How often do the physical demands occur (not just the maximums)?</label>
+      <div class="hint">Without it, &ldquo;up to 50 lbs&rdquo; reads as constant even if it&rsquo;s rare.</div>
+      <textarea id="finalizePhysical"></textarea>
     </div>
     <div class="field">
-      <label for="step5Pathway">Where does this role typically lead, and how long does that take?</label>
-      <div class="hint">Without it, candidates can't see a future in the role.</div>
-      <textarea id="step5Pathway"></textarea>
+      <label for="finalizePathway">Where does this role typically lead, and how long does that take?</label>
+      <div class="hint">Without it, candidates can&rsquo;t see a future in the role.</div>
+      <textarea id="finalizePathway"></textarea>
     </div>
-    <button type="button" class="primary" id="step5ContinueBtn">Continue to Step 6</button>
-    <p class="msg" id="step5Msg"></p>
-  </section>
-
-  <!-- ===================== Step 6: new role decision ===================== -->
-  <section id="screen-step6" class="card" hidden>
-    <p class="step-label">Step 6 &middot; New role decision</p>
-    <h2>Almost done</h2>
+    <hr style="border:0; border-top:1px solid var(--border); margin:18px 0">
     <div class="field">
       <label>Would you screen and interview candidates differently now?</label>
-      <div class="choices" id="step6ScreenChoices">
+      <div class="choices" id="finalizeScreenChoices">
         <button type="button" class="choice-btn" data-value="true">Yes</button>
         <button type="button" class="choice-btn" data-value="false">No</button>
       </div>
     </div>
     <div class="field">
       <label>Would compensation, progression, or reporting change?</label>
-      <div class="choices" id="step6CompChoices">
+      <div class="choices" id="finalizeCompChoices">
         <button type="button" class="choice-btn" data-value="true">Yes</button>
         <button type="button" class="choice-btn" data-value="false">No</button>
       </div>
     </div>
-    <div id="step6Matrix" style="margin-top:14px"></div>
-    <button type="button" class="primary" id="step6ContinueBtn" style="margin-top:10px">See recommendation</button>
-    <p class="msg" id="step6Msg"></p>
+    <div id="finalizeMatrix" style="margin-top:14px"></div>
+    <button type="button" class="primary" id="finalizeContinueBtn" style="margin-top:12px">Continue</button>
+    <p class="msg" id="finalizeMsg"></p>
   </section>
 
-  <!-- ===================== Step 7: outputs ===================== -->
+  <!-- ===================== Outputs ===================== -->
   <section id="screen-outputs" class="card" hidden>
-    <p class="step-label">Step 7 &middot; Outputs</p>
+    <p class="step-label">Outputs</p>
     <h2 id="outputsHeading">Ready to generate</h2>
     <div id="outputsPrompt">
-      <p class="desc">Generates the revised description, a redline, the analysis worksheet, and five
-        communication drafts -- no more questions. Optionally add an owner and target date for
-        each communication draft below (skippable).</p>
-      <div id="commsOwners"></div>
-      <button type="button" class="primary" id="generateBtn">Generate outputs</button>
+      <p class="desc">Produces a plain-English summary of what changed, plus three Word files:
+        a redlined description with tracked changes, the clean final version, and a career-fair
+        one-pager. No more questions.</p>
+      <div id="outputsMatrix" style="margin-bottom:14px"></div>
+      <button type="button" class="primary" id="generateBtn">Generate</button>
       <p class="msg" id="generateMsg"></p>
     </div>
     <div id="outputsResults" hidden></div>
@@ -298,7 +289,7 @@
     });
   }
 
-  var SCREENS = ["upload", "preread", "step2", "step3", "conflicts", "step4", "step5", "step6", "outputs"];
+  var SCREENS = ["upload", "preread", "step3", "conflicts", "step4", "finalize", "outputs"];
   function showScreen(name) {
     SCREENS.forEach(function (s) { el("screen-" + s).hidden = s !== name; });
     window.scrollTo(0, 0);
@@ -326,6 +317,11 @@
       el("uploadMsg").innerHTML = '<span class="spin"></span>Reading the document…';
       var form = new FormData();
       form.append("file", file);
+      // Sent with the document rather than on a screen of their own: three fields the
+      // employer fills in while the pre-read is running, which removes a whole step.
+      form.append("role", el("startRole").value);
+      form.append("hardToFill", el("startHardToFill").checked ? "true" : "false");
+      form.append("lastUpdated", el("startLastUpdated").value);
       fetch("/api/job-description/upload", { method: "POST", body: form })
         .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || ("HTTP " + r.status)); return b; }); })
         .then(function (body) {
@@ -364,13 +360,24 @@
   function renderPreRead() {
     var pr = session.preRead;
     el("prereadOnet").textContent = pr.onetMatch.title + " (" + pr.onetMatch.code + ") -- " + pr.onetMatch.reasoning;
+
+    // All ten toolkit categories are still audited and still editable, but only the ones
+    // Claude flagged open by default. Reading ten boxes to find the three that moved is
+    // exactly the friction that makes the manual toolkit take 60-90 minutes.
+    var drifted = pr.categories.filter(function (c) { return c.status !== "aligned"; }).length;
+    el("prereadHeading").textContent = drifted
+      ? drifted + " of " + pr.categories.length + " categories need attention"
+      : "All ten categories look aligned";
+
     el("prereadCategories").innerHTML = pr.categories.map(function (c, i) {
-      return '<div class="duty-card">' +
-        '<div class="row" style="justify-content:space-between; margin-bottom:6px">' +
-        '<b>' + esc(CATEGORY_LABEL[c.key] || c.key) + '</b>' + (STATUS_PILL[c.status] || "") + '</div>' +
-        '<p class="infer-note">' + esc(c.statusReasoning) + '</p>' +
-        '<textarea data-cat="' + i + '" rows="2">' + esc(c.extractedText) + '</textarea>' +
-        '</div>';
+      var needsWork = c.status !== "aligned";
+      return '<details class="output"' + (needsWork ? " open" : "") + '>' +
+        '<summary><span style="display:inline-flex; gap:8px; align-items:center">' +
+        esc(CATEGORY_LABEL[c.key] || c.key) + (STATUS_PILL[c.status] || "") + '</span></summary>' +
+        '<div class="body">' +
+        '<p class="infer-note" style="margin-top:0">' + esc(c.statusReasoning) + '</p>' +
+        '<textarea data-cat="' + i + '" rows="3">' + esc(c.extractedText) + '</textarea>' +
+        '</div></details>';
     }).join("");
 
     var flags = [];
@@ -378,7 +385,8 @@
     if (vague.length) flags.push('<p class="msg warn" style="color:var(--warn)">Vague placeholder duties: ' +
       vague.map(function (d) { return esc(d.text); }).join("; ") + '</p>');
     if (pr.systemGaps && pr.systemGaps.length) flags.push('<p class="msg warn" style="color:var(--warn)">' +
-      'Mentioned in duties but not in requirements: ' + pr.systemGaps.map(esc).join(", ") + '</p>');
+      'Named in the duties but missing from the requirements &mdash; the toolkit calls this the single ' +
+      'most common gap: ' + pr.systemGaps.map(esc).join(", ") + '</p>');
     el("prereadFlags").innerHTML = flags.length ? flags.join("") : '<p class="msg muted">No flags.</p>';
   }
 
@@ -390,8 +398,8 @@
     el("prereadConfirmBtn").disabled = true;
     apiPost("session/" + session.id + "/confirm-pre-read", { edits: edits }).then(function (body) {
       session = body.session;
-      renderStep2();
-      showScreen("step2");
+      renderStep3();
+      showScreen("step3");
     }).catch(function (e) {
       el("prereadMsg").className = "msg err";
       el("prereadMsg").textContent = "Error: " + e.message;
@@ -399,15 +407,8 @@
   });
 
   /* ---------------------------------------------------------------------
-   * Step 2
+   * Second respondent (the toolkit asks for an incumbent AND a supervisor)
    * --------------------------------------------------------------------- */
-  function renderStep2() {
-    el("step2Role").value = "";
-    el("step2HardToFill").checked = false;
-    el("step2LastUpdated").value = "";
-    el("inviteBox").hidden = true;
-  }
-
   el("inviteSupervisorBtn").addEventListener("click", function () {
     el("inviteSupervisorBtn").disabled = true;
     apiPost("session/" + session.id + "/invite-supervisor").then(function (body) {
@@ -418,20 +419,6 @@
   });
   el("copyInviteBtn").addEventListener("click", function () {
     if (navigator.clipboard) navigator.clipboard.writeText(el("inviteLink").textContent);
-  });
-
-  el("step2ContinueBtn").addEventListener("click", function () {
-    el("step2ContinueBtn").disabled = true;
-    apiPost("session/" + session.id + "/step2", {
-      role: el("step2Role").value, hardToFill: el("step2HardToFill").checked,
-      lastUpdated: el("step2LastUpdated").value,
-    }).then(function (body) {
-      session = body.session;
-      renderStep3();
-      showScreen("step3");
-    }).catch(function (e) {
-      el("step2Msg").className = "msg err"; el("step2Msg").textContent = "Error: " + e.message;
-    }).then(function () { el("step2ContinueBtn").disabled = false; });
   });
 
   /* ---------------------------------------------------------------------
@@ -544,11 +531,28 @@
    * --------------------------------------------------------------------- */
   var REQ_CHOICES = [["must_have", "Must arrive with it"], ["could_learn", "Could learn it in onboarding/apprenticeship"], ["would_train", "We would train it"]];
 
+  function renderCredentialBox() {
+    // The shortlist is scored deterministically from this role's own duties (see
+    // src/credentials.js) -- shown here so the employer can see which credentials are in
+    // play while deciding what is genuinely required. Claude narrows it to 1-5 at the end.
+    var list = session.credentialShortlist || [];
+    if (!list.length) { el("credentialBox").innerHTML = ""; return; }
+    el("credentialBox").innerHTML =
+      '<h3>Credentials in play for this role</h3>' +
+      '<p class="desc">Scored against your duties from the Conexus credential reference. Where a ' +
+      'requirement really is necessary, the toolkit asks you to name one of these rather than say ' +
+      '&ldquo;technical background preferred&rdquo; &mdash; that is what a school can teach toward. ' +
+      'Claude picks the ones that genuinely fit at the end.</p>' +
+      '<div>' + list.slice(0, 5).map(function (c) {
+        return '<span class="chip" title="' + esc(c.signals) + '">' + esc(c.name) + '</span>';
+      }).join("") + '</div>';
+  }
+
   function renderStep4() {
+    renderCredentialBox();
     el("requirementsList").innerHTML = session.preRead.requirements.map(function (r) {
       return '<div class="req-card" data-req="' + esc(r.id) + '">' +
         '<p class="text">' + esc(r.text) + '</p>' +
-        (r.suggestedCredential ? '<p class="infer-note">Suggested credential: ' + esc(r.suggestedCredential) + '</p>' : "") +
         '<div class="choices req-choices">' + REQ_CHOICES.map(function (c) {
           return '<button type="button" class="choice-btn" data-value="' + c[0] + '">' + c[1] + '</button>';
         }).join("") + '</div>' +
@@ -584,100 +588,99 @@
     el("step4ContinueBtn").disabled = true;
     apiPost("session/" + session.id + "/step4", { requirementAnswers: answers }).then(function (body) {
       session = body.session;
-      showScreen("step5");
+      renderFinalize();
+      showScreen("finalize");
     }).catch(function (e) {
       el("step4Msg").className = "msg err"; el("step4Msg").textContent = "Error: " + e.message;
     }).then(function () { el("step4ContinueBtn").disabled = false; });
   });
 
   /* ---------------------------------------------------------------------
-   * Step 5
+   * Gaps and the new-role decision, on one screen
    * --------------------------------------------------------------------- */
-  el("step5ContinueBtn").addEventListener("click", function () {
-    el("step5ContinueBtn").disabled = true;
-    apiPost("session/" + session.id + "/step5", {
-      payRange: el("step5Pay").value, physicalFrequency: el("step5Physical").value, pathway: el("step5Pathway").value,
-    }).then(function (body) {
-      session = body.session;
-      loadStep6Matrix();
-      showScreen("step6");
-    }).catch(function (e) {
-      el("step5Msg").className = "msg err"; el("step5Msg").textContent = "Error: " + e.message;
-    }).then(function () { el("step5ContinueBtn").disabled = false; });
-  });
-
-  /* ---------------------------------------------------------------------
-   * Step 6
-   * --------------------------------------------------------------------- */
-  function bindYesNo(id) {
+  function bindYesNo(id, onChange) {
     var group = el(id);
     Array.prototype.forEach.call(group.querySelectorAll(".choice-btn"), function (btn) {
       btn.addEventListener("click", function () {
         Array.prototype.forEach.call(group.querySelectorAll(".choice-btn"), function (b) { b.classList.remove("selected"); });
         btn.classList.add("selected");
+        if (onChange) onChange();
       });
     });
   }
-  bindYesNo("step6ScreenChoices");
-  bindYesNo("step6CompChoices");
 
-  function renderMatrix(data) {
-    el("step6Matrix").innerHTML =
+  function selectedBool(id) {
+    var btn = el(id).querySelector(".choice-btn.selected");
+    return btn ? btn.dataset.value === "true" : false;
+  }
+
+  function renderMatrix(target, data) {
+    el(target).innerHTML =
       '<table><thead><tr><th>Item</th><th>Answer</th><th>Why</th></tr></thead><tbody>' +
       data.matrix.map(function (m) {
-        return "<tr><td>" + esc(m.label) + "</td><td>" + (m.value ? '<span class="pill good">Yes</span>' : '<span class="pill muted">No</span>') +
-          (m.computed ? '' : ' <span class="infer-note">(your answer)</span>') + "</td><td class=\"infer-note\">" + esc(m.reasoning) + "</td></tr>";
+        return "<tr><td>" + esc(m.label) + "</td><td>" +
+          (m.value ? '<span class="pill good">Yes</span>' : '<span class="pill muted">No</span>') +
+          (m.computed ? "" : ' <span class="infer-note">(your answer)</span>') +
+          '</td><td class="infer-note">' + esc(m.reasoning) + "</td></tr>";
       }).join("") + "</tbody></table>" +
-      '<p style="margin-top:12px"><span class="score-badge">' + data.score + '</span> &nbsp;' + esc(data.recommendation) + "</p>";
+      '<p style="margin-top:12px"><span class="score-badge">' + data.score + '</span> &nbsp;' +
+      esc(data.recommendation) + "</p>";
   }
 
-  function loadStep6Matrix() {
-    apiGet("session/" + session.id + "/step6").then(renderMatrix).catch(function () {});
+  // Three of the five matrix questions are already computed from earlier answers, so the
+  // score can move as the employer answers the other two rather than only afterwards.
+  var baseMatrix = null;
+  function refreshLiveMatrix() {
+    if (!baseMatrix) return;
+    var live = { matrix: baseMatrix.matrix.map(function (m) {
+      if (m.id === "screen_differently") return Object.assign({}, m, { value: selectedBool("finalizeScreenChoices") });
+      if (m.id === "comp_changes") return Object.assign({}, m, { value: selectedBool("finalizeCompChoices") });
+      return m;
+    }) };
+    live.score = live.matrix.filter(function (m) { return m.value; }).length;
+    live.recommendation = live.score <= 1 ? "Update the existing description."
+      : live.score === 2 ? "Revise thoroughly and monitor."
+      : "Create a new title, anchored to an O*NET-SOC code, apprenticeship.gov, or an AML ITA competency framework.";
+    renderMatrix("finalizeMatrix", live);
   }
 
-  el("step6ContinueBtn").addEventListener("click", function () {
-    var screenBtn = el("step6ScreenChoices").querySelector(".choice-btn.selected");
-    var compBtn = el("step6CompChoices").querySelector(".choice-btn.selected");
-    el("step6ContinueBtn").disabled = true;
-    apiPost("session/" + session.id + "/step6", {
-      screenDifferently: screenBtn ? screenBtn.dataset.value === "true" : false,
-      compChanges: compBtn ? compBtn.dataset.value === "true" : false,
+  bindYesNo("finalizeScreenChoices", refreshLiveMatrix);
+  bindYesNo("finalizeCompChoices", refreshLiveMatrix);
+
+  function renderFinalize() {
+    apiGet("session/" + session.id + "/matrix").then(function (data) {
+      baseMatrix = data;
+      refreshLiveMatrix();
+    }).catch(function () {});
+  }
+
+  el("finalizeContinueBtn").addEventListener("click", function () {
+    el("finalizeContinueBtn").disabled = true;
+    apiPost("session/" + session.id + "/finalize", {
+      payRange: el("finalizePay").value,
+      physicalFrequency: el("finalizePhysical").value,
+      pathway: el("finalizePathway").value,
+      screenDifferently: selectedBool("finalizeScreenChoices"),
+      compChanges: selectedBool("finalizeCompChoices"),
     }).then(function (body) {
       session = body.session;
-      renderMatrix(session.step6);
-      renderOutputsPrompt();
+      renderMatrix("outputsMatrix", session.step6);
       showScreen("outputs");
     }).catch(function (e) {
-      el("step6Msg").className = "msg err"; el("step6Msg").textContent = "Error: " + e.message;
-    }).then(function () { el("step6ContinueBtn").disabled = false; });
+      el("finalizeMsg").className = "msg err"; el("finalizeMsg").textContent = "Error: " + e.message;
+    }).then(function () { el("finalizeContinueBtn").disabled = false; });
   });
 
   /* ---------------------------------------------------------------------
-   * Step 7: outputs
+   * Outputs
    * --------------------------------------------------------------------- */
-  var COMMS_LABELS = [
-    ["screeningRubric", "Screening rubric changes (internal hiring team)"],
-    ["incumbentUpdate", "Update for current incumbents"],
-    ["educationProvidersNote", "Note for education/training providers"],
-    ["careerFairOneSheet", "Career fair one-sheet"],
-    ["apprenticeshipCheckNote", "Work-process check note (apprenticeship sponsors)"],
-  ];
-
-  function renderOutputsPrompt() {
-    el("commsOwners").innerHTML = COMMS_LABELS.map(function (c) {
-      return '<div class="field"><label style="font-size:12.5px">' + c[1] + ' -- owner &amp; target date (optional)</label>' +
-        '<div class="row"><input type="text" placeholder="Owner" style="flex:1 1 160px" id="owner-' + c[0] + '">' +
-        '<input type="text" placeholder="Target date" style="flex:1 1 140px" id="date-' + c[0] + '"></div></div>';
-    }).join("");
-  }
-
   el("generateBtn").addEventListener("click", function () {
-    confirmClaudeSpend("Claude drafts the final revised description, redline, worksheet, and all " +
-      "five communication drafts -- one Claude call.").then(function (ok) {
+    confirmClaudeSpend("Claude drafts the summary, the redlined description and the career-fair " +
+      "one-pager -- one Claude call.").then(function (ok) {
       if (!ok) return;
       el("generateBtn").disabled = true;
       el("generateMsg").className = "msg muted";
-      el("generateMsg").innerHTML = '<span class="spin"></span>Generating…';
+      el("generateMsg").innerHTML = '<span class="spin"></span>Writing the revised description…';
       apiPost("session/" + session.id + "/generate-outputs").then(function (body) {
         session = body.session;
         renderOutputs();
@@ -687,25 +690,50 @@
     });
   });
 
+  var DOWNLOADS = [
+    ["redline", "Redlined description", "Word file with tracked changes \u2014 accept or reject each edit"],
+    ["final", "Final description", "The same document, clean, with the redlines accepted"],
+    ["one-pager", "Career fair one-pager", "Plain-language handout for job seekers and counselors"],
+  ];
+  var TIER_LABEL = { required: "Required", preferred: "Preferred", "we-provide": "We provide it" };
+
   function renderOutputs() {
     var o = session.outputs;
     el("outputsHeading").textContent = "Done";
     el("outputsPrompt").hidden = true;
     var results = el("outputsResults");
     results.hidden = false;
+
     var html = "";
-    html += '<p class="msg ' + (o.box.saved ? "ok" : "muted") + '">' +
-      (o.box.saved ? "Saved to Box alongside the original upload." : "Generated -- not saved to Box (no data folder configured yet).") + "</p>";
-    html += '<details class="output" open><summary>Revised job description</summary><div class="body">' + esc(o.revisedDescription) + "</div></details>";
-    html += '<details class="output"><summary>Redline (' + o.redline.length + ' change' + (o.redline.length === 1 ? "" : "s") + ')</summary><div class="body">' +
-      o.redline.map(function (r) {
-        return '<div class="redline-item"><b>' + esc(r.section) + '</b><br><span class="before">' + esc(r.before) + '</span><br>' +
-          '<span class="after">' + esc(r.after) + '</span><br><span class="infer-note">' + esc(r.reason) + '</span></div>';
-      }).join("") + "</div></details>";
-    html += '<details class="output"><summary>Analysis worksheet</summary><div class="body">' + esc(o.worksheet) + "</div></details>";
-    COMMS_LABELS.forEach(function (c) {
-      html += '<details class="output"><summary>' + c[1] + '</summary><div class="body">' + esc(o.comms[c[0]]) + "</div></details>";
-    });
+    // 1. The summary, read on screen.
+    html += '<h3>What changed</h3><div style="white-space:pre-wrap; font-size:13.5px; margin-bottom:20px">' +
+      esc(o.summary) + "</div>";
+
+    // 2-4. The three Word files.
+    html += '<h3>Download</h3><div style="margin-bottom:18px">' + DOWNLOADS.map(function (d) {
+      return '<div class="duty-card" style="display:flex; gap:14px; align-items:center; justify-content:space-between">' +
+        '<div><b style="font-size:13.5px">' + esc(d[1]) + '</b>' +
+        '<div class="infer-note" style="margin:2px 0 0">' + esc(d[2]) + '</div></div>' +
+        '<a class="link" style="white-space:nowrap" download href="/api/job-description/session/' +
+        encodeURIComponent(session.id) + '/download/' + d[0] + '">Download .docx</a></div>';
+    }).join("") + "</div>";
+
+    if (o.credentials && o.credentials.length) {
+      html += '<h3>Credentials to name</h3>' +
+        '<p class="desc">Chosen from the Conexus credential reference against this role\u2019s duties. ' +
+        'Naming one precisely is what lets a training provider build toward it.</p>' +
+        '<table><thead><tr><th>Credential</th><th>How to list it</th><th>Why it fits</th></tr></thead><tbody>' +
+        o.credentials.map(function (c) {
+          return "<tr><td><b>" + esc(c.name) + "</b></td><td>" +
+            esc(TIER_LABEL[c.tier] || c.tier) + "</td><td class=\"infer-note\">" + esc(c.whyItFits) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    }
+
+    html += '<p class="msg ' + (o.box && o.box.saved ? "ok" : "muted") + '" style="margin-top:18px">' +
+      (o.box && o.box.saved
+        ? "All three files were also saved to Box alongside the original upload."
+        : "Not saved to Box (no data folder configured yet) \u2014 download them here.") + "</p>";
+
     results.innerHTML = html;
   }
 
@@ -717,17 +745,22 @@
     apiGet("session/" + resumeId).then(function (body) {
       session = body;
       var status = session.status;
-      if (status === "pre_read" && !session.preRead.confirmed) { renderPreRead(); showScreen("preread"); return; }
-      if (status === "pre_read" || status === "step3") {
-        renderStep2(); if (session.respondent) { renderStep3(); showScreen("step3"); } else showScreen("step2");
+      if (status === "complete") {
+        renderMatrix("outputsMatrix", session.step6);
+        showScreen("outputs");
+        renderOutputs();
         return;
       }
-      if (status === "step4") { renderStep4(); showScreen("step4"); return; }
-      if (status === "step5") { showScreen("step5"); return; }
-      if (status === "step6") { loadStep6Matrix(); showScreen("step6"); return; }
-      if (status === "step7") { loadStep6Matrix(); renderOutputsPrompt(); showScreen("outputs"); return; }
-      if (status === "complete") { renderOutputsPrompt(); showScreen("outputs"); renderOutputs(); return; }
-      showScreen("upload");
+      if (status === "outputs") {
+        renderMatrix("outputsMatrix", session.step6);
+        showScreen("outputs");
+        return;
+      }
+      if (status === "finalize") { renderFinalize(); showScreen("finalize"); return; }
+      if (status === "requirements") { renderStep4(); showScreen("step4"); return; }
+      if (session.preRead && session.preRead.confirmed) { renderStep3(); showScreen("step3"); return; }
+      renderPreRead();
+      showScreen("preread");
     }).catch(function () { showScreen("upload"); });
   } else {
     showScreen("upload");
