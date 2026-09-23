@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Apprenticeship Readiness</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/apprenticeship/brand.css">
+<script src="/apprenticeship/session.js"></script>
+<style>
+  .wrap { max-width:460px; padding-top:56px; }
+  .tabs { display:flex; gap:6px; margin-bottom:18px; }
+  .tabs button { flex:1; font-weight:600; }
+  .tabs button.active { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .lede { font-size:13.5px; color:var(--text-secondary); margin:0 0 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title-block">
+      <h1>Apprenticeship Readiness Toolbox</h1>
+      <p class="sub">Conexus Indiana</p>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="tabs">
+      <button type="button" id="tabSignIn" class="active">Sign in</button>
+      <button type="button" id="tabCreate">Create an account</button>
+    </div>
+
+    <div id="signInPanel">
+      <p class="lede">Your assessments and your readiness dashboard are saved to your
+        account, so you can stop part-way and come back.</p>
+      <label for="loginEmail">Email</label>
+      <input type="email" id="loginEmail" autocomplete="email">
+      <label for="loginPassword">Password</label>
+      <input type="password" id="loginPassword" autocomplete="current-password">
+      <button type="button" class="primary" id="loginBtn" style="margin-top:16px">Sign in</button>
+      <p class="msg" id="loginMsg" hidden></p>
+      <p class="sub" style="margin-top:14px">Forgotten your password? Email Conexus Indiana
+        and a member of staff will set a new one for you.</p>
+    </div>
+
+    <div id="createPanel" hidden>
+      <p class="lede">You'll work through a short set of self-assessments. They combine
+        into one readiness dashboard for your company.</p>
+      <label for="signupName">Your name</label>
+      <input type="text" id="signupName" autocomplete="name">
+      <label for="signupCompany">Company</label>
+      <input type="text" id="signupCompany" autocomplete="organization">
+      <label for="signupEmail">Email</label>
+      <input type="email" id="signupEmail" autocomplete="email">
+      <label for="signupPassword">Password <span class="hint">— at least 10 characters</span></label>
+      <input type="password" id="signupPassword" autocomplete="new-password">
+      <button type="button" class="primary" id="signupBtn" style="margin-top:16px">Create account</button>
+      <p class="msg" id="signupMsg" hidden></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var session = window.ApprenticeshipSession;
+
+  // Only a same-site path is ever followed after signing in -- an absolute or
+  // protocol-relative URL in ?next= would turn this page into an open redirect.
+  var raw = new URLSearchParams(window.location.search).get("next") || "";
+  var next = /^\/[^/\\]/.test(raw) ? raw : "/apprenticeship/dashboard.html";
+
+  function show(which) {
+    el("signInPanel").hidden = which !== "signin";
+    el("createPanel").hidden = which !== "create";
+    el("tabSignIn").classList.toggle("active", which === "signin");
+    el("tabCreate").classList.toggle("active", which === "create");
+  }
+  el("tabSignIn").addEventListener("click", function () { show("signin"); });
+  el("tabCreate").addEventListener("click", function () { show("create"); });
+
+  function say(id, text) {
+    el(id).hidden = false;
+    el(id).className = "msg err";
+    el(id).textContent = text;
+  }
+
+  function post(path, body, msgId, buttonId) {
+    el(buttonId).disabled = true;
+    el(msgId).hidden = true;
+    fetch("/api/apprenticeship/" + path, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+        return data;
+      });
+    }).then(function (data) {
+      session.setToken(data.token);
+      window.location.replace(next);
+    }).catch(function (e) {
+      el(buttonId).disabled = false;
+      say(msgId, e.message);
+    });
+  }
+
+  el("loginBtn").addEventListener("click", function () {
+    post("account/login", {
+      email: el("loginEmail").value.trim(), password: el("loginPassword").value,
+    }, "loginMsg", "loginBtn");
+  });
+  el("signupBtn").addEventListener("click", function () {
+    post("account/signup", {
+      name: el("signupName").value.trim(), company: el("signupCompany").value.trim(),
+      email: el("signupEmail").value.trim(), password: el("signupPassword").value,
+    }, "signupMsg", "signupBtn");
+  });
+  ["loginPassword", "signupPassword"].forEach(function (id) {
+    el(id).addEventListener("keydown", function (e) {
+      if (e.key === "Enter") el(id === "loginPassword" ? "loginBtn" : "signupBtn").click();
+    });
+  });
+
+  // Already signed in and no particular destination asked for: go straight to the
+  // dashboard rather than showing a sign-in form to someone who is signed in.
+  if (session.token()) {
+    session.api("account/me").then(function () { window.location.replace(next); })
+      .catch(function () { /* api() has already cleared a dead token */ });
+  }
+})();
+</script>
+</body>
+</html>

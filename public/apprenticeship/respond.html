@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Apprenticeship Readiness</title>
+<script src="/apprenticeship/session.js"></script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
 <style>
   /* Conexus Indiana brand palette -- navy headings, brand blue accent, amber used once
@@ -27,6 +28,8 @@
   .brand-sub { font-size:11px; font-weight:600; color:rgba(255,255,255,.72);
                text-transform:uppercase; letter-spacing:.06em; margin:3px 0 9px; }
   h1 { font-size:15px; font-weight:400; margin:0; color:rgba(255,255,255,.92); }
+  .who { font-size:11.5px; color:rgba(255,255,255,.72); margin-top:8px; }
+  .who a { color:#fff; text-decoration:underline; }
   .progress-bar { padding:11px 22px; border-bottom:1px solid var(--border); background:var(--wash); }
   .progress-bar-track { width:100%; height:6px; border-radius:999px; background:#dfe3ec; overflow:hidden; }
   .progress-bar-fill { height:100%; width:0; background:var(--accent); border-radius:999px;
@@ -92,6 +95,7 @@
     <div class="brand-name">Apprenticeship Readiness Toolbox</div>
     <div class="brand-sub">Conexus Indiana</div>
     <h1 id="surveyTitle">Loading…</h1>
+    <div class="who" id="who" hidden></div>
   </header>
 
   <div class="progress-bar" id="progressBar" hidden>
@@ -99,16 +103,12 @@
     <div class="progress-bar-label" id="progressLabel"></div>
   </div>
 
-  <!-- Every form in this app starts with name, company and email. -->
+  <!-- Name, company and email come from the account rather than being typed again at
+       the top of every assessment -- they are what ties three assessments to one
+       dashboard, so they cannot be different each time. -->
   <div class="panel" id="intake" hidden>
     <h2 id="intakeHeading">Before we start</h2>
     <p class="desc" id="intakeIntro"></p>
-    <label for="nameInput">Your name</label>
-    <input type="text" id="nameInput" autocomplete="name">
-    <label for="companyInput">Company</label>
-    <input type="text" id="companyInput" autocomplete="organization">
-    <label for="emailInput">Email</label>
-    <input type="email" id="emailInput" autocomplete="email">
     <div class="err" id="intakeError" hidden></div>
     <button type="button" class="primary" id="startBtn">Start the assessment</button>
   </div>
@@ -160,16 +160,9 @@
   }
   function addTyping() { return addBubble("typing", "…"); }
 
+  var session = window.ApprenticeshipSession;
   function api(path, body) {
-    return fetch("/api/apprenticeship/" + path, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }).then(function (r) {
-      return r.json().then(function (data) {
-        if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
-        return data;
-      });
-    });
+    return session.api(path, { method: "POST", body: JSON.stringify(body) });
   }
 
   /* ---------- chat ---------- */
@@ -275,10 +268,10 @@
       html += '<div class="callout">' + esc(results.contactPrompt) + "</div>";
     }
 
-    html += '<p class="foot">Taking more than one assessment? Your combined readiness '
-      + 'across this programme is on your <a href="/apprenticeship/dashboard.html?survey='
-      + encodeURIComponent(surveyId) + "&response=" + encodeURIComponent(responseId)
-      + '">readiness dashboard</a>. Keep this link — it is the only way back to these results.</p>';
+    html += '<p class="foot">These results are saved to your account. Your '
+      + '<a href="/apprenticeship/dashboard.html">readiness dashboard</a> shows them '
+      + 'alongside the other assessments in this programme, and combines them once you '
+      + 'have finished all of them.</p>';
     html += "</div>";
 
     el("results").hidden = false;
@@ -299,23 +292,19 @@
   });
 
   el("startBtn").addEventListener("click", function () {
-    var payload = {
-      surveyId: surveyId,
-      name: el("nameInput").value.trim(),
-      company: el("companyInput").value.trim(),
-      email: el("emailInput").value.trim(),
-    };
-    if (!payload.name || !payload.company || !payload.email) {
-      el("intakeError").hidden = false;
-      el("intakeError").textContent = "Name, company and email are all needed to start.";
-      return;
-    }
     el("intakeError").hidden = true;
     el("startBtn").disabled = true;
-    api("public/start", payload)
+    api("public/start", { surveyId: surveyId })
       .then(function (data) {
         responseId = data.responseId;
         el("intake").hidden = true;
+        // An assessment left half-finished is continued, not restarted. Saying so
+        // explains why the first question on screen isn't question one.
+        if (data.resumed) {
+          addBubble("bot", "Welcome back \u2014 picking up where you left off. You've "
+            + "answered " + data.answered + " question"
+            + (data.answered === 1 ? "" : "s") + " so far.");
+        }
         renderStep(data.step);
       })
       .catch(function (e) {
@@ -325,23 +314,37 @@
       });
   });
 
-  fetch("/api/apprenticeship/public/" + encodeURIComponent(surveyId))
-    .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); })
-    .then(function (survey) {
+  // Signed in first: the assessment is saved to an account, and which account decides
+  // whose dashboard it lands on. Somebody arriving cold on an assessment link is sent to
+  // sign in or register and comes straight back here afterwards.
+  if (!session.token()) { session.requireSignIn(); return; }
+
+  Promise.all([
+    session.api("account/me"),
+    fetch("/api/apprenticeship/public/" + encodeURIComponent(surveyId))
+      .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); }),
+  ]).then(function (results) {
+    var account = results[0].account;
+    var survey = results[1];
+    el("who").hidden = false;
+    el("who").innerHTML = esc(account.name) + " \u00b7 " + esc(account.company)
+      + ' \u00b7 <a href="/apprenticeship/dashboard.html">Your dashboard</a>';
+    {
       el("surveyTitle").textContent = survey.name;
       document.title = survey.name + " — Apprenticeship Readiness";
       el("intakeIntro").textContent = survey.questionCount + " question"
         + (survey.questionCount === 1 ? "" : "s") + " across " + survey.sectionCount
         + " section" + (survey.sectionCount === 1 ? "" : "s") + ". Answer in your own words —"
         + " there is nothing to look up, and an honest “we don’t do that yet” is"
-        + " the most useful answer you can give.";
+        + " the most useful answer you can give. You can stop part-way and come back.";
       el("intake").hidden = false;
-      el("nameInput").focus();
-    })
-    .catch(function () {
-      el("surveyTitle").textContent = "Assessment not found";
-      showNotice("This link doesn't look right. Double-check it and try again.");
-    });
+      el("startBtn").focus();
+    }
+  }).catch(function (e) {
+    if (e && e.message === "Not signed in") return; // api() is already redirecting
+    el("surveyTitle").textContent = "Assessment not found";
+    showNotice("This link doesn't look right. Double-check it and try again.");
+  });
 })();
 </script>
 </body>

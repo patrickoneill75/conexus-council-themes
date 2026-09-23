@@ -48,6 +48,15 @@
     </div>
 
     <div class="card">
+      <h3>Respondent accounts</h3>
+      <p class="desc">Employers register themselves from an assessment link. Nothing here
+        can send email, so a forgotten password is reset by setting a new one and telling
+        them what it is &mdash; there is no reset link to send.</p>
+      <div id="accountList"><div class="empty">Loading&hellip;</div></div>
+      <div class="msg" id="accountMsg" hidden></div>
+    </div>
+
+    <div class="card">
       <h3>New project</h3>
       <label for="pName">Name</label>
       <input type="text" id="pName" placeholder="e.g. 2026 Apprenticeship Readiness">
@@ -181,9 +190,55 @@
 
   /* ---------- projects ---------- */
 
+  function loadAccounts() {
+    api("accounts").then(function (data) {
+      if (!data.accounts.length) {
+        el("accountList").innerHTML = '<div class="empty">Nobody has registered yet.</div>';
+        return;
+      }
+      var html = "<table><thead><tr><th>Name</th><th>Company</th><th>Email</th>"
+        + "<th>Assessments done</th><th>Registered</th><th></th></tr></thead><tbody>";
+      data.accounts.forEach(function (a) {
+        html += "<tr><td>" + esc(a.name) + "</td><td>" + esc(a.company) + "</td><td>"
+          + esc(a.email) + "</td><td>" + a.completedCount + "</td><td>"
+          + esc(String(a.createdAt || "").slice(0, 10)) + "</td>"
+          + '<td><button type="button" class="small" data-reset="' + esc(a.id) + '">Set password</button> '
+          + '<button type="button" class="small danger" data-delete-account="' + esc(a.id)
+          + '" data-email="' + esc(a.email) + '">Delete</button></td></tr>';
+      });
+      el("accountList").innerHTML = html + "</tbody></table>";
+    }).catch(function (e) {
+      el("accountList").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+    });
+  }
+
+  el("accountList").addEventListener("click", function (e) {
+    var button = e.target.closest("button");
+    if (!button) return;
+    if (button.hasAttribute("data-reset")) {
+      var password = window.prompt("New password for this account (at least 10 characters). "
+        + "Tell them what it is \u2014 nothing is emailed.");
+      if (!password) return;
+      api("accounts/" + encodeURIComponent(button.getAttribute("data-reset")) + "/password",
+        { method: "POST", body: JSON.stringify({ password: password }) })
+        .then(function () { say("accountMsg", "Password set. Pass it on to them.", "ok"); })
+        .catch(function (err) { say("accountMsg", err.message, "err"); });
+      return;
+    }
+    if (button.hasAttribute("data-delete-account")) {
+      if (!window.confirm("Delete the account for " + button.getAttribute("data-email")
+        + "? Their completed assessments stay in the responses and the cohort numbers.")) return;
+      api("accounts/" + encodeURIComponent(button.getAttribute("data-delete-account")),
+        { method: "DELETE" })
+        .then(function () { loadAccounts(); })
+        .catch(function (err) { say("accountMsg", err.message, "err"); });
+    }
+  });
+
   function loadProjects() {
     show("projectsView");
     el("crumb").textContent = "Projects hold the self-assessments a cohort works through.";
+    loadAccounts();
     api("projects").then(function (data) {
       if (!data.projects.length) {
         el("projectList").innerHTML = '<div class="empty">No projects yet.</div>';

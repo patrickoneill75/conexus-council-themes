@@ -744,8 +744,28 @@ one or more *assessments*, each made of *sections*, each section made of *questi
 Everything a given person finishes inside a project rolls up into one readiness
 dashboard for them.
 
-**The respondent's experience.** Every assessment opens with name, company and email,
-then runs as a chat. Each section leads with its own context, each question leads with
+**Respondents have accounts.** An employer registers once (name, company, email,
+password) from an assessment link, and everything they do is saved to that account. That
+is what makes the combined dashboard possible: three assessments only add up to one
+readiness score if the tool knows the same company answered all three. It also means they
+can stop half-way through an assessment and pick it up later, on any device.
+
+These accounts are **not** the Conexus admin accounts in `src/beta_auth.js`, and cannot
+become them. The two sign their tokens with different secrets, so a respondent token fails
+an admin route's signature check outright, and an admin token is not a respondent either.
+Both directions have a test.
+
+Nothing here sends email, because this Worker has no email sender wired up. Two
+consequences, both deliberate:
+
+1. An email address is never verified. Someone could register with an address they don't
+   own — they would only be assessing themselves under it.
+2. A forgotten password is reset by a Conexus admin: control panel → **Respondent
+   accounts** → **Set password**, then tell them what it is. There is no reset link to
+   send. Adding one later needs an email-sending secret and two more routes, not a
+   different storage model.
+
+**The respondent's experience.** They sign in, then the assessment runs as a chat. Each section leads with its own context, each question leads with
 its own, and the person answers in their own words — nothing is multiple choice, because
 the point is to find out what an employer actually has in place rather than what they can
 recognise from a list.
@@ -777,8 +797,15 @@ Claude-written improvement areas for each section grounded in what they actually
 | 60% to 84.9% | Moderate Readiness |
 | Below 60% | Build Readiness First |
 
-**What the admin sees** (`/apprenticeship/control-panel`): projects and the assessment
-editor; per-assessment cohort readiness (band counts and the section averages across
+**The Apprenticeship Readiness Dashboard** (`/apprenticeship/dashboard.html`) is the
+respondent's own page: every assessment in each project they have started, which are done,
+which are still to do, their section scores, and — **only once every assessment in the
+project is finished** — the combined readiness across all of them. It is withheld until
+then on purpose: a combined score built from one assessment out of three is not that
+employer's readiness, and a percentage on screen reads as one however it is labelled.
+
+**What the admin sees** (`/apprenticeship/control-panel`): respondent accounts (with the
+password reset above); projects and the assessment editor; per-assessment cohort readiness (band counts and the section averages across
 every completed response, so the weakest section for the whole cohort is obvious); every
 individual response with its scores and the reason behind each; a CSV of the lot; and
 the **issue log** — every question that needed a redirect, showing the original question,
@@ -803,8 +830,10 @@ repo's default model, because it is the only thing the respondent takes away.
 3. Run **Set Cloudflare secrets** from the Actions tab. Nothing else needs a copy of this
    one — there is no batch script for this app.
 
-**Where the data lives.** Workers KV, under an `apprenticeship:` prefix — projects,
-assessments and responses. Unlike Consensus, the run state (the cursor, the scores, the
+**Where the data lives.** Workers KV, under an `apprenticeship:` prefix — accounts,
+projects, assessments and responses, plus two small index keys per account
+(`account-open:` and `account-done:`) that make a respondent's dashboard one read per
+assessment instead of a scan of every response in the project. Unlike Consensus, the run state (the cursor, the scores, the
 non-responsive streak, the issue log) is written and read only by the Worker, never
 trusted from the browser, because that same state decides a score, a flag and a shut-off.
 No Box folder is involved; the admin CSV is the export path.

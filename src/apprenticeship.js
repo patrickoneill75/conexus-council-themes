@@ -10,11 +10,20 @@
  *   Nothing is multiple choice, because the point is to find out what an employer
  *   actually has in place, not what they can recognize from a list.
  *
+ * WHO IS SIGNED IN
+ *   Respondents have their own accounts (see src/apprenticeship_accounts.js), because the
+ *   dashboard only means anything if the tool knows the same employer came back. Those
+ *   accounts are deliberately NOT the Conexus staff accounts in src/beta_auth.js: the two
+ *   sign tokens with different secrets, so neither can ever be accepted as the other. Every
+ *   admin route below is still gated by requireBetaAuth; every assessment route is gated by
+ *   requireRespondent.
+ *
  * STORAGE (Workers KV, binding BOX_KV, all under an "apprenticeship:" prefix -- the
  * same namespace and the same listed-by-prefix pattern src/consensus.js already uses,
  * so there is no separate index to keep in sync):
  *   apprenticeship:project:<projectId>
  *   apprenticeship:survey:<surveyId>                  (carries its own projectId)
+ *   apprenticeship:account*                           (see src/apprenticeship_accounts.js)
  *   apprenticeship:response:<surveyId>:<responseId>   (surveyId in the key so one
  *     survey's responses list with a single prefix scan; the client sends both ids
  *     back on every turn and the stored record's own surveyId is re-checked, so the
@@ -52,6 +61,10 @@
  */
 
 import { requireBetaAuth } from "./beta_auth.js";
+import {
+  handleAccountApi, requireRespondent, publicAccount, listAccounts, adminSetPassword,
+  deleteAccount, openRunKey, doneRunKey, ACCOUNT_KEY_PREFIXES,
+} from "./apprenticeship_accounts.js";
 
 const PROJECT_PREFIX = "apprenticeship:project:";
 const SURVEY_PREFIX = "apprenticeship:survey:";
@@ -565,6 +578,100 @@ function responsesCsv(survey, responses) {
   return rows.join("\n") + "\n";
 }
 
+/* ---------- the signed-in respondent's own data ---------- */
+
+/**
+ * Whether this run belongs to this account.
+ *
+ * A response collected before accounts existed has no owner, so it falls back to the
+ * email it was started with -- the same match claimOrphanResponses() uses. That path
+ * disappears once every stored response carries an accountId.
+ */
+function ownedBy(response, account) {
+  if (!account || !response) return false;
+  if (response.accountId) return response.accountId === account.id;
+  return Boolean(response.respondent
+    && String(response.respondent.email || "").toLowerCase() === account.email);
+}
+
+/**
+ * Every assessment in each project this account has touched, plus the combined readiness
+ * across the finished ones -- the Apprenticeship Readiness Dashboard.
+ *
+ * A project the account has never started does not appear: the entry point to a new
+ * project is the assessment link a Conexus admin sends. Once one assessment in it is
+ * under way, the rest of that project shows up here to be worked through.
+ */
+async function accountDashboard(env, account) {
+  const [open, done] = await Promise.all([
+    env.BOX_KV.list({ prefix: openRunKey(account.id, "") }),
+    env.BOX_KV.list({ prefix: doneRunKey(account.id, "") }),
+  ]);
+  const runs = new Map(); // surveyId -> { openId, doneId }
+  const note = (keys, field) => {
+    for (const entry of keys) {
+      const surveyId = entry.name.slice(entry.name.lastIndexOf(":") + 1);
+      const at = runs.get(surveyId) || {};
+      at[field] = entry.name;
+      runs.set(surveyId, at);
+    }
+  };
+  note(open.keys, "openKey");
+  note(done.keys, "doneKey");
+  if (!runs.size) return { account: publicAccount(account), projects: [] };
+
+  const allSurveys = await listPrefix(env, SURVEY_PREFIX);
+  const touchedProjectIds = new Set(
+    allSurveys.filter((s) => runs.has(s.id)).map((s) => s.projectId).filter(Boolean)
+  );
+
+  const projects = [];
+  for (const projectId of touchedProjectIds) {
+    const project = await getProject(env, projectId);
+    const surveys = allSurveys.filter((s) => s.projectId === projectId)
+      .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+    const assessments = [];
+    for (const survey of surveys) {
+      const at = runs.get(survey.id) || {};
+      const doneId = at.doneKey ? await env.BOX_KV.get(at.doneKey) : null;
+      const openId = at.openKey ? await env.BOX_KV.get(at.openKey) : null;
+      const finished = doneId ? await getResponse(env, survey.id, doneId) : null;
+      assessments.push({
+        surveyId: survey.id,
+        surveyName: survey.name,
+        questionCount: questionCount(survey),
+        status: finished ? "complete" : (openId ? "in-progress" : "not-started"),
+        responseId: finished ? finished.id : (openId || null),
+        overall: finished && finished.results ? finished.results.overall : null,
+        sections: finished && finished.results ? finished.results.sections : [],
+        submittedAt: finished ? finished.submittedAt : null,
+      });
+    }
+    const complete = assessments.filter((a) => a.overall);
+    const earned = complete.reduce((n, a) => n + a.overall.earned, 0);
+    const possible = complete.reduce((n, a) => n + a.overall.possible, 0);
+    const percent = possible ? Math.round((earned / possible) * 1000) / 10 : 0;
+    const band = bandFor(percent);
+    projects.push({
+      id: projectId,
+      name: project ? project.name : "",
+      description: project ? project.description : "",
+      assessments,
+      completedCount: complete.length,
+      // Withheld until every assessment in the project is done. A combined readiness
+      // built from one assessment out of three is not this employer's readiness, and
+      // showing it as though it were would be the most misleading number in the tool.
+      complete: complete.length === assessments.length && assessments.length > 0,
+      overall: (complete.length === assessments.length && assessments.length > 0)
+        ? { earned, possible, percent, display: `${earned}/${possible}`,
+            band: band.key, bandLabel: band.label }
+        : null,
+    });
+  }
+  projects.sort((a, b) => a.name.localeCompare(b.name));
+  return { account: publicAccount(account), projects };
+}
+
 /* ---------- routes ---------- */
 
 export async function handleApprenticeshipApi(route, request, env) {
@@ -572,7 +679,25 @@ export async function handleApprenticeshipApi(route, request, env) {
   const method = request.method.toUpperCase();
   const parts = route.split("/").filter(Boolean);
 
-  /* ================= public (respondent-facing, no auth) ================= */
+  /* ================= respondent accounts ================= */
+
+  if (parts[0] === "account") {
+    // Sign-up, sign-in, me, change-password. Returns null for anything it doesn't own,
+    // so this app's own account routes (the dashboard, below) still get a look.
+    const handled = await handleAccountApi(parts.slice(1), request, env);
+    if (handled) return handled;
+
+    // GET account/dashboard -- the point of the whole tool: every assessment in each
+    // project this respondent has touched, and the combined readiness across them.
+    if (parts[1] === "dashboard" && parts.length === 2 && method === "GET") {
+      const account = await requireRespondent(request, env);
+      if (!account) return json({ error: "Not signed in" }, 401);
+      return json(await accountDashboard(env, account));
+    }
+    return json({ error: "Not found" }, 404);
+  }
+
+  /* ================= public (the assessment itself) ================= */
 
   // GET public/<surveyId> -- everything a respondent legitimately sees before starting,
   // and nothing an admin wrote as private guidance (section objectives, per-question
@@ -591,24 +716,38 @@ export async function handleApprenticeshipApi(route, request, env) {
     });
   }
 
-  // POST public/start { surveyId, name, company, email }
+  // POST public/start { surveyId } -- name, company and email come from the signed-in
+  // account, not from the request: they identify the person whose dashboard this feeds.
   if (route === "public/start" && method === "POST") {
+    const account = await requireRespondent(request, env);
+    if (!account) return json({ error: "Sign in to start this assessment." }, 401);
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     const survey = await getSurvey(env, str(body.surveyId));
     if (!survey) return json({ error: "Assessment not found" }, 404);
     if (!questionCount(survey)) return json({ error: "This assessment has no questions yet." }, 409);
 
-    const respondent = {
-      name: str(body.name).slice(0, 200),
-      company: str(body.company).slice(0, 200),
-      email: str(body.email).slice(0, 200).toLowerCase(),
-    };
-    if (!respondent.name || !respondent.company || !respondent.email) {
-      return json({ error: "Name, company and email are all needed to start." }, 400);
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(respondent.email)) {
-      return json({ error: "That email address doesn't look right." }, 400);
+    // An assessment left half-finished is picked up where it stopped rather than started
+    // again. Being able to come back is most of why accounts exist here, and starting
+    // over would throw away answers the respondent already paid for in model calls.
+    const openId = await env.BOX_KV.get(openRunKey(account.id, survey.id));
+    if (openId) {
+      const existing = await getResponse(env, survey.id, openId);
+      if (existing && existing.status === "in-progress") {
+        return json({
+          responseId: existing.id, surveyId: survey.id, resumed: true,
+          answered: existing.answers.length,
+          step: existing.pending
+            ? {
+                sectionId: "", sectionName: "",
+                questionId: existing.pending.questionId,
+                messages: [], prompt: existing.pending.followUpQuestion, isFollowUp: true,
+                progress: { answered: existing.cursor, total: flatQuestions(survey).length },
+              }
+            : nextStep(survey, existing),
+        });
+      }
+      await env.BOX_KV.delete(openRunKey(account.id, survey.id));
     }
 
     const response = {
@@ -616,7 +755,8 @@ export async function handleApprenticeshipApi(route, request, env) {
       surveyId: survey.id,
       projectId: survey.projectId,
       surveyName: survey.name,
-      respondent,
+      accountId: account.id,
+      respondent: { name: account.name, company: account.company, email: account.email },
       status: "in-progress",
       cursor: 0,              // index into flatQuestions(survey)
       pending: null,          // the follow-up awaiting a reply, if any
@@ -628,6 +768,7 @@ export async function handleApprenticeshipApi(route, request, env) {
       submittedAt: null,
     };
     await saveResponse(env, response);
+    await env.BOX_KV.put(openRunKey(account.id, survey.id), response.id);
     return json({ responseId: response.id, surveyId: survey.id, step: nextStep(survey, response) });
   }
 
@@ -637,6 +778,8 @@ export async function handleApprenticeshipApi(route, request, env) {
       return json({ error: "The Apprenticeship Readiness Toolbox's Claude key isn't set up "
         + "yet (apprenticeship_claude_api) -- see SETUP.md." }, 500);
     }
+    const account = await requireRespondent(request, env);
+    if (!account) return json({ error: "Sign in to continue this assessment." }, 401);
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     const surveyId = str(body.surveyId);
@@ -647,6 +790,10 @@ export async function handleApprenticeshipApi(route, request, env) {
     // the caller steered us to, so a response can never be replayed against a different
     // (easier) survey's questions and scoring.
     if (!response || response.surveyId !== surveyId) return json({ error: "Session not found" }, 404);
+    // And it has to be this account's run. A response id is a UUID, but "hard to guess"
+    // is not the same as "checked" -- without this, anyone holding one could answer
+    // someone else's assessment and change the score on their dashboard.
+    if (!ownedBy(response, account)) return json({ error: "Session not found" }, 404);
     if (response.status === "halted") return json(haltPayload());
     if (response.status === "complete") return json({ done: true, results: response.results });
 
@@ -744,6 +891,10 @@ export async function handleApprenticeshipApi(route, request, env) {
         response.status = "halted";
         response.submittedAt = new Date().toISOString();
         await saveResponse(env, response);
+        // The run is over, so it is no longer resumable. Clearing the open-run pointer
+        // means a respondent who sorts it out with Conexus can start the assessment
+        // again instead of being handed the same dead end every time they come back.
+        await env.BOX_KV.delete(openRunKey(account.id, survey.id));
         return json(haltPayload());
       }
     }
@@ -773,6 +924,11 @@ export async function handleApprenticeshipApi(route, request, env) {
 
     survey.responseCount = (survey.responseCount || 0) + 1;
     await saveSurvey(env, survey);
+    // Point the account at this finished run and stop offering it as resumable. These
+    // two keys are what make the dashboard one read per assessment instead of a scan of
+    // every response in the project.
+    await env.BOX_KV.put(doneRunKey(account.id, survey.id), response.id);
+    await env.BOX_KV.delete(openRunKey(account.id, survey.id));
 
     return json({ done: true, results: response.results });
   }
@@ -783,6 +939,9 @@ export async function handleApprenticeshipApi(route, request, env) {
   if (parts[0] === "public" && parts[1] === "results" && parts.length === 4 && method === "GET") {
     const response = await getResponse(env, parts[2], parts[3]);
     if (!response || response.surveyId !== parts[2]) return json({ error: "Not found" }, 404);
+    if (response.accountId && !ownedBy(response, await requireRespondent(request, env))) {
+      return json({ error: "Not found" }, 404);
+    }
     if (response.status === "halted") return json(haltPayload());
     if (response.status !== "complete") return json({ error: "This assessment isn't finished yet." }, 409);
     return json({ done: true, results: response.results });
@@ -796,6 +955,9 @@ export async function handleApprenticeshipApi(route, request, env) {
   if (parts[0] === "public" && parts[1] === "dashboard" && parts.length === 4 && method === "GET") {
     const anchor = await getResponse(env, parts[2], parts[3]);
     if (!anchor || anchor.surveyId !== parts[2]) return json({ error: "Not found" }, 404);
+    if (anchor.accountId && !ownedBy(anchor, await requireRespondent(request, env))) {
+      return json({ error: "Not found" }, 404);
+    }
     const surveys = (await listPrefix(env, SURVEY_PREFIX))
       .filter((s) => s.projectId && s.projectId === anchor.projectId);
     const email = anchor.respondent.email;
@@ -1029,6 +1191,40 @@ export async function handleApprenticeshipApi(route, request, env) {
         percent: t.possible ? Math.round((t.earned / t.possible) * 1000) / 10 : 0,
       })),
     });
+  }
+
+  // ---- respondent accounts (admin view) ----
+  // GET accounts -- who has registered, and how far each has got. Nothing here exposes a
+  // password hash or a salt: publicAccount() decides what leaves the Worker.
+  if (route === "accounts" && method === "GET") {
+    const accounts = await listAccounts(env);
+    const done = await env.BOX_KV.list({ prefix: ACCOUNT_KEY_PREFIXES.DONE_PREFIX });
+    const completedByAccount = new Map();
+    for (const entry of done.keys) {
+      const withoutPrefix = entry.name.slice(ACCOUNT_KEY_PREFIXES.DONE_PREFIX.length);
+      const accountId = withoutPrefix.slice(0, withoutPrefix.indexOf(":"));
+      completedByAccount.set(accountId, (completedByAccount.get(accountId) || 0) + 1);
+    }
+    return json({
+      accounts: accounts.map((a) => ({ ...a, completedCount: completedByAccount.get(a.id) || 0 }))
+        .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
+    });
+  }
+
+  // POST accounts/<id>/password { password } -- the whole password-reset story for this
+  // app, since nothing here can send an email. An admin sets one and tells the person.
+  if (parts[0] === "accounts" && parts.length === 3 && parts[2] === "password" && method === "POST") {
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    const result = await adminSetPassword(env, parts[1], body.password);
+    if (result.error) return json({ error: result.error }, result.status || 400);
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "accounts" && parts.length === 2 && method === "DELETE") {
+    const result = await deleteAccount(env, parts[1]);
+    if (result.error) return json({ error: result.error }, result.status || 400);
+    return json({ ok: true });
   }
 
   // GET surveys/<id>/responses.csv
