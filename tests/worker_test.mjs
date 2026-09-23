@@ -1331,17 +1331,40 @@ const ONE_SECTION = [{
   ],
 }];
 
-async function startResponse(env, surveyId) {
-  const res = await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST", {
-    surveyId, name: "Pat", company: "Acme", email: "pat@acme.test",
+/** Register a respondent and return their bearer token. */
+async function signUp(env, over = {}) {
+  const res = await appr("account/signup", jsonReq("/api/apprenticeship/account/signup", "POST", {
+    name: "Pat", company: "Acme", email: "pat@acme.test", password: "a-long-enough-pw", ...over,
   }), env);
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  return body.token;
+}
+
+/** One respondent per env, created on first use, so each test reads like one person. */
+const respondentTokens = new WeakMap();
+async function respondent(env) {
+  if (!respondentTokens.has(env)) respondentTokens.set(env, await signUp(env));
+  return respondentTokens.get(env);
+}
+
+async function startResponse(env, surveyId, token) {
+  const bearer = token || await respondent(env);
+  const res = await appr("public/start",
+    jsonReq("/api/apprenticeship/public/start", "POST", { surveyId }, bearer), env);
   const body = await res.json();
   assert.equal(res.status, 200, JSON.stringify(body));
   return body;
 }
 
-const answerReq = (surveyId, responseId, answer) =>
-  jsonReq("/api/apprenticeship/public/answer", "POST", { surveyId, responseId, answer });
+const answerReq = (surveyId, responseId, answer, token) =>
+  jsonReq("/api/apprenticeship/public/answer", "POST", { surveyId, responseId, answer }, token);
+
+/** Send one answer as the env's respondent (or as someone else, with an explicit token). */
+async function postAnswer(env, surveyId, responseId, answer, token) {
+  return appr("public/answer",
+    answerReq(surveyId, responseId, answer, token || await respondent(env)), env);
+}
 
 test("apprenticeship: the public view never leaks objectives, criteria or point values", async () => {
   const { env, token } = await apprEnv();
@@ -1371,8 +1394,7 @@ test("apprenticeship: an honest low score is never flagged and never trips the s
   await withFetch(claudeStub((name, body) => name === "record_evaluation"
     ? evaluation({ score: 0, scoreReason: "Nothing in place." })
     : improvementsFor(body)), async () => {
-    const res = await appr("public/answer",
-      answerReq(survey.id, started.responseId, "Honestly, nobody owns it yet."), env);
+    const res = await postAnswer(env, survey.id, started.responseId, "Honestly, nobody owns it yet.");
     const body = await res.json();
     assert.equal(res.status, 200, JSON.stringify(body));
     assert.ok(body.done, "a one-question assessment finishes on the first answer");
@@ -1393,13 +1415,11 @@ test("apprenticeship: a non-responsive answer is redirected once, then flagged w
     ? evaluation({ responsive: false, score: 0, scoreReason: "Off topic.",
                    redirect: "To put it another way — who signs off on it?" })
     : improvementsFor(body)), async () => {
-    const first = await (await appr("public/answer",
-      answerReq(survey.id, started.responseId, "what's for lunch"), env)).json();
+    const first = await (await postAnswer(env, survey.id, started.responseId, "what's for lunch")).json();
     assert.ok(first.step.isFollowUp, "the first miss gets one redirect, not a flag");
     assert.equal(first.step.prompt, "To put it another way — who signs off on it?");
 
-    const second = await (await appr("public/answer",
-      answerReq(survey.id, started.responseId, "still not answering"), env)).json();
+    const second = await (await postAnswer(env, survey.id, started.responseId, "still not answering")).json();
     assert.ok(second.done, "the second miss ends the question rather than badgering again");
     assert.equal(second.results.flaggedCount, 1);
     assert.match(second.results.contactPrompt, /Conexus Indiana staff/);
@@ -1432,7 +1452,7 @@ test("apprenticeship: three non-responsive questions in a row shut the assessmen
     let last = null;
     // Two turns per question: the miss, then the miss on the redirect.
     for (let i = 0; i < 8; i++) {
-      last = await (await appr("public/answer", answerReq(survey.id, started.responseId, "no"), env)).json();
+      last = await (await postAnswer(env, survey.id, started.responseId, "no")).json();
       if (last.halted) break;
     }
     assert.ok(last.halted, "three consecutive non-responsive questions must stop the assessment");
@@ -1450,8 +1470,7 @@ test("apprenticeship: a score above the question's maximum is clamped, not trust
   const started = await startResponse(env, survey.id);
   await withFetch(claudeStub((name, body) => name === "record_evaluation"
     ? evaluation({ score: 99 }) : improvementsFor(body)), async () => {
-    const body = await (await appr("public/answer",
-      answerReq(survey.id, started.responseId, "A real answer."), env)).json();
+    const body = await (await postAnswer(env, survey.id, started.responseId, "A real answer.")).json();
     assert.equal(body.results.overall.display, "5/5",
       "a strict schema constrains shape, not range — an out-of-range score would inflate the section");
     assert.equal(body.results.overall.percent, 100);
@@ -1480,9 +1499,8 @@ test("apprenticeship: the readiness bands land exactly on 85 and 60", async () =
     const scores = testCase.scores.slice();
     await withFetch(claudeStub((name, body) => name === "record_evaluation"
       ? evaluation({ score: scores.shift() }) : improvementsFor(body)), async () => {
-      await appr("public/answer", answerReq(survey.id, started.responseId, "An answer."), env);
-      const body = await (await appr("public/answer",
-        answerReq(survey.id, started.responseId, "Another answer."), env)).json();
+      await postAnswer(env, survey.id, started.responseId, "An answer.");
+      const body = await (await postAnswer(env, survey.id, started.responseId, "Another answer.")).json();
       assert.equal(body.results.overall.percent, testCase.percent);
       assert.equal(body.results.overall.bandLabel, testCase.label,
         `${testCase.percent}% should be ${testCase.label}`);
@@ -1495,8 +1513,7 @@ test("apprenticeship: a response cannot be replayed against a different assessme
   const a = await makeAssessment(env, token, ONE_SECTION, "A");
   const b = await makeAssessment(env, token, ONE_SECTION, "B");
   const started = await startResponse(env, a.survey.id);
-  const res = await appr("public/answer",
-    answerReq(b.survey.id, started.responseId, "An answer."), env);
+  const res = await postAnswer(env, b.survey.id, started.responseId, "An answer.");
   assert.equal(res.status, 404, "the stored record's own surveyId is re-checked, so B cannot score A's run");
 });
 
@@ -1509,7 +1526,7 @@ test("apprenticeship: a failed improvement write-up still returns the earned sco
     if (body.tools[0].name === "record_improvements") return new Response("boom", { status: 500 });
     return okJson({ content: [{ type: "tool_use", name: "record_evaluation", input: evaluation({ score: 4 }) }] });
   }, async () => {
-    const res = await appr("public/answer", answerReq(survey.id, started.responseId, "An answer."), env);
+    const res = await postAnswer(env, survey.id, started.responseId, "An answer.");
     const body = await res.json();
     assert.equal(res.status, 200, "the scores are earned — a failed write-up must not lose them");
     assert.equal(body.results.overall.display, "4/5");
@@ -1517,18 +1534,178 @@ test("apprenticeship: a failed improvement write-up still returns the earned sco
   });
 });
 
-test("apprenticeship: starting needs name, company and a real email", async () => {
+test("apprenticeship: signing up needs name, company, a real email and a real password", async () => {
+  const { env } = await apprEnv();
+  const base = { name: "Pat", company: "Acme", email: "pat@acme.test", password: "a-long-enough-pw" };
+  for (const over of [
+    { name: "" }, { company: "" }, { email: "" }, { email: "not-an-email" }, { password: "short" },
+  ]) {
+    const res = await appr("account/signup",
+      jsonReq("/api/apprenticeship/account/signup", "POST", { ...base, ...over }), env);
+    assert.equal(res.status, 400, `should have been rejected: ${JSON.stringify(over)}`);
+  }
+});
+
+test("apprenticeship: an email can only be registered once", async () => {
+  const { env } = await apprEnv();
+  await signUp(env);
+  const res = await appr("account/signup", jsonReq("/api/apprenticeship/account/signup", "POST", {
+    name: "Someone Else", company: "Other Co", email: "pat@acme.test", password: "another-long-pw",
+  }), env);
+  assert.equal(res.status, 409);
+});
+
+test("apprenticeship: signing in works, and a wrong password says nothing about the account", async () => {
+  const { env } = await apprEnv();
+  await signUp(env);
+  const good = await appr("account/login", jsonReq("/api/apprenticeship/account/login", "POST",
+    { email: "PAT@Acme.Test", password: "a-long-enough-pw" }), env);
+  const goodBody = await good.json();
+  assert.equal(good.status, 200, "the email is matched case-insensitively");
+  assert.ok(goodBody.token);
+  assert.ok(!JSON.stringify(goodBody).includes("passwordHash"), "no hash ever leaves the Worker");
+
+  const wrongPassword = await appr("account/login", jsonReq("/api/apprenticeship/account/login",
+    "POST", { email: "pat@acme.test", password: "not-the-password" }), env);
+  const noSuchAccount = await appr("account/login", jsonReq("/api/apprenticeship/account/login",
+    "POST", { email: "nobody@acme.test", password: "a-long-enough-pw" }), env);
+  assert.equal(wrongPassword.status, 401);
+  assert.equal(noSuchAccount.status, 401);
+  // Different messages here would be an account-enumeration oracle: whether an address
+  // is registered is exactly what the difference would tell you.
+  assert.deepEqual(await wrongPassword.json(), await noSuchAccount.json());
+});
+
+test("apprenticeship: a respondent account is not an admin account, in either direction", async () => {
+  const { env, token: adminToken } = await apprEnv();
+  const respondentToken = await signUp(env);
+
+  // The two systems sign with different secrets, so this fails at the signature check --
+  // no payload a self-registering employer could obtain can satisfy an admin route.
+  for (const path of ["projects", "surveys", "accounts"]) {
+    const res = await appr(path, req(`/api/apprenticeship/${path}`,
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env);
+    assert.equal(res.status, 401, `a respondent token must not open ${path}`);
+  }
+  const asAdmin = await appr("account/me",
+    req("/api/apprenticeship/account/me", { headers: { authorization: `Bearer ${adminToken}` } }), env);
+  assert.equal(asAdmin.status, 401, "and an admin token is not a respondent either");
+});
+
+test("apprenticeship: an assessment cannot be started or answered without signing in", async () => {
   const { env, token } = await apprEnv();
   const { survey } = await makeAssessment(env, token, ONE_SECTION);
-  for (const body of [
-    { surveyId: survey.id, name: "", company: "Acme", email: "pat@acme.test" },
-    { surveyId: survey.id, name: "Pat", company: "", email: "pat@acme.test" },
-    { surveyId: survey.id, name: "Pat", company: "Acme", email: "" },
-    { surveyId: survey.id, name: "Pat", company: "Acme", email: "not-an-email" },
-  ]) {
-    const res = await appr("public/start",
-      jsonReq("/api/apprenticeship/public/start", "POST", body), env);
-    assert.equal(res.status, 400, `should have been rejected: ${JSON.stringify(body)}`);
+  const started = await startResponse(env, survey.id);
+  assert.equal((await appr("public/start",
+    jsonReq("/api/apprenticeship/public/start", "POST", { surveyId: survey.id }), env)).status, 401);
+  assert.equal((await appr("public/answer",
+    answerReq(survey.id, started.responseId, "An answer."), env)).status, 401);
+});
+
+test("apprenticeship: one account cannot answer another account's assessment", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const started = await startResponse(env, survey.id);
+  const intruder = await signUp(env, { email: "someone@else.test", company: "Else Co" });
+  const res = await postAnswer(env, survey.id, started.responseId, "An answer.", intruder);
+  assert.equal(res.status, 404,
+    "a response id is hard to guess, which is not the same as checked -- without this an "
+    + "intruder could change the score on someone else's dashboard");
+});
+
+test("apprenticeship: an unfinished assessment resumes instead of starting over", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "c",
+    questions: [{ text: "Q1?", context: "", criteria: "c", maxPoints: 5 },
+                { text: "Q2?", context: "", criteria: "c", maxPoints: 5 }],
+  }]);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 4 }) : improvementsFor(body)), async () => {
+    await postAnswer(env, survey.id, started.responseId, "An answer.");
+  });
+  const again = await startResponse(env, survey.id);
+  assert.equal(again.responseId, started.responseId, "the same run is handed back");
+  assert.equal(again.resumed, true);
+  assert.equal(again.answered, 1);
+  assert.equal(again.step.prompt, "Q2?", "and it picks up at the question they had reached");
+});
+
+test("apprenticeship: the dashboard combines a project, and withholds the total until it is finished", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const first = await makeAssessment(env, token, ONE_SECTION, "One");
+  const second = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: first.projectId, name: "Two", sections: ONE_SECTION,
+  }, token), env)).json();
+
+  const dash = () => appr("account/dashboard", req("/api/apprenticeship/account/dashboard",
+    { headers: { authorization: `Bearer ${respondentToken}` } }), env).then((r) => r.json());
+
+  const runOne = await startResponse(env, first.survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 4 }) : improvementsFor(body)), async () => {
+    await postAnswer(env, first.survey.id, runOne.responseId, "An answer.");
+  });
+
+  const halfway = await dash();
+  assert.equal(halfway.projects.length, 1);
+  assert.equal(halfway.projects[0].assessments.length, 2, "the rest of the project is listed too");
+  assert.equal(halfway.projects[0].completedCount, 1);
+  assert.equal(halfway.projects[0].overall, null,
+    "a combined readiness built from one assessment of two is not this employer's readiness");
+  assert.deepEqual(halfway.projects[0].assessments.map((a) => a.status), ["complete", "not-started"]);
+
+  const runTwo = await startResponse(env, second.survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 5 }) : improvementsFor(body)), async () => {
+    await postAnswer(env, second.survey.id, runTwo.responseId, "Another answer.");
+  });
+
+  const finished = await dash();
+  assert.equal(finished.projects[0].complete, true);
+  assert.equal(finished.projects[0].overall.display, "9/10", "4 of 5 plus 5 of 5");
+  assert.equal(finished.projects[0].overall.bandLabel, "Strong Readiness");
+});
+
+test("apprenticeship: signing up claims the assessments that person finished before accounts existed", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  // A response exactly as the tool stored one before it had accounts: an email, no owner.
+  const orphanId = "legacy-response";
+  await env.BOX_KV.put(`apprenticeship:response:${survey.id}:${orphanId}`, JSON.stringify({
+    id: orphanId, surveyId: survey.id, projectId: survey.projectId, surveyName: survey.name,
+    respondent: { name: "Pat", company: "Acme", email: "pat@acme.test" },
+    status: "complete", cursor: 1, pending: null, consecutiveNonResponsive: 0,
+    answers: [], issues: [],
+    results: { sections: [], overall: { earned: 4, possible: 5, percent: 80, display: "4/5",
+                                        band: "moderate", bandLabel: "Moderate Readiness" } },
+    startedAt: "2026-01-01T00:00:00.000Z", submittedAt: "2026-01-01T00:10:00.000Z",
+  }));
+
+  const respondentToken = await signUp(env);
+  const stored = JSON.parse(await env.BOX_KV.get(`apprenticeship:response:${survey.id}:${orphanId}`));
+  assert.equal(stored.accountId, JSON.parse(await env.BOX_KV.get(
+    `apprenticeship:account:${stored.accountId}`)).id, "the orphan now has an owner");
+
+  const dashboard = await (await appr("account/dashboard",
+    req("/api/apprenticeship/account/dashboard",
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env)).json();
+  assert.equal(dashboard.projects[0].assessments[0].status, "complete",
+    "work done before sign-up must not look like a blank slate");
+});
+
+test("apprenticeship: the admin account list never carries a password hash or salt", async () => {
+  const { env, token } = await apprEnv();
+  await signUp(env);
+  const body = await (await appr("accounts", req("/api/apprenticeship/accounts",
+    { headers: { authorization: `Bearer ${token}` } }), env)).json();
+  assert.equal(body.accounts.length, 1);
+  assert.equal(body.accounts[0].email, "pat@acme.test");
+  const serialized = JSON.stringify(body);
+  for (const secret of ["passwordHash", "passwordSalt"]) {
+    assert.ok(!serialized.includes(secret), `${secret} must never leave the Worker`);
   }
 });
 

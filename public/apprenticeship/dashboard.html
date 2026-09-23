@@ -3,23 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Readiness dashboard</title>
+<title>Apprenticeship Readiness Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/apprenticeship/brand.css">
+<script src="/apprenticeship/session.js"></script>
 <style>
-  .wrap { max-width:760px; }
+  .wrap { max-width:780px; }
   .assessment { border:1px solid var(--border); border-radius:10px; padding:16px 18px; margin-top:12px; }
   .assessment .head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
   .assessment .name { font-weight:650; color:var(--navy); font-size:14.5px; }
   .assessment .num { font-weight:700; font-size:15px; color:var(--accent); white-space:nowrap; }
   .assessment .meta { font-size:12.5px; color:var(--text-muted); margin-top:6px; }
+  .assessment ul { margin:10px 0 0; padding-left:20px; font-size:13px; color:var(--text-secondary); }
+  .assessment li { margin:4px 0; }
+  .pending { border-left:4px solid var(--amber); background:rgba(251,174,64,.10);
+             border-radius:10px; padding:14px 16px; font-size:13.5px; margin-bottom:4px; }
+  .sec-line { display:flex; justify-content:space-between; font-size:12.5px; margin-top:8px; }
+  .sec-line .n { color:var(--text-secondary); }
+  .sec-line .v { font-weight:650; color:var(--accent); }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="topbar">
+    <span id="whoami"></span>
+    <button type="button" class="link" id="signOutBtn">Sign out</button>
+  </div>
   <header>
     <div class="title-block">
-      <h1>Readiness dashboard</h1>
+      <h1>Apprenticeship Readiness Dashboard</h1>
       <p class="sub" id="subline">Loading…</p>
     </div>
   </header>
@@ -30,76 +42,92 @@
 (function () {
   "use strict";
   var el = function (id) { return document.getElementById(id); };
-  var params = new URLSearchParams(window.location.search);
-  var surveyId = params.get("survey");
-  var responseId = params.get("response");
+  var session = window.ApprenticeshipSession;
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  if (!surveyId || !responseId) {
-    el("subline").textContent = "";
-    el("body").innerHTML = '<div class="card">This dashboard link is incomplete. Use the '
-      + "link shown at the end of an assessment.</div>";
-    return;
+  el("signOutBtn").addEventListener("click", function () {
+    session.clear();
+    window.location.replace("/apprenticeship/account.html");
+  });
+
+  if (!session.token()) { session.requireSignIn("/apprenticeship/dashboard.html"); return; }
+
+  function assessmentHtml(a) {
+    var link = "/apprenticeship/respond.html?survey=" + encodeURIComponent(a.surveyId);
+    var html = '<div class="assessment"><div class="head"><span class="name">'
+      + esc(a.surveyName) + "</span>";
+
+    if (a.status === "complete" && a.overall) {
+      html += '<span class="num">' + esc(a.overall.display) + " · "
+        + esc(a.overall.percent) + "%</span></div>"
+        + '<div class="track"><div class="fill" style="width:' + Number(a.overall.percent) + '%"></div></div>'
+        + '<div class="meta"><span class="pill ' + esc(a.overall.band) + '">'
+        + esc(a.overall.bandLabel) + "</span> · finished "
+        + esc(String(a.submittedAt || "").slice(0, 10))
+        + ' · <a class="link" href="' + link + '">Take it again</a></div>';
+      (a.sections || []).forEach(function (section) {
+        html += '<div class="sec-line"><span class="n">' + esc(section.name)
+          + '</span><span class="v">' + esc(section.display) + "</span></div>";
+      });
+    } else if (a.status === "in-progress") {
+      html += '<span class="num" style="color:var(--amber)">In progress</span></div>'
+        + '<div class="meta"><a class="link" href="' + link + '">Pick up where you left off</a></div>';
+    } else {
+      html += '<span class="num" style="color:var(--text-muted)">Not started</span></div>'
+        + '<div class="meta">' + a.questionCount + " question"
+        + (a.questionCount === 1 ? "" : "s") + ' · <a class="link" href="' + link
+        + '">Start this assessment</a></div>';
+    }
+    return html + "</div>";
   }
 
-  // The respondent is identified from the stored record behind these two ids, never from
-  // anything typed into the URL -- see the dashboard route in src/apprenticeship.js.
-  fetch("/api/apprenticeship/public/dashboard/" + encodeURIComponent(surveyId)
-        + "/" + encodeURIComponent(responseId))
-    .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); })
-    .then(function (data) {
-      el("subline").textContent = data.respondent.name + " · " + data.respondent.company
-        + (data.projectName ? " · " + data.projectName : "");
+  function projectHtml(project) {
+    var html = '<div class="card"><h2>' + esc(project.name || "Your assessments") + "</h2>";
+    if (project.description) html += '<p class="desc">' + esc(project.description) + "</p>";
 
-      var done = data.assessments.filter(function (a) { return a.overall; });
-      var html = "";
+    if (project.overall) {
+      html += '<div class="band"><div class="score">' + esc(project.overall.percent) + "%</div>"
+        + '<div class="label">' + esc(project.overall.bandLabel) + "</div>"
+        + '<div class="sub">' + esc(project.overall.display) + " points across "
+        + project.assessments.length + " assessment"
+        + (project.assessments.length === 1 ? "" : "s") + "</div></div>";
+    } else {
+      // Said plainly rather than shown as a provisional number. A combined readiness
+      // built from one assessment out of three is not this employer's readiness, and a
+      // percentage on screen would be read as one however it were labelled.
+      var left = project.assessments.length - project.completedCount;
+      html += '<div class="pending"><b>Your combined readiness isn’t ready yet.</b> '
+        + "Finish the remaining " + left + " assessment" + (left === 1 ? "" : "s")
+        + " below and it will appear here.</div>";
+    }
 
-      if (data.overall) {
-        html += '<div class="card"><div class="band">'
-          + '<div class="score">' + esc(data.overall.percent) + "%</div>"
-          + '<div class="label">' + esc(data.overall.bandLabel) + "</div>"
-          + '<div class="sub">' + esc(data.overall.display) + " points across "
-          + done.length + " completed assessment" + (done.length === 1 ? "" : "s") + "</div>"
-          + "</div></div>";
-      }
+    project.assessments.forEach(function (a) { html += assessmentHtml(a); });
+    return html + "</div>";
+  }
 
-      html += '<div class="card"><h2>Assessments in this programme</h2>'
-        + '<p class="desc">Each assessment you finish is added here. Where you have taken '
-        + "one more than once, the most recent attempt is the one that counts.</p>";
-
-      data.assessments.forEach(function (a) {
-        html += '<div class="assessment"><div class="head">'
-          + '<span class="name">' + esc(a.surveyName) + "</span>";
-        if (a.overall) {
-          html += '<span class="num">' + esc(a.overall.display) + " · "
-            + esc(a.overall.percent) + "%</span></div>"
-            + '<div class="track"><div class="fill" style="width:'
-            + Number(a.overall.percent) + '%"></div></div>'
-            + '<div class="meta"><span class="pill ' + esc(a.overall.band) + '">'
-            + esc(a.overall.bandLabel) + "</span> · completed "
-            + esc(String(a.submittedAt || "").slice(0, 10))
-            + ' · <a class="link" href="/apprenticeship/respond.html?survey='
-            + encodeURIComponent(a.surveyId) + '">retake</a></div>';
-        } else {
-          html += '<span class="num" style="color:var(--text-muted)">Not started</span></div>'
-            + '<div class="meta"><a class="link" href="/apprenticeship/respond.html?survey='
-            + encodeURIComponent(a.surveyId) + '">Take this assessment</a></div>';
-        }
-        html += "</div>";
-      });
-
-      html += "</div>";
-      el("body").innerHTML = html;
-    })
-    .catch(function () {
+  session.api("account/dashboard").then(function (data) {
+    el("whoami").textContent = data.account.name + " · " + data.account.company;
+    if (!data.projects.length) {
       el("subline").textContent = "";
-      el("body").innerHTML = '<div class="card">We couldn’t find that dashboard. '
-        + "Double-check the link you were given at the end of your assessment.</div>";
-    });
+      el("body").innerHTML = '<div class="card"><h2>Nothing here yet</h2><p class="desc">'
+        + "Once you start an assessment, it and the rest of its programme will show up "
+        + "here. Use the link Conexus Indiana sent you to begin.</p></div>";
+      return;
+    }
+    var totalDone = data.projects.reduce(function (n, p) { return n + p.completedCount; }, 0);
+    var totalAll = data.projects.reduce(function (n, p) { return n + p.assessments.length; }, 0);
+    el("subline").textContent = totalDone + " of " + totalAll + " assessment"
+      + (totalAll === 1 ? "" : "s") + " complete.";
+    el("body").innerHTML = data.projects.map(projectHtml).join("");
+  }).catch(function (e) {
+    if (e && e.message === "Not signed in") return; // api() is already redirecting
+    el("subline").textContent = "";
+    el("body").innerHTML = '<div class="card">' + esc(e.message) + "</div>";
+  });
 })();
 </script>
 </body>
