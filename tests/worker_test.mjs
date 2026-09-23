@@ -1698,6 +1698,123 @@ test("apprenticeship: signing up claims the assessments that person finished bef
     "work done before sign-up must not look like a blank slate");
 });
 
+test("apprenticeship: context before the question can be switched off without deleting it", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "Section context.",
+    questions: [
+      { text: "Do you have leadership support?", context: "PRE CONTEXT", showPreContext: false,
+        criteria: "c", maxPoints: 5 },
+      { text: "Q2?", context: "SHOWN PRE CONTEXT", criteria: "c", maxPoints: 5 },
+    ],
+  }]);
+  const started = await startResponse(env, survey.id);
+  assert.ok(!started.step.messages.includes("PRE CONTEXT"),
+    "context in front of that question telegraphs the answer, so it must stay hidden");
+  assert.ok(started.step.messages.includes("Section context."), "the section's own context still shows");
+  // The text is kept on the survey, not thrown away -- switching it back on restores it.
+  const stored = await (await appr(`surveys/${survey.id}`,
+    req(`/api/apprenticeship/surveys/${survey.id}`, { headers: { authorization: `Bearer ${token}` } }),
+    env)).json();
+  assert.equal(stored.sections[0].questions[0].context, "PRE CONTEXT");
+
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 5 }) : improvementsFor(body)), async () => {
+    const next = await (await postAnswer(env, survey.id, started.responseId, "Yes, fully.")).json();
+    assert.ok(next.step.messages.includes("SHOWN PRE CONTEXT"), "and it defaults to showing");
+  });
+});
+
+test("apprenticeship: a weak answer earns the post-answer context, a strong one moves on", async () => {
+  const { env, token } = await apprEnv();
+  const sections = [{
+    name: "S", objective: "o", context: "",
+    questions: [
+      { text: "Do you have leadership support?", context: "", showPreContext: false,
+        postContext: "WHY LEADERSHIP MATTERS", postContextMode: "weak", postContextBelow: 60,
+        criteria: "c", maxPoints: 5 },
+      { text: "Q2?", context: "", criteria: "c", maxPoints: 5 },
+    ],
+  }];
+
+  // Answered no -- 0 of 5 -- so the education is shown, and it leads, reading as a reply
+  // to what they just said rather than as preamble to the next question.
+  const weak = await makeAssessment(env, token, sections, "Weak");
+  const weakRun = await startResponse(env, weak.survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 0 }) : improvementsFor(body)), async () => {
+    const next = await (await postAnswer(env, weak.survey.id, weakRun.responseId, "No.")).json();
+    assert.equal(next.step.messages[0], "WHY LEADERSHIP MATTERS");
+  });
+
+  // Answered yes -- 5 of 5 -- so they are not made to sit through it.
+  const strong = await makeAssessment(env, token, sections, "Strong");
+  const strongRun = await startResponse(env, strong.survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 5 }) : improvementsFor(body)), async () => {
+    const next = await (await postAnswer(env, strong.survey.id, strongRun.responseId, "Yes, fully.")).json();
+    assert.ok(!next.step.messages.includes("WHY LEADERSHIP MATTERS"));
+  });
+});
+
+test("apprenticeship: post-answer context can be set to always, or parked without deleting it", async () => {
+  const { env, token } = await apprEnv();
+  for (const [mode, expected] of [["always", true], ["never", false]]) {
+    const { survey } = await makeAssessment(env, token, [{
+      name: "S", objective: "o", context: "",
+      questions: [
+        { text: "Q1?", context: "", postContext: "ALWAYS TEXT", postContextMode: mode,
+          criteria: "c", maxPoints: 5 },
+        { text: "Q2?", context: "", criteria: "c", maxPoints: 5 },
+      ],
+    }], `Mode ${mode}`);
+    const started = await startResponse(env, survey.id);
+    await withFetch(claudeStub((name, body) => name === "record_evaluation"
+      ? evaluation({ score: 5 }) : improvementsFor(body)), async () => {
+      const next = await (await postAnswer(env, survey.id, started.responseId, "A full answer.")).json();
+      assert.equal(next.step.messages.includes("ALWAYS TEXT"), expected,
+        `mode ${mode} on a full-marks answer`);
+    });
+  }
+});
+
+test("apprenticeship: the last question's post-answer context rides along with the results", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [{ text: "Q1?", context: "", postContext: "CLOSING LESSON",
+                  postContextMode: "weak", postContextBelow: 60, criteria: "c", maxPoints: 5 }],
+  }]);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 1 }) : improvementsFor(body)), async () => {
+    const body = await (await postAnswer(env, survey.id, started.responseId, "Barely.")).json();
+    assert.ok(body.done);
+    // There is no next question for it to precede, so it has to travel with the results
+    // or be silently dropped on the one question most likely to need it.
+    assert.equal(body.results.postContext, "CLOSING LESSON");
+  });
+});
+
+test("apprenticeship: a pending follow-up does not trigger the post-answer context early", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "",
+    questions: [{ text: "Q1?", context: "", postContext: "TOO SOON", postContextMode: "always",
+                  criteria: "c", maxPoints: 5 },
+                { text: "Q2?", context: "", criteria: "c", maxPoints: 5 }],
+  }]);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ responsive: false, score: 0, redirect: "Say more?" })
+    : improvementsFor(body)), async () => {
+    const first = await (await postAnswer(env, survey.id, started.responseId, "what?")).json();
+    assert.equal(first.step.isFollowUp, true);
+    assert.deepEqual(first.step.messages, [],
+      "the question isn't finished, so there is no final answer for the context to react to");
+  });
+});
+
 test("apprenticeship: the results come back as strengths and a to-do list with stable ids", async () => {
   const { env, token } = await apprEnv();
   const { survey } = await makeAssessment(env, token, ONE_SECTION);

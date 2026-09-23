@@ -93,6 +93,11 @@ const MAX_FOLLOW_UPS_PER_QUESTION = 1;
 // tool exists to find, and it must never trip a shut-off or raise a flag.
 const SHUT_OFF_AFTER_NON_RESPONSIVE = 3;
 
+// "weak" shows the post-answer context only when the answer scored below the question's
+// threshold; "always" shows it however they answered; "never" keeps the text on file
+// without showing it, so an admin can park one without deleting what they wrote.
+const POST_CONTEXT_MODES = ["weak", "always", "never"];
+
 const MAX_POINTS_CEILING = 10;
 const MAX_ANSWER_CHARS = 4000;
 
@@ -166,9 +171,25 @@ function cleanSections(raw) {
       return {
         id: uniqueId(str(question.id), `q${j + 1}-${crypto.randomUUID().slice(0, 8)}`),
         text: str(question.text),
-        // Shown to the respondent before the question is asked -- this is the
+        // Shown to the respondent BEFORE the question is asked -- this is the
         // "educate, then ask" half of the design, not private guidance.
         context: str(question.context),
+        // Whether to show it at all. Some questions read better cold: context in front
+        // of "Do you have leadership support?" telegraphs the answer the tool wants, and
+        // a respondent who reads the case for it first is being led rather than asked.
+        showPreContext: !(question.showPreContext === false),
+        // Shown AFTER they answer, and normally only when the answer was weak. This is
+        // where teaching belongs for a question like that one: a "no" earns the case for
+        // leadership support, a "yes" does not need it and is not made to sit through it.
+        postContext: str(question.postContext),
+        postContextMode: POST_CONTEXT_MODES.includes(str(question.postContextMode))
+          ? str(question.postContextMode) : "weak",
+        // Used by the "weak" mode: show the post-answer context when the answer scored
+        // below this percentage of the question's points.
+        postContextBelow: (() => {
+          const below = Number(question.postContextBelow);
+          return Number.isFinite(below) ? Math.max(1, Math.min(100, Math.round(below))) : 60;
+        })(),
         // Private. Scored against, never shown.
         criteria: str(question.criteria),
         maxPoints: Number.isFinite(points)
@@ -649,7 +670,9 @@ function nextStep(survey, response) {
     messages.push(`${at.section.name}`);
     if (at.section.context) messages.push(at.section.context);
   }
-  if (at.question.context) messages.push(at.question.context);
+  if (at.question.context && at.question.showPreContext !== false) {
+    messages.push(at.question.context);
+  }
 
   return {
     sectionId: at.section.id,
@@ -660,6 +683,26 @@ function nextStep(survey, response) {
     isFollowUp: false,
     progress: { answered: response.cursor, total: flat.length },
   };
+}
+
+/**
+ * The context to show after this question, if any.
+ *
+ * The teaching a question needs usually depends on the answer. "Do you have leadership
+ * support?" answered yes needs nothing; answered no is the moment the case for it is
+ * worth reading, because they have just noticed they don't have it. Showing it before the
+ * question would have told them which answer the tool was hoping for.
+ */
+function postContextFor(question, score) {
+  const text = str(question.postContext);
+  if (!text) return "";
+  const mode = question.postContextMode || "weak";
+  if (mode === "never") return "";
+  if (mode === "always") return text;
+  const threshold = Number.isFinite(Number(question.postContextBelow))
+    ? Number(question.postContextBelow) : 60;
+  const percent = question.maxPoints ? (score / question.maxPoints) * 100 : 0;
+  return percent < threshold ? text : "";
 }
 
 function haltPayload() {
@@ -1033,6 +1076,11 @@ export async function handleApprenticeshipApi(route, request, env) {
       return json({ error: e.message || "Could not read that answer. Please try again." }, 502);
     }
 
+    // Whatever this question's answer earns it by way of follow-on teaching, decided the
+    // moment the question closes. Nothing is added while a follow-up is still pending --
+    // the question is not finished, and the answer it would be reacting to is not final.
+    let afterContext = "";
+
     // Responsive: score it, clear the streak, move on.
     if (evaluation.responsive) {
       response.answers.push({
@@ -1048,6 +1096,7 @@ export async function handleApprenticeshipApi(route, request, env) {
       response.consecutiveNonResponsive = 0;
       response.pending = null;
       response.cursor += 1;
+      afterContext = postContextFor(at.question, evaluation.score);
     } else if (!isFollowUp && MAX_FOLLOW_UPS_PER_QUESTION > 0 && evaluation.redirect) {
       // First miss: add context and re-ask. Nothing is recorded or flagged yet -- a
       // respondent who simply misread the question deserves a clean second go.
@@ -1102,6 +1151,9 @@ export async function handleApprenticeshipApi(route, request, env) {
       response.consecutiveNonResponsive += 1;
       response.pending = null;
       response.cursor += 1;
+      // A question nobody managed to answer scores zero, which is as weak as it gets --
+      // if anything they need the explanation more than someone who answered badly.
+      afterContext = postContextFor(at.question, 0);
 
       if (response.consecutiveNonResponsive >= SHUT_OFF_AFTER_NON_RESPONSIVE) {
         response.status = "halted";
@@ -1118,7 +1170,11 @@ export async function handleApprenticeshipApi(route, request, env) {
     // More questions left.
     if (response.cursor < flat.length) {
       await saveResponse(env, response);
-      return json({ step: nextStep(survey, response) });
+      const step = nextStep(survey, response);
+      // First in the queue, so it reads as a reply to what they just said rather than as
+      // preamble to the next question.
+      if (afterContext) step.messages = [afterContext, ...step.messages];
+      return json({ step });
     }
 
     // Done: score, then one call for the improvement areas.
@@ -1135,7 +1191,13 @@ export async function handleApprenticeshipApi(route, request, env) {
     }
     response.status = "complete";
     response.submittedAt = new Date().toISOString();
-    response.results = { ...buildResults(survey, response, sections, scored), improvementsError };
+    response.results = {
+      ...buildResults(survey, response, sections, scored),
+      improvementsError,
+      // The last question's follow-on teaching has nowhere else to go -- there is no next
+      // question to precede -- so it rides along and is shown before the results.
+      postContext: afterContext,
+    };
     await saveResponse(env, response);
 
     survey.responseCount = (survey.responseCount || 0) + 1;

@@ -765,10 +765,30 @@ consequences, both deliberate:
    send. Adding one later needs an email-sending secret and two more routes, not a
    different storage model.
 
-**The respondent's experience.** They sign in, then the assessment runs as a chat. Each section leads with its own context, each question leads with
-its own, and the person answers in their own words — nothing is multiple choice, because
+**The respondent's experience.** They sign in, then the assessment runs as a chat. Each
+section leads with its own context, and the person answers in their own words — nothing is multiple choice, because
 the point is to find out what an employer actually has in place rather than what they can
 recognise from a list.
+
+**Where a question's context goes is a per-question setting.** Each question has two
+context boxes and the admin decides which are used:
+
+| Box | What it is for |
+|---|---|
+| **Before the question** | The teaching half of the chat. It can be switched off per question without deleting the text: context in front of *"Do you have leadership support?"* telegraphs the answer the tool is hoping for, and a respondent who reads the case for it first is being led rather than asked. |
+| **After they answer** | Shown in reply to what they said, and normally only when the answer was weak. A "no" earns the case for leadership support — that is the moment it is worth reading, because they have just noticed they don't have it. A "yes" is not made to sit through it. |
+
+The post-answer box has three modes: **when they answer poorly** (the default, with an
+admin-set score threshold), **however they answer**, and **never** — which parks the text
+without showing it rather than making an admin delete what they wrote. On the last
+question it travels with the results, since there is no next question for it to precede.
+
+**Pacing.** Messages that would otherwise land in the same instant are staged, so a
+section's context and the question behind it read as someone talking rather than a wall of
+text. The first bubble is always immediate and nothing delays a reply — an earlier version
+paused before the first bubble too, on top of an API call the respondent had already
+waited through, and it made every answer feel slow. The gap scales with how much there is
+to read.
 
 **When an answer isn't an answer.** Claude reads each answer as it arrives and decides
 two separate things: whether the person engaged with the question at all, and how far

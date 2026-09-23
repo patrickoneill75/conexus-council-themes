@@ -238,28 +238,55 @@
       : "Question " + (progress.answered + 1) + " of " + progress.total;
   }
 
-  // Everything this step has to say is already in hand by the time renderStep runs, so it
-  // all goes on screen at once. There is NO artificial pacing delay here on purpose: the
-  // per-answer evaluation is a real API call the respondent already waited through, and
-  // padding a further beat onto each bubble after it just makes a slow chat slower. The
-  // typing indicator is shown only while a request is genuinely in flight.
+  /**
+   * Messages in a row are staged, so a section's context and the question behind it read
+   * as someone talking rather than a wall of text landing at once.
+   *
+   * The FIRST bubble is always immediate. The pause that was taken out before sat in
+   * front of it too, on top of an API call the respondent had already waited through,
+   * which is what made every answer feel slow. Nothing here delays a reply; it only
+   * spaces out bubbles that would otherwise appear in the same instant. The gap scales
+   * with how much there is to read, so a one-line section name does not hold up the
+   * question behind it.
+   */
+  var GAP_MIN_MS = 350, GAP_PER_CHAR_MS = 13, GAP_MAX_MS = 1500;
+  function gapAfter(text) {
+    return Math.min(GAP_MAX_MS, Math.max(GAP_MIN_MS, String(text || "").length * GAP_PER_CHAR_MS));
+  }
+
+  /** Show `texts` one after another, then call `then`. The first lands immediately. */
+  function stage(texts, kindFor, then) {
+    var queue = texts.slice();
+    var typing = null;
+    function next() {
+      if (typing) { typing.remove(); typing = null; }
+      if (!queue.length) return then ? then() : undefined;
+      var text = queue.shift();
+      addBubble(kindFor ? kindFor(text) : "bot", text);
+      typing = addTyping();
+      setTimeout(next, gapAfter(text));
+    }
+    next();
+  }
+
   function renderStep(step) {
     currentProgress = step.progress;
     updateProgress(step.progress);
-    (step.messages || []).forEach(function (text) {
-      // The first message after a section boundary is the section's own name -- given
-      // its own styling so a respondent can see where they are in the assessment.
-      addBubble(text === step.sectionName ? "section" : "bot", text);
+    stage(step.messages || [], function (text) {
+      // The section's own name is styled as a heading so a respondent can see where they
+      // are in the assessment.
+      return text === step.sectionName ? "section" : "bot";
+    }, function () {
+      currentPrompt = step.prompt;
+      addBubble("bot", step.prompt);
+      el("composer").hidden = false;
+      el("answerInput").disabled = false;
+      el("sendBtn").disabled = false;
+      el("answerInput").value = "";
+      el("answerInput").style.height = "auto";
+      el("answerInput").focus();
+      scrollToBottom();
     });
-    currentPrompt = step.prompt;
-    addBubble("bot", step.prompt);
-    el("composer").hidden = false;
-    el("answerInput").disabled = false;
-    el("sendBtn").disabled = false;
-    el("answerInput").value = "";
-    el("answerInput").style.height = "auto";
-    el("answerInput").focus();
-    scrollToBottom();
   }
 
   function submitAnswer() {
@@ -303,8 +330,14 @@
     el("composer").hidden = true;
     el("progressFill").style.width = "100%";
     el("progressLabel").textContent = "All done!";
-    addBubble("bot", "That's everything \u2014 thank you. Here's where your readiness stands.");
+    // The last question's follow-on teaching has no next question to precede, so it is
+    // said here, before the results, staged the same way as anywhere else.
+    stage((results.postContext ? [results.postContext] : [])
+      .concat(["That's everything \u2014 thank you. Here's where your readiness stands."]),
+      null, function () { renderResultsPanel(results); });
+  }
 
+  function renderResultsPanel(results) {
     var html = '<div class="panel">'
       + '<div class="band">'
       + '<div class="score">' + esc(results.overall.percent) + "%</div>"
