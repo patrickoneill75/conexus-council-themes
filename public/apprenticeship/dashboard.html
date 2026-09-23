@@ -20,6 +20,10 @@
   .combined { margin-top:22px; }
   .pending { border-left:4px solid var(--amber); background:rgba(251,174,64,.10);
              border-radius:10px; padding:14px 16px; font-size:13.5px; }
+  .next-step { border-left:4px solid var(--teal); background:rgba(16,143,194,.09);
+               border-radius:10px; padding:13px 16px; margin-top:14px; font-size:13.5px;
+               display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .next-step button { margin-left:auto; }
   .wf-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
               gap:12px; margin-top:14px; }
   .wf { border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
@@ -246,6 +250,14 @@
    */
   var selectedStep = {};
 
+  /**
+   * Which tab opens, and it is never a step they have not started.
+   *
+   * Clearing a gate opens the next step; it does not move them into it. Landing on step 2
+   * the moment step 1 passed took them away from the results they had just earned, and
+   * from a to-do list they may well have come back to work through. Moving on is a thing
+   * they choose -- the panel tells them the step is open and gives them the button.
+   */
   function defaultStep(project) {
     if (selectedStep[project.id]) return selectedStep[project.id];
     // Coming back from finishing an assessment: land on the step just completed.
@@ -254,9 +266,24 @@
       var match = project.assessments.filter(function (a) { return a.surveyId === fromUrl; })[0];
       if (match) return match.step;
     }
+    var started = project.assessments.filter(function (a) {
+      return !a.placeholder && (a.status === "complete" || a.status === "in-progress");
+    });
+    if (started.length) return started[started.length - 1].step;
     var open = project.assessments.filter(function (a) { return !a.locked && !a.placeholder; });
-    var unfinished = open.filter(function (a) { return a.status !== "complete"; })[0];
-    return (unfinished || open[open.length - 1] || project.assessments[0] || { step: 1 }).step;
+    return (open[0] || project.assessments[0] || { step: 1 }).step;
+  }
+
+  /** Told, not taken: the next step is open and here is the button for it. */
+  function nextStepHtml(project, a) {
+    if (a.status !== "complete") return "";
+    var next = project.assessments.filter(function (x) { return x.step === a.step + 1; })[0];
+    if (!next || next.locked || next.placeholder || next.status === "complete") return "";
+    return '<div class="next-step"><b>Step ' + next.step + " is now open.</b> "
+      + esc(next.surveyName) + ' is ready whenever you are \u2014 your work here stays on '
+      + 'this tab. <button type="button" class="small primary" data-goto-project="'
+      + esc(project.id) + '" data-goto-step="' + next.step + '">Go to step ' + next.step
+      + "</button></div>";
   }
 
   function projectHtml(project) {
@@ -286,7 +313,8 @@
 
     project.assessments.forEach(function (a) {
       html += '<div class="steppanel"' + (a.step === current ? "" : " hidden")
-        + ' data-panel="' + a.step + '">' + assessmentHtml(a) + "</div>";
+        + ' data-panel="' + a.step + '">' + assessmentHtml(a)
+        + nextStepHtml(project, a) + "</div>";
     });
 
     // The combined figure sits after the steps, not above them: each step has its own
@@ -306,21 +334,34 @@
     return html + "</div></div>";
   }
 
-  // Switching tab is presentation only -- nothing is fetched, and which tab you were on
-  // survives the redraw after ticking an item.
-  el("body").addEventListener("click", function (event) {
-    var tab = event.target.closest && event.target.closest(".steptab");
-    if (!tab || tab.disabled) return;
-    var projectId = tab.getAttribute("data-project");
-    var step = Number(tab.getAttribute("data-step"));
+  function selectStep(projectId, step) {
     selectedStep[projectId] = step;
-    var card = tab.closest("[data-project]");
+    // The CARD, not the tab. A tab carries data-project itself, so closest("[data-project]")
+    // returned the button -- which contains no tabs and no panels, so every tab click did
+    // nothing at all and there was no way back to an earlier step.
+    var card = document.querySelector('.card[data-project="' + projectId + '"]');
+    if (!card) return;
     Array.prototype.forEach.call(card.querySelectorAll(".steptab"), function (b) {
       b.classList.toggle("active", Number(b.getAttribute("data-step")) === step && !b.disabled);
     });
     Array.prototype.forEach.call(card.querySelectorAll(".steppanel"), function (panel) {
       panel.hidden = Number(panel.getAttribute("data-panel")) !== step;
     });
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // Switching tab is presentation only -- nothing is fetched, and which tab you were on
+  // survives the redraw after ticking an item.
+  el("body").addEventListener("click", function (event) {
+    if (!event.target.closest) return;
+    var goTo = event.target.closest("[data-goto-step]");
+    if (goTo) {
+      return selectStep(goTo.getAttribute("data-goto-project"),
+        Number(goTo.getAttribute("data-goto-step")));
+    }
+    var tab = event.target.closest(".steptab");
+    if (!tab || tab.disabled) return;
+    selectStep(tab.getAttribute("data-project"), Number(tab.getAttribute("data-step")));
   });
 
   /** Which to-do lists were expanded, so a redraw after a tick doesn't fold them shut. */
