@@ -808,12 +808,11 @@ the assessment with an apology and a note to contact Conexus staff. Only non-res
 answers count toward that streak — an honest low score can never trigger it.
 
 **What they get at the end.** While the last answer is being scored and written up, a
-progress bar says what is happening rather than a spinner. Then, per section, two columns:
-
-- **Already in place** (green) — very short bullets naming what needs no work.
-- **To do** (amber) — 2 to 4 one-line items, each starting with a verb and finishable in
-  a few weeks. These are a real to-do list, not advice: they carry over to the dashboard
-  and ticking them off raises the score.
+progress bar says what is happening rather than a spinner. Then, per section, a **to-do
+list**: 2 to 4 items, each ONE action in twelve words or fewer, starting with a verb. No
+rationale, no praise, no explanation — the item is the task. "Name who signs off apprentice
+hours", not a paragraph about why governance matters. These are a real checklist, not
+advice: they carry over to the dashboard and ticking them off raises the score.
 
 Plus a readiness percentage for that step, with a band:
 
@@ -825,14 +824,14 @@ Plus a readiness percentage for that step, with a band:
 
 **The Apprenticeship Readiness Dashboard** (`/apprenticeship/dashboard.html`) is the
 respondent's own page. Each step carries **its own readiness percentage**, shown with that
-step rather than as one number at the top of the page, along with its two columns and its
-to-do list. The combined figure across every step sits *after* them, and appears **only
+step rather than as one number at the top of the page, along with its to-do list. The combined figure across every step sits *after* them, and appears **only
 once every step in the project is finished** — a combined score built from one step out of
 three is not that employer's readiness, and a percentage on screen reads as one however it
 is labelled.
 
 **Steps unlock on a score the admin sets.** Each assessment has a step number and a
-threshold ("score needed to open the next step", 0 for no gate). Step 2 stays locked, and
+threshold — a **percentage** of that step's total points, not a number of points, so 85
+means 85%. Zero means no gate. Step 2 stays locked, and
 starting it is refused by the Worker rather than merely greyed out, until step 1 is
 finished and has reached its threshold.
 

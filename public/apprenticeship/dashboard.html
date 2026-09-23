@@ -55,22 +55,22 @@
 
   if (!session.token()) { session.requireSignIn("/apprenticeship/dashboard.html"); return; }
 
-  /* ---------- one section, as two columns ---------- */
+  /* ---------- one section and its to-do list ---------- */
 
   function sectionHtml(assessment, section) {
-    var strengths = section.strengths || [];
     var todos = section.improvements || [];
     var html = '<div class="section-block">'
       + '<div class="head"><span class="n">' + esc(section.name) + "</span>"
       + '<span class="v">' + esc(section.displayNow) + "</span></div>"
-      + '<div class="track"><div class="fill" style="width:' + Number(section.percentNow) + '%"></div></div>'
-      + '<div class="cols">';
+      + '<div class="track"><div class="fill" style="width:' + Number(section.percentNow) + '%"></div></div>';
 
-    // Left, amber: the to-do list. Each box is a real checkbox because ticking it is what
-    // moves the score, so it has to be reachable by keyboard and read out as a checkbox.
-    html += '<div class="col todo"><h4>To do</h4><p class="count">'
+    // One list, not two columns: an "already in place" column beside it read as a report
+    // rather than as work, and the to-do list is the only thing here to act on. Each box
+    // is a real checkbox because ticking it is what moves the score, so it has to be
+    // reachable by keyboard and read out as a checkbox.
+    html += '<div class="col"><h4>To do</h4><p class="count">'
       + section.todoDone + " of " + section.todoTotal + " done"
-      + (section.credit ? " · +" + section.credit + " credited" : "")
+      + (section.credit ? " \u00b7 +" + section.credit + " credited" : "")
       + "</p>";
     if (todos.length) {
       todos.forEach(function (item) {
@@ -82,16 +82,7 @@
     } else {
       html += '<p class="none">Nothing outstanding here.</p>';
     }
-    html += "</div>";
-
-    // Right, green: what needs no work.
-    html += '<div class="col strength"><h4>Already in place</h4><p class="count">'
-      + strengths.length + " item" + (strengths.length === 1 ? "" : "s") + " · no work needed</p>"
-      + (strengths.length
-          ? "<ul>" + strengths.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>"
-          : '<p class="none">Nothing to credit in this section yet.</p>')
-      + "</div></div></div>";
-    return html;
+    return html + "</div></div>";
   }
 
   /* ---------- one step ---------- */

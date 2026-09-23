@@ -18,28 +18,16 @@
   --text-secondary:#4a5663; --text-muted:#7c8794; --border:#e1e2e9; --grid:#e1e2e9;
   --wash:#f3f5f9; --accent:#325eae; --teal:#108fc2; --sky:#00b0f0; --amber:#fbae40;
   --good:#108fc2; --warn:#fbae40; --bad:#f26b43;
-  /* The one colour outside the brand list. Green carries "nothing to do here" in a way no
-     brand colour does, and the alternative was using teal for both that and the secondary
-     accent. Muted enough to sit beside navy and amber. */
-  --green:#1f8a5b;
 }
 
-/* Two columns: what to do next on the left in amber, what is already in place on the
-   right in green. Stacked on a phone, side by side wherever there is room. */
-.cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
-@media (max-width:700px) { .cols { grid-template-columns:1fr; } }
-.col { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
-       background:var(--surface-1); }
-.col h4 { margin:0 0 3px; font-size:12px; font-weight:700; letter-spacing:.04em;
-          text-transform:uppercase; }
+/* The to-do list. One column, not two: an "already in place" column alongside it read as
+   a report rather than a list of work, and the only thing on this page a respondent has
+   to act on is the list of things to do. */
+.col { border:1px solid var(--border); border-left:4px solid var(--amber); border-radius:10px;
+       padding:14px 16px; margin-top:12px; background:var(--surface-1); }
+.col h4 { margin:0 0 2px; font-size:13.5px; font-weight:650; color:var(--navy); }
 .col .count { font-size:11.5px; color:var(--text-muted); margin:0 0 9px; }
 .col .none { font-size:12.5px; color:var(--text-muted); margin:0; }
-.col.todo { border-left:4px solid var(--amber); }
-.col.todo h4 { color:#8a5c05; }
-.col.strength { border-left:4px solid var(--green); }
-.col.strength h4 { color:#146b48; }
-.col.strength ul { margin:0; padding-left:18px; font-size:13px; }
-.col.strength li { margin:5px 0; }
 /* A real checkbox, not a styled div: ticking an item is the mechanism that moves the
    score, so it has to be reachable by keyboard and announced as a checkbox. */
 .todo-item { display:flex; gap:9px; align-items:flex-start; font-size:13px; margin:7px 0; }

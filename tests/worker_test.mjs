@@ -1308,9 +1308,7 @@ const evaluation = (over) => ({ responsive: true, score: 5, scoreReason: "fine",
 /** improvements for however many sections the prompt described, in order. */
 function improvementsFor(body, todos = ["Do a thing.", "Do another thing."]) {
   const names = [...body.messages[0].content.matchAll(/^SECTION: (.+?) --/gm)].map((m) => m[1]);
-  return { sections: names.map((name) => ({
-    sectionName: name, strengths: ["A thing already in place"], improvements: todos,
-  })) };
+  return { sections: names.map((name) => ({ sectionName: name, improvements: todos })) };
 }
 
 async function makeAssessment(env, token, sections, name = "Readiness") {
@@ -1815,7 +1813,7 @@ test("apprenticeship: a pending follow-up does not trigger the post-answer conte
   });
 });
 
-test("apprenticeship: the results come back as strengths and a to-do list with stable ids", async () => {
+test("apprenticeship: the results come back as a to-do list with stable ids", async () => {
   const { env, token } = await apprEnv();
   const { survey } = await makeAssessment(env, token, ONE_SECTION);
   const started = await startResponse(env, survey.id);
@@ -1823,13 +1821,53 @@ test("apprenticeship: the results come back as strengths and a to-do list with s
     ? evaluation({ score: 3 }) : improvementsFor(body)), async () => {
     const body = await (await postAnswer(env, survey.id, started.responseId, "An answer.")).json();
     const section = body.results.sections[0];
-    assert.deepEqual(section.strengths, ["A thing already in place"]);
     assert.equal(section.improvements.length, 2);
     // Ids, not bare strings: a ticked item has to still mean the same item when they
     // come back to the dashboard days later.
     assert.ok(section.improvements.every((i) => i.id && i.text));
     assert.equal(new Set(section.improvements.map((i) => i.id)).size, 2);
   });
+});
+
+test("apprenticeship: the unlock gate is a percentage of the step's points, not points", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  // 20 points on offer and a gate of 85. If that were read as points, 17/20 would fail it;
+  // as a percentage it is exactly 85% and passes.
+  const stepOne = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "c",
+    questions: [{ text: "Q1?", context: "", criteria: "c", maxPoints: 10 },
+                { text: "Q2?", context: "", criteria: "c", maxPoints: 10 }],
+  }], "Gate One");
+  await appr(`surveys/${stepOne.survey.id}`,
+    jsonReq(`/api/apprenticeship/surveys/${stepOne.survey.id}`, "PUT", {
+      projectId: stepOne.projectId, name: "Gate One", step: 1, unlockThreshold: 85,
+      sections: [{
+        id: stepOne.survey.sections[0].id, name: "S", objective: "o", context: "c",
+        questions: stepOne.survey.sections[0].questions.map((q) => ({
+          id: q.id, text: q.text, criteria: "c", maxPoints: 10 })),
+      }],
+    }, token), env);
+  const stepTwo = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: stepOne.projectId, name: "Gate Two", step: 2, sections: ONE_SECTION,
+  }, token), env)).json();
+
+  const started = await startResponse(env, stepOne.survey.id);
+  const scores = [10, 7];
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: scores.shift() }) : improvementsFor(body)), async () => {
+    await postAnswer(env, stepOne.survey.id, started.responseId, "An answer.");
+    await postAnswer(env, stepOne.survey.id, started.responseId, "Another answer.");
+  });
+
+  const dashboard = await (await appr("account/dashboard",
+    req("/api/apprenticeship/account/dashboard",
+      { headers: { authorization: `Bearer ${respondentToken}` } }), env)).json();
+  assert.equal(dashboard.projects[0].assessments[0].overall.percent, 85, "17 of 20");
+  assert.equal(dashboard.projects[0].assessments[1].locked, false,
+    "85 points would have failed a 17/20 score; 85 per cent passes it exactly");
+  assert.equal((await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST",
+    { surveyId: stepTwo.survey.id }, respondentToken), env)).status, 200);
 });
 
 test("apprenticeship: ticking the to-do list raises the score, and clearing it restores it", async () => {
