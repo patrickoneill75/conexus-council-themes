@@ -93,6 +93,20 @@
       <input type="text" id="sName" placeholder="e.g. Employer Readiness Self-Assessment">
       <label for="sIntro">Opening message <span class="hint">(shown first, optional)</span></label>
       <textarea id="sIntro" placeholder="One or two sentences setting up what this covers."></textarea>
+      <div class="row" style="align-items:flex-start; gap:18px; margin-top:4px">
+        <div style="flex:1 1 140px">
+          <label for="sStep">Step number</label>
+          <input type="number" id="sStep" min="1" step="1" value="1">
+        </div>
+        <div style="flex:2 1 260px">
+          <label for="sThreshold">Score needed to open the next step
+            <span class="hint">— 0 for no gate</span></label>
+          <input type="number" id="sThreshold" min="0" max="100" step="1" value="0">
+        </div>
+      </div>
+      <p class="desc" style="margin:10px 0 0">A respondent reaches the threshold either by
+        answering well enough first time, or by coming back and ticking items off this
+        step's to-do list — both move the same score.</p>
     </div>
 
     <div id="sections"></div>
@@ -288,11 +302,14 @@
         el("surveyList").innerHTML = '<div class="empty">No assessments in this project yet.</div>';
         return;
       }
-      var html = "<table><thead><tr><th>Assessment</th><th>Sections</th><th>Questions</th>"
-        + "<th>Responses</th><th></th></tr></thead><tbody>";
+      var html = "<table><thead><tr><th>Step</th><th>Assessment</th><th>Unlocks next at</th>"
+        + "<th>Sections</th><th>Questions</th><th>Responses</th><th></th></tr></thead><tbody>";
       data.surveys.forEach(function (s) {
-        html += "<tr><td><a class=\"link\" href=\"#project/" + esc(projectId) + "/survey/"
-          + esc(s.id) + "\">" + esc(s.name) + "</a></td><td>" + s.sectionCount + "</td><td>"
+        html += "<tr><td>" + (s.step || 1) + "</td>"
+          + "<td><a class=\"link\" href=\"#project/" + esc(projectId) + "/survey/"
+          + esc(s.id) + "\">" + esc(s.name) + "</a></td><td>"
+          + (s.unlockThreshold ? esc(s.unlockThreshold) + "%" : "\u2014") + "</td><td>"
+          + s.sectionCount + "</td><td>"
           + s.questionCount + "</td><td>" + s.responseCount + "</td>"
           + "<td><a class=\"link\" href=\"/apprenticeship/control-panel/responses.html?survey="
           + encodeURIComponent(s.id) + "\">Responses &amp; issues</a></td></tr>";
@@ -469,6 +486,8 @@
     el("editorTitle").textContent = survey ? "Edit assessment" : "New assessment";
     el("sName").value = survey ? survey.name : "";
     el("sIntro").value = survey ? (survey.intro || "") : "";
+    el("sStep").value = survey ? (survey.step || 1) : 1;
+    el("sThreshold").value = survey ? (survey.unlockThreshold || 0) : 0;
     el("sections").innerHTML = "";
     el("sMsg").hidden = true;
     el("deleteSurveyBtn").hidden = !survey;
@@ -498,6 +517,8 @@
       projectId: projectId,
       name: el("sName").value.trim(),
       intro: el("sIntro").value.trim(),
+      step: Number(el("sStep").value) || 1,
+      unlockThreshold: Number(el("sThreshold").value) || 0,
       sections: collectSections(),
     };
     if (!payload.name) return say("sMsg", "Give the assessment a name.", "err");

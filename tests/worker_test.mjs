@@ -1306,9 +1306,11 @@ function claudeStub(handler) {
 const evaluation = (over) => ({ responsive: true, score: 5, scoreReason: "fine", redirect: "", ...over });
 
 /** improvements for however many sections the prompt described, in order. */
-function improvementsFor(body) {
+function improvementsFor(body, todos = ["Do a thing.", "Do another thing."]) {
   const names = [...body.messages[0].content.matchAll(/^SECTION: (.+?) --/gm)].map((m) => m[1]);
-  return { sections: names.map((name) => ({ sectionName: name, improvements: ["Do a thing."] })) };
+  return { sections: names.map((name) => ({
+    sectionName: name, strengths: ["A thing already in place"], improvements: todos,
+  })) };
 }
 
 async function makeAssessment(env, token, sections, name = "Readiness") {
@@ -1694,6 +1696,147 @@ test("apprenticeship: signing up claims the assessments that person finished bef
       { headers: { authorization: `Bearer ${respondentToken}` } }), env)).json();
   assert.equal(dashboard.projects[0].assessments[0].status, "complete",
     "work done before sign-up must not look like a blank slate");
+});
+
+test("apprenticeship: the results come back as strengths and a to-do list with stable ids", async () => {
+  const { env, token } = await apprEnv();
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 3 }) : improvementsFor(body)), async () => {
+    const body = await (await postAnswer(env, survey.id, started.responseId, "An answer.")).json();
+    const section = body.results.sections[0];
+    assert.deepEqual(section.strengths, ["A thing already in place"]);
+    assert.equal(section.improvements.length, 2);
+    // Ids, not bare strings: a ticked item has to still mean the same item when they
+    // come back to the dashboard days later.
+    assert.ok(section.improvements.every((i) => i.id && i.text));
+    assert.equal(new Set(section.improvements.map((i) => i.id)).size, 2);
+  });
+});
+
+test("apprenticeship: ticking the to-do list raises the score, and clearing it restores it", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  // One section worth 10, scored 6. Two to-do items, so each is worth half the 4-point
+  // shortfall -- tick both and the section reaches full marks.
+  const { survey } = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "c",
+    questions: [{ text: "Q?", context: "", criteria: "c", maxPoints: 10 }],
+  }]);
+  const started = await startResponse(env, survey.id);
+  let items = [];
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 6 }) : improvementsFor(body)), async () => {
+    const body = await (await postAnswer(env, survey.id, started.responseId, "An answer.")).json();
+    assert.equal(body.results.overall.percent, 60);
+    items = body.results.sections[0].improvements;
+  });
+
+  const tick = (itemId, done) => appr("account/todo",
+    jsonReq("/api/apprenticeship/account/todo", "POST",
+      { surveyId: survey.id, itemId, done }, respondentToken), env).then((r) => r.json());
+
+  const afterOne = await tick(items[0].id, true);
+  assert.equal(afterOne.projects[0].assessments[0].overall.percent, 80, "half the shortfall");
+  assert.equal(afterOne.projects[0].assessments[0].baseOverall.percent, 60,
+    "what they scored answering is kept, not overwritten");
+
+  const afterBoth = await tick(items[1].id, true);
+  assert.equal(afterBoth.projects[0].assessments[0].overall.percent, 100,
+    "the whole list closes the whole shortfall");
+
+  const afterUntick = await tick(items[0].id, false);
+  assert.equal(afterUntick.projects[0].assessments[0].overall.percent, 80, "unticking gives it back");
+});
+
+test("apprenticeship: a to-do id that is not on this account's list is refused", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const { survey } = await makeAssessment(env, token, ONE_SECTION);
+  const started = await startResponse(env, survey.id);
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 1 }) : improvementsFor(body)), async () => {
+    await postAnswer(env, survey.id, started.responseId, "An answer.");
+  });
+  // Credit is a fraction of ticked items, so an unchecked id written into the map would
+  // inflate the score past anything the list allows.
+  const res = await appr("account/todo", jsonReq("/api/apprenticeship/account/todo", "POST",
+    { surveyId: survey.id, itemId: "made-up-item", done: true }, respondentToken), env);
+  assert.equal(res.status, 404);
+});
+
+test("apprenticeship: step two stays locked until step one reaches its threshold", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const stepOne = await makeAssessment(env, token, [{
+    name: "S", objective: "o", context: "c",
+    questions: [{ text: "Q?", context: "", criteria: "c", maxPoints: 10 }],
+  }], "Step One");
+  await appr(`surveys/${stepOne.survey.id}`,
+    jsonReq(`/api/apprenticeship/surveys/${stepOne.survey.id}`, "PUT", {
+      projectId: stepOne.projectId, name: "Step One", step: 1, unlockThreshold: 85,
+      sections: [{ id: stepOne.survey.sections[0].id, name: "S", objective: "o", context: "c",
+        questions: [{ id: stepOne.survey.sections[0].questions[0].id, text: "Q?",
+                      criteria: "c", maxPoints: 10 }] }],
+    }, token), env);
+  const stepTwo = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: stepOne.projectId, name: "Step Two", step: 2, sections: ONE_SECTION,
+  }, token), env)).json();
+
+  const started = await startResponse(env, stepOne.survey.id);
+  let items = [];
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 6 }) : improvementsFor(body)), async () => {
+    items = (await (await postAnswer(env, stepOne.survey.id, started.responseId, "An answer.")).json())
+      .results.sections[0].improvements;
+  });
+
+  const dash = () => appr("account/dashboard", req("/api/apprenticeship/account/dashboard",
+    { headers: { authorization: `Bearer ${respondentToken}` } }), env).then((r) => r.json());
+
+  const locked = (await dash()).projects[0].assessments[1];
+  assert.equal(locked.locked, true, "60% is short of the 85% gate");
+  assert.equal(locked.lockedBy, "Step One");
+  assert.equal(locked.lockedUntil, 85);
+
+  // A locked step is refused, not merely greyed out -- the link to it is just a URL.
+  const refused = await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST",
+    { surveyId: stepTwo.survey.id }, respondentToken), env);
+  assert.equal(refused.status, 409);
+  assert.match((await refused.json()).error, /Step One/);
+
+  // Ticking both items closes the 4-point shortfall: 10/10, past the gate.
+  for (const item of items) {
+    await appr("account/todo", jsonReq("/api/apprenticeship/account/todo", "POST",
+      { surveyId: stepOne.survey.id, itemId: item.id, done: true }, respondentToken), env);
+  }
+  const opened = (await dash()).projects[0].assessments[1];
+  assert.equal(opened.locked, false, "the to-do list is a second route to the same threshold");
+  assert.equal((await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST",
+    { surveyId: stepTwo.survey.id }, respondentToken), env)).status, 200);
+});
+
+test("apprenticeship: a threshold of zero gates nothing", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const first = await makeAssessment(env, token, ONE_SECTION, "Open One");
+  const second = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: first.projectId, name: "Open Two", step: 2, sections: ONE_SECTION,
+  }, token), env)).json();
+  // Not even started: a threshold of zero means the next step is not gated on this one
+  // at all, which is also what keeps every assessment built before thresholds existed open.
+  const started = await startResponse(env, first.survey.id);
+  assert.equal((await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST",
+    { surveyId: second.survey.id }, respondentToken), env)).status, 200,
+    "step one is unfinished, but it gates nothing");
+  await withFetch(claudeStub((name, body) => name === "record_evaluation"
+    ? evaluation({ score: 0 }) : improvementsFor(body)), async () => {
+    await postAnswer(env, first.survey.id, started.responseId, "Nothing in place.");
+  });
+  assert.equal((await appr("public/start", jsonReq("/api/apprenticeship/public/start", "POST",
+    { surveyId: second.survey.id }, respondentToken), env)).status, 200,
+    "and 0% scored still gates nothing");
 });
 
 test("apprenticeship: the admin account list never carries a password hash or salt", async () => {

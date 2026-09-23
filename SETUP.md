@@ -787,9 +787,15 @@ that they should talk to Conexus staff.
 the assessment with an apology and a note to contact Conexus staff. Only non-responsive
 answers count toward that streak — an honest low score can never trigger it.
 
-**What they get at the end.** A readiness breakdown per section (`4/5` for
-*Organizational Commitment*, and so on), an overall percentage with a band, and
-Claude-written improvement areas for each section grounded in what they actually said:
+**What they get at the end.** While the last answer is being scored and written up, a
+progress bar says what is happening rather than a spinner. Then, per section, two columns:
+
+- **Already in place** (green) — very short bullets naming what needs no work.
+- **To do** (amber) — 2 to 4 one-line items, each starting with a verb and finishable in
+  a few weeks. These are a real to-do list, not advice: they carry over to the dashboard
+  and ticking them off raises the score.
+
+Plus a readiness percentage for that step, with a band:
 
 | Overall | Band |
 |---|---|
@@ -798,11 +804,30 @@ Claude-written improvement areas for each section grounded in what they actually
 | Below 60% | Build Readiness First |
 
 **The Apprenticeship Readiness Dashboard** (`/apprenticeship/dashboard.html`) is the
-respondent's own page: every assessment in each project they have started, which are done,
-which are still to do, their section scores, and — **only once every assessment in the
-project is finished** — the combined readiness across all of them. It is withheld until
-then on purpose: a combined score built from one assessment out of three is not that
-employer's readiness, and a percentage on screen reads as one however it is labelled.
+respondent's own page. Each step carries **its own readiness percentage**, shown with that
+step rather than as one number at the top of the page, along with its two columns and its
+to-do list. The combined figure across every step sits *after* them, and appears **only
+once every step in the project is finished** — a combined score built from one step out of
+three is not that employer's readiness, and a percentage on screen reads as one however it
+is labelled.
+
+**Steps unlock on a score the admin sets.** Each assessment has a step number and a
+threshold ("score needed to open the next step", 0 for no gate). Step 2 stays locked, and
+starting it is refused by the Worker rather than merely greyed out, until step 1 is
+finished and has reached its threshold.
+
+There are two ways to reach it, and they move the same number:
+
+1. Answer well enough first time.
+2. Come back later and tick items off that step's to-do list.
+
+**How ticking changes the score.** Per section, and it is the only thing it could honestly
+be: a section's shortfall is what it did not earn, and that section's to-do items are the
+work that closes it. Tick them all and the section reaches full marks; tick half and half
+the shortfall is credited. The score they originally answered to is kept and shown
+alongside, so the movement is visible rather than the original being overwritten. A
+section with a shortfall but no to-do items (an older response, or a write-up that failed)
+simply cannot be recovered that way and stays at what it scored.
 
 **What the admin sees** (`/apprenticeship/control-panel`): respondent accounts (with the
 password reset above); projects and the assessment editor; per-assessment cohort readiness (band counts and the section averages across
@@ -833,7 +858,8 @@ repo's default model, because it is the only thing the respondent takes away.
 **Where the data lives.** Workers KV, under an `apprenticeship:` prefix — accounts,
 projects, assessments and responses, plus two small index keys per account
 (`account-open:` and `account-done:`) that make a respondent's dashboard one read per
-assessment instead of a scan of every response in the project. Unlike Consensus, the run state (the cursor, the scores, the
+assessment instead of a scan of every response in the project, plus one `todo:` entry per
+account per assessment holding which items are ticked. Unlike Consensus, the run state (the cursor, the scores, the
 non-responsive streak, the issue log) is written and read only by the Worker, never
 trusted from the browser, because that same state decides a score, a flag and a shut-off.
 No Box folder is involved; the admin CSV is the export path.
