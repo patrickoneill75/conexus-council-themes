@@ -55,34 +55,66 @@
 
   if (!session.token()) { session.requireSignIn("/apprenticeship/dashboard.html"); return; }
 
-  /* ---------- one section and its to-do list ---------- */
+  /* ---------- one step's score line, gate marker and to-do list ---------- */
 
-  function sectionHtml(assessment, section) {
-    var todos = section.improvements || [];
-    var html = '<div class="section-block">'
-      + '<div class="head"><span class="n">' + esc(section.name) + "</span>"
+  /** The bar, with a marker above it at the score that opens the next step. */
+  function gaugeHtml(percent, threshold) {
+    var goal = threshold > 0
+      ? '<div class="goal" style="left:' + Number(threshold) + '%">'
+        + '<span class="goal-label">' + esc(threshold) + '%</span>'
+        + '<span class="goal-mark"></span></div>'
+      : "";
+    return '<div class="gauge">' + goal
+      + '<div class="track"><div class="fill" style="width:' + Number(percent) + '%"></div></div>'
+      + "</div>";
+  }
+
+  function sectionScoreHtml(section) {
+    return '<div class="section-block"><div class="head">'
+      + '<span class="n">' + esc(section.name) + "</span>"
       + '<span class="v">' + esc(section.displayNow) + "</span></div>"
-      + '<div class="track"><div class="fill" style="width:' + Number(section.percentNow) + '%"></div></div>';
+      + '<div class="track"><div class="fill" style="width:' + Number(section.percentNow) + '%"></div></div>'
+      + "</div>";
+  }
 
-    // One list, not two columns: an "already in place" column beside it read as a report
-    // rather than as work, and the to-do list is the only thing here to act on. Each box
-    // is a real checkbox because ticking it is what moves the score, so it has to be
-    // reachable by keyboard and read out as a checkbox.
-    html += '<div class="col"><h4>To do</h4><p class="count">'
-      + section.todoDone + " of " + section.todoTotal + " done"
-      + (section.credit ? " \u00b7 +" + section.credit + " credited" : "")
-      + "</p>";
-    if (todos.length) {
-      todos.forEach(function (item) {
+  /**
+   * Every to-do item across the step, grouped by the section it came from, behind one
+   * collapsed summary. The count is the headline because that is what someone checks when
+   * they open the dashboard; the list itself is one click away.
+   */
+  function todoPackHtml(assessment) {
+    var sections = (assessment.sections || []).filter(function (s) {
+      return (s.improvements || []).length;
+    });
+    var total = assessment.todoTotal || 0;
+    var done = assessment.todoDone || 0;
+    if (!total) {
+      return '<div class="todo-pack"><div class="todo-empty">Nothing on your to-do list for '
+        + "this step.</div></div>";
+    }
+
+    var left = total - done;
+    var summary = left
+      ? left + " item" + (left === 1 ? "" : "s") + " on your to-do list"
+      : "All " + total + " items done";
+    var html = '<details class="todo-pack"><summary><span>' + esc(summary) + "</span>"
+      + '<span class="sub">' + done + " of " + total + " ticked"
+      + (assessment.threshold > 0 && assessment.overall
+          && assessment.overall.percent < assessment.threshold
+          ? " · ticking these off raises your score" : "")
+      + "</span></summary><div class=\"todo-body\">";
+
+    sections.forEach(function (section) {
+      html += '<div class="todo-group"><h5>' + esc(section.name) + "</h5>";
+      section.improvements.forEach(function (item) {
         html += '<label class="todo-item' + (item.done ? " done" : "") + '">'
           + '<input type="checkbox" data-survey="' + esc(assessment.surveyId) + '"'
           + ' data-item="' + esc(item.id) + '"' + (item.done ? " checked" : "") + ">"
           + "<span>" + esc(item.text) + "</span></label>";
       });
-    } else {
-      html += '<p class="none">Nothing outstanding here.</p>';
-    }
-    return html + "</div></div>";
+      html += "</div>";
+    });
+    return html + "</div></details>";
   }
 
   /* ---------- one step ---------- */
@@ -105,7 +137,7 @@
       html += '<div class="step-score"><span class="pct">' + esc(a.overall.percent) + "%</span>"
         + '<span class="pill ' + esc(a.overall.band) + '">' + esc(a.overall.bandLabel) + "</span>"
         + '<span class="of">' + esc(a.overall.display) + " points</span></div>"
-        + '<div class="track"><div class="fill" style="width:' + Number(a.overall.percent) + '%"></div></div>';
+        + gaugeHtml(a.overall.percent, a.threshold);
 
       if (a.threshold > 0) {
         var met = a.overall.percent >= a.threshold;
@@ -113,7 +145,7 @@
           + (met
               ? "You have passed the " + esc(a.threshold) + "% needed to open the next step."
               : "You need " + esc(a.threshold) + "% to open the next step. Tick items off "
-                + "the to-do list below and this rises — you do not have to sit it again.")
+                + "your to-do list and this rises — you do not have to sit it again.")
           + "</div>";
       }
       if (a.baseOverall && a.baseOverall.percent !== a.overall.percent) {
@@ -122,7 +154,8 @@
       }
       html += '<div class="meta">Finished ' + esc(String(a.submittedAt || "").slice(0, 10))
         + ' · <a class="link" href="' + link + '">Take it again</a></div>';
-      (a.sections || []).forEach(function (section) { html += sectionHtml(a, section); });
+      (a.sections || []).forEach(function (section) { html += sectionScoreHtml(section); });
+      html += todoPackHtml(a);
     } else if (a.status === "in-progress") {
       html += '<div class="meta"><a class="link" href="' + link
         + '">Pick up where you left off</a></div>';
@@ -156,7 +189,24 @@
     return html + "</div></div>";
   }
 
+  /** Which to-do lists were expanded, so a redraw after a tick doesn't fold them shut. */
+  function openPacks() {
+    var open = {};
+    Array.prototype.forEach.call(document.querySelectorAll(".todo-pack[open]"), function (node) {
+      var box = node.querySelector("input[data-survey]");
+      if (box) open[box.getAttribute("data-survey")] = true;
+    });
+    return open;
+  }
+  function restorePacks(open) {
+    Array.prototype.forEach.call(document.querySelectorAll(".todo-pack"), function (node) {
+      var box = node.querySelector("input[data-survey]");
+      if (box && open[box.getAttribute("data-survey")]) node.open = true;
+    });
+  }
+
   function render(data) {
+    var wasOpen = openPacks();
     el("whoami").textContent = data.account.name + " · " + data.account.company;
     if (!data.projects.length) {
       el("subline").textContent = "";
@@ -170,6 +220,7 @@
     el("subline").textContent = totalDone + " of " + totalAll + " step"
       + (totalAll === 1 ? "" : "s") + " complete.";
     el("body").innerHTML = data.projects.map(projectHtml).join("");
+    restorePacks(wasOpen);
   }
 
   // Ticking an item can open the next step, so the server sends the whole dashboard back
