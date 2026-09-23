@@ -20,6 +20,11 @@
   .combined { margin-top:22px; }
   .pending { border-left:4px solid var(--amber); background:rgba(251,174,64,.10);
              border-radius:10px; padding:14px 16px; font-size:13.5px; }
+  .wf-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
+              gap:12px; margin-top:14px; }
+  .wf { border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+  .wf .n { font-size:22px; font-weight:700; color:var(--navy); line-height:1.1; }
+  .wf .k { font-size:11.5px; color:var(--text-muted); margin-top:3px; }
 </style>
 </head>
 <body>
@@ -134,8 +139,34 @@
 
   /* ---------- one step ---------- */
 
+  /** The gap and the apprentice plan, for a finished workforce step. */
+  function workforceHtml(a) {
+    var w = a.workforce;
+    if (!w || !w.summary) return "";
+    var gap = w.summary.gap;
+    var projection = w.projection || { total: 0, coverage: {} };
+    var html = '<div class="wf-stats">'
+      + '<div class="wf"><div class="n">' + esc(w.summary.workforce.headcount) + "</div>"
+      + '<div class="k">people across ' + esc(w.summary.workforce.roleCount) + " roles</div></div>"
+      + '<div class="wf"><div class="n">' + esc(gap.now) + '</div><div class="k">vacancies today</div></div>'
+      + '<div class="wf"><div class="n">' + esc(gap.threeYear) + '</div><div class="k">three-year gap</div></div>'
+      + '<div class="wf"><div class="n">' + esc(gap.fiveYear) + '</div><div class="k">five-year gap</div></div>'
+      + "</div>";
+    if (projection.total) {
+      var five = projection.coverage.fiveYear || { filled: 0, gap: gap.fiveYear, inTraining: 0 };
+      html += '<div class="meta" style="margin-top:12px"><b>' + esc(projection.total)
+        + "</b> apprentices planned \u00b7 <b>" + esc(five.filled) + " of " + esc(five.gap)
+        + "</b> of the five-year gap covered once they qualify"
+        + (five.inTraining ? ", with " + esc(five.inTraining) + " still in training" : "")
+        + ".</div>";
+    }
+    return html;
+  }
+
   function assessmentHtml(a) {
-    var link = "/apprenticeship/respond.html?survey=" + encodeURIComponent(a.surveyId);
+    var workforce = a.kind === "workforce";
+    var link = (workforce ? "/apprenticeship/workforce.html?survey="
+                          : "/apprenticeship/respond.html?survey=") + encodeURIComponent(a.surveyId);
     var html = '<div class="assessment' + (a.locked ? " locked" : "") + '">'
       + '<div class="step-head"><span class="name">' + esc(a.surveyName) + "</span></div>";
 
@@ -151,6 +182,22 @@
       html += '<div class="lock-note">This step isn\u2019t ready yet. Conexus Indiana will '
         + "open it when it is \u2014 there is nothing for you to do here for now.</div></div>";
       return html;
+    }
+
+    if (workforce) {
+      // Not scored: this step is a planning exercise, so it reports what it found rather
+      // than a percentage that would mean nothing.
+      if (a.status === "complete") {
+        html += '<div class="step-score"><span class="pill strong">Complete</span>'
+          + '<span class="of">finished ' + esc(String(a.submittedAt || "").slice(0, 10))
+          + "</span></div>"
+          + workforceHtml(a)
+          + '<div class="meta"><a class="link" href="' + link + '">Open it again</a></div>';
+      } else {
+        html += '<div class="meta">Map your roles, see the gap you are facing, and size '
+          + 'apprentices against it. \u00b7 <a class="link" href="' + link + '">Start this step</a></div>';
+      }
+      return html + "</div>";
     }
 
     if (a.status === "complete" && a.overall) {

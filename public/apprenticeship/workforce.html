@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workforce Needs Assessment</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/apprenticeship/brand.css">
+<script src="/apprenticeship/session.js"></script>
+<style>
+  .wrap { max-width: 940px; }
+  .role-card { border:1px solid var(--border); border-radius:12px; padding:18px 20px;
+               margin-bottom:14px; background:var(--surface-1); }
+  .role-card > .row.title { margin-bottom:4px; }
+  .role-card h3 { margin:0; font-size:15px; color:var(--navy); }
+  .subsection { margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+  .subsection > h4 { margin:0 0 2px; font-size:12px; font-weight:700; letter-spacing:.04em;
+                     text-transform:uppercase; color:var(--text-muted); }
+  .subsection > p.hint { margin:0 0 10px; font-size:12px; color:var(--text-muted); }
+  .fields { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:14px; }
+  .fields label { margin-top:0; }
+  .stat-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:14px;
+              margin-top:4px; }
+  .stat { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+          background:var(--surface-1); }
+  .stat .n { font-size:26px; font-weight:700; color:var(--navy); line-height:1.1; }
+  .stat .k { font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+  .stat.accent { border-left:4px solid var(--amber); }
+  .bar { display:flex; height:22px; border-radius:6px; overflow:hidden; background:#e7eaf1;
+         margin:8px 0 6px; }
+  .bar span { display:block; height:100%; }
+  .bar .filled { background:var(--teal); }
+  .bar .training { background:repeating-linear-gradient(45deg, #fbae40, #fbae40 5px,
+                   #fdd399 5px, #fdd399 10px); }
+  .bar .remaining { background:#e7eaf1; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--text-secondary); }
+  .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px;
+              vertical-align:-1px; }
+  .legend .filled i { background:var(--teal); }
+  .legend .training i { background:repeating-linear-gradient(45deg, #fbae40, #fbae40 4px,
+                        #fdd399 4px, #fdd399 8px); }
+  .legend .remaining i { background:#e7eaf1; border:1px solid var(--border); }
+  .drill { border:1px solid var(--border); border-radius:9px; margin-top:8px; background:var(--page); }
+  .drill > summary { cursor:pointer; padding:10px 13px; font-size:13px; font-weight:600;
+                     color:var(--navy); list-style:none; display:flex; justify-content:space-between; gap:10px; }
+  .drill > summary::-webkit-details-marker { display:none; }
+  .drill .body { padding:0 13px 12px; font-size:13px; color:var(--text-secondary); }
+  .drill .body ul { margin:0; padding-left:18px; }
+  .guidance { border-left:4px solid var(--amber); background:rgba(251,174,64,.10);
+              border-radius:10px; padding:14px 16px; font-size:13.5px; margin-bottom:16px; }
+  .plan-table input { width:64px; text-align:center; padding:6px 4px; }
+  .plan-table th, .plan-table td { padding:7px 8px; }
+  .plan-table td.role { font-weight:600; color:var(--navy); }
+  .sticky { position:sticky; bottom:0; background:var(--page); padding:14px 0 0;
+            border-top:1px solid var(--border); margin-top:18px; }
+  .chip-list { display:flex; gap:7px; flex-wrap:wrap; margin-top:6px; }
+  .chip-list span { font-size:11.5px; background:var(--wash); border:1px solid var(--border);
+                    border-radius:999px; padding:3px 10px; color:var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <span id="whoami"></span>
+    <a class="link" href="/apprenticeship/dashboard.html">Your dashboard</a>
+  </div>
+  <header>
+    <div class="title-block">
+      <h1 id="title">Workforce Needs Assessment</h1>
+      <p class="sub" id="subline">Loading…</p>
+    </div>
+  </header>
+
+  <div class="msg err" id="err" hidden></div>
+
+  <!-- ===================== roles ===================== -->
+  <div id="entryView" hidden>
+    <div class="card">
+      <h2>Your roles</h2>
+      <p class="desc">Add every role you are trying to staff. You can stop part-way and come
+        back — everything is saved to your account as you go.</p>
+      <div id="roles"></div>
+      <div class="row" style="margin-top:14px">
+        <button type="button" id="addRoleBtn">Add a role</button>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="saveBtn">Save progress</button>
+        <button type="button" class="primary" id="doneRolesBtn">I've entered all my roles</button>
+      </div>
+      <div class="msg" id="entryMsg" hidden></div>
+    </div>
+  </div>
+
+  <!-- ===================== summary + plan ===================== -->
+  <div id="summaryView" hidden>
+    <div class="card">
+      <div class="row"><h2 style="flex:1">Current workforce</h2>
+        <button type="button" class="small" id="backToRolesBtn">Edit roles</button></div>
+      <div class="stat-row" id="workforceStats"></div>
+      <h3 style="margin:20px 0 4px; font-size:14px; color:var(--navy)">Top skills gaps</h3>
+      <p class="desc">The gaps named across the most roles. Open a role to see its own.</p>
+      <div id="topGaps"></div>
+      <div id="roleGaps"></div>
+    </div>
+
+    <div class="card">
+      <h2>Retirement risk</h2>
+      <div class="stat-row" id="retirementStats"></div>
+      <h3 style="margin:20px 0 4px; font-size:14px; color:var(--navy)">Who is eligible, by role</h3>
+      <div id="retirementByRole"></div>
+      <h3 style="margin:20px 0 4px; font-size:14px; color:var(--navy)">Knowledge most at risk</h3>
+      <p class="desc">Named against the most roles — this is what walks out of the door with them.</p>
+      <div id="atRisk"></div>
+    </div>
+
+    <div class="card">
+      <h2>Your employment gap</h2>
+      <p class="desc">Vacancies you carry today, and what retirement adds to them.</p>
+      <div class="stat-row" id="gapStats"></div>
+      <div id="gapNote"></div>
+      <div id="gapByRole" style="margin-top:18px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Filling it with apprentices</h2>
+      <div class="guidance">
+        <b>Most first-year employers succeed with 1–3 apprentices per site</b> — enough to
+        justify the program infrastructure without overloading mentors. Plan roughly one
+        active mentor per 1–2 apprentices.
+      </div>
+      <p class="desc">Enter how many apprentices you could take on in each role, per year.
+        An apprentice is in training for two years and counts as a full member of staff from
+        the year after — so someone who starts in year 1 is staffing the role in year 3.</p>
+      <div id="planTable"></div>
+      <div class="row" style="margin-top:14px">
+        <button type="button" class="primary" id="updateBtn">Update the dashboard</button>
+        <span id="planSaved" class="msg ok" hidden>Saved.</span>
+      </div>
+    </div>
+
+    <div class="card" id="projectionCard">
+      <h2>What that closes</h2>
+      <div id="projection"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button type="button" class="primary" id="submitBtn">Finish this step</button>
+        <span class="spacer"></span>
+        <span class="sub" id="submitNote">This marks step 2 complete on your dashboard.</span>
+      </div>
+      <div class="msg" id="submitMsg" hidden></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var session = window.ApprenticeshipSession;
+  var surveyId = new URLSearchParams(window.location.search).get("survey");
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function fail(e) {
+    if (e && e.message === "Not signed in") return; // api() is already redirecting
+    el("err").hidden = false;
+    el("err").textContent = e.message || String(e);
+  }
+  function say(id, text, kind) {
+    el(id).hidden = false;
+    el(id).className = "msg " + (kind || "ok");
+    el(id).textContent = text;
+  }
+
+  if (!surveyId) { fail(new Error("No assessment specified.")); return; }
+  if (!session.token()) { session.requireSignIn(); return; }
+
+  var doc = null;
+
+  /* ------------------------------------------------------------------ roles ---- */
+
+  var DIFFICULTY = [["low", "Low"], ["medium", "Medium"], ["high", "High"]];
+
+  function roleHtml(index) {
+    return '<div class="role-card" data-role="' + index + '">'
+      + '<div class="row title"><h3>Role ' + (index + 1) + "</h3>"
+      + '<span class="spacer"></span>'
+      + '<button type="button" class="small danger" data-remove="1">Remove</button></div>'
+
+      + '<div class="subsection" style="border-top:0; padding-top:6px; margin-top:6px">'
+      + "<h4>Role name</h4>"
+      + '<input type="text" data-f="name" placeholder="e.g. CNC Machinist">'
+      + "</div>"
+
+      + '<div class="subsection"><h4>Current employment</h4>'
+      + '<div class="fields">'
+      + "<div><label>People currently in this role</label>"
+      + '<input type="number" min="0" step="1" data-f="headcount" value="0"></div>'
+      + "<div><label>Average years of experience</label>"
+      + '<input type="number" min="0" step="0.5" data-f="avgYearsExperience" value="0"></div>'
+      + "</div>"
+      + "<label>Current skills gaps <span class=\"hint\">— one per line</span></label>"
+      + '<textarea data-f="skillsGaps" rows="3" placeholder="Blueprint reading&#10;GD&amp;T"></textarea>'
+      + "</div>"
+
+      + '<div class="subsection"><h4>Retirement risk</h4>'
+      + '<div class="fields">'
+      + "<div><label>Eligible to retire in the next five years</label>"
+      + '<input type="number" min="0" step="1" data-f="retirementEligible5y" value="0"></div>'
+      + "</div>"
+      + "<label>Skills and knowledge at risk of leaving with them "
+      + '<span class="hint">— one per line</span></label>'
+      + '<textarea data-f="atRiskSkills" rows="3" placeholder="Setting up the old Mazak&#10;Customer tooling history"></textarea>'
+      + "</div>"
+
+      + '<div class="subsection"><h4>Current vacancies</h4>'
+      + '<div class="fields">'
+      + "<div><label>Vacancies right now</label>"
+      + '<input type="number" min="0" step="1" data-f="vacancies" value="0"></div>'
+      + "<div><label>Anticipated new roles in three years</label>"
+      + '<input type="number" min="0" step="1" data-f="anticipatedNewRoles3y" value="0"></div>'
+      + "<div><label>How hard is this to hire for?</label><select data-f=\"hiringDifficulty\">"
+      + DIFFICULTY.map(function (d) {
+          return '<option value="' + d[0] + '">' + d[1] + "</option>";
+        }).join("") + "</select></div>"
+      + "</div></div>"
+      + "</div>";
+  }
+
+  function addRole(data) {
+    var host = el("roles");
+    host.insertAdjacentHTML("beforeend", roleHtml(host.children.length));
+    var node = host.lastElementChild;
+    if (data) {
+      node.dataset.id = data.id || "";
+      node.querySelector('[data-f="name"]').value = data.name || "";
+      ["headcount", "avgYearsExperience", "retirementEligible5y", "vacancies",
+       "anticipatedNewRoles3y"].forEach(function (f) {
+        node.querySelector('[data-f="' + f + '"]').value = data[f] || 0;
+      });
+      node.querySelector('[data-f="skillsGaps"]').value = (data.skillsGaps || []).join("\n");
+      node.querySelector('[data-f="atRiskSkills"]').value = (data.atRiskSkills || []).join("\n");
+      node.querySelector('[data-f="hiringDifficulty"]').value = data.hiringDifficulty || "medium";
+    }
+    renumber();
+  }
+
+  // Headings are positional, so every add and remove has to rewrite them.
+  function renumber() {
+    Array.prototype.forEach.call(el("roles").children, function (node, i) {
+      node.querySelector("h3").textContent = "Role " + (i + 1);
+    });
+  }
+
+  function collectRoles() {
+    return Array.prototype.map.call(el("roles").children, function (node) {
+      var v = function (f) { return node.querySelector('[data-f="' + f + '"]').value; };
+      var lines = function (f) {
+        return v(f).split("\n").map(function (x) { return x.trim(); })
+          .filter(function (x) { return x; });
+      };
+      return {
+        id: node.dataset.id || "",
+        name: v("name").trim(),
+        headcount: Number(v("headcount")) || 0,
+        avgYearsExperience: Number(v("avgYearsExperience")) || 0,
+        skillsGaps: lines("skillsGaps"),
+        retirementEligible5y: Number(v("retirementEligible5y")) || 0,
+        atRiskSkills: lines("atRiskSkills"),
+        vacancies: Number(v("vacancies")) || 0,
+        anticipatedNewRoles3y: Number(v("anticipatedNewRoles3y")) || 0,
+        hiringDifficulty: v("hiringDifficulty"),
+      };
+    });
+  }
+
+  el("roles").addEventListener("click", function (e) {
+    var button = e.target.closest("button[data-remove]");
+    if (!button) return;
+    button.closest(".role-card").remove();
+    renumber();
+  });
+  el("addRoleBtn").addEventListener("click", function () { addRole(null); });
+
+  function saveRoles() {
+    var roles = collectRoles();
+    var unnamed = roles.filter(function (r) { return !r.name; }).length;
+    if (unnamed) {
+      say("entryMsg", "Give every role a name — " + unnamed + " still needs one.", "err");
+      return Promise.reject(new Error("unnamed"));
+    }
+    return session.api("workforce/" + encodeURIComponent(surveyId) + "/roles", {
+      method: "PUT", body: JSON.stringify({ roles: roles }),
+    }).then(function (data) { doc = data.doc; return data; });
+  }
+
+  el("saveBtn").addEventListener("click", function () {
+    saveRoles().then(function () { say("entryMsg", "Saved.", "ok"); })
+      .catch(function (e) { if (e.message !== "unnamed") fail(e); });
+  });
+
+  el("doneRolesBtn").addEventListener("click", function () {
+    saveRoles().then(function () {
+      if (!doc.roles.length) return say("entryMsg", "Add at least one role first.", "err");
+      return loadSummary();
+    }).catch(function (e) { if (e.message !== "unnamed") fail(e); });
+  });
+
+  el("backToRolesBtn").addEventListener("click", function () {
+    el("summaryView").hidden = true;
+    el("entryView").hidden = false;
+    window.scrollTo(0, 0);
+  });
+
+  /* --------------------------------------------------------------- summary ---- */
+
+  function stat(n, k, accent) {
+    return '<div class="stat' + (accent ? " accent" : "") + '"><div class="n">' + esc(n)
+      + '</div><div class="k">' + esc(k) + "</div></div>";
+  }
+  function chips(list) {
+    if (!list.length) return '<p class="empty">Nothing named yet.</p>';
+    return '<div class="chip-list">' + list.map(function (x) {
+      return "<span>" + esc(x) + "</span>";
+    }).join("") + "</div>";
+  }
+  function mentionList(items, noun) {
+    if (!items.length) return '<p class="empty">Nothing named yet.</p>';
+    return "<table><tbody>" + items.map(function (m) {
+      return "<tr><td>" + esc(m.text) + '</td><td style="text-align:right; white-space:nowrap">'
+        + m.count + " " + noun + (m.count === 1 ? "" : "s") + "</td></tr>";
+    }).join("") + "</tbody></table>";
+  }
+
+  function renderSummary(summary) {
+    var w = summary.workforce;
+    el("workforceStats").innerHTML =
+      stat(w.headcount, "people across " + w.roleCount + " role" + (w.roleCount === 1 ? "" : "s"))
+      + stat(w.avgYearsExperience, "average years of experience, weighted by headcount");
+    el("topGaps").innerHTML = mentionList(w.topSkillsGaps, "role");
+    el("roleGaps").innerHTML = summary.roles.map(function (r) {
+      return '<details class="drill"><summary><span>' + esc(r.name) + "</span>"
+        + '<span style="color:var(--text-muted); font-weight:400">' + r.headcount
+        + " people · " + r.avgYearsExperience + " yrs avg · " + r.skillsGaps.length
+        + " gap" + (r.skillsGaps.length === 1 ? "" : "s") + "</span></summary>"
+        + '<div class="body">' + (r.skillsGaps.length
+            ? "<ul>" + r.skillsGaps.map(function (g) { return "<li>" + esc(g) + "</li>"; }).join("") + "</ul>"
+            : "No skills gaps recorded for this role.")
+        + "</div></details>";
+    }).join("");
+
+    var ret = summary.retirement;
+    el("retirementStats").innerHTML =
+      stat(ret.eligible5y, "eligible to retire within five years", true)
+      + stat(ret.eligible3y, "of those within three years");
+    el("retirementByRole").innerHTML = ret.byRole.length
+      ? "<table><thead><tr><th>Role</th><th>Within 3 years</th><th>Within 5 years</th>"
+        + "</tr></thead><tbody>" + ret.byRole.map(function (r) {
+            return "<tr><td>" + esc(r.name) + "</td><td>" + r.retire3y + "</td><td>"
+              + r.eligible5y + "</td></tr>";
+          }).join("") + "</tbody></table>"
+      : '<p class="empty">Nobody is flagged as eligible to retire.</p>';
+    el("atRisk").innerHTML = mentionList(ret.topAtRisk, "role");
+
+    var gap = summary.gap;
+    el("gapStats").innerHTML =
+      stat(gap.now, "vacancies today")
+      + stat(gap.threeYear, "three-year gap", true)
+      + stat(gap.fiveYear, "five-year gap", true);
+    el("gapNote").innerHTML =
+      '<p class="desc" style="margin-top:12px">The three-year gap is your vacancies plus '
+      + "three fifths of your retirement risk, rounded per role. The five-year gap is your "
+      + "vacancies plus everyone eligible to retire.</p>"
+      + (gap.anticipatedNewRoles3y
+          ? '<p class="desc">You also anticipate <b>' + gap.anticipatedNewRoles3y
+            + " new role" + (gap.anticipatedNewRoles3y === 1 ? "" : "s")
+            + "</b> in the next three years. Those are on top of the gaps above.</p>"
+          : "")
+      + (gap.hardToFillRoles.length
+          ? '<p class="desc">Hard to hire for today: ' + chips(gap.hardToFillRoles) + "</p>"
+          : "");
+    el("gapByRole").innerHTML =
+      "<table><thead><tr><th>Role</th><th>Now</th><th>3 years</th><th>5 years</th>"
+      + "<th>Hiring difficulty</th></tr></thead><tbody>"
+      + summary.roles.map(function (r) {
+          return "<tr><td>" + esc(r.name) + "</td><td>" + r.gapNow + "</td><td>" + r.gap3y
+            + "</td><td>" + r.gap5y + '</td><td><span class="pill '
+            + (r.hiringDifficulty === "high" ? "build"
+               : r.hiringDifficulty === "medium" ? "moderate" : "strong") + '">'
+            + esc(r.hiringDifficulty) + "</span></td></tr>";
+        }).join("") + "</tbody></table>";
+  }
+
+  /* ------------------------------------------------------------ apprentices ---- */
+
+  function renderPlan(summary, projection) {
+    var planned = {};
+    projection.perRole.forEach(function (r) { planned[r.id] = r.byYear; });
+    el("planTable").innerHTML =
+      "<table class=\"plan-table\"><thead><tr><th>Role</th><th>Year 1</th><th>Year 2</th>"
+      + "<th>Year 3</th><th>Year 4</th><th>Year 5</th><th>5-year gap</th></tr></thead><tbody>"
+      + summary.roles.map(function (r) {
+          var row = planned[r.id] || [0, 0, 0, 0, 0];
+          return '<tr data-plan="' + esc(r.id) + '"><td class="role">' + esc(r.name) + "</td>"
+            + [0, 1, 2, 3, 4].map(function (i) {
+                return '<td><input type="number" min="0" step="1" data-year="' + i
+                  + '" value="' + (row[i] || 0) + '"></td>';
+              }).join("")
+            + '<td style="color:var(--text-muted)">' + r.gap5y + "</td></tr>";
+        }).join("") + "</tbody></table>";
+  }
+
+  function collectPlan() {
+    var plan = {};
+    Array.prototype.forEach.call(el("planTable").querySelectorAll("tr[data-plan]"), function (row) {
+      plan[row.getAttribute("data-plan")] = Array.prototype.map.call(
+        row.querySelectorAll("input[data-year]"), function (i) { return Number(i.value) || 0; });
+    });
+    return plan;
+  }
+
+  function coverageHtml(label, c) {
+    // Apprentices still in training are shown beside the gap, never inside the filled
+    // figure: someone two years off qualifying is not filling a vacancy today.
+    var filledPct = c.gap ? (c.filled / c.gap) * 100 : 0;
+    var trainingPct = c.gap ? Math.min(100 - filledPct, (c.inTraining / c.gap) * 100) : 0;
+    return '<div style="margin-top:18px"><div class="row" style="justify-content:space-between">'
+      + '<span style="font-weight:650; color:var(--navy)">' + esc(label) + "</span>"
+      + '<span style="font-weight:700; color:var(--accent)">' + c.filled + " of " + c.gap
+      + " filled</span></div>"
+      + '<div class="bar"><span class="filled" style="width:' + filledPct + '%"></span>'
+      + '<span class="training" style="width:' + trainingPct + '%"></span>'
+      + '<span class="remaining" style="width:' + Math.max(0, 100 - filledPct - trainingPct) + '%"></span></div>'
+      + '<div class="legend"><span class="filled"><i></i>' + c.qualified
+      + " qualified from apprenticeships</span>"
+      + '<span class="training"><i></i>' + c.inTraining + " still in training</span>"
+      + '<span class="remaining"><i></i>' + c.remaining + " still to fill</span></div></div>";
+  }
+
+  function renderProjection(summary, projection) {
+    if (!projection.total) {
+      el("projection").innerHTML = '<p class="empty">Enter some apprentices above and update '
+        + "the dashboard to see what they close.</p>";
+      return;
+    }
+    el("projection").innerHTML =
+      '<div class="stat-row">'
+      + stat(projection.total, "apprentices over five years", true)
+      + stat(projection.peakInTraining, "in training at the busiest point")
+      + stat(projection.mentorsNeeded, "mentors needed at that point")
+      + "</div>"
+      + coverageHtml("Against your three-year gap", projection.coverage.threeYear)
+      + coverageHtml("Against your five-year gap", projection.coverage.fiveYear)
+      + '<h3 style="margin:24px 0 4px; font-size:14px; color:var(--navy)">Year by year</h3>'
+      + '<p class="desc">An apprentice trains for two years, so a year-1 start is counted as '
+      + "full staff from year 3.</p>"
+      + "<table><thead><tr><th>Year</th><th>Starting</th><th>In training</th>"
+      + "<th>Qualified and on staff</th></tr></thead><tbody>"
+      + projection.timeline.map(function (y) {
+          return "<tr><td>Year " + y.year + "</td><td>" + y.started + "</td><td>"
+            + y.inTraining + "</td><td><b>" + y.qualified + "</b></td></tr>";
+        }).join("") + "</tbody></table>";
+  }
+
+  el("updateBtn").addEventListener("click", function () {
+    el("updateBtn").disabled = true;
+    session.api("workforce/" + encodeURIComponent(surveyId) + "/plan", {
+      method: "PUT", body: JSON.stringify({ plan: collectPlan() }),
+    }).then(function (data) {
+      doc = data.doc;
+      renderProjection(data.summary, data.projection);
+      el("planSaved").hidden = false;
+      setTimeout(function () { el("planSaved").hidden = true; }, 2500);
+      el("projectionCard").scrollIntoView({ behavior: "smooth" });
+    }).catch(fail).then(function () { el("updateBtn").disabled = false; });
+  });
+
+  el("submitBtn").addEventListener("click", function () {
+    el("submitBtn").disabled = true;
+    session.api("workforce/" + encodeURIComponent(surveyId) + "/submit", { method: "POST" })
+      .then(function (data) {
+        if (data.box && data.box.error) {
+          say("submitMsg", "Saved. (The Box copy didn't go through: " + data.box.error + ")", "err");
+        }
+        window.location.href = "/apprenticeship/dashboard.html?survey="
+          + encodeURIComponent(surveyId);
+      })
+      .catch(function (e) { el("submitBtn").disabled = false; fail(e); });
+  });
+
+  /* ------------------------------------------------------------------ load ---- */
+
+  function loadSummary() {
+    return session.api("workforce/" + encodeURIComponent(surveyId) + "/summary")
+      .then(function (data) {
+        renderSummary(data.summary);
+        renderPlan(data.summary, data.projection);
+        renderProjection(data.summary, data.projection);
+        el("entryView").hidden = true;
+        el("summaryView").hidden = false;
+        window.scrollTo(0, 0);
+      });
+  }
+
+  Promise.all([
+    session.api("account/me"),
+    session.api("workforce/" + encodeURIComponent(surveyId)),
+  ]).then(function (results) {
+    var account = results[0].account;
+    doc = results[1].doc;
+    el("whoami").textContent = account.name + " · " + account.company;
+    el("title").textContent = results[1].survey.name || "Workforce Needs Assessment";
+    document.title = el("title").textContent;
+    el("subline").textContent = results[1].survey.intro
+      || "Add your roles, then see the gap you are facing and what apprentices would close.";
+    (doc.roles || []).forEach(addRole);
+    if (!doc.roles.length) addRole(null);
+    el("entryView").hidden = false;
+    // Coming back to a finished assessment lands on the picture, not the form.
+    if (doc.submittedAt && doc.roles.length) loadSummary().catch(fail);
+  }).catch(fail);
+})();
+</script>
+</body>
+</html>
