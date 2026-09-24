@@ -51,6 +51,10 @@
   .composer button { font:inherit; font-weight:600; border-radius:10px; border:1px solid var(--accent);
                      cursor:pointer; padding:0 22px; background:var(--accent); color:#fff; }
   .composer button:disabled { opacity:.5; cursor:not-allowed; }
+  /* Greyed while the chat is talking, but still there -- see the answer controls in the
+     script below for why it does not come and go. */
+  .composer.waiting { opacity:.5; }
+  .composer.waiting textarea { background:var(--bot-bg); }
   .composer button.choice { flex:1; padding:12px 0; font-size:15px; background:var(--surface-1);
                             color:var(--navy); border:1px solid var(--border); }
   .composer button.choice:hover { background:var(--bot-bg); }
@@ -136,25 +140,49 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-  /** Two buttons for a yes/no question, the text box for an open one. */
-  function openComposer(answerType) {
+  /* ---------- the answer controls ----------
+   *
+   * Two buttons for a yes/no question, the text box for an open one -- and whichever it is
+   * STAYS ON SCREEN between questions, greyed and unclickable while the chat is talking.
+   * Hiding it and bringing it back moved everything above it by the height of the control,
+   * twice per question, which made reading the chat feel like standing on a boat. It only
+   * disappears when there is genuinely nothing left to answer: the results, the safety
+   * shut-off, or a broken link.
+   */
+
+  function setComposerEnabled(on) {
+    el("composer").classList.toggle("waiting", !on);
+    el("choiceComposer").classList.toggle("waiting", !on);
+    el("answerInput").disabled = !on;
+    el("sendBtn").disabled = !on;
+    Array.prototype.forEach.call(el("choiceComposer").querySelectorAll("button"),
+      function (b) { b.disabled = !on; });
+  }
+
+  /** Show the control this step will need, greyed, before the chat starts talking. */
+  function prepareComposer(answerType) {
     var yesNo = answerType !== "open";
+    var swapping = el("choiceComposer").hidden === yesNo;
     el("choiceComposer").hidden = !yesNo;
     el("composer").hidden = yesNo;
-    if (yesNo) {
-      Array.prototype.forEach.call(el("choiceComposer").querySelectorAll("button"),
-        function (b) { b.disabled = false; });
-    } else {
-      el("answerInput").disabled = false;
-      el("sendBtn").disabled = false;
+    setComposerEnabled(false);
+    // Only a swap between the two kinds of control changes the layout now, and that only
+    // happens on a follow-up to an open question.
+    if (swapping) scrollToBottom();
+  }
+
+  /** The prompt has landed: hand it over. */
+  function openComposer(answerType) {
+    prepareComposer(answerType);
+    setComposerEnabled(true);
+    if (answerType === "open") {
       el("answerInput").value = "";
       el("answerInput").style.height = "auto";
       el("answerInput").focus();
     }
-    // Un-hiding a composer shrinks .messages, so the newest bubble has to be scrolled to
-    // again or it ends up behind it.
     scrollToBottom();
   }
+
   function closeComposers() {
     el("composer").hidden = true;
     el("choiceComposer").hidden = true;
@@ -248,17 +276,18 @@
    * with how much there is to read, so a one-line section name does not hold up the
    * question behind it.
    */
-  // An adult reads prose at roughly 240 words a minute. The pause after a bubble is a
-  // share of how long that bubble actually takes to read, so a section's paragraph of
-  // context holds the next line back and a four-word heading barely does.
+  // An adult reads prose at roughly 240 words a minute. The pause after a bubble is how
+  // long that bubble actually takes to read, so a section's paragraph of context holds the
+  // next line back and a four-word heading barely does.
   //
-  // A share, not the whole of it: the message stays on screen, so they carry on reading
-  // while the next one arrives, and waiting out a full read of everything would make a
-  // six-bubble section feel like a lecture. Clamped at both ends -- below the floor the
-  // staging stops reading as staging, above the ceiling it reads as a hang.
+  // The full read time, not a share of it. Half was tried first, on the reasoning that the
+  // message stays on screen so they carry on reading while the next arrives -- in practice
+  // that read as rushed. Clamped at both ends: below the floor the staging stops reading as
+  // staging, above the ceiling a genuinely long paragraph would hold the chat for its whole
+  // seventeen seconds.
   var WORDS_PER_MINUTE = 240;
-  var READ_FRACTION = 0.5;
-  var GAP_MIN_MS = 500, GAP_MAX_MS = 4000;
+  var READ_FRACTION = 1;
+  var GAP_MIN_MS = 1000, GAP_MAX_MS = 8000;
 
   function gapAfter(text) {
     var words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
@@ -284,6 +313,7 @@
   function renderStep(step) {
     currentProgress = step.progress;
     lastAnswerType = step.answerType || "yes_no";
+    prepareComposer(lastAnswerType);
     updateProgress(step.progress);
     stage(step.messages || [], function (text) {
       // The section's own name is styled as a heading so a respondent can see where they
@@ -303,7 +333,7 @@
     if (!answer) return;
     // A tapped answer shows as "Yes"; typed text is shown exactly as they wrote it.
     addBubble("user", tapped ? answer.charAt(0).toUpperCase() + answer.slice(1) : answer);
-    closeComposers();
+    setComposerEnabled(false);
     // On the last question this answer triggers the scoring and the written improvement
     // list, so it gets the bar rather than the same "…" every other answer gets. A
     // non-responsive answer here is redirected instead, and the bar simply comes away.
@@ -416,9 +446,10 @@
       document.title = survey.name + " — Apprenticeship Readiness";
       el("intakeIntro").textContent = survey.questionCount + " question"
         + (survey.questionCount === 1 ? "" : "s") + " across " + survey.sectionCount
-        + " section" + (survey.sectionCount === 1 ? "" : "s") + ". Answer in your own words —"
-        + " there is nothing to look up, and an honest “we don’t do that yet” is"
-        + " the most useful answer you can give. You can stop part-way and come back.";
+        + " section" + (survey.sectionCount === 1 ? "" : "s")
+        + ". Most are a simple yes or no — there is nothing to look up, and an honest"
+        + " “no” is the most useful answer you can give, because it is what shows"
+        + " us where to help. You can stop part-way and come back.";
       el("intake").hidden = false;
       el("startBtn").focus();
     }
