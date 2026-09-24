@@ -746,9 +746,10 @@ Everything a given person finishes inside a project rolls up into one readiness
 dashboard for them.
 
 **Employers pick their own programme.** A new account's dashboard lists the programmes on
-offer — name, description, how many steps and how many are ready — and one press adds it.
-Picking a programme only puts it on their dashboard; which step they start, and when, stays
-theirs. They can be in more than one at a time.
+offer — name, description, how many steps and how many are ready. **Start** adds the
+programme and opens its first step straight away; if that step isn't built yet, the
+programme lands on their dashboard and says so. They can be in more than one at a time, and
+after that first step everything is driven from the dashboard's tabs.
 
 A project appears on that list only if it is **open to respondents** (a per-project toggle,
 on by default, under **Open/close** in the control panel) **and has at least one step
