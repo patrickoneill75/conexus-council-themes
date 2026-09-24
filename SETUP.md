@@ -782,9 +782,10 @@ consequences, both deliberate:
    different storage model.
 
 **The respondent's experience.** They sign in, then the assessment runs as a chat. Each
-section leads with its own context, and the person answers in their own words — nothing is multiple choice, because
-the point is to find out what an employer actually has in place rather than what they can
-recognise from a list.
+section leads with its own context, and the answer control — two buttons, or a text box for
+an open question — stays put at the bottom of the screen throughout, greyed while the chat
+is talking. It used to appear and disappear with each question, which moved everything
+above it twice per question and made the chat hard to read.
 
 **Questions are yes/no by default.** The respondent taps Yes or No; there is nothing to
 type and nothing for a model to interpret. A yes/no question:
