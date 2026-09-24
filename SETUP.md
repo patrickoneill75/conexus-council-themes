@@ -745,6 +745,16 @@ one or more *assessments*, each made of *sections*, each section made of *questi
 Everything a given person finishes inside a project rolls up into one readiness
 dashboard for them.
 
+**Employers pick their own programme.** A new account's dashboard lists the programmes on
+offer — name, description, how many steps and how many are ready — and one press adds it.
+Picking a programme only puts it on their dashboard; which step they start, and when, stays
+theirs. They can be in more than one at a time.
+
+A project appears on that list only if it is **open to respondents** (a per-project toggle,
+on by default, under **Open/close** in the control panel) **and has at least one step
+built**. Closing a project keeps a draft off the list without disturbing anyone already in
+it, and a closed project cannot be joined by asking for it directly either.
+
 **`/apprenticeship` is the employer's front door.** Signed in, it goes straight to their
 dashboard; otherwise to sign-in or registration. It is not the control panel — that is a
 small link at the bottom of both pages, for staff.

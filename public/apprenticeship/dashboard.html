@@ -20,6 +20,10 @@
   .combined { margin-top:22px; }
   .pending { border-left:4px solid var(--amber); background:rgba(251,174,64,.10);
              border-radius:10px; padding:14px 16px; font-size:13.5px; }
+  .programme { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+               margin-top:12px; }
+  .programme .head { display:flex; align-items:center; gap:12px; }
+  .programme .name { flex:1; font-weight:650; color:var(--navy); font-size:14.5px; }
   .next-step { border-left:4px solid var(--teal); background:rgba(16,143,194,.09);
                border-radius:10px; padding:13px 16px; margin-top:14px; font-size:13.5px;
                display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
@@ -380,21 +384,57 @@
     });
   }
 
+  /**
+   * The programmes on offer.
+   *
+   * A brand new account used to land on "nothing here yet" with nothing to press, because
+   * a project only appeared once one of its assessments had been touched -- so the only
+   * way in was a link somebody had to send you. An employer picks their programme here,
+   * and the steps inside it are laid out before they answer anything.
+   */
+  function chooserHtml(projects, hasProjects) {
+    var joinableNow = projects.filter(function (p) { return !p.joined; });
+    if (!joinableNow.length) return "";
+    var html = '<div class="card"><h2>'
+      + (hasProjects ? "Start another programme" : "Choose your programme")
+      + "</h2>"
+      + '<p class="desc">'
+      + (hasProjects
+          ? "You can work through more than one at a time."
+          : "Pick the programme Conexus Indiana has you on. Each one is a short series of "
+            + "steps, and you can stop between them and come back.")
+      + "</p>";
+    joinableNow.forEach(function (p) {
+      html += '<div class="programme"><div class="head">'
+        + '<span class="name">' + esc(p.name) + "</span>"
+        + '<button type="button" class="primary small" data-join="' + esc(p.id) + '">Start</button>'
+        + "</div>"
+        + (p.description ? '<div class="meta">' + esc(p.description) + "</div>" : "")
+        + '<div class="meta">' + p.stepCount + " step" + (p.stepCount === 1 ? "" : "s")
+        + " \u00b7 " + p.builtCount + " ready now"
+        + (p.firstStepName ? " \u00b7 starts with " + esc(p.firstStepName) : "")
+        + "</div></div>";
+    });
+    return html + "</div>";
+  }
+
   function render(data) {
     var wasOpen = openPacks();
     el("whoami").textContent = data.account.name + " · " + data.account.company;
     if (!data.projects.length) {
       el("subline").textContent = "";
-      el("body").innerHTML = '<div class="card"><h2>Nothing here yet</h2><p class="desc">'
-        + "Once you start an assessment, it and the rest of its programme will show up "
-        + "here. Use the link Conexus Indiana sent you to begin.</p></div>";
+      el("body").innerHTML = chooserHtml(joinable, false)
+        || '<div class="card"><h2>Nothing here yet</h2><p class="desc">'
+           + "There are no programmes open to join at the moment. Conexus Indiana will "
+           + "send you a link when yours is ready.</p></div>";
       return;
     }
     var totalDone = data.projects.reduce(function (n, p) { return n + p.completedCount; }, 0);
     var totalAll = data.projects.reduce(function (n, p) { return n + p.assessments.length; }, 0);
     el("subline").textContent = totalDone + " of " + totalAll + " step"
       + (totalAll === 1 ? "" : "s") + " complete.";
-    el("body").innerHTML = data.projects.map(projectHtml).join("");
+    el("body").innerHTML = data.projects.map(projectHtml).join("")
+      + chooserHtml(joinable, true);
     restorePacks(wasOpen);
   }
 
@@ -421,7 +461,37 @@
     });
   });
 
-  session.api("account/dashboard").then(render).catch(function (e) {
+  // Joining puts the programme on the dashboard and nothing more -- which step they start,
+  // and when, stays theirs to choose.
+  el("body").addEventListener("click", function (event) {
+    var button = event.target.closest && event.target.closest("[data-join]");
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    button.textContent = "Starting\u2026";
+    session.api("account/projects/" + encodeURIComponent(button.getAttribute("data-join")) + "/join",
+      { method: "POST" })
+      .then(function (data) {
+        return session.api("account/projects").then(function (list) {
+          joinable = list.projects || [];
+          render(data);
+        });
+      })
+      .catch(function (e) {
+        button.disabled = false;
+        button.textContent = "Start";
+        if (e && e.message !== "Not signed in") window.alert(e.message);
+      });
+  });
+
+  var joinable = [];
+  Promise.all([
+    session.api("account/dashboard"),
+    // Fails soft: a chooser that could not load must not take the dashboard down with it.
+    session.api("account/projects").catch(function () { return { projects: [] }; }),
+  ]).then(function (results) {
+    joinable = results[1].projects || [];
+    render(results[0]);
+  }).catch(function (e) {
     if (e && e.message === "Not signed in") return; // api() is already redirecting
     el("subline").textContent = "";
     el("body").innerHTML = '<div class="card">' + esc(e.message) + "</div>";
