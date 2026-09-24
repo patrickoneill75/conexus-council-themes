@@ -4,11 +4,48 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Apprenticeship Readiness Toolbox</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214E'/%3E%3Cpath d='M8 20l5-9 5 9z' fill='%23FBAE40'/%3E%3Crect x='17' y='17' width='7' height='3' rx='1.5' fill='white'/%3E%3Crect x='17' y='22' width='7' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/apprenticeship/brand.css">
+<script src="/apprenticeship/session.js"></script>
+<style>
+  .wrap { max-width:480px; padding-top:64px; text-align:center; }
+  .wrap h1 { font-size:22px; }
+  .wrap p.sub { margin:10px 0 0; }
+  .staff { margin-top:26px; font-size:12px; color:var(--text-muted); }
+  .staff a { color:var(--text-muted); }
+</style>
 </head>
 <body>
-<!-- Like Consensus, this app has no single public URL: every assessment gets its own
-     respondent link from the control panel, so the base path just goes there. -->
-<script>window.location.replace("/apprenticeship/control-panel/index.html");</script>
-<p>Redirecting to the <a href="/apprenticeship/control-panel/index.html">control panel</a>…</p>
+<div class="wrap">
+  <h1>Apprenticeship Readiness Toolbox</h1>
+  <p class="sub">Conexus Indiana</p>
+  <p class="sub" id="going">Taking you to your dashboard&hellip;</p>
+  <p class="sub" style="margin-top:18px">
+    <a class="link" id="fallback" href="/apprenticeship/account.html">Continue</a>
+  </p>
+  <p class="staff">Conexus staff:
+    <a href="/apprenticeship/control-panel/index.html">control panel</a></p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  // This is the address an employer is given, so it belongs to them, not to staff. It used
+  // to redirect to the control panel, which bounced anyone without an admin account
+  // straight to an admin sign-in page they could never get past -- the wrong door, and a
+  // dead end behind it. Signed in goes to their dashboard; everyone else goes to sign in
+  // or register. The control panel is still one click away, at the bottom, for staff.
+  var session = window.ApprenticeshipSession;
+  var signedIn = Boolean(session && session.token());
+  var target = signedIn
+    ? "/apprenticeship/dashboard.html"
+    : "/apprenticeship/account.html?next=" + encodeURIComponent("/apprenticeship/dashboard.html");
+  document.getElementById("going").textContent = signedIn
+    ? "Taking you to your dashboard…"
+    : "Taking you to sign in…";
+  document.getElementById("fallback").href = target;
+  window.location.replace(target);
+})();
+</script>
 </body>
 </html>
