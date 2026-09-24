@@ -85,7 +85,7 @@ const APPS = [
   {
     id: "apprenticeship",
     name: "Apprenticeship Readiness Toolbox",
-    description: "A programme of self-assessments an employer works through step by step: " +
+    description: "A program of self-assessments an employer works through step by step: " +
       "a scored readiness chat, then a workforce needs assessment that sizes their hiring " +
       "gap and what apprentices would close. Employers sign in at /apprenticeship and get " +
       "their own dashboard; each step also has its own direct link.",
