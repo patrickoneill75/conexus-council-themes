@@ -70,6 +70,14 @@
       <textarea id="pDesc"></textarea>
       <label for="pSteps">Steps in this programme</label>
       <input type="number" id="pSteps" min="1" max="10" step="1" value="3">
+      <label style="text-transform:none; letter-spacing:0; font-size:12.5px; font-weight:500;
+                    color:var(--text-primary); margin-top:14px">
+        <input type="checkbox" id="pOpen" checked
+               style="width:auto; margin-right:7px; vertical-align:-2px">Employers can pick
+        this programme themselves</label>
+      <p class="desc" style="margin:6px 0 0">Untick to keep a programme you are still
+        writing off the list respondents choose from. A programme with no step built never
+        appears either way.</p>
       <p class="desc" style="margin:8px 0 0">Respondents see a tab for every step from the
         first day, so they can see the shape of the programme. Steps you haven't built yet
         show as &ldquo;Coming soon&rdquo; and stay locked.</p>
@@ -82,6 +90,7 @@
   <div id="projectView" hidden>
     <div class="card">
       <div class="row"><h3 id="projectName" style="flex:1"></h3>
+        <button type="button" class="small" id="openBtn">Open/close</button>
         <button type="button" class="small" id="stepsBtn">Steps</button>
         <button type="button" class="small" id="editProjectBtn">Rename</button>
         <button type="button" class="small danger" id="deleteProjectBtn">Delete</button></div>
@@ -321,7 +330,8 @@
     if (!name) return say("pMsg", "Give the project a name.", "err");
     api("projects", { method: "POST", body: JSON.stringify({
       name: name, description: el("pDesc").value.trim(),
-      stepCount: Number(el("pSteps").value) || 3 }) })
+      stepCount: Number(el("pSteps").value) || 3,
+      openToRespondents: el("pOpen").checked }) })
       .then(function (data) {
         el("pName").value = ""; el("pDesc").value = "";
         el("pMsg").hidden = true;
@@ -338,7 +348,9 @@
       if (!currentProject) { window.location.hash = ""; return; }
       el("projectName").textContent = currentProject.name;
       el("projectDesc").textContent = (currentProject.description ? currentProject.description + " \u00b7 " : "")
-        + (currentProject.stepCount || 3) + " steps";
+        + (currentProject.stepCount || 3) + " steps \u00b7 "
+        + (currentProject.openToRespondents === false
+            ? "closed \u2014 employers can't pick it" : "open for employers to pick");
       el("crumb").textContent = "Assessments in this project.";
       return api("surveys?projectId=" + encodeURIComponent(projectId));
     }).then(function (data) {
@@ -371,7 +383,23 @@
     if (name === null) return;
     api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
       body: JSON.stringify({ name: name, description: currentProject.description || "",
-        stepCount: currentProject.stepCount || 3 }) })
+        stepCount: currentProject.stepCount || 3,
+        openToRespondents: currentProject.openToRespondents !== false }) })
+      .then(function () { openProject(currentProject.id); })
+      .catch(function (e) { say("projMsg", e.message, "err"); });
+  });
+
+  el("openBtn").addEventListener("click", function () {
+    if (!currentProject) return;
+    var nowOpen = currentProject.openToRespondents !== false;
+    if (!window.confirm(nowOpen
+      ? "Close this programme? Employers will no longer see it on the list they pick from. "
+        + "Anyone already in it keeps it."
+      : "Open this programme so employers can pick it themselves?")) return;
+    api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
+      body: JSON.stringify({ name: currentProject.name,
+        description: currentProject.description || "",
+        stepCount: currentProject.stepCount || 3, openToRespondents: !nowOpen }) })
       .then(function () { openProject(currentProject.id); })
       .catch(function (e) { say("projMsg", e.message, "err"); });
   });
@@ -383,7 +411,8 @@
     if (count === null) return;
     api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
       body: JSON.stringify({ name: currentProject.name,
-        description: currentProject.description || "", stepCount: Number(count) || 3 }) })
+        description: currentProject.description || "", stepCount: Number(count) || 3,
+        openToRespondents: currentProject.openToRespondents !== false }) })
       .then(function () { openProject(currentProject.id); })
       .catch(function (e) { say("projMsg", e.message, "err"); });
   });

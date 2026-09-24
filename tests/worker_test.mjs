@@ -1685,6 +1685,53 @@ test("apprenticeship: the dashboard combines a project, and withholds the total 
   assert.equal(finished.projects[0].overall.bandLabel, "Strong Readiness");
 });
 
+test("apprenticeship: an employer can pick a programme, and only a real one", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const ready = await makeAssessment(env, token, ONE_SECTION, "Step One");
+
+  // A project with nothing built, and one an admin has closed. Neither is startable.
+  const empty = await (await appr("projects", jsonReq("/api/apprenticeship/projects", "POST",
+    { name: "Nothing built yet" }, token), env)).json();
+  const closed = await makeAssessment(env, token, ONE_SECTION, "Draft step");
+  await appr(`projects/${closed.projectId}`,
+    jsonReq(`/api/apprenticeship/projects/${closed.projectId}`, "PUT",
+      { name: "Still being written", openToRespondents: false }, token), env);
+
+  const list = () => appr("account/projects", req("/api/apprenticeship/account/projects",
+    { headers: { authorization: `Bearer ${respondentToken}` } }), env).then((r) => r.json());
+
+  const offered = await list();
+  assert.deepEqual(offered.projects.map((p) => p.id), [ready.projectId],
+    "a programme with no step built, and one an admin closed, are not on offer");
+  assert.equal(offered.projects[0].joined, false);
+  assert.equal(offered.projects[0].firstStepName, "Step One");
+  assert.equal(offered.projects[0].stepCount, 3);
+
+  // Joining puts it on the dashboard without starting anything.
+  const dash = await (await appr(`account/projects/${ready.projectId}/join`,
+    jsonReq(`/api/apprenticeship/account/projects/${ready.projectId}/join`, "POST", {},
+      respondentToken), env)).json();
+  assert.equal(dash.projects.length, 1, "a picked programme shows up before any step is touched");
+  assert.equal(dash.projects[0].assessments[0].status, "not-started");
+  assert.equal((await list()).projects[0].joined, true, "and is no longer offered to join");
+
+  // A closed programme cannot be joined by asking for it directly, only hidden from the list.
+  assert.equal((await appr(`account/projects/${closed.projectId}/join`,
+    jsonReq(`/api/apprenticeship/account/projects/${closed.projectId}/join`, "POST", {},
+      respondentToken), env)).status, 404);
+  assert.equal((await appr(`account/projects/${empty.project.id}/join`,
+    jsonReq(`/api/apprenticeship/account/projects/${empty.project.id}/join`, "POST", {},
+      respondentToken), env)).status, 409);
+});
+
+test("apprenticeship: the programme list needs an account", async () => {
+  const { env, token } = await apprEnv();
+  await makeAssessment(env, token, ONE_SECTION, "Step One");
+  assert.equal((await appr("account/projects",
+    req("/api/apprenticeship/account/projects"), env)).status, 401);
+});
+
 test("apprenticeship: a programme shows a tab for every step, built or not", async () => {
   const { env, token } = await apprEnv();
   const respondentToken = await respondent(env);
