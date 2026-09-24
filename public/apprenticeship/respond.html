@@ -248,9 +248,22 @@
    * with how much there is to read, so a one-line section name does not hold up the
    * question behind it.
    */
-  var GAP_MIN_MS = 350, GAP_PER_CHAR_MS = 13, GAP_MAX_MS = 1500;
+  // An adult reads prose at roughly 240 words a minute. The pause after a bubble is a
+  // share of how long that bubble actually takes to read, so a section's paragraph of
+  // context holds the next line back and a four-word heading barely does.
+  //
+  // A share, not the whole of it: the message stays on screen, so they carry on reading
+  // while the next one arrives, and waiting out a full read of everything would make a
+  // six-bubble section feel like a lecture. Clamped at both ends -- below the floor the
+  // staging stops reading as staging, above the ceiling it reads as a hang.
+  var WORDS_PER_MINUTE = 240;
+  var READ_FRACTION = 0.5;
+  var GAP_MIN_MS = 500, GAP_MAX_MS = 4000;
+
   function gapAfter(text) {
-    return Math.min(GAP_MAX_MS, Math.max(GAP_MIN_MS, String(text || "").length * GAP_PER_CHAR_MS));
+    var words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
+    var readMs = (words / WORDS_PER_MINUTE) * 60000;
+    return Math.min(GAP_MAX_MS, Math.max(GAP_MIN_MS, Math.round(readMs * READ_FRACTION)));
   }
 
   /** Show `texts` one after another, then call `then`. The first lands immediately. */
