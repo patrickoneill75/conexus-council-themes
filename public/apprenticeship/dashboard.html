@@ -20,10 +20,10 @@
   .combined { margin-top:22px; }
   .pending { border-left:4px solid var(--amber); background:rgba(251,174,64,.10);
              border-radius:10px; padding:14px 16px; font-size:13.5px; }
-  .programme { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+  .program { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
                margin-top:12px; }
-  .programme .head { display:flex; align-items:center; gap:12px; }
-  .programme .name { flex:1; font-weight:650; color:var(--navy); font-size:14.5px; }
+  .program .head { display:flex; align-items:center; gap:12px; }
+  .program .name { flex:1; font-weight:650; color:var(--navy); font-size:14.5px; }
   .next-step { border-left:4px solid var(--teal); background:rgba(16,143,194,.09);
                border-radius:10px; padding:13px 16px; margin-top:14px; font-size:13.5px;
                display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
@@ -265,7 +265,7 @@
    * A project is a tab per step, not a page you scroll.
    *
    * Every step gets a tab from the first day, including ones nobody has built yet, so a
-   * respondent can see the shape of the programme rather than only the step in front of
+   * respondent can see the shape of the program rather than only the step in front of
    * them. A locked tab is greyed and cannot be opened -- the Worker refuses a locked step
    * anyway, so this is the courtesy, not the enforcement.
    */
@@ -402,27 +402,27 @@
   }
 
   /**
-   * The programmes on offer.
+   * The programs on offer.
    *
    * A brand new account used to land on "nothing here yet" with nothing to press, because
    * a project only appeared once one of its assessments had been touched -- so the only
-   * way in was a link somebody had to send you. An employer picks their programme here,
+   * way in was a link somebody had to send you. An employer picks their program here,
    * and the steps inside it are laid out before they answer anything.
    */
   function chooserHtml(projects, hasProjects) {
     var joinableNow = projects.filter(function (p) { return !p.joined; });
     if (!joinableNow.length) return "";
     var html = '<div class="card"><h2>'
-      + (hasProjects ? "Start another programme" : "Choose your programme")
+      + (hasProjects ? "Start another program" : "Choose your program")
       + "</h2>"
       + '<p class="desc">'
       + (hasProjects
           ? "You can work through more than one at a time."
-          : "Pick the programme Conexus Indiana has you on. Each one is a short series of "
+          : "Pick the program Conexus Indiana has you on. Each one is a short series of "
             + "steps, and you can stop between them and come back.")
       + "</p>";
     joinableNow.forEach(function (p) {
-      html += '<div class="programme"><div class="head">'
+      html += '<div class="program"><div class="head">'
         + '<span class="name">' + esc(p.name) + "</span>"
         + '<button type="button" class="primary small" data-join="' + esc(p.id) + '">Start</button>'
         + "</div>"
@@ -442,7 +442,7 @@
       el("subline").textContent = "";
       el("body").innerHTML = chooserHtml(joinable, false)
         || '<div class="card"><h2>Nothing here yet</h2><p class="desc">'
-           + "There are no programmes open to join at the moment. Conexus Indiana will "
+           + "There are no programs open to join at the moment. Conexus Indiana will "
            + "send you a link when yours is ready.</p></div>";
       return;
     }
@@ -479,7 +479,7 @@
   });
 
   /**
-   * Joining puts the programme on the dashboard and nothing more -- which step they start,
+   * Joining puts the program on the dashboard and nothing more -- which step they start,
    * and when, stays theirs to choose.
    *
    * The join response IS the dashboard, so the page is drawn from it straight away. It
@@ -500,33 +500,36 @@
     session.api("account/projects/" + encodeURIComponent(projectId) + "/join", { method: "POST" })
       .then(function (data) {
         // The button says Start, so it starts: straight into the first step that is open.
-        // Redrawing the page in place was the whole complaint -- it looked like the press
-        // had done nothing.
-        var joinedProject = (data.projects || []).filter(function (p) {
-          return p.id === projectId;
-        })[0];
-        var first = joinedProject && (joinedProject.assessments || []).filter(function (a) {
-          return !a.locked && !a.placeholder && a.surveyId;
-        })[0];
+        // firstStep is worked out by the Worker from the program's own surveys, so this
+        // does not depend on anything about the dashboard payload beside it.
+        var first = data.firstStep;
+        if (!first) {
+          var joinedProject = (data.projects || []).filter(function (p) {
+            return p.id === projectId;
+          })[0];
+          first = joinedProject && (joinedProject.assessments || []).filter(function (a) {
+            return !a.locked && !a.placeholder && a.surveyId;
+          })[0];
+        }
         if (first) {
           window.location.href = stepLink(first);
           return;
         }
-        // Nothing open to walk into -- a programme whose first step is not built yet. Then
+        // Nothing open to walk into -- a program whose first step is not built yet. Then
         // the dashboard is the honest answer, and it is drawn from the join's own response
         // so nothing between the press and the redraw can fail.
         joinable = joinable.map(function (p) {
           return p.id === projectId ? Object.assign({}, p, { joined: true }) : p;
         });
         render(data);
-        showError("That programme is on your dashboard, but its first step isn't ready to "
+        showError("That program is on your dashboard, but its first step isn't ready to "
           + "open yet.");
       })
       .catch(function (e) {
         button.disabled = false;
         button.textContent = "Start";
         if (e && e.message === "Not signed in") return; // api() is already redirecting
-        showError("Couldn't start that programme: " + (e && e.message ? e.message : e));
+        showError("Couldn't start that program: " + (e && e.message ? e.message : e));
       });
   });
 

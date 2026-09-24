@@ -1648,7 +1648,7 @@ test("apprenticeship: the dashboard combines a project, and withholds the total 
   const { env, token } = await apprEnv();
   const respondentToken = await respondent(env);
   const first = await makeAssessment(env, token, ONE_SECTION, "One");
-  // A two-step programme, so the combined figure is due once both are done.
+  // A two-step program, so the combined figure is due once both are done.
   await appr(`projects/${first.projectId}`,
     jsonReq(`/api/apprenticeship/projects/${first.projectId}`, "PUT",
       { name: "Project", stepCount: 2 }, token), env);
@@ -1685,7 +1685,7 @@ test("apprenticeship: the dashboard combines a project, and withholds the total 
   assert.equal(finished.projects[0].overall.bandLabel, "Strong Readiness");
 });
 
-test("apprenticeship: an employer can pick a programme, and only a real one", async () => {
+test("apprenticeship: an employer can pick a program, and only a real one", async () => {
   const { env, token } = await apprEnv();
   const respondentToken = await respondent(env);
   const ready = await makeAssessment(env, token, ONE_SECTION, "Step One");
@@ -1703,7 +1703,7 @@ test("apprenticeship: an employer can pick a programme, and only a real one", as
 
   const offered = await list();
   assert.deepEqual(offered.projects.map((p) => p.id), [ready.projectId],
-    "a programme with no step built, and one an admin closed, are not on offer");
+    "a program with no step built, and one an admin closed, are not on offer");
   assert.equal(offered.projects[0].joined, false);
   assert.equal(offered.projects[0].firstStepName, "Step One");
   assert.equal(offered.projects[0].stepCount, 3);
@@ -1712,11 +1712,11 @@ test("apprenticeship: an employer can pick a programme, and only a real one", as
   const dash = await (await appr(`account/projects/${ready.projectId}/join`,
     jsonReq(`/api/apprenticeship/account/projects/${ready.projectId}/join`, "POST", {},
       respondentToken), env)).json();
-  assert.equal(dash.projects.length, 1, "a picked programme shows up before any step is touched");
+  assert.equal(dash.projects.length, 1, "a picked program shows up before any step is touched");
   assert.equal(dash.projects[0].assessments[0].status, "not-started");
   assert.equal((await list()).projects[0].joined, true, "and is no longer offered to join");
 
-  // A closed programme cannot be joined by asking for it directly, only hidden from the list.
+  // A closed program cannot be joined by asking for it directly, only hidden from the list.
   assert.equal((await appr(`account/projects/${closed.projectId}/join`,
     jsonReq(`/api/apprenticeship/account/projects/${closed.projectId}/join`, "POST", {},
       respondentToken), env)).status, 404);
@@ -1725,14 +1725,65 @@ test("apprenticeship: an employer can pick a programme, and only a real one", as
       respondentToken), env)).status, 409);
 });
 
-test("apprenticeship: the programme list needs an account", async () => {
+test("apprenticeship: joining answers correctly even when KV's list hasn't caught up", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const ready = await makeAssessment(env, token, ONE_SECTION, "Step One");
+
+  // Workers KV is eventually consistent: a list() straight after a put() routinely does
+  // not include the key just written. This stub makes that certain rather than occasional.
+  // Joining used to write the membership key and then build the dashboard from a list in
+  // the same request, so it came back with no programs at all and the page showed the
+  // empty state to somebody who had just pressed Start.
+  const realList = env.BOX_KV.list.bind(env.BOX_KV);
+  const writtenThisRequest = new Set();
+  env.BOX_KV.put = async function (key, value) {
+    writtenThisRequest.add(key);
+    this.store.set(key, String(value));
+  };
+  env.BOX_KV.list = async function (opts) {
+    const out = await realList(opts);
+    return { keys: out.keys.filter((k) => !writtenThisRequest.has(k.name)) };
+  };
+
+  const body = await (await appr(`account/projects/${ready.projectId}/join`,
+    jsonReq(`/api/apprenticeship/account/projects/${ready.projectId}/join`, "POST", {},
+      respondentToken), env)).json();
+
+  assert.equal(body.projects.length, 1,
+    "the program has to come back even though the membership key is not listable yet");
+  assert.equal(body.projects[0].id, ready.projectId);
+  // And the step to walk into is named outright, not dug out of the payload beside it.
+  assert.equal(body.firstStep.surveyId, ready.survey.id);
+  assert.equal(body.firstStep.kind, "chat");
+  assert.equal(body.firstStep.step, 1);
+});
+
+test("apprenticeship: joining a program whose first step is a workforce step says so", async () => {
+  const { env, token } = await apprEnv();
+  const respondentToken = await respondent(env);
+  const project = await (await appr("projects", jsonReq("/api/apprenticeship/projects", "POST",
+    { name: "Workforce first", stepCount: 1 }, token), env)).json();
+  const survey = await (await appr("surveys", jsonReq("/api/apprenticeship/surveys", "POST", {
+    projectId: project.project.id, name: "Workforce Needs", kind: "workforce", step: 1,
+    sections: [],
+  }, token), env)).json();
+  const body = await (await appr(`account/projects/${project.project.id}/join`,
+    jsonReq(`/api/apprenticeship/account/projects/${project.project.id}/join`, "POST", {},
+      respondentToken), env)).json();
+  assert.equal(body.firstStep.kind, "workforce",
+    "so the page opens the form rather than the chat");
+  assert.equal(body.firstStep.surveyId, survey.survey.id);
+});
+
+test("apprenticeship: the program list needs an account", async () => {
   const { env, token } = await apprEnv();
   await makeAssessment(env, token, ONE_SECTION, "Step One");
   assert.equal((await appr("account/projects",
     req("/api/apprenticeship/account/projects"), env)).status, 401);
 });
 
-test("apprenticeship: a programme shows a tab for every step, built or not", async () => {
+test("apprenticeship: a program shows a tab for every step, built or not", async () => {
   const { env, token } = await apprEnv();
   const respondentToken = await respondent(env);
   // Only step 1 exists; the project runs to three.

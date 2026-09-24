@@ -153,7 +153,7 @@ function safeUrl(value) {
   return (parsed.protocol === "http:" || parsed.protocol === "https:") ? parsed.href : "";
 }
 
-// Three is the default because that is the shape of the programme this was built for; an
+// Three is the default because that is the shape of the program this was built for; an
 // admin can set it to whatever their own runs to.
 const MAX_STEPS = 10;
 const stepCount = (value) => {
@@ -164,9 +164,9 @@ const stepCount = (value) => {
 function projectKey(id) { return `${PROJECT_PREFIX}${id}`; }
 
 /**
- * A programme an account has joined.
+ * A program an account has joined.
  *
- * Joining is separate from starting a step. An employer who picks a programme should see
+ * Joining is separate from starting a step. An employer who picks a program should see
  * its steps laid out before answering anything -- and until this existed, a brand new
  * account's dashboard was empty with nothing on it to press, because the only way a
  * project appeared was by already having touched one of its assessments.
@@ -299,7 +299,7 @@ function buildSurvey(id, body, existing) {
       : (existing ? existing.boxFolderId || null : null),
     boxFolderName: body.boxFolderName ? str(body.boxFolderName)
       : (existing ? existing.boxFolderName || null : null),
-    // Which step of the programme this is. The order matters now that a step can be
+    // Which step of the program this is. The order matters now that a step can be
     // locked behind the one before it, and creation order is not that order -- an admin
     // building Step 3 first would otherwise have built the gate backwards.
     step: Number.isFinite(step) && step > 0 ? Math.round(step) : (existing ? existing.step : 1) || 1,
@@ -1049,7 +1049,7 @@ async function assessmentsForProject(env, account, surveys, stepCount) {
     });
   }
 
-  // A programme is a fixed number of steps, and the respondent should be able to see the
+  // A program is a fixed number of steps, and the respondent should be able to see the
   // shape of it from the first day -- which steps are coming, not just the one in front of
   // them. Any step the admin hasn't built yet shows as a placeholder rather than as a gap.
   const built = new Set(assessments.map((a) => a.step));
@@ -1068,7 +1068,15 @@ async function assessmentsForProject(env, account, surveys, stepCount) {
   return applyLocks(assessments);
 }
 
-async function accountDashboard(env, account) {
+/**
+ * @param extraProjectIds project ids the caller knows this account is in, even if a list
+ *   cannot see them yet. Workers KV is eventually consistent: a list() immediately after
+ *   a put() routinely does not include the key just written. Joining a program wrote the
+ *   membership key and then built this dashboard from a list in the same request, so the
+ *   answer came back with no programs in it at all -- and the page, being told the account
+ *   was in nothing, showed the empty state. Nothing here waits on propagation now.
+ */
+async function accountDashboard(env, account, extraProjectIds) {
   const [open, done] = await Promise.all([
     env.BOX_KV.list({ prefix: openRunKey(account.id, "") }),
     env.BOX_KV.list({ prefix: doneRunKey(account.id, "") }),
@@ -1077,10 +1085,12 @@ async function accountDashboard(env, account) {
     .map((entry) => entry.name.slice(entry.name.lastIndexOf(":") + 1)));
 
   // Joined but not yet started counts: that is what an employer who has just picked a
-  // programme has, and their dashboard has to show them the steps rather than nothing.
+  // program has, and their dashboard has to show them the steps rather than nothing.
   const joined = await env.BOX_KV.list({ prefix: joinKey(account.id, "") });
-  const joinedProjectIds = joined.keys
-    .map((entry) => entry.name.slice(entry.name.lastIndexOf(":") + 1));
+  const joinedProjectIds = [
+    ...joined.keys.map((entry) => entry.name.slice(entry.name.lastIndexOf(":") + 1)),
+    ...(Array.isArray(extraProjectIds) ? extraProjectIds : []),
+  ].filter(Boolean);
   if (!touchedSurveyIds.size && !joinedProjectIds.length) {
     return { account: publicAccount(account), projects: [] };
   }
@@ -1103,9 +1113,9 @@ async function accountDashboard(env, account) {
     const possible = complete.reduce((n, a) => n + a.overall.possible, 0);
     const percent = possible ? round1((earned / possible) * 100) : 0;
     const band = bandFor(percent);
-    // Every step in the programme, including the ones not built yet -- a combined score
+    // Every step in the program, including the ones not built yet -- a combined score
     // that appeared as soon as the built steps were done would be claiming to cover a
-    // programme the respondent has not finished.
+    // program the respondent has not finished.
     const allDone = assessments.length > 0 && complete.length === assessments.length;
     projects.push({
       id: projectId,
@@ -1168,8 +1178,8 @@ export async function handleApprenticeshipApi(route, request, env) {
       return json(await accountDashboard(env, account));
     }
 
-    // GET account/projects -- the programmes an employer can pick from, and which they are
-    // already in. Only ones that are open AND have a step built: a programme with nothing
+    // GET account/projects -- the programs an employer can pick from, and which they are
+    // already in. Only ones that are open AND have a step built: a program with nothing
     // behind it is not something anybody can start.
     if (parts[1] === "projects" && parts.length === 2 && method === "GET") {
       const account = await requireRespondent(request, env);
@@ -1190,7 +1200,7 @@ export async function handleApprenticeshipApi(route, request, env) {
               id: p.id,
               name: p.name,
               description: p.description || "",
-              // What they are signing up to: how many steps the programme runs to, and how
+              // What they are signing up to: how many steps the program runs to, and how
               // many of those exist today.
               stepCount: p.stepCount || 3,
               builtCount: built.length,
@@ -1204,21 +1214,32 @@ export async function handleApprenticeshipApi(route, request, env) {
       });
     }
 
-    // POST account/projects/<projectId>/join -- pick a programme. This only puts it on
+    // POST account/projects/<projectId>/join -- pick a program. This only puts it on
     // their dashboard; which step they start, and when, is theirs to choose.
     if (parts[1] === "projects" && parts.length === 4 && parts[3] === "join" && method === "POST") {
       const account = await requireRespondent(request, env);
       if (!account) return json({ error: "Not signed in" }, 401);
       const project = await getProject(env, str(parts[2]));
       if (!project || project.openToRespondents === false) {
-        return json({ error: "That programme isn't open to join." }, 404);
+        return json({ error: "That program isn't open to join." }, 404);
       }
       const surveys = (await listPrefix(env, SURVEY_PREFIX)).filter((x) => x.projectId === project.id);
       if (!surveys.length) {
-        return json({ error: "That programme has no steps built yet." }, 409);
+        return json({ error: "That program has no steps built yet." }, 409);
       }
       await env.BOX_KV.put(joinKey(account.id, project.id), new Date().toISOString());
-      return json(await accountDashboard(env, account));
+      // The first step to walk into, worked out from the program's own surveys rather
+      // than dug back out of the dashboard payload -- so the page has somewhere to go
+      // even if anything about that payload surprises it.
+      const assessments = await assessmentsForProject(
+        env, account, surveys, project.stepCount || 3);
+      const firstOpen = assessments.find((a) => !a.locked && !a.placeholder && a.surveyId);
+      return json({
+        ...await accountDashboard(env, account, [project.id]),
+        firstStep: firstOpen
+          ? { surveyId: firstOpen.surveyId, kind: firstOpen.kind || "chat", step: firstOpen.step }
+          : null,
+      });
     }
 
     // POST account/todo { surveyId, itemId, done } -- tick an improvement off, or untick
@@ -1772,12 +1793,12 @@ export async function handleApprenticeshipApi(route, request, env) {
       id: crypto.randomUUID(),
       name: str(body.name),
       description: str(body.description),
-      // How many steps the programme runs to. The respondent sees a tab for each from the
+      // How many steps the program runs to. The respondent sees a tab for each from the
       // first day, so they can see the shape of what they have taken on rather than only
       // the step in front of them; steps an admin hasn't built yet show as placeholders.
       stepCount: stepCount(body.stepCount),
-      // Whether an employer can pick this programme for themselves from their dashboard.
-      // Open by default -- a programme with a step built is a programme meant to be run;
+      // Whether an employer can pick this program for themselves from their dashboard.
+      // Open by default -- a program with a step built is a program meant to be run;
       // close one to keep a draft off the list while it is being written.
       openToRespondents: body.openToRespondents !== false,
       createdAt: now,

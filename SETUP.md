@@ -740,15 +740,15 @@ second respondent.
 A set of chat-style self-assessments that tell an employer how ready they actually are
 to run a registered apprenticeship — and, where they are not, what to do about it.
 
-**Projects hold assessments.** A *project* is one programme. Inside it an admin builds
+**Projects hold assessments.** A *project* is one program. Inside it an admin builds
 one or more *assessments*, each made of *sections*, each section made of *questions*.
 Everything a given person finishes inside a project rolls up into one readiness
 dashboard for them.
 
-**Employers pick their own programme.** A new account's dashboard lists the programmes on
+**Employers pick their own program.** A new account's dashboard lists the programs on
 offer — name, description, how many steps and how many are ready. **Start** adds the
-programme and opens its first step straight away; if that step isn't built yet, the
-programme lands on their dashboard and says so. They can be in more than one at a time, and
+program and opens its first step straight away; if that step isn't built yet, the
+program lands on their dashboard and says so. They can be in more than one at a time, and
 after that first step everything is driven from the dashboard's tabs.
 
 A project appears on that list only if it is **open to respondents** (a per-project toggle,
@@ -874,10 +874,10 @@ Plus a readiness percentage for that step, with a band:
 
 **Finishing an assessment takes them straight to the dashboard.** The chat says the last
 question's piece and then hands over — the score, the to-do list and the rest of the
-programme all live in one place rather than being shown twice.
+program all live in one place rather than being shown twice.
 
 **The Apprenticeship Readiness Dashboard** (`/apprenticeship/dashboard.html`) is the
-respondent's own page, and it is **a tab per step**. Every step in the programme gets a tab
+respondent's own page, and it is **a tab per step**. Every step in the program gets a tab
 from the first day, including ones the admin hasn't built yet — so a respondent can see the
 shape of what they have taken on, not just the step in front of them. A locked tab is
 greyed and cannot be opened; an unbuilt one says "Coming soon" and keeps everything behind

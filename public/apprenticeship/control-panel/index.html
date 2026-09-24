@@ -47,7 +47,7 @@
   <div id="projectsView">
     <div class="card">
       <h3>Projects</h3>
-      <p class="desc">A project is one programme of self-assessments. Everything a
+      <p class="desc">A project is one program of self-assessments. Everything a
         respondent completes inside a project rolls up into a single readiness dashboard
         for them.</p>
       <div id="projectList"><div class="empty">Loading…</div></div>
@@ -68,18 +68,18 @@
       <input type="text" id="pName" placeholder="e.g. 2026 Apprenticeship Readiness">
       <label for="pDesc">Description <span class="hint">(internal, optional)</span></label>
       <textarea id="pDesc"></textarea>
-      <label for="pSteps">Steps in this programme</label>
+      <label for="pSteps">Steps in this program</label>
       <input type="number" id="pSteps" min="1" max="10" step="1" value="3">
       <label style="text-transform:none; letter-spacing:0; font-size:12.5px; font-weight:500;
                     color:var(--text-primary); margin-top:14px">
         <input type="checkbox" id="pOpen" checked
                style="width:auto; margin-right:7px; vertical-align:-2px">Employers can pick
-        this programme themselves</label>
-      <p class="desc" style="margin:6px 0 0">Untick to keep a programme you are still
-        writing off the list respondents choose from. A programme with no step built never
+        this program themselves</label>
+      <p class="desc" style="margin:6px 0 0">Untick to keep a program you are still
+        writing off the list respondents choose from. A program with no step built never
         appears either way.</p>
       <p class="desc" style="margin:8px 0 0">Respondents see a tab for every step from the
-        first day, so they can see the shape of the programme. Steps you haven't built yet
+        first day, so they can see the shape of the program. Steps you haven't built yet
         show as &ldquo;Coming soon&rdquo; and stay locked.</p>
       <div class="row" style="margin-top:14px"><button type="button" class="primary" id="pCreate">Create project</button></div>
       <div class="msg" id="pMsg" hidden></div>
@@ -393,9 +393,9 @@
     if (!currentProject) return;
     var nowOpen = currentProject.openToRespondents !== false;
     if (!window.confirm(nowOpen
-      ? "Close this programme? Employers will no longer see it on the list they pick from. "
+      ? "Close this program? Employers will no longer see it on the list they pick from. "
         + "Anyone already in it keeps it."
-      : "Open this programme so employers can pick it themselves?")) return;
+      : "Open this program so employers can pick it themselves?")) return;
     api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
       body: JSON.stringify({ name: currentProject.name,
         description: currentProject.description || "",
@@ -406,7 +406,7 @@
 
   el("stepsBtn").addEventListener("click", function () {
     if (!currentProject) return;
-    var count = window.prompt("How many steps does this programme run to? Respondents see a "
+    var count = window.prompt("How many steps does this program run to? Respondents see a "
       + "tab for each.", String(currentProject.stepCount || 3));
     if (count === null) return;
     api("projects/" + encodeURIComponent(currentProject.id), { method: "PUT",
