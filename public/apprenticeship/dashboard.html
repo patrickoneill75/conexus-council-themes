@@ -182,6 +182,16 @@
     return html;
   }
 
+  /**
+   * The one thing to do on a step, as a button rather than a line of link text. It is the
+   * point of the panel, so it is the only thing in it that looks pressable, and it sits on
+   * the right where the eye lands after reading the step.
+   */
+  function stepAction(href, label, variant) {
+    return '<div class="step-action"><a class="btn-action' + (variant ? " " + variant : "")
+      + '" href="' + href + '">' + esc(label) + "</a></div>";
+  }
+
   /** Where a step is answered: the chat, or the workforce form. */
   function stepLink(a) {
     return (a.kind === "workforce" ? "/apprenticeship/workforce.html?survey="
@@ -217,10 +227,11 @@
           + '<span class="of">finished ' + esc(String(a.submittedAt || "").slice(0, 10))
           + "</span></div>"
           + workforceHtml(a)
-          + '<div class="meta"><a class="link" href="' + link + '">Open it again</a></div>';
+          + stepAction(link, "Open it again", "ghost");
       } else {
         html += '<div class="meta">Map your roles, see the gap you are facing, and size '
-          + 'apprentices against it. \u00b7 <a class="link" href="' + link + '">Start this step</a></div>';
+          + "apprentices against it.</div>"
+          + stepAction(link, "Start this step");
       }
       return html + "</div>";
     }
@@ -247,16 +258,15 @@
           + "% when you answered; " + esc(a.overall.percent) + "% with what you have ticked off since.</div>";
       }
       html += '<div class="meta">Finished ' + esc(String(a.submittedAt || "").slice(0, 10))
-        + ' · <a class="link" href="' + link + '">Take it again</a></div>';
+        + "</div>" + stepAction(link, "Take it again", "ghost");
       (a.sections || []).forEach(function (section) { html += sectionScoreHtml(section); });
       html += todoPackHtml(a);
     } else if (a.status === "in-progress") {
-      html += '<div class="meta"><a class="link" href="' + link
-        + '">Pick up where you left off</a></div>';
+      html += stepAction(link, "Pick up where you left off");
     } else {
       html += '<div class="meta">' + a.questionCount + " question"
-        + (a.questionCount === 1 ? "" : "s") + ' · <a class="link" href="' + link
-        + '">Start this step</a></div>';
+        + (a.questionCount === 1 ? "" : "s") + "</div>"
+        + stepAction(link, "Start this step");
     }
     return html + "</div>";
   }

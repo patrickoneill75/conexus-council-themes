@@ -88,6 +88,16 @@
 .steptab.active { background:var(--navy); border-color:var(--navy); color:#fff; }
 .steptab.active .sub { color:rgba(255,255,255,.74); }
 .steptab.locked, .steptab:disabled { opacity:.45; cursor:not-allowed; background:var(--wash); }
+/* The action on a step: a real button, right-aligned, because it is the one thing to do on
+   that panel and a line of link text read as decoration beside the numbers above it. */
+.step-action { display:flex; justify-content:flex-end; margin-top:14px; }
+.btn-action { display:inline-flex; align-items:center; font:inherit; font-weight:600;
+              font-size:13.5px; border-radius:9px; padding:10px 20px; text-decoration:none;
+              background:var(--accent); border:1px solid var(--accent); color:#fff;
+              white-space:nowrap; }
+.btn-action:hover { background:#2a5095; border-color:#2a5095; }
+.btn-action.ghost { background:transparent; border-color:var(--border); color:var(--accent); }
+.btn-action.ghost:hover { background:var(--wash); }
 .locked { opacity:.62; }
 .lock-note { font-size:12.5px; border-left:4px solid var(--border); background:var(--wash);
              border-radius:8px; padding:11px 14px; margin-top:10px; color:var(--text-secondary); }
