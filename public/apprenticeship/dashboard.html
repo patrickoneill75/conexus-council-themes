@@ -47,6 +47,7 @@
       <p class="sub" id="subline">Loading…</p>
     </div>
   </header>
+  <div class="msg err" id="err" hidden></div>
   <div id="body"></div>
 </div>
 
@@ -67,6 +68,16 @@
   });
 
   if (!session.token()) { session.requireSignIn("/apprenticeship/dashboard.html"); return; }
+
+  /** Errors belong on the page. An alert can be suppressed, and a silent one reads as a
+   *  button that does nothing. */
+  function showError(text) {
+    var box = el("err");
+    box.hidden = false;
+    box.textContent = text;
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  function hideError() { el("err").hidden = true; }
 
   /* ---------- one step's score line, gate marker and to-do list ---------- */
 
@@ -171,10 +182,16 @@
     return html;
   }
 
+  /** Where a step is answered: the chat, or the workforce form. */
+  function stepLink(a) {
+    return (a.kind === "workforce" ? "/apprenticeship/workforce.html?survey="
+                                   : "/apprenticeship/respond.html?survey=")
+      + encodeURIComponent(a.surveyId);
+  }
+
   function assessmentHtml(a) {
     var workforce = a.kind === "workforce";
-    var link = (workforce ? "/apprenticeship/workforce.html?survey="
-                          : "/apprenticeship/respond.html?survey=") + encodeURIComponent(a.surveyId);
+    var link = stepLink(a);
     var html = '<div class="assessment' + (a.locked ? " locked" : "") + '">'
       + '<div class="step-head"><span class="name">' + esc(a.surveyName) + "</span></div>";
 
@@ -461,25 +478,55 @@
     });
   });
 
-  // Joining puts the programme on the dashboard and nothing more -- which step they start,
-  // and when, stays theirs to choose.
+  /**
+   * Joining puts the programme on the dashboard and nothing more -- which step they start,
+   * and when, stays theirs to choose.
+   *
+   * The join response IS the dashboard, so the page is drawn from it straight away. It
+   * used to wait on a second call for the offer list and only draw inside that call's
+   * success path, which meant a join that had already succeeded on the server left the
+   * page sitting exactly as it was if that second call so much as hiccuped -- and because
+   * the catch stayed silent on "Not signed in", the press looked like it did nothing at
+   * all. Nothing between the press and the redraw can fail now, and nothing fails quietly.
+   */
   el("body").addEventListener("click", function (event) {
     var button = event.target.closest && event.target.closest("[data-join]");
     if (!button || button.disabled) return;
+    var projectId = button.getAttribute("data-join");
     button.disabled = true;
     button.textContent = "Starting\u2026";
-    session.api("account/projects/" + encodeURIComponent(button.getAttribute("data-join")) + "/join",
-      { method: "POST" })
+    hideError();
+
+    session.api("account/projects/" + encodeURIComponent(projectId) + "/join", { method: "POST" })
       .then(function (data) {
-        return session.api("account/projects").then(function (list) {
-          joinable = list.projects || [];
-          render(data);
+        // The button says Start, so it starts: straight into the first step that is open.
+        // Redrawing the page in place was the whole complaint -- it looked like the press
+        // had done nothing.
+        var joinedProject = (data.projects || []).filter(function (p) {
+          return p.id === projectId;
+        })[0];
+        var first = joinedProject && (joinedProject.assessments || []).filter(function (a) {
+          return !a.locked && !a.placeholder && a.surveyId;
+        })[0];
+        if (first) {
+          window.location.href = stepLink(first);
+          return;
+        }
+        // Nothing open to walk into -- a programme whose first step is not built yet. Then
+        // the dashboard is the honest answer, and it is drawn from the join's own response
+        // so nothing between the press and the redraw can fail.
+        joinable = joinable.map(function (p) {
+          return p.id === projectId ? Object.assign({}, p, { joined: true }) : p;
         });
+        render(data);
+        showError("That programme is on your dashboard, but its first step isn't ready to "
+          + "open yet.");
       })
       .catch(function (e) {
         button.disabled = false;
         button.textContent = "Start";
-        if (e && e.message !== "Not signed in") window.alert(e.message);
+        if (e && e.message === "Not signed in") return; // api() is already redirecting
+        showError("Couldn't start that programme: " + (e && e.message ? e.message : e));
       });
   });
 
@@ -494,7 +541,7 @@
   }).catch(function (e) {
     if (e && e.message === "Not signed in") return; // api() is already redirecting
     el("subline").textContent = "";
-    el("body").innerHTML = '<div class="card">' + esc(e.message) + "</div>";
+    el("body").innerHTML = '<div class="card">' + esc(e.message || String(e)) + "</div>";
   });
 })();
 </script>
