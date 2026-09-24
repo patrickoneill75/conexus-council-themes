@@ -248,17 +248,18 @@
    * with how much there is to read, so a one-line section name does not hold up the
    * question behind it.
    */
-  // An adult reads prose at roughly 240 words a minute. The pause after a bubble is a
-  // share of how long that bubble actually takes to read, so a section's paragraph of
-  // context holds the next line back and a four-word heading barely does.
+  // An adult reads prose at roughly 240 words a minute. The pause after a bubble is how
+  // long that bubble actually takes to read, so a section's paragraph of context holds the
+  // next line back and a four-word heading barely does.
   //
-  // A share, not the whole of it: the message stays on screen, so they carry on reading
-  // while the next one arrives, and waiting out a full read of everything would make a
-  // six-bubble section feel like a lecture. Clamped at both ends -- below the floor the
-  // staging stops reading as staging, above the ceiling it reads as a hang.
+  // The full read time, not a share of it. Half was tried first, on the reasoning that the
+  // message stays on screen so they carry on reading while the next arrives -- in practice
+  // that read as rushed. Clamped at both ends: below the floor the staging stops reading as
+  // staging, above the ceiling a genuinely long paragraph would hold the chat for its whole
+  // seventeen seconds.
   var WORDS_PER_MINUTE = 240;
-  var READ_FRACTION = 0.5;
-  var GAP_MIN_MS = 500, GAP_MAX_MS = 4000;
+  var READ_FRACTION = 1;
+  var GAP_MIN_MS = 1000, GAP_MAX_MS = 8000;
 
   function gapAfter(text) {
     var words = String(text || "").trim().split(/\s+/).filter(Boolean).length;

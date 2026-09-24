@@ -820,9 +820,9 @@ there is no next question for it to precede.
 section's context and the question behind it read as someone talking rather than a wall of
 text. The first bubble is always immediate and nothing delays a reply — an earlier version
 paused before the first bubble too, on top of an API call the respondent had already
-waited through, and it made every answer feel slow. The gap after a bubble is half its
-reading time at 240 words a minute, floored at 0.5s and capped at 4s — a section's
-paragraph of context holds the next line back, a four-word heading barely does.
+waited through, and it made every answer feel slow. The gap after a bubble is its reading
+time at 240 words a minute, floored at 1s and capped at 8s — a section's paragraph of
+context holds the next line back, a four-word heading barely does.
 
 **When an answer isn't an answer.** Claude reads each answer as it arrives and decides
 two separate things: whether the person engaged with the question at all, and how far
