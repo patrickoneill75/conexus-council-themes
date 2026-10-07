@@ -3005,7 +3005,7 @@ test("partner_intel: ask without a Claude key returns a labeled keyword ranking 
   assert.equal([...env.BOX_KV.store.keys()].filter((k) => k.startsWith("pi:ask:") && k !== "pi:ask:recent").length, 0);
 });
 
-test("partner_intel: ask never shows a company or evidence the model was not given, and caches by dataset version", async () => {
+test("partner_intel: ask never shows a company or evidence the model was not given, and caches by what Claude would read", async () => {
   const rows = SOLVERS();
   const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
   let bodies = [];
@@ -3030,10 +3030,19 @@ test("partner_intel: ask never shows a company or evidence the model was not giv
   const second = await (await ask()).json();
   assert.equal(second.cached, true);
   assert.equal(bodies.length, 1, "the repeat question made no Claude call");
-  // A republish is a new dataset version, so the saved answer is no longer trusted.
+  // COST: every daily scan publishes a new version. When nothing the question touches changed,
+  // the prompt is the same, so the saved answer is reused instead of paid for again.
   await pi("relay/publish", relay("publish", "POST", { version: "new-version", generated_at: "x", roster_updated_at: "r1", topics: TOPICS, events: [], insights: rows, companies: [], unmatched: [], stats: {} }), env);
+  assert.equal((await (await ask()).json()).cached, true, "a republish that changed nothing relevant costs nothing");
+  assert.equal(bodies.length, 1);
+  // A new row that answers the question changes what Claude would read, so it is asked again.
+  const more = [...rows, ins({ kind: "solution", urgency: "none", company_id: "c-c", title: "AI inspection cameras on the press line",
+    detail: "Installed vision inspection with AI.", topic: "quality", tags: ["ai", "inspection"], solves: "quality inspection" })];
+  await pi("relay/publish", relay("publish", "POST", { version: "v3", generated_at: "x", roster_updated_at: "r1", topics: TOPICS, events: [], insights: more, companies: [], unmatched: [], stats: {} }), env);
   assert.equal((await (await ask()).json()).cached, false);
   assert.equal(bodies.length, 2);
+  const usage = (await getJson("status", env, token)).usage.thisMonth.ask;
+  assert.deepEqual([usage.calls, usage.input, usage.output, usage.reused], [2, 20, 10, 2], "the meter counts paid calls and reuses");
 });
 
 test("partner_intel: a failed Claude call is an error and is not saved as an answer", async () => {
@@ -3221,7 +3230,7 @@ test("partner_intel: database files go to the chosen Box folder, as a new versio
   const save = (name, text = "{}") => pi("relay/box/save", relay("box/save", "POST", { name, text }), env);
   assert.equal((await save("partner_intel_database.json")).status, 409, "no database folder chosen yet");
   await setFolder(env, token, "data", "22", "Database");
-  assert.equal((await save("../../evil.json")).status, 400, "only the three database files may be written");
+  assert.equal((await save("../../evil.json")).status, 400, "only the database files may be written");
   assert.equal((await save("notes.docx")).status, 400);
   const uploads = [];
   const handler = boxFake({ 22: [fileItem("700", "partner_intel_state.json", "2026-01-01T00:00:00Z")] }, {}, uploads);
@@ -3234,6 +3243,9 @@ test("partner_intel: database files go to the chosen Box folder, as a new versio
   assert.equal(updated.updated, true, "Box answers 409 to a second upload of the same name, so it is a new version");
   assert.match(uploads[1].url, /files\/700\/content$/);
   assert.equal((await pi("relay/box/save", relay("box/save", "POST", { name: "partner_intel_state.json", text: "x" }, "wrong"), env)).status, 401);
+  const archived = await withFetch(handler, async () => (await save("partner_intel_results_archive.json", "{}")).json());
+  assert.equal(archived.ok, true, "the results archive is a database file too");
+  assert.equal((await pi("relay/box/load", relay("box/load", "GET"), env)).status, 400);
 });
 
 test("partner_intel: a saved state file can be read back, and a missing one is a plain 404", async () => {
@@ -3484,6 +3496,68 @@ test("partner_intel: summaries follow the filters they were asked under, so a so
   await sum({ days: 30, topics: ["quality"] });
   await sum({ days: 30, topics: ["quality"], source: ["ADAPT"] });
   assert.deepEqual(seen, [2, 1], "the ADAPT summary was written from ADAPT's rows only");
+});
+
+const oneBullet = (t) => ({ topic_id: t.topic_id, bullets: [
+  { text: "First point.", evidence_ids: [t.evidence[0].id] }, { text: "Second point.", evidence_ids: t.evidence.slice(1).map((e) => e.id).slice(0, 4) }] });
+
+test("partner_intel: COST a summary is reused when the window rolls and only a row changes, not paid for again", async () => {
+  const base = Array.from({ length: 10 }, (_, k) => ins({ topic: "quality", company_id: ["c-a", "c-b", "c-c"][k % 3], meeting_id: `m-q${k}`, title: `Quality point ${k}` }));
+  const { env, token } = await piEnv(base, { partner_intel_claude_api: "k" });
+  let calls = 0;
+  const handler = (url, init) => { calls++; return summaryOut(topicsIn(init).payload, oneBullet); };
+  const sum = () => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  await sum();
+  assert.equal(calls, 1);
+  // A day later: one new row came in. Ten of the eleven rows are the ones the summary was written from.
+  await publishV2(env, [...base, ins({ topic: "quality", company_id: "c-c", meeting_id: "m-new", title: "A newer quality point" })]);
+  const again = await sum();
+  assert.equal(calls, 1, "ten of eleven rows unchanged: the saved summary is reused");
+  assert.equal(again.summaries.quality.bullets.length, 2);
+  assert.equal((await getJson("status", env, token)).usage.thisMonth.summaries.reused, 1);
+});
+
+test("partner_intel: a summary is written again when the rows have moved on, and reuse never drifts", async () => {
+  const base = Array.from({ length: 10 }, (_, k) => ins({ topic: "quality", company_id: ["c-a", "c-b", "c-c"][k % 3], meeting_id: `m-d${k}`, title: `Quality point ${k}` }));
+  const { env, token } = await piEnv(base, { partner_intel_claude_api: "k" });
+  let calls = 0;
+  const handler = (url, init) => { calls++; return summaryOut(topicsIn(init).payload, oneBullet); };
+  const sum = () => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  await sum();
+  // Each step adds one row: 10/11, then 10/12, then 10/13 of the rows it was WRITTEN from.
+  // Measured against the last reuse instead, every step would look 90% the same forever.
+  const rows = [...base];
+  for (let k = 0; k < 3; k++) {
+    rows.push(ins({ topic: "quality", company_id: "c-a", meeting_id: `m-step${k}`, title: `Step ${k}` }));
+    await publishV2(env, rows);
+    await sum();
+  }
+  assert.equal(calls, 2, "10/11 and 10/12 reuse; 10/13 is under 80% of the original rows, so it is written again");
+});
+
+test("partner_intel: a summary is not reused when one of its bullets has lost all its rows", async () => {
+  const base = Array.from({ length: 10 }, (_, k) => ins({ topic: "quality", company_id: ["c-a", "c-b", "c-c"][k % 3], meeting_id: `m-l${k}`, title: `Quality point ${k}` }));
+  const { env, token } = await piEnv(base, { partner_intel_claude_api: "k" });
+  let calls = 0, firstEvidence;
+  const handler = (url, init) => { calls++; const { payload } = topicsIn(init); firstEvidence = firstEvidence || payload[0].evidence[0].id;
+    return summaryOut(payload, oneBullet); };
+  const sum = () => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  await sum();
+  // The row the first bullet stands on leaves; 9 of 10 rows are still the same.
+  await publishV2(env, base.filter((r) => r.id !== firstEvidence));
+  await sum();
+  assert.equal(calls, 2, "the first bullet would have nothing to show, so the summary is written again");
+});
+
+test("partner_intel: the scan report adds the pipeline's Claude use to the monthly meter, batch and direct apart", async () => {
+  const { env, token } = await piEnv([]);
+  await pi("relay/report", relay("report", "POST", { mode: "scan", claude_calls: 5, claude_calls_batch: 4, tokens_in_batch: 4000,
+    tokens_out_batch: 800, claude_calls_sync: 1, tokens_in_sync: 900, tokens_out_sync: 300, units_cached: 2, units_from_archive: 3 }), env);
+  const u = (await getJson("status", env, token)).usage.thisMonth;
+  assert.deepEqual([u.extractionBatch.calls, u.extractionBatch.input, u.extractionBatch.output], [4, 4000, 800]);
+  assert.deepEqual([u.extraction.calls, u.extraction.input, u.extraction.output, u.extraction.reused], [1, 900, 300, 5]);
+  await pi("relay/report", relay("report", "POST", { mode: "scan" }), env);
+  assert.equal((await getJson("status", env, token)).usage.thisMonth.extraction.calls, 1, "a quiet scan adds nothing");
 });
 
 const PROGRAM_ROWS = () => [

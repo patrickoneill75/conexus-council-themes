@@ -18,6 +18,7 @@ import dataclasses
 import hashlib
 import json
 import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -230,6 +231,24 @@ def get_client():
     return _client
 
 
+def request_params(unit: Unit, event_type: str, staff: list[str], model: str) -> dict:
+    """The one request shape, sent directly or inside a batch."""
+    return {"model": model, "max_tokens": MAX_OUTPUT_TOKENS, "system": system_prompt(),
+            "messages": [{"role": "user", "content": user_message(unit, event_type, staff)}],
+            "tools": [TOOL], "tool_choice": {"type": "tool", "name": TOOL["name"]}}
+
+
+def parse_response(response) -> tuple[list[dict], dict]:
+    """Rows and usage from a finished message, direct or batched."""
+    if response.stop_reason == "max_tokens":
+        raise OutOfRoom("Claude ran out of room for this section.")
+    for block in response.content:
+        if block.type == "tool_use":
+            usage = {"input": response.usage.input_tokens, "output": response.usage.output_tokens}
+            return block.input.get("insights", []), usage
+    raise RuntimeError(f"Claude did not call {TOOL['name']!r} (stop_reason={response.stop_reason!r})")
+
+
 def call_claude(unit: Unit, event_type: str, staff: list[str], model: str) -> tuple[list[dict], dict]:
     """The single model call. Returns (raw rows, usage).
 
@@ -242,19 +261,8 @@ def call_claude(unit: Unit, event_type: str, staff: list[str], model: str) -> tu
     @retry(retry=retry_if_exception_type((anthropic.APIError, RuntimeError)),
            wait=wait_exponential(multiplier=1, min=2, max=30), stop=stop_after_attempt(4), reraise=True)
     def go():
-        with get_client().messages.stream(
-            model=model, max_tokens=MAX_OUTPUT_TOKENS, system=system_prompt(),
-            messages=[{"role": "user", "content": user_message(unit, event_type, staff)}],
-            tools=[TOOL], tool_choice={"type": "tool", "name": TOOL["name"]},
-        ) as stream:
-            response = stream.get_final_message()
-        if response.stop_reason == "max_tokens":
-            raise OutOfRoom("Claude ran out of room for this section.")
-        for block in response.content:
-            if block.type == "tool_use":
-                usage = {"input": response.usage.input_tokens, "output": response.usage.output_tokens}
-                return block.input.get("insights", []), usage
-        raise RuntimeError(f"Claude did not call {TOOL['name']!r} (stop_reason={response.stop_reason!r})")
+        with get_client().messages.stream(**request_params(unit, event_type, staff, model)) as stream:
+            return parse_response(stream.get_final_message())
 
     return go()
 
@@ -294,6 +302,10 @@ def _read(unit: Unit, event_type: str, staff: list[str], model: str, caller, dep
 def extract_unit(unit: Unit, event_type: str, staff: list[str], model: str, caller=call_claude) -> dict:
     """Run one unit and return the cache entry to store. caller is swapped out in tests."""
     raw_rows, usage, splits = _read(unit, event_type, staff, model, caller)
+    return _entry(unit, event_type, model, raw_rows, usage, splits)
+
+
+def _entry(unit: Unit, event_type: str, model: str, raw_rows: list, usage: dict, splits: int, batch: bool = False) -> dict:
     checked = check_rows(raw_rows, unit.text)
     return {
         "key": cache_key(unit, event_type, model),
@@ -307,4 +319,52 @@ def extract_unit(unit: Unit, event_type: str, staff: list[str], model: str, call
         "raw_count": checked.raw_count,
         "rejected": checked.rejected,
         "rows": checked.rows,
+        **({"batch": True} if batch else {}),
     }
+
+
+# ---------------------------------------------------------------- the batch
+
+BATCH_POLL_SECONDS = 30
+BATCH_CANCEL_GRACE_SECONDS = 600
+
+
+def extract_batch(jobs: dict, staff: list[str], model: str, client=None, wait_minutes: float = 60,
+                  sleep=None, clock=None) -> tuple[dict, list[str], str]:
+    """Read many units through the Message Batches API, at half the price of direct calls.
+
+    jobs maps cache key -> (unit, event_type). Returns (entries by key, keys left over, note).
+    A scan is never urgent, so the discount is worth the wait; but a scan must also finish.
+    If the batch is not done within wait_minutes it is cancelled, whatever finished is kept
+    (a cancelled batch still returns its finished results, and the rest are not billed), and
+    the leftovers go back to the caller to read directly. So are any that failed or ran out
+    of room: the direct path knows how to split a unit, a batch does not.
+    """
+    client = client or get_client()
+    sleep, clock = sleep or time.sleep, clock or time.monotonic
+    batch = client.messages.batches.create(requests=[
+        {"custom_id": key, "params": request_params(unit, event_type, staff, model)}
+        for key, (unit, event_type) in jobs.items()])
+    note = ""
+    deadline = clock() + wait_minutes * 60
+    cancelled = False
+    while batch.processing_status != "ended":
+        if not cancelled and clock() >= deadline:
+            client.messages.batches.cancel(batch.id)
+            cancelled, deadline = True, clock() + BATCH_CANCEL_GRACE_SECONDS
+            note = f"The batch was not done after {wait_minutes:g} minutes; the rest were read directly."
+        elif cancelled and clock() >= deadline:
+            return {}, list(jobs), "The batch could not be cancelled in time; every section was read directly."
+        sleep(BATCH_POLL_SECONDS)
+        batch = client.messages.batches.retrieve(batch.id)
+    entries: dict = {}
+    for item in client.messages.batches.results(batch.id):
+        if item.custom_id not in jobs or item.result.type != "succeeded":
+            continue
+        try:
+            rows, usage = parse_response(item.result.message)
+        except (OutOfRoom, RuntimeError):
+            continue
+        unit, event_type = jobs[item.custom_id]
+        entries[item.custom_id] = _entry(unit, event_type, model, rows, usage, 0, batch=True)
+    return entries, [k for k in jobs if k not in entries], note

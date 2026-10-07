@@ -54,6 +54,12 @@ const SUMMARY_PROMPT_VERSION = "pi-sum-2";
 const MAX_SUMMARY_TOPICS = 8;     // topics written in one Claude call
 const EVIDENCE_PER_TOPIC = 25;    // rows the model reads per topic
 const MAX_ROWS_PER_MEETING = 3;   // however long the meeting, it is one voice
+// A saved summary is reused for a slightly different set of rows (a window that rolled a day,
+// a filter that adds a row or two) when at least this share of the rows it was written from
+// is the same. Compared with the rows it was WRITTEN from, never with a later reuse, so a
+// summary cannot drift away from its evidence one day at a time.
+const SUMMARY_REUSE_OVERLAP = 0.8;
+const SUMMARY_INDEX_SIZE = 25;
 // One-time updates the control panel offers, each usable once. See pendingUpdate().
 const ONE_TIME_UPDATES = [{
   id: "programs-v1", schema: 2, title: "One-time update: Programs",
@@ -62,7 +68,8 @@ const ONE_TIME_UPDATES = [{
     "This button disappears after one use. Without it the same rebuild happens at the next scan.",
 }];
 // The only files the pipeline may write to the database folder in Box.
-const DB_FILES = new Set(["partner_intel_database.json", "partner_intel_insights.csv", "partner_intel_state.json"]);
+const DB_FILES = new Set(["partner_intel_database.json", "partner_intel_insights.csv", "partner_intel_state.json",
+  "partner_intel_results_archive.json"]);
 
 const MODEL = "claude-opus-5";
 const ASK_PROMPT_VERSION = "pi-ask-1";
@@ -972,13 +979,19 @@ async function summarizeTopics(env, data, index, overrides, labels, params, topi
     index, overrides, labels);
   const wanted = groups.filter((g) => topicIds.includes(g.topic)).slice(0, MAX_SUMMARY_TOPICS);
   const summaries = {}, missing = [];
+  let reused = 0;
   for (const g of wanted) {
     const evidence = pickEvidence(g.items, index);
     const key = await summaryKey(g.topic, evidence);
-    const stored = await readJson(env, key, null);
+    let stored = await readJson(env, key, null);
+    if (!stored) {
+      stored = await nearSummary(env, g.topic, evidence, key);
+      if (stored) reused++;
+    }
     if (stored) summaries[g.topic] = presentSummary(stored, evidence, index, labels, overrides);
     else missing.push({ g, evidence, key });
   }
+  if (reused) await addUsage(env, "summaries", null, { reused });
   if (!missing.length) return { summaries };
   if (!env.partner_intel_claude_api) {
     return { summaries, unavailable: "Claude is not set up for this tool yet, so summaries cannot be written." };
@@ -990,6 +1003,7 @@ async function summarizeTopics(env, data, index, overrides, labels, params, topi
   }));
   const { input, usage } = await callClaudeTool(env, SUMMARY_SYSTEM,
     `<topics>\n${JSON.stringify(payload, null, 1)}\n</topics>`, SUMMARY_TOOL, 4000 + 900 * payload.length);
+  await addUsage(env, "summaries", usage);
   const shown = new Map(missing.map(({ g, evidence }) => [g.topic, new Set(evidence.map((e) => e.id))]));
   const bulletsByTopic = validateSummaries(input, shown);
   for (const { g, evidence, key } of missing) {
@@ -998,9 +1012,78 @@ async function summarizeTopics(env, data, index, overrides, labels, params, topi
     const stored = { topic: g.topic, bullets, model: MODEL, promptVersion: SUMMARY_PROMPT_VERSION, usage,
       evidenceIds: evidence.map((e) => e.id), createdAt: new Date().toISOString() };
     await env.BOX_KV.put(key, JSON.stringify(stored));
+    await indexSummary(env, g.topic, key, stored.evidenceIds);
     summaries[g.topic] = presentSummary(stored, evidence, index, labels, overrides);
   }
   return { summaries };
+}
+
+const summaryIndexKey = (topic) => `pi:sumidx:${encodeURIComponent(topic)}`;
+
+/** Remember a summary Claude wrote, and the rows it was written from, so a near match can find it. */
+async function indexSummary(env, topic, key, ids) {
+  const list = (await readJson(env, summaryIndexKey(topic), [])).filter((e) => e && e.key !== key);
+  list.unshift({ key, ids });
+  await env.BOX_KV.put(summaryIndexKey(topic), JSON.stringify(list.slice(0, SUMMARY_INDEX_SIZE)));
+}
+
+/**
+ * A saved summary written from nearly the same rows, or null. Near means the rows overlap by
+ * at least SUMMARY_REUSE_OVERLAP (shared rows over all rows of either set), and every bullet
+ * still has at least one of its cited rows in the current set, so no bullet is left making a
+ * point the page can no longer show. A reuse is saved under the exact key, so the next view
+ * is one read, but it is not indexed: the next near match is measured against the rows the
+ * summary was actually written from.
+ */
+async function nearSummary(env, topic, evidence, key) {
+  const now = new Set(evidence.map((e) => e.id));
+  let best = null, bestOverlap = 0;
+  for (const entry of await readJson(env, summaryIndexKey(topic), [])) {
+    if (!entry || !Array.isArray(entry.ids)) continue;
+    const basis = new Set(entry.ids);
+    let shared = 0;
+    for (const id of now) if (basis.has(id)) shared++;
+    const overlap = shared / (basis.size + now.size - shared);
+    if (overlap > bestOverlap) { best = entry; bestOverlap = overlap; }
+  }
+  if (!best || bestOverlap < SUMMARY_REUSE_OVERLAP) return null;
+  const stored = await readJson(env, best.key, null);
+  if (!stored || !stored.bullets.every((b) => b.evidence_ids.some((id) => now.has(id)))) return null;
+  const copy = { ...stored, reusedFrom: best.key, overlap: Math.round(bestOverlap * 100) / 100 };
+  await env.BOX_KV.put(key, JSON.stringify(copy));
+  return copy;
+}
+
+/* ------------------------------------------------------------------ usage meter */
+
+const usageKey = (d = new Date()) => `pi:usage:${d.toISOString().slice(0, 7)}`;
+const USAGE_KINDS = ["extraction", "extractionBatch", "summaries", "ask"];
+
+/**
+ * Add one call's tokens (and any counted savings) to this month's totals, so the control
+ * panel can show where Claude spend goes. Read-modify-write on one key: two calls finishing
+ * at the same moment can lose an increment, which is fine for a meter.
+ */
+async function addUsage(env, kind, usage, extra = {}) {
+  if (!USAGE_KINDS.includes(kind)) return;
+  const key = usageKey();
+  const all = await readJson(env, key, {});
+  const row = { calls: 0, input: 0, output: 0, reused: 0, ...(hasOwn(all, kind) ? all[kind] : {}) };
+  if (usage) {
+    row.calls += Number(extra.calls) || 1;
+    row.input += Number(usage.input_tokens ?? usage.input) || 0;
+    row.output += Number(usage.output_tokens ?? usage.output) || 0;
+  }
+  row.reused += Number(extra.reused) || 0;
+  all[kind] = row;
+  await env.BOX_KV.put(key, JSON.stringify(all));
+}
+
+async function usageView(env) {
+  const now = new Date();
+  const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+  const [thisMonth, lastMonth] = await Promise.all([readJson(env, usageKey(now), {}), readJson(env, usageKey(last), {})]);
+  return { thisMonth: { month: usageKey(now).slice(9), ...thisMonth }, lastMonth: { month: usageKey(last).slice(9), ...lastMonth } };
 }
 
 /* ------------------------------------------------------------------ programs and meetings */
@@ -1369,10 +1452,6 @@ async function ask(env, data, roster, overrides, question, sourceList = []) {
   const index = companyIndex(roster, data);
   const labels = topicLabels(data, overrides);
   const sources = new Set(sourceList);
-  const key = `pi:ask:${await sha(`${ASK_PROMPT_VERSION}|${MODEL}|${data.version}|${[...sources].sort().join(",")}|${nameKey(question)}`)}`;
-  const hit = await readJson(env, key, null);
-  if (hit) return presentAnswer({ ...hit, cached: true }, data, index, overrides, labels);
-
   const short = shortlist(question, data, index, overrides, labels, 10, sources);
   const considered = { companies: short.companies.length, insights: short.docs };
   if (!short.companies.length) {
@@ -1396,7 +1475,17 @@ async function ask(env, data, roster, overrides, question, sourceList = []) {
       member: co ? co.status === "Active" : false, evidence: c.evidence.map(evidenceForPrompt) };
   });
   const userText = `<question>\n${question}\n</question>\n<candidates>\n${JSON.stringify(candidates, null, 1)}\n</candidates>`;
+  // Keyed on exactly what Claude would read. A daily scan that changes nothing relevant to the
+  // question builds the same prompt and so reuses the saved answer; a new row, a renamed or
+  // re-statused partner, or a different question builds a different one.
+  const key = `pi:ask:${await sha(`${ASK_PROMPT_VERSION}|${MODEL}|${userText}`)}`;
+  const hit = await readJson(env, key, null);
+  if (hit) {
+    await addUsage(env, "ask", null, { reused: 1 });
+    return presentAnswer({ ...hit, cached: true }, data, index, overrides, labels);
+  }
   const { answer, usage } = await callClaude(env, userText);
+  await addUsage(env, "ask", usage);
   stored = { question, answer: validateAnswer(answer, shown), ranking: "claude", considered, model: MODEL,
     promptVersion: ASK_PROMPT_VERSION, datasetVersion: data.version, usage, createdAt: new Date().toISOString() };
   await env.BOX_KV.put(key, JSON.stringify(stored));
@@ -1517,6 +1606,17 @@ async function handleRelay(route, request, env) {
     const body = await readBody(request);
     if (!body) return json({ error: "A report is required." }, 400);
     await env.BOX_KV.put(REPORT_KEY, JSON.stringify(body));
+    // The pipeline's Claude use joins the same monthly meter: batch and full price apart,
+    // because a batch token costs half.
+    const n = (v) => Math.max(0, Number(v) || 0);
+    if (n(body.claude_calls_sync)) {
+      await addUsage(env, "extraction", { input: n(body.tokens_in_sync), output: n(body.tokens_out_sync) }, { calls: n(body.claude_calls_sync) });
+    }
+    if (n(body.claude_calls_batch)) {
+      await addUsage(env, "extractionBatch", { input: n(body.tokens_in_batch), output: n(body.tokens_out_batch) }, { calls: n(body.claude_calls_batch) });
+    }
+    const reusedUnits = n(body.units_cached) + n(body.units_from_archive);
+    if (reusedUnits) await addUsage(env, "extraction", null, { reused: reusedUnits });
     return json({ ok: true });
   }
   return json({ error: "Not found" }, 404);
@@ -1544,7 +1644,7 @@ export async function handlePartnerIntelApi(route, request, env) {
         settings, roster: rosterSummary(roster), dataset: meta,
         relinkNeeded: Boolean(meta) && (meta.roster_updated_at || "") !== (roster.updatedAt || ""),
         report, rosterSync, oneTimeUpdate, boxConnected: Boolean(token), githubConfigured: Boolean(env.GITHUB_TOKEN && env.GITHUB_REPO),
-        claudeConfigured: Boolean(env.partner_intel_claude_api),
+        claudeConfigured: Boolean(env.partner_intel_claude_api), usage: await usageView(env),
       });
     }
     if (route === "settings" && method === "POST") {

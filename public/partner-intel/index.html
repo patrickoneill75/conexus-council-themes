@@ -117,6 +117,14 @@
     box.insertAdjacentHTML("beforeend", chunk.map(function (t, k) { return topicCard(t, from + k); }).join(""));
     var need = chunk.filter(function (t) { return !t.summary; });
     if (!need.length) return;
+    // Wait a moment before asking for summaries. Someone clicking through windows and filters
+    // would otherwise start a paid Claude call for every view they pass through.
+    setTimeout(function () { if (mine === seq) writeSummaries(box, need, scope, mine); }, SUMMARY_DELAY_MS);
+  }
+
+  var SUMMARY_DELAY_MS = 700;
+
+  function writeSummaries(box, need, scope, mine) {
     PI.post("summarize", Object.assign({}, scope, { topics: need.map(function (t) { return t.topic; }) })).then(function (r) {
       if (mine !== seq) return;
       need.forEach(function (t) {

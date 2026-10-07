@@ -1015,6 +1015,7 @@ The Worker serves the data from Workers KV. The durable copy lives in the **Data
 - `partner_intel_database.json`: everything the tool serves.
 - `partner_intel_insights.csv`: the same insights as a flat table that opens in Excel (company, member status, industry, source folder, type, topic, urgency, quote, source file and more).
 - `partner_intel_state.json`: which files were read and every saved Claude result. If the Worker's own copy is ever empty, the next scan restores from this file and does not read the notes again.
+- `partner_intel_results_archive.json`: every Claude result the live state no longer needs (a file edited, removed, or read with a model you tried and dropped). Every scan looks here before paying Claude, so a file put back, restored from Box's trash, or a model you switch back to costs nothing. Written only when something is archived. Capped at 40 MB; past that the oldest results go first.
 
 If no Database folder is chosen the scan still works, and **Last scan** says nothing was saved to Box.
 
@@ -1085,10 +1086,13 @@ The partner list drives industry, member status, contacts, and how names in the 
 ### Cost
 
 - The first scan is the expensive one. Use the trial run first. **Last scan** shows tokens used.
+- **Notes are read through Anthropic's Message Batches API, at half the price of direct calls** ([Anthropic batch processing docs](https://platform.claude.com/docs/en/build-with-claude/batch-processing): "reducing costs by 50%", "most batches finishing in less than 1 hour"). A scan waits up to 60 minutes for its batch (`PARTNER_INTEL_BATCH_WAIT_MINUTES`), then cancels it, keeps what finished, and reads the rest directly at full price. A section whose answer runs out of room is also read directly, because only the direct path can split it. Set `PARTNER_INTEL_BATCH=false` on the workflow to read everything directly (faster, twice the cost).
+- **Claude use** in the control panel totals this month's and last month's calls and tokens by purpose (notes by batch, notes direct, summaries, Ask), and counts answers served from saved results instead. It shows tokens, not dollars: price them against your Anthropic rate card.
 - A day with no new notes uses no Claude: unchanged files are skipped by Box checksum, and text already read is served from the stored results, keyed by the text, the prompt version and the model, so renaming or moving a file costs nothing.
 - A section too dense for one answer is read in halves and the results merged, so a large section costs a few extra calls, not a failure. **Last scan** counts those.
-- Ask makes one Claude call per new question, over a deterministic shortlist of about ten companies. The answer is saved against the data version, so the same question costs nothing until the next scan changes the data.
-- No Anthropic prompt caching is used (see CLAUDE.md: scans are hours or days apart).
+- Ask makes one Claude call per new question, over a deterministic shortlist of about ten companies. The answer is saved under exactly what Claude would read (the question, the shortlist and its evidence). A daily scan that changes nothing relevant to the question reuses it; a new matching row, or a partner's name or status changing, asks again.
+- Trending summaries are reused across small changes. When a window rolls a day, or a filter adds a row or two, a saved summary is used if at least 80% of the rows it was written from are still the rows behind the topic, and every bullet still has one of its rows to show. The comparison is always with the rows the summary was written from, never with a reuse, so a summary cannot drift one day at a time. The page also waits 0.7 seconds before asking for summaries, so clicking through windows and filters does not start a paid call for every view passed through.
+- No Anthropic prompt caching is used. The instructions and schema shared by every call are about 1,700 tokens, input is the smaller part of an extraction's cost (Claude's written answer is most of it), and inside a batch a cache hit is not guaranteed. Low-volume Worker calls are minutes to days apart (see CLAUDE.md).
 - `claude-opus-5` is used for both. Changing the extraction prompt or topic list means bumping `PROMPT_VERSION` in `partner_intel/extract.py`, which re-reads everything.
 
 ### The one-time update

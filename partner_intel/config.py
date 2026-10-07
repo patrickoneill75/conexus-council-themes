@@ -21,3 +21,9 @@ WORKERS = int(os.environ.get("PARTNER_INTEL_WORKERS", "4"))
 
 # Files bigger than this are reported and skipped rather than loaded into the runner.
 MAX_FILE_BYTES = 40 * 1024 * 1024
+
+# Read new notes through the Message Batches API: half the price of direct calls, in exchange
+# for minutes of waiting, which a scan can afford. Set to "false" to read directly.
+USE_BATCH = os.environ.get("PARTNER_INTEL_BATCH", "true").lower() != "false"
+# How long a scan waits for its batch before reading the remainder directly.
+BATCH_WAIT_MINUTES = float(os.environ.get("PARTNER_INTEL_BATCH_WAIT_MINUTES") or 60)
