@@ -1003,10 +1003,20 @@ A staff-only tool that reads every meeting note in one Box folder and answers fo
 1. Add a repository secret named exactly **`partner_intel_claude_api`**, an Anthropic API key used only by this tool. Run **Set Cloudflare secrets** from the Actions tab: it pushes the key to the Worker (Ask needs it) and the scan reads the repository copy.
 2. Make sure `.github/workflows/partner_intel_run.yml` is on `main`. GitHub runs the daily schedule only from the default branch.
 3. Box must already be connected (step 5). `BOX_RELAY_URL`, `BOX_RELAY_SECRET` and `PANEL_GITHUB_TOKEN` are the same ones the other tools use.
-4. Open `/partner-intel/control-panel/`. Under **Partner list**, upload the Salesforce export (see below).
-5. Under **Box folder**, choose the folder that holds all the folders of notes.
+4. Open `/partner-intel/control-panel/`. Under **Box folders**, choose three folders: the **Meeting notes** folder (read), the **Database** folder (written to after every scan), and the **Member list** folder (read).
+5. Put the member list in the Member list folder as a `.csv` or `.xlsx` (the Salesforce "Programs & Councils with Participation" report works as it is), then under **Partner list** click **Preview changes** and **Apply**. You can instead upload a file by hand.
 6. Click **Trial run (first 5 files)**. When it finishes, read **Last scan**, then open the tool and check a few results against their source quotes.
 7. Click **Scan now** for everything. From then on a scan runs every morning at about 6 to 7 a.m. Indiana time.
+
+### Where the database is saved
+
+The Worker serves the data from Workers KV. The durable copy lives in the **Database** folder you chose in Box, rewritten after every scan (a new version of the same files, never duplicates):
+
+- `partner_intel_database.json`: everything the tool serves.
+- `partner_intel_insights.csv`: the same insights as a flat table that opens in Excel (company, member status, industry, source folder, type, topic, urgency, quote, source file and more).
+- `partner_intel_state.json`: which files were read and every saved Claude result. If the Worker's own copy is ever empty, the next scan restores from this file and does not read the notes again.
+
+If no Database folder is chosen the scan still works, and **Last scan** says nothing was saved to Box.
 
 ### What a scan reads
 
@@ -1027,26 +1037,32 @@ A staff-only tool that reads every meeting note in one Box folder and answers fo
 
 The date in the text comes first (the top of the document, or a line labelled "Date"), then a date in the file name, then the Box upload date. A date after the upload date is never accepted from the text. Every date records which of the three it came from. Rows that only have the upload date show an "estimated date" tag, and **Exact dates only** hides them. A section added to a running file later takes the date it arrived, not the file's first upload date.
 
+### Source folders
+
+The top-level sub-folders under the notes folder (ADAPT, Board Meetings, CIAIC and so on) are each a **source**. Home, Ask and Explore show a row of source buttons: switch on one or several to limit the view to them, and clear to see everything. Choosing Board Meetings shows those rows even though board notes are otherwise kept out as Conexus's own business. The CSV has a SourceFolder column.
+
 ### Keeping the partner list current
 
 The partner list drives industry, member status, contacts, and how names in the notes are recognized.
 
+- **Member list folder in Box.** The newest `.csv` or `.xlsx` in the folder is read. **Preview changes** shows who is new, returning and no longer listed before anything is saved. A scan also refreshes the list from this folder first, so a partner who joins or leaves is picked up every morning. That automatic refresh does nothing when the file is the one already applied, and if it would mark more than 30% of current members as Former it applies the file as add-and-update only and says so in **Last scan**, so a half-exported file cannot empty the list.
 - **Update from a Salesforce export**: choose the CSV and **Preview changes**. With *full current list*, partners missing from the file become Former member, new ones are added and returning ones are reactivated. With *only add and update*, nobody is deactivated. Nobody is ever deleted by an upload, so a partner who left keeps their history. The file may be UTF-8 or Windows-1252.
 - **Add or edit one partner**: name, industry, status, contacts, and other names the notes use.
 - **Names to review** lists companies named in the notes that the list does not recognize. Match one to a partner, or add it as a non-member.
-- After any of these, click **Re-link now**. It re-applies the list to every stored result. It reads no files and makes no Claude call.
+- A company the notes named that the list now has under exactly the same name (or an alias you set) shows as a member at once. Looser matches, such as a different spelling, need **Re-link now**, which re-applies the list to every stored result. It reads no files and makes no Claude call.
 
 ### Cost
 
 - The first scan is the expensive one. Use the trial run first. **Last scan** shows tokens used.
 - A day with no new notes uses no Claude: unchanged files are skipped by Box checksum, and text already read is served from the stored results, keyed by the text, the prompt version and the model, so renaming or moving a file costs nothing.
+- A section too dense for one answer is read in halves and the results merged, so a large section costs a few extra calls, not a failure. **Last scan** counts those.
 - Ask makes one Claude call per new question, over a deterministic shortlist of about ten companies. The answer is saved against the data version, so the same question costs nothing until the next scan changes the data.
 - No Anthropic prompt caching is used (see CLAUDE.md: scans are hours or days apart).
 - `claude-opus-5` is used for both. Changing the extraction prompt or topic list means bumping `PROMPT_VERSION` in `partner_intel/extract.py`, which re-reads everything.
 
 ### Where things live
 
-Box holds only the notes. Everything the tool produces lives in Workers KV: `pi:roster` (the partner list), `pi:state:*` (which files were read, and every stored Claude result), `pi:data:*` (the published data), `pi:ask:*` (saved answers). If KV were ever emptied, a full scan rebuilds the data at full cost.
+Box holds the notes you point it at, the member list, and the database files described above. Workers KV is the working copy: `pi:roster` (the partner list), `pi:state:*` (which files were read, and every stored Claude result), `pi:data:*` (the published data), `pi:ask:*` (saved answers), `pi:settings` (the three folders). The partner list is not in the Box database folder: it is rebuilt from the Member list folder. If KV were ever emptied, the state file in the Database folder restores the stored Claude results.
 
 ### Known limits
 
@@ -1173,4 +1189,7 @@ Box holds only the notes. Everything the tool produces lives in Workers KV: `pi:
 | A Partner Intelligence scan reports "PARTNER_INTEL_CLAUDE_API_KEY is not set" | The repository secret `partner_intel_claude_api` is missing. Nothing new was read, and the files retry on the next scan. |
 | Ask says "Ranked by keyword match only" | `partner_intel_claude_api` has not been pushed to the Worker. Run **Set Cloudflare secrets**. |
 | A company shows industry "Unknown" | It is in the notes but not on the partner list. Add it under **Names to review** or **Partner list**, then Re-link. |
+| Last scan says "Claude ran out of room" for a section | Should no longer appear: such a section is read in pieces. If it still does, the section is too short to split. Send the file name shown in the error. |
+| Members show as "Not a member" | The partner list is empty or does not have them. Choose the Member list folder, or upload the file, then Preview and Apply. An exact name match shows at once; others need Re-link. |
+| Last scan says "No database folder is chosen" | Choose one under **Box folders**. Nothing is lost meanwhile: the Worker still serves the data. |
 | Dates on many Partner Intelligence rows say "estimated date" | Those notes carry no date in the text or the file name, so the Box upload date is used. Put the date in the file name to fix it, or filter with **Exact dates only**. |

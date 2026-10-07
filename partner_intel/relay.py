@@ -59,6 +59,22 @@ class Api:
     def download(self, file_id: str) -> bytes:
         return self._get(f"box/file?id={quote(file_id, safe='')}", timeout=180).content
 
+    def sync_roster(self) -> dict:
+        """Ask the Worker to refresh the partner list from the member-list folder in Box."""
+        return self._post("roster-sync", {}).json()
+
+    def save_to_box(self, name: str, text: str) -> dict:
+        return self._post("box/save", {"name": name, "text": text}, timeout=600).json()
+
+    def load_from_box(self, name: str) -> str | None:
+        """A file from the database folder, or None when it is not there."""
+        try:
+            return self._get(f"box/load?name={quote(name, safe='')}", timeout=300).text
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code in (404, 409):
+                return None
+            raise
+
     def get_state(self) -> dict:
         return self._get("state", timeout=120).json()
 

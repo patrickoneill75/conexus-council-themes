@@ -42,6 +42,13 @@ def _similar(a: dict, b: dict) -> bool:
     return a["topic"] == b["topic"] and _jaccard(_words(a["detail"]), _words(b["detail"])) >= 0.6
 
 
+def source_folder(path: str) -> str:
+    """The top-level folder under the chosen Box root: "Notes/CIAIC/2025" gives "CIAIC".
+    A file sitting directly in the root has no sub-folder and is "(root)"."""
+    parts = [p for p in (path or "").split("/") if p]
+    return parts[1] if len(parts) > 1 else "(root)"
+
+
 def _note_company_id(raw: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", core_key(raw)).strip("-")
     return f"n-{slug}" if slug else ""
@@ -69,6 +76,7 @@ def _absorb(base: dict, other: dict) -> None:
     if other["status"] == "resolved":
         base["status"] = "resolved"
     base["tags"] = sorted(set(base["tags"]) | set(other["tags"]))[:8]
+    base["source_folders"] = sorted(set(base["source_folders"]) | set(other["source_folders"]))
     for src in other["sources"]:
         if src not in base["sources"]:
             base["sources"].append(src)
@@ -165,6 +173,8 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     "date": date, "date_source": unit.get("date_source") or event.get("date_source") or "",
                     "event_type": event.get("type", ""), "series": event.get("series", ""),
                     "meeting_key": meeting_key, "review": sorted(set(review)),
+                    "source_folder": entry.get("source") or source_folder(entry.get("path", "")),
+                    "source_folders": [entry.get("source") or source_folder(entry.get("path", ""))],
                     "sources": [{"id": file_id, "name": entry.get("name", ""), "path": entry.get("path", "")}],
                 })
         if used_units:

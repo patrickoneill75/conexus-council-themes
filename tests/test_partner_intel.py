@@ -477,9 +477,13 @@ class BuildTests(unittest.TestCase):
 
 # ------------------------------------------------------------------------------ run
 class FakeApi:
-    def __init__(self, files, folder_id="1"):
+    def __init__(self, files, folder_id="1", data_folder_id=""):
         self.files = files  # id -> {name, data, folder, created_at, modified_at}
-        self.settings = {"folderId": folder_id, "folderName": "Notes"}
+        self.settings = {"folderId": folder_id, "folderName": "Notes", "dataFolderId": data_folder_id}
+        self.box = {}  # the database folder: file name -> text
+        self.box_fail = set()
+        self.roster_syncs = 0
+        self.roster_sync_error = None
         self.state = {"registry": {}, "cache": {}}
         self.published = None
         self.reports = []
@@ -502,6 +506,20 @@ class FakeApi:
     def download(self, file_id):
         self.downloads += 1
         return self.files[file_id]["data"]
+
+    def sync_roster(self):
+        self.roster_syncs += 1
+        if self.roster_sync_error:
+            raise RuntimeError(self.roster_sync_error)
+        return {"skipped": "unchanged"}
+
+    def save_to_box(self, name, text):
+        if name in self.box_fail:
+            raise RuntimeError("Box said no")
+        self.box[name] = text
+        return {"ok": True}
+
+    def load_from_box(self, name): return self.box.get(name)
 
     def get_state(self): return json.loads(json.dumps(self.state))
     def put_state(self, registry, cache): self.state = {"registry": json.loads(json.dumps(registry)), "cache": json.loads(json.dumps(cache))}
@@ -667,6 +685,219 @@ class RunTests(unittest.TestCase):
             self.assertEqual(len(again.calls), 3)
         finally:
             extract.PROMPT_VERSION = original
+
+
+# ------------------------------------------------------------------------------ out of room
+class RoomTests(unittest.TestCase):
+    def point_unit(self, n=60):
+        lines = [f"Point {i}: " + " ".join(f"word{i}x{j}" for j in range(12)) for i in range(n)]
+        return shape.Unit(text="\n".join(lines), default_company="Zoeller")
+
+    def caller(self, limit_words):
+        calls = []
+
+        def call(unit, event_type, staff, model):
+            calls.append(len(unit.text.split()))
+            if len(unit.text.split()) > limit_words:
+                raise extract.OutOfRoom("too big")
+            rows = [row(quote=l[:90], title=l[:30]) for l in unit.text.split("\n") if l.startswith("Point")]
+            return rows, {"input": 10, "output": 5}
+        return call, calls
+
+    def test_a_section_too_big_for_one_answer_is_read_in_pieces_and_merged(self):
+        """BUG: "Claude ran out of room for this unit; it needs to be split smaller." A dense
+        section gave up on the first try and the whole file stayed unread. It is now split,
+        each piece read, and the pieces' overlap counted once."""
+        unit = self.point_unit()
+        call, calls = self.caller(limit_words=500)
+        entry = extract.extract_unit(unit, "Onboarding Call", [], "m", caller=call)
+        self.assertEqual(len(entry["rows"]), 60, "every point once, none lost, none doubled by the overlap")
+        self.assertGreaterEqual(entry["split_calls"], 2)
+        self.assertEqual(entry["usage"]["output"], 5 * (len(calls) - 1), "usage adds up the pieces, not the failed try")
+        self.assertEqual(entry["key"], extract.cache_key(unit, "Onboarding Call", "m"), "saved under the whole unit's key")
+
+    def test_pieces_are_split_again_when_needed_and_stop_at_a_limit(self):
+        unit = self.point_unit(120)
+        call, calls = self.caller(limit_words=300)
+        entry = extract.extract_unit(unit, "x", [], "m", caller=call)
+        self.assertEqual(len(entry["rows"]), 120)
+        impossible, tries = self.caller(limit_words=0)
+        with self.assertRaises(extract.OutOfRoom):
+            extract.extract_unit(unit, "x", [], "m", caller=impossible)
+        self.assertLessEqual(len(tries), 1 + 2 + 4 + 8, "gives up at the depth limit instead of splitting forever")
+
+    def test_a_tiny_unit_that_does_not_fit_is_reported_not_split_to_nothing(self):
+        call, calls = self.caller(limit_words=0)
+        with self.assertRaises(extract.OutOfRoom):
+            extract.extract_unit(shape.Unit(text="Point 1: short."), "x", [], "m", caller=call)
+        self.assertEqual(len(calls), 1)
+
+    def fake_client(self, message):
+        from types import SimpleNamespace
+        calls = []
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def get_final_message(self): return message
+
+        class Messages:
+            def stream(self, **kw):
+                calls.append(kw)
+                return Stream()
+
+        return SimpleNamespace(messages=Messages()), calls
+
+    def test_the_call_streams_with_room_and_a_cut_off_answer_is_not_retried(self):
+        """BUG: max_tokens was 8000 on a non-streaming call. The limit is now large, the call
+        streams (the SDK requires it), and a truncated answer raises OutOfRoom at once. It
+        must not be retried: the same request would spend the same tokens and fail again."""
+        from types import SimpleNamespace
+        cut = SimpleNamespace(stop_reason="max_tokens", content=[], usage=SimpleNamespace(input_tokens=1, output_tokens=2))
+        client, calls = self.fake_client(cut)
+        extract._client = client
+        try:
+            with self.assertRaises(extract.OutOfRoom):
+                extract.call_claude(shape.Unit(text="x"), "x", [], "m")
+        finally:
+            extract._client = None
+        self.assertEqual(len(calls), 1, "one attempt")
+        self.assertGreaterEqual(calls[0]["max_tokens"], 32000)
+        self.assertEqual(calls[0]["tools"][0]["strict"], True)
+
+    def test_a_complete_answer_returns_rows_and_usage(self):
+        from types import SimpleNamespace
+        done = SimpleNamespace(stop_reason="tool_use", usage=SimpleNamespace(input_tokens=7, output_tokens=9),
+                               content=[SimpleNamespace(type="tool_use", input={"insights": [row()]})])
+        client, _ = self.fake_client(done)
+        extract._client = client
+        try:
+            rows, usage = extract.call_claude(shape.Unit(text="x"), "x", [], "m")
+        finally:
+            extract._client = None
+        self.assertEqual((len(rows), usage), (1, {"input": 7, "output": 9}))
+
+    def test_a_failed_section_is_reported_with_its_file_and_section_name(self):
+        """BUG: the error said "unit: ..." with no clue which file or section."""
+        api = FakeApi(RunTests().files())
+        report = run.run("scan", api=api, caller=Counter(fail_on="Lucas Oil"), model="m")
+        self.assertTrue(any("Copilot Onboarding Notes.docx" in e and "Lucas Oil" in e for e in report["errors"]), report["errors"])
+
+
+# ------------------------------------------------------------------------------ box database
+class BoxDatabaseTests(unittest.TestCase):
+    def files(self):
+        return RunTests().files()
+
+    def test_database_files_are_written_to_the_chosen_box_folder(self):
+        """The admin chooses where the database lives. After a scan it is saved there as JSON,
+        as a CSV that opens in Excel, and as the state file that makes a restore possible."""
+        api = FakeApi(self.files(), data_folder_id="55")
+        report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(sorted(api.box), sorted(["partner_intel_database.json", "partner_intel_insights.csv", "partner_intel_state.json"]))
+        self.assertEqual(sorted(report["box_saved"]), sorted(api.box))
+        database = json.loads(api.box["partner_intel_database.json"])
+        self.assertEqual(len(database["insights"]), 3)
+        state = json.loads(api.box["partner_intel_state.json"])
+        self.assertEqual(len(state["cache"]), 3)
+        self.assertTrue(api.box["partner_intel_insights.csv"].startswith("\ufeff"))
+
+    def test_no_database_folder_is_said_plainly_and_does_not_fail_the_scan(self):
+        api = FakeApi(self.files())
+        report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(api.box, {})
+        self.assertIn("No database folder", report["box_note"])
+        self.assertEqual(report["insights"], 3)
+
+    def test_a_box_failure_is_reported_and_the_rest_still_saves(self):
+        api = FakeApi(self.files(), data_folder_id="55")
+        api.box_fail = {"partner_intel_insights.csv"}
+        report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(len(report["box_errors"]), 1)
+        self.assertIn("partner_intel_insights.csv", report["box_errors"][0])
+        self.assertIn("partner_intel_state.json", report["box_saved"])
+        self.assertEqual(api.published["stats"]["insights"], 3, "the Worker's copy was published regardless")
+
+    def test_lost_worker_state_is_restored_from_box_without_paying_to_read_again(self):
+        """BUG guard: the Worker's own copy lives in KV. If it is ever empty, the saved state
+        file in Box brings back every stored Claude result, so the notes are not re-read."""
+        api = FakeApi(self.files(), data_folder_id="55")
+        run.run("scan", api=api, caller=Counter(), model="m")
+        api.state = {"registry": {}, "cache": {}}  # KV wiped
+        again = Counter()
+        report = run.run("scan", api=api, caller=again, model="m")
+        self.assertTrue(report["restored_from_box"])
+        self.assertEqual(again.calls, [], "nothing was read a second time")
+        self.assertEqual(len(api.state["cache"]), 3, "and the Worker's copy was rebuilt")
+
+    def test_an_unreadable_saved_state_is_ignored(self):
+        api = FakeApi(self.files(), data_folder_id="55")
+        api.box["partner_intel_state.json"] = "not json {"
+        report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertNotIn("restored_from_box", report)
+        self.assertEqual(report["insights"], 3)
+
+    def test_the_member_list_is_refreshed_before_notes_are_read_and_a_failure_does_not_stop_the_scan(self):
+        api = FakeApi(self.files())
+        api.roster_sync_error = "Box is down"
+        report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(api.roster_syncs, 1)
+        self.assertIn("Box is down", report["roster_sync"]["error"])
+        self.assertEqual(report["insights"], 3)
+        rebuild = FakeApi(self.files())
+        run.run("rebuild", api=rebuild, caller=Counter(), model="m")
+        self.assertEqual(rebuild.roster_syncs, 0, "a re-link reads no Box")
+
+
+class SourceFolderTests(unittest.TestCase):
+    def test_source_is_the_top_level_folder_under_the_chosen_root(self):
+        self.assertEqual(build.source_folder("Raw Notes/CIAIC/2025/Q4"), "CIAIC")
+        self.assertEqual(build.source_folder("Raw Notes/Board Meetings"), "Board Meetings")
+        self.assertEqual(build.source_folder("Raw Notes"), "(root)")
+        self.assertEqual(build.source_folder(""), "(root)")
+
+    def test_insights_carry_their_source_and_a_merge_keeps_every_source(self):
+        a, b = row(), row(detail="Pump demand drops sharply in Q4.")
+        reg, cache = registry_with(("1", "notes.docx", "2026-04-24", "text", [a], "partner"),
+                                   ("2", "summary.txt", "2026-04-24", "filename", [b], "partner"))
+        reg["1"]["path"], reg["2"]["path"] = "Notes/CIAIC", "Notes/ADAPT/2026"
+        ds = build.build_dataset(reg, cache, ROSTER, "t")
+        self.assertEqual(len(ds["insights"]), 1)
+        self.assertEqual(ds["insights"][0]["source_folders"], ["ADAPT", "CIAIC"])
+
+    def test_a_scanned_file_records_its_source(self):
+        api = FakeApi(RunTests().files())
+        run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual({e["name"]: e["source"] for e in api.state["registry"].values()},
+                         {"Copilot Onboarding Notes.docx": "Onboarding", "2026-04-24 Cohort 2 Meeting.txt": "PCN"})
+
+
+class ExportTests(unittest.TestCase):
+    def test_csv_has_member_status_industry_and_source_and_cannot_run_a_formula(self):
+        """BUG guard: a note that starts with = or + would be run as a formula when the CSV is
+        opened in Excel."""
+        reg, cache = registry_with(("1", "n.docx", "2026-04-24", "text",
+                                    [row(company="Zoeller", title="=HYPERLINK(\"http://x\")", detail="+1 cmd")], "partner"))
+        reg["1"]["path"] = "Notes/CIAIC"
+        ds = build.build_dataset(reg, cache, ROSTER, "t")
+        from partner_intel import export
+        import csv as csvmod
+        rows = list(csvmod.DictReader(io.StringIO(export.insights_csv(ds, ROSTER).lstrip("\ufeff"))))
+        self.assertEqual(len(rows), 1)
+        r = rows[0]
+        self.assertEqual((r["Company"], r["MemberStatus"], r["Industry"], r["SourceFolder"]),
+                         ("Zoeller Custom Molding", "Member", "Plastics Company", "CIAIC"))
+        self.assertTrue(r["Title"].startswith("'="))
+        self.assertTrue(r["Detail"].startswith("'+"))
+
+    def test_a_company_not_on_the_list_is_labelled_so(self):
+        reg, cache = registry_with(("1", "n.docx", "2026-04-24", "text", [row(company="Hartman")], "partner"))
+        ds = build.build_dataset(reg, cache, ROSTER, "t")
+        from partner_intel import export
+        import csv as csvmod
+        r = list(csvmod.DictReader(io.StringIO(export.insights_csv(ds, ROSTER).lstrip("\ufeff"))))[0]
+        self.assertEqual((r["Company"], r["MemberStatus"], r["Industry"]), ("Hartman", "Not on the partner list", "Unknown"))
+
 
 
 if __name__ == "__main__":

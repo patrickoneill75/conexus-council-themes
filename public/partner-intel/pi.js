@@ -58,7 +58,7 @@
       head += co.id ? '<a class="co" href="/partner-intel/#/company/' + encodeURIComponent(co.id) + '">' + PI.esc(co.name) + "</a>"
                     : '<span class="co">' + PI.esc(co.name) + "</span>";
       head += PI.pill("info", co.industry || "Unknown");
-      if (co.status && co.status !== "Active") head += PI.pill("info", PI.statusLabel[co.status] || co.status);
+      head += PI.pill(co.status === "Active" ? "good" : "info", PI.statusLabel[co.status] || co.status || "Unknown");
     }
     var urgentProblem = i.kind === "problem" && i.urgency !== "none";
     if (!urgentProblem) head += PI.pill("info", PI.kindLabel[i.kind] || i.kind);

@@ -34,15 +34,17 @@
   </section>
 
   <section class="card">
-    <h2>1. Box folder</h2>
-    <p class="desc">The folder that holds all the folders of meeting notes. Subfolders are read too. Word, text, VTT, SRT, HTML and PDFs with a text layer are read. Images, audio and spreadsheets are ignored.</p>
-    <div id="folderNow" class="small" style="margin-bottom:10px"></div>
-    <button id="chooseFolder">Choose folder</button>
+    <h2>1. Box folders</h2>
+    <p class="desc">Three folders, each chosen here. Notes are read from one, the database is written to another, and the member list is read from a third. They can be the same folder or different ones.</p>
+    <table>
+      <thead><tr><th>Folder</th><th>What it is for</th><th>Chosen</th><th></th></tr></thead>
+      <tbody id="folderRows"></tbody>
+    </table>
     <div id="picker" hidden style="margin-top:14px">
+      <h3 id="pickTitle" style="margin-bottom:6px"></h3>
       <div class="small muted" id="crumbs"></div>
       <div id="folders" style="margin:8px 0"></div>
-      <button class="primary" id="useFolder">Use this folder</button>
-      <span class="msg" id="folderMsg"></span>
+      <div class="row"><button class="primary" id="useFolder">Use this folder</button><button id="cancelPick">Cancel</button><span class="msg" id="folderMsg"></span></div>
     </div>
   </section>
 
@@ -70,7 +72,19 @@
     <p class="desc">Industry, member status and contacts come from here, and it is how a company named in the notes is recognized. Update it whenever partners join or leave: upload a fresh Salesforce export, or edit one partner below. Nobody is deleted by an upload. A partner missing from a full list is marked Former member and keeps their history.</p>
     <div id="rosterSummary" class="small" style="margin-bottom:12px"></div>
 
-    <h3>Update from a Salesforce export</h3>
+    <h3>Load from the member list folder in Box</h3>
+    <p class="small muted" style="margin:4px 0 8px">Reads the newest .csv or .xlsx in the member list folder (section 1). A scan also does this by itself first, so partners who join or leave are picked up every morning.</p>
+    <div class="row">
+      <select id="syncMode">
+        <option value="replace">The file is the full current list</option>
+        <option value="merge">Only add and update the partners in the file</option>
+      </select>
+      <button id="syncPreview">Preview changes</button>
+    </div>
+    <div id="syncResult" style="margin-top:10px"></div>
+    <div id="syncLast" class="small muted" style="margin-top:8px"></div>
+
+    <h3 style="margin-top:22px">Or upload a file by hand</h3>
     <div class="row" style="margin-top:8px">
       <input type="file" id="csvFile" accept=".csv,text/csv">
       <select id="csvMode">
@@ -154,8 +168,11 @@
         '<span class="stat"><b>' + s.roster.Active + "</b><span>current members</span></span>" +
         '<span class="stat"><b>' + s.roster.total + "</b><span>partners listed</span></span>";
       el("relink").hidden = !s.relinkNeeded;
-      var f = s.settings;
-      el("folderNow").innerHTML = f && f.folderId ? "Reading from <b>" + esc(f.folderName || ("folder " + f.folderId)) + "</b>" : "No folder chosen yet.";
+      settings = s.settings || {};
+      renderFolders();
+      el("syncLast").textContent = s.rosterSync ? "Last applied: " + s.rosterSync.name + ", " + PI.fmtStamp(s.rosterSync.at) +
+        " (" + s.rosterSync.counts.added + " added, " + s.rosterSync.counts.reactivated + " returning, " + s.rosterSync.counts.deactivated + " marked Former)." +
+        (s.rosterSync.warning ? " " + s.rosterSync.warning : "") : "";
       renderReport(s.report);
       el("rosterSummary").innerHTML = s.roster.Active + " members &middot; " + s.roster.Inactive + " former &middot; " + s.roster["Non-member"] + " not members";
     });
@@ -174,17 +191,44 @@
       '<div style="margin:8px 0">' + [
         ["files_seen", "files seen"], ["files_to_read", "files read"], ["files_unchanged", "unchanged"], ["units_to_read", "sections to read"],
         ["claude_calls", "Claude calls"], ["units_cached", "reused from saved results"], ["insights", "insights"], ["rows_rejected", "rows dropped (quote not in notes)"],
-        ["not_on_roster", "names to review"]].map(function (k) {
+        ["sections_split", "sections read in pieces"], ["not_on_roster", "names to review"]].map(function (k) {
         return '<span class="stat"><b>' + (r[k[0]] || 0) + "</b><span>" + k[1] + "</span></span>";
       }).join("") + "</div>" +
+      (r.box_saved && r.box_saved.length ? "<div>Saved to Box: " + r.box_saved.map(esc).join(", ") + "</div>" : "") +
+      (r.box_note ? '<div class="msg err">' + esc(r.box_note) + "</div>" : "") +
+      (r.restored_from_box ? "<div>The saved state was restored from the Box database folder.</div>" : "") +
+      (r.roster_sync && (r.roster_sync.skipped || r.roster_sync.error || r.roster_sync.saved) ? "<div>Member list: " + esc(r.roster_sync.error || r.roster_sync.skipped || ("applied " + (r.roster_sync.file || {}).name)) + (r.roster_sync.warning ? " " + esc(r.roster_sync.warning) : "") + "</div>" : "") +
       (r.tokens_in ? "<div>Tokens used: " + r.tokens_in.toLocaleString() + " in, " + (r.tokens_out || 0).toLocaleString() + " out.</div>" : "") +
       (ign ? "<div>Ignored (not notes): " + esc(ign) + "</div>" : "") +
-      list("Errors", r.errors) + list("Need converting to .docx", r.needs_conversion) + list("Unreadable", r.unreadable) +
+      list("Errors", r.errors) + list("Could not save to Box", r.box_errors) + list("Need converting to .docx", r.needs_conversion) + list("Unreadable", r.unreadable) +
       list("PDFs with no text (scans)", r.no_text) + list("Too large", r.too_large);
   }
 
-  /* ------------------------------------------------------------ folder picker */
-  var pickCur = null;
+  /* ------------------------------------------------------------ folders */
+  var FOLDERS = [
+    { which: "notes", id: "folderId", name: "folderName", label: "Meeting notes", use: "Read. Every subfolder is read too. Word, text, VTT, SRT, HTML and PDFs with a text layer are used; images, audio and spreadsheets are ignored." },
+    { which: "data", id: "dataFolderId", name: "dataFolderName", label: "Database", use: "Written after every scan: partner_intel_database.json, partner_intel_insights.csv (opens in Excel) and partner_intel_state.json. The state file lets the tool restore itself without reading the notes again." },
+    { which: "roster", id: "rosterFolderId", name: "rosterFolderName", label: "Member list", use: "Read. Put the member list here as a .csv or .xlsx. The newest file is used, and it is re-read at the start of every scan." }
+  ];
+  var settings = {};
+  function renderFolders() {
+    el("folderRows").innerHTML = FOLDERS.map(function (f) {
+      var chosen = settings[f.id] ? "<b>" + esc(settings[f.name] || ("folder " + settings[f.id])) + "</b>" : '<span class="muted">Not chosen</span>';
+      return "<tr><td><b>" + esc(f.label) + '</b></td><td class="small">' + esc(f.use) + "</td><td>" + chosen + '</td><td><button data-which="' + f.which + '">Choose</button></td></tr>';
+    }).join("");
+    Array.prototype.forEach.call(el("folderRows").querySelectorAll("button[data-which]"), function (b) {
+      b.addEventListener("click", function () { openPicker(b.getAttribute("data-which")); });
+    });
+  }
+  var pickCur = null, pickWhich = "notes";
+  function openPicker(which) {
+    pickWhich = which;
+    var f = FOLDERS.filter(function (x) { return x.which === which; })[0];
+    el("pickTitle").textContent = "Choose the " + f.label.toLowerCase() + " folder";
+    el("picker").hidden = false; msg("folderMsg", "");
+    browse("0");
+    el("picker").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
   function browse(id) {
     msg("folderMsg", "Loading…");
     PI.api("box/folders?id=" + encodeURIComponent(id || "0")).then(function (r) {
@@ -197,11 +241,11 @@
       });
     }).catch(function (e) { msg("folderMsg", e.message, "err"); });
   }
-  el("chooseFolder").addEventListener("click", function () { el("picker").hidden = false; browse("0"); });
+  el("cancelPick").addEventListener("click", function () { el("picker").hidden = true; });
   el("useFolder").addEventListener("click", function () {
-    if (!pickCur || pickCur.id === "0") { msg("folderMsg", "Open the notes folder first.", "err"); return; }
-    PI.post("settings", { folderId: pickCur.id, folderName: pickCur.name }).then(function () {
-      msg("folderMsg", "Saved.", "ok"); el("picker").hidden = true; loadStatus();
+    if (!pickCur || pickCur.id === "0") { msg("folderMsg", "Open the folder first.", "err"); return; }
+    PI.post("settings", { which: pickWhich, folderId: pickCur.id, folderName: pickCur.name }).then(function () {
+      msg("folderMsg", "Saved.", "ok"); el("picker").hidden = true; return loadStatus();
     }).catch(function (e) { msg("folderMsg", e.message, "err"); });
   });
 
@@ -290,6 +334,26 @@
   });
   el("rFilter").addEventListener("input", renderRoster);
   el("rStatus").addEventListener("change", renderRoster);
+
+  /* Member list from Box. Preview first, then apply what was previewed. */
+  function syncSummary(r) {
+    var head = '<div class="small">' + esc(r.file.name) + " &middot; " + esc(PI.fmtStamp(r.file.modified_at)) + "</div>" + summaryHtml(r.summary);
+    return (r.warning ? '<div class="banner">' + esc(r.warning) + "</div>" : "") + head;
+  }
+  el("syncPreview").addEventListener("click", function () {
+    el("syncResult").innerHTML = '<span class="spinner"></span>Reading the file…';
+    var mode = el("syncMode").value;
+    PI.post("roster/sync", { preview: true, mode: mode }).then(function (r) {
+      if (r.skipped) { el("syncResult").innerHTML = '<div class="msg">' + esc(r.skipped) + "</div>"; return; }
+      el("syncResult").innerHTML = syncSummary(r) + '<div class="row" style="margin-top:10px"><button class="primary" id="syncApply">Apply these changes</button></div><div class="msg" id="syncMsg"></div>';
+      el("syncApply").addEventListener("click", function () {
+        PI.post("roster/sync", { mode: mode }).then(function (done) {
+          el("syncResult").innerHTML = '<div class="msg ok">Applied.</div>' + syncSummary(done);
+          return Promise.all([loadRoster(), loadStatus(), loadReview()]);
+        }).catch(function (e) { msg("syncMsg", e.message, "err"); });
+      });
+    }).catch(function (e) { el("syncResult").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; });
+  });
 
   /* CSV import. A Salesforce export is often Windows-1252, not UTF-8; reading it as UTF-8
      turns "Acción" into a replacement character that no later step can recover. */
