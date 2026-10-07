@@ -5,6 +5,9 @@ Two suites, both dependency-free beyond what the app already needs:
 - `test_pipelines.py` — the Python pipelines (`themes/`, `pcn/`, `mcm/`, `consensus/`).
   Run with `python3 -m unittest discover -s tests -p 'test_*.py' -t .` from the repo root,
   or `python3 tests/test_pipelines.py`.
+- `test_partner_intel.py` — the Partner Intelligence scan (`partner_intel/`): reading Box files,
+  recognizing note formats, dates, name matching, the extraction checks, and the incremental
+  scan. Box and Claude are in-memory fakes.
 - `worker_test.mjs` — the Cloudflare Worker modules in `src/`, exercised as real route
   handlers against an in-memory KV stub and a stubbed `fetch`. Run with
   `node tests/worker_test.mjs`.

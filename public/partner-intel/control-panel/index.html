@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Partner Intelligence control panel — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214e'/%3E%3Ccircle cx='11' cy='16' r='4' fill='white'/%3E%3Ccircle cx='22' cy='10' r='3' fill='%23fbae40'/%3E%3Ccircle cx='22' cy='22' r='3' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/partner-intel/pi.css">
+<style>html { visibility:hidden; }</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">
+      <h1>Partner Intelligence control panel</h1>
+      <p class="sub">Point the tool at the Box notes, run scans, and keep the partner list current.</p>
+    </div>
+    <div class="tools">
+      <span id="whoami"></span>
+      <a href="/partner-intel/">Open the tool</a>
+      <a href="/admin/">Admin hub</a>
+      <button class="link" id="signOut">Sign out</button>
+    </div>
+  </div>
+
+  <div id="relink" class="banner" hidden>
+    <b>The partner list changed since the data was last built.</b> Re-link applies the change to every note. It reads nothing new and uses no Claude.
+    <div class="row" style="margin-top:8px"><button class="primary" id="relinkBtn">Re-link now</button><span class="msg" id="relinkMsg"></span></div>
+  </div>
+
+  <section class="card">
+    <h2>Status</h2>
+    <div id="status"><span class="spinner"></span>Loading…</div>
+  </section>
+
+  <section class="card">
+    <h2>1. Box folder</h2>
+    <p class="desc">The folder that holds all the folders of meeting notes. Subfolders are read too. Word, text, VTT, SRT, HTML and PDFs with a text layer are read. Images, audio and spreadsheets are ignored.</p>
+    <div id="folderNow" class="small" style="margin-bottom:10px"></div>
+    <button id="chooseFolder">Choose folder</button>
+    <div id="picker" hidden style="margin-top:14px">
+      <div class="small muted" id="crumbs"></div>
+      <div id="folders" style="margin:8px 0"></div>
+      <button class="primary" id="useFolder">Use this folder</button>
+      <span class="msg" id="folderMsg"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2. Scan</h2>
+    <p class="desc">A scan also runs by itself every morning. It lists the folder, skips every file Box says has not changed, and calls Claude only for text it has never read, so a day with no new notes uses none. Every Claude result is saved and reused.</p>
+    <div class="row">
+      <button id="trial">Trial run (first 5 files)</button>
+      <button class="primary" id="scan">Scan now</button>
+      <button id="force" title="Re-reads every file. Text already read is served from the saved results.">Re-read every file</button>
+      <button id="rebuild" title="Applies the current partner list to the saved results. No Box, no Claude.">Re-link only</button>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">Start with the trial run. It reads five files so the first cost is small and you can check the results before the full scan.</p>
+    <div class="msg" id="runMsg"></div>
+    <div id="runs" style="margin-top:12px"></div>
+  </section>
+
+  <section class="card">
+    <h2>Last scan</h2>
+    <div id="report" class="small muted">No scan has run yet.</div>
+  </section>
+
+  <section class="card">
+    <h2>3. Partner list</h2>
+    <p class="desc">Industry, member status and contacts come from here, and it is how a company named in the notes is recognized. Update it whenever partners join or leave: upload a fresh Salesforce export, or edit one partner below. Nobody is deleted by an upload. A partner missing from a full list is marked Former member and keeps their history.</p>
+    <div id="rosterSummary" class="small" style="margin-bottom:12px"></div>
+
+    <h3>Update from a Salesforce export</h3>
+    <div class="row" style="margin-top:8px">
+      <input type="file" id="csvFile" accept=".csv,text/csv">
+      <select id="csvMode">
+        <option value="replace">This file is the full current list</option>
+        <option value="merge">Only add and update the partners in this file</option>
+      </select>
+      <button id="csvPreview" disabled>Preview changes</button>
+    </div>
+    <div id="csvResult" style="margin-top:10px"></div>
+
+    <h3 style="margin-top:22px" id="formTitle">Add a partner</h3>
+    <div class="fields" style="margin-top:8px">
+      <div><label class="field" for="pName">Name</label><input id="pName" style="width:100%"></div>
+      <div><label class="field" for="pIndustry">Industry</label><input id="pIndustry" list="industryList" style="width:100%"><datalist id="industryList"></datalist></div>
+      <div><label class="field" for="pStatus">Status</label><select id="pStatus"><option value="Active">Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>
+    </div>
+    <div class="fields" style="margin-top:12px">
+      <div><label class="field" for="pContacts">Contacts (one per line)</label><textarea id="pContacts" rows="3"></textarea></div>
+      <div><label class="field" for="pAliases">Other names the notes use (one per line)</label><textarea id="pAliases" rows="3"></textarea></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="pSave">Add partner</button>
+      <button id="pCancel" hidden>Cancel edit</button>
+      <button class="danger" id="pDelete" hidden>Delete</button>
+      <span class="msg" id="pMsg"></span>
+    </div>
+
+    <div class="row" style="margin-top:22px">
+      <input id="rFilter" placeholder="Search partners" style="min-width:220px">
+      <select id="rStatus"><option value="">All statuses</option><option value="Active">Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select>
+    </div>
+    <div style="margin-top:10px;overflow-x:auto"><table><thead><tr><th>Partner</th><th>Industry</th><th>Status</th><th>Contacts</th><th></th></tr></thead><tbody id="rosterRows"></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>4. Names to review</h2>
+    <p class="desc">Company names that appear in the notes but could not be matched to the partner list with confidence. Match one to a partner, or add it as a non-member. Changes apply after Re-link.</p>
+    <div id="review"><span class="muted small">Loading…</span></div>
+  </section>
+
+  <section class="card">
+    <h2>5. Conexus staff</h2>
+    <p class="desc">People who work for Conexus, one per line. What they say in a conversation is not counted as a partner's problem or solution.</p>
+    <textarea id="staff" rows="4" style="max-width:420px"></textarea>
+    <div class="row" style="margin-top:8px"><button id="saveStaff">Save staff</button><span class="msg" id="staffMsg"></span></div>
+  </section>
+
+  <section class="card">
+    <h2>6. Topics</h2>
+    <p class="desc">Every note is filed under one topic, and the shared-issues ranking counts companies per topic. Rename a topic, or merge two that mean the same thing.</p>
+    <div id="topics"><span class="muted small">Loading…</span></div>
+  </section>
+</div>
+
+<script src="/partner-intel/pi.js"></script>
+<script>
+(function () {
+  "use strict";
+  if (!window.PI) return;
+  document.documentElement.style.visibility = "visible";
+  var el = function (id) { return document.getElementById(id); };
+  var esc = PI.esc;
+  el("signOut").addEventListener("click", PI.signOut);
+  PI.whoami(el("whoami"));
+  function msg(id, text, kind) { var n = el(id); n.className = "msg" + (kind ? " " + kind : ""); n.textContent = text || ""; }
+
+  var roster = { partners: [], aliases: {}, staff: [] };
+  var editingId = "";
+
+  /* ------------------------------------------------------------ status + report */
+  function loadStatus() {
+    return PI.api("status").then(function (s) {
+      var d = s.dataset;
+      var ok = function (b, y, n) { return b ? PI.pill("good", y) : PI.pill("medium", n); };
+      el("status").innerHTML = '<div class="row" style="gap:6px;margin-bottom:12px">' +
+        ok(s.boxConnected, "Box connected", "Box not connected") + ok(s.githubConfigured, "Scans can start", "GitHub token missing") +
+        ok(s.claudeConfigured, "Claude key set (Ask)", "Claude key not set (Ask uses keywords)") + "</div>" +
+        (d ? '<span class="stat"><b>' + d.insightCount + "</b><span>insights</span></span>" +
+          '<span class="stat"><b>' + esc(PI.fmtStamp(d.generated_at)) + "</b><span>data last built</span></span>"
+           : '<span class="muted">No data yet. Choose the folder and run a trial scan.</span>') +
+        '<span class="stat"><b>' + s.roster.Active + "</b><span>current members</span></span>" +
+        '<span class="stat"><b>' + s.roster.total + "</b><span>partners listed</span></span>";
+      el("relink").hidden = !s.relinkNeeded;
+      var f = s.settings;
+      el("folderNow").innerHTML = f && f.folderId ? "Reading from <b>" + esc(f.folderName || ("folder " + f.folderId)) + "</b>" : "No folder chosen yet.";
+      renderReport(s.report);
+      el("rosterSummary").innerHTML = s.roster.Active + " members &middot; " + s.roster.Inactive + " former &middot; " + s.roster["Non-member"] + " not members";
+    });
+  }
+
+  function renderReport(r) {
+    if (!r) return;
+    var list = function (title, items) {
+      return items && items.length ? '<details style="margin-top:8px"><summary><b>' + esc(title) + " (" + items.length + ")</b></summary><ul class=\"small\">" +
+        items.map(function (x) { return "<li>" + esc(typeof x === "string" ? x : (x.file + ": " + x.error)) + "</li>"; }).join("") + "</ul></details>" : "";
+    };
+    var ign = r.ignored ? Object.keys(r.ignored).map(function (k) { return k + " " + r.ignored[k]; }).join(", ") : "";
+    el("report").className = "small";
+    el("report").innerHTML = r.error ? '<div class="msg err">' + esc(r.error) + "</div>" :
+      "<div>" + esc(PI.fmtStamp(r.started_at)) + " &middot; " + esc(r.mode) + (r.trial_limit ? " &middot; trial of " + r.trial_limit + " files" : "") + "</div>" +
+      '<div style="margin:8px 0">' + [
+        ["files_seen", "files seen"], ["files_to_read", "files read"], ["files_unchanged", "unchanged"], ["units_to_read", "sections to read"],
+        ["claude_calls", "Claude calls"], ["units_cached", "reused from saved results"], ["insights", "insights"], ["rows_rejected", "rows dropped (quote not in notes)"],
+        ["not_on_roster", "names to review"]].map(function (k) {
+        return '<span class="stat"><b>' + (r[k[0]] || 0) + "</b><span>" + k[1] + "</span></span>";
+      }).join("") + "</div>" +
+      (r.tokens_in ? "<div>Tokens used: " + r.tokens_in.toLocaleString() + " in, " + (r.tokens_out || 0).toLocaleString() + " out.</div>" : "") +
+      (ign ? "<div>Ignored (not notes): " + esc(ign) + "</div>" : "") +
+      list("Errors", r.errors) + list("Need converting to .docx", r.needs_conversion) + list("Unreadable", r.unreadable) +
+      list("PDFs with no text (scans)", r.no_text) + list("Too large", r.too_large);
+  }
+
+  /* ------------------------------------------------------------ folder picker */
+  var pickCur = null;
+  function browse(id) {
+    msg("folderMsg", "Loading…");
+    PI.api("box/folders?id=" + encodeURIComponent(id || "0")).then(function (r) {
+      pickCur = r; msg("folderMsg", "");
+      el("crumbs").innerHTML = r.breadcrumb.map(function (c) { return '<button class="link" data-id="' + esc(c.id) + '">' + esc(c.name || "All Files") + "</button>"; }).join(" / ");
+      el("folders").innerHTML = r.folders.length ? r.folders.map(function (f) {
+        return '<div><button class="link" data-id="' + esc(f.id) + '">' + esc(f.name) + "</button></div>"; }).join("") : '<span class="muted small">No subfolders.</span>';
+      Array.prototype.forEach.call(el("picker").querySelectorAll("button.link[data-id]"), function (b) {
+        b.addEventListener("click", function () { browse(b.getAttribute("data-id")); });
+      });
+    }).catch(function (e) { msg("folderMsg", e.message, "err"); });
+  }
+  el("chooseFolder").addEventListener("click", function () { el("picker").hidden = false; browse("0"); });
+  el("useFolder").addEventListener("click", function () {
+    if (!pickCur || pickCur.id === "0") { msg("folderMsg", "Open the notes folder first.", "err"); return; }
+    PI.post("settings", { folderId: pickCur.id, folderName: pickCur.name }).then(function () {
+      msg("folderMsg", "Saved.", "ok"); el("picker").hidden = true; loadStatus();
+    }).catch(function (e) { msg("folderMsg", e.message, "err"); });
+  });
+
+  /* ------------------------------------------------------------ scan */
+  function start(body, label) {
+    msg("runMsg", "Starting…");
+    PI.post("run", body).then(function () {
+      msg("runMsg", label + " started. It takes a few minutes. This page updates when it finishes.", "ok"); pollRuns(true);
+    }).catch(function (e) { msg("runMsg", e.message, "err"); });
+  }
+  el("trial").addEventListener("click", function () { start({ mode: "scan", limit: 5 }, "Trial run"); });
+  el("scan").addEventListener("click", function () { start({ mode: "scan" }, "Scan"); });
+  el("force").addEventListener("click", function () {
+    if (confirm("Re-read every file? Text that was already read is reused, so this is cheap unless the files changed.")) start({ mode: "scan", force: true }, "Full re-read");
+  });
+  el("rebuild").addEventListener("click", function () { start({ mode: "rebuild" }, "Re-link"); });
+  el("relinkBtn").addEventListener("click", function () {
+    msg("relinkMsg", "Starting…");
+    PI.post("run", { mode: "rebuild" }).then(function () { msg("relinkMsg", "Started. Refresh in a minute.", "ok"); pollRuns(true); })
+      .catch(function (e) { msg("relinkMsg", e.message, "err"); });
+  });
+
+  var poll = null, sawActive = false;
+  function pollRuns(fast) {
+    clearTimeout(poll);
+    PI.api("run-status").then(function (r) {
+      var active = r.runs.some(function (x) { return x.status !== "completed"; });
+      el("runs").innerHTML = r.runs.length ? "<table><thead><tr><th>Started</th><th>Trigger</th><th>State</th></tr></thead><tbody>" + r.runs.map(function (x) {
+        var state = x.status === "completed" ? (x.conclusion === "success" ? PI.pill("good", "Finished") : PI.pill("high", x.conclusion || "Failed")) : PI.pill("medium", x.status === "queued" ? "Queued" : "Running");
+        return "<tr><td>" + esc(PI.fmtStamp(x.created_at)) + '</td><td>' + (x.event === "schedule" ? "Daily" : "Manual") + "</td><td>" + state + ' <a href="' + esc(x.url) + '" target="_blank" rel="noopener">log</a></td></tr>';
+      }).join("") + "</tbody></table>" : "";
+      if (active) sawActive = true;
+      if (!active && sawActive) { sawActive = false; loadStatus(); loadReview(); loadTopics(); }
+      if (active || fast) poll = setTimeout(function () { pollRuns(false); }, 12000);
+    }).catch(function () {});
+  }
+
+  /* ------------------------------------------------------------ roster */
+  function statusName(s) { return PI.statusLabel[s] || s; }
+  function loadRoster() {
+    return PI.api("roster").then(function (r) {
+      roster = r;
+      var inds = {}; r.partners.forEach(function (p) { if (p.industry) inds[p.industry] = 1; });
+      el("industryList").innerHTML = Object.keys(inds).sort().map(function (i) { return '<option value="' + esc(i) + '">'; }).join("");
+      el("staff").value = r.staff.join("\n");
+      renderRoster();
+    });
+  }
+  function renderRoster() {
+    var q = el("rFilter").value.trim().toLowerCase(), st = el("rStatus").value;
+    var rows = roster.partners.filter(function (p) {
+      return (!q || p.name.toLowerCase().indexOf(q) >= 0) && (!st || p.status === st);
+    }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+    el("rosterRows").innerHTML = rows.length ? rows.map(function (p) {
+      return "<tr><td><b>" + esc(p.name) + "</b></td><td>" + esc(p.industry || "") + "</td><td>" +
+        PI.pill(p.status === "Active" ? "good" : "info", statusName(p.status)) + '</td><td class="small">' + esc(p.contacts.join(", ")) +
+        '</td><td><button class="tiny" data-id="' + esc(p.id) + '">Edit</button></td></tr>';
+    }).join("") : '<tr><td colspan="5" class="empty">No partners.</td></tr>';
+    Array.prototype.forEach.call(el("rosterRows").querySelectorAll("button[data-id]"), function (b) {
+      b.addEventListener("click", function () { edit(b.getAttribute("data-id")); });
+    });
+  }
+  function edit(id) {
+    var p = roster.partners.filter(function (x) { return x.id === id; })[0];
+    editingId = p ? p.id : "";
+    el("formTitle").textContent = p ? "Edit " + p.name : "Add a partner";
+    el("pName").value = p ? p.name : ""; el("pIndustry").value = p ? p.industry : "";
+    el("pStatus").value = p ? p.status : "Active";
+    el("pContacts").value = p ? p.contacts.join("\n") : ""; el("pAliases").value = p ? p.aliases.join("\n") : "";
+    el("pSave").textContent = p ? "Save changes" : "Add partner";
+    el("pCancel").hidden = !p; el("pDelete").hidden = !p; msg("pMsg", "");
+    if (p) el("pName").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  el("pCancel").addEventListener("click", function () { edit(""); });
+  el("pSave").addEventListener("click", function () {
+    var lines = function (id) { return el(id).value.split("\n").map(function (x) { return x.trim(); }).filter(Boolean); };
+    PI.post("roster/partner", { id: editingId, name: el("pName").value, industry: el("pIndustry").value, status: el("pStatus").value,
+      contacts: lines("pContacts"), aliases: lines("pAliases") }).then(function () {
+      msg("pMsg", "Saved.", "ok"); edit(""); return Promise.all([loadRoster(), loadStatus()]);
+    }).catch(function (e) { msg("pMsg", e.message, "err"); });
+  });
+  el("pDelete").addEventListener("click", function () {
+    if (!confirm("Delete this partner? Marking them Former member instead keeps their history attached.")) return;
+    PI.post("roster/partner/delete", { id: editingId }).then(function () { edit(""); return Promise.all([loadRoster(), loadStatus()]); })
+      .catch(function (e) { msg("pMsg", e.message, "err"); });
+  });
+  el("rFilter").addEventListener("input", renderRoster);
+  el("rStatus").addEventListener("change", renderRoster);
+
+  /* CSV import. A Salesforce export is often Windows-1252, not UTF-8; reading it as UTF-8
+     turns "Acción" into a replacement character that no later step can recover. */
+  var csvText = "";
+  function decode(buffer) {
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
+    catch (e) { return new TextDecoder("windows-1252").decode(buffer); }
+  }
+  el("csvFile").addEventListener("change", function (e) {
+    var f = e.target.files[0]; el("csvResult").innerHTML = ""; csvText = "";
+    el("csvPreview").disabled = true;
+    if (!f) return;
+    var fr = new FileReader();
+    fr.onload = function () { csvText = decode(fr.result); el("csvPreview").disabled = false; };
+    fr.readAsArrayBuffer(f);
+  });
+  function names(list) { return list.length ? "<ul class=\"small\" style=\"margin:4px 0\">" + list.slice(0, 40).map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + (list.length > 40 ? "<li>and " + (list.length - 40) + " more</li>" : "") + "</ul>" : ""; }
+  function summaryHtml(s) {
+    return '<div class="small"><b>' + s.added.length + "</b> new &middot; <b>" + s.updated.length + "</b> changed &middot; <b>" + s.reactivated.length +
+      "</b> returning &middot; <b>" + s.deactivated.length + "</b> no longer on the list &middot; " + s.unchanged + " unchanged</div>" +
+      (s.added.length ? "<details><summary>New partners</summary>" + names(s.added) + "</details>" : "") +
+      (s.reactivated.length ? "<details><summary>Returning partners</summary>" + names(s.reactivated) + "</details>" : "") +
+      (s.deactivated.length ? "<details open><summary><b>Will be marked Former member</b></summary>" + names(s.deactivated) + "</details>" : "") +
+      (s.updated.length ? "<details><summary>Changed</summary>" + names(s.updated) + "</details>" : "");
+  }
+  el("csvPreview").addEventListener("click", function () {
+    el("csvResult").innerHTML = '<span class="spinner"></span>Checking…';
+    var mode = el("csvMode").value;
+    PI.post("roster/import", { csv: csvText, mode: mode, preview: true }).then(function (r) {
+      el("csvResult").innerHTML = summaryHtml(r.summary) + '<div class="row" style="margin-top:10px"><button class="primary" id="csvApply">Apply these changes</button></div><div class="msg" id="csvMsg"></div>';
+      el("csvApply").addEventListener("click", function () {
+        PI.post("roster/import", { csv: csvText, mode: mode }).then(function (done) {
+          el("csvResult").innerHTML = '<div class="msg ok">Applied.</div>' + summaryHtml(done.summary);
+          el("csvFile").value = ""; el("csvPreview").disabled = true; csvText = "";
+          return Promise.all([loadRoster(), loadStatus(), loadReview()]);
+        }).catch(function (e) { msg("csvMsg", e.message, "err"); });
+      });
+    }).catch(function (e) { el("csvResult").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; });
+  });
+
+  el("saveStaff").addEventListener("click", function () {
+    PI.post("roster/staff", { names: el("staff").value.split("\n") }).then(function () { msg("staffMsg", "Saved. Applies after Re-link.", "ok"); loadStatus(); })
+      .catch(function (e) { msg("staffMsg", e.message, "err"); });
+  });
+
+  /* ------------------------------------------------------------ review queue */
+  function loadReview() {
+    return PI.api("review").then(function (r) {
+      if (!r.items.length) { el("review").innerHTML = '<span class="muted small">Nothing to review.</span>'; return; }
+      var opts = roster.partners.slice().sort(function (a, b) { return a.name.localeCompare(b.name); })
+        .map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + "</option>"; }).join("");
+      el("review").innerHTML = "<table><thead><tr><th>Name in the notes</th><th>Times</th><th>Match to a partner</th><th></th></tr></thead><tbody>" +
+        r.items.map(function (u, n) {
+          var sug = (u.candidates || []).map(function (c) { return '<button class="tiny" data-map="' + n + '" data-id="' + esc(c.id) + '">Same as ' + esc(c.name) + "</button>"; }).join(" ");
+          return "<tr><td><b>" + esc(u.raw) + "</b>" + (u.pending ? "<div>" + PI.pill("est", "applies on Re-link") + "</div>" : "") + "</td><td>" + u.count + "</td><td>" + sug +
+            '<div class="row" style="margin-top:6px"><select id="sel' + n + '"><option value="">Choose a partner…</option>' + opts + '</select><button class="tiny" data-pick="' + n + '">Match</button></div></td>' +
+            '<td><button class="tiny" data-add="' + n + '">Add as non-member</button></td></tr>';
+        }).join("") + "</tbody></table>";
+      var items = r.items;
+      function done() { return Promise.all([loadRoster(), loadStatus(), loadReview()]); }
+      Array.prototype.forEach.call(el("review").querySelectorAll("button[data-map]"), function (b) {
+        b.addEventListener("click", function () { PI.post("review/map", { raw: items[+b.getAttribute("data-map")].raw, companyId: b.getAttribute("data-id") }).then(done); });
+      });
+      Array.prototype.forEach.call(el("review").querySelectorAll("button[data-pick]"), function (b) {
+        b.addEventListener("click", function () {
+          var n = +b.getAttribute("data-pick"), id = el("sel" + n).value;
+          if (id) PI.post("review/map", { raw: items[n].raw, companyId: id }).then(done);
+        });
+      });
+      Array.prototype.forEach.call(el("review").querySelectorAll("button[data-add]"), function (b) {
+        b.addEventListener("click", function () { PI.post("review/add", { raw: items[+b.getAttribute("data-add")].raw }).then(done); });
+      });
+    }).catch(function () { el("review").innerHTML = '<span class="muted small">Review opens after the first scan.</span>'; });
+  }
+
+  /* ------------------------------------------------------------ topics */
+  function loadTopics() {
+    return PI.api("topics").then(function (r) {
+      var opts = '<option value="">Keep separate</option>' + r.topics.filter(function (t) { return t.id !== "other"; }).map(function (t) {
+        return '<option value="' + esc(t.id) + '">' + esc(t.label) + "</option>"; }).join("");
+      el("topics").innerHTML = "<table><thead><tr><th>Topic</th><th>Shown as</th><th>Merge into</th><th></th></tr></thead><tbody>" +
+        r.topics.filter(function (t) { return t.id !== "other"; }).map(function (t, n) {
+          var o = t.override || {};
+          return "<tr><td>" + esc(t.label) + '</td><td><input id="tl' + n + '" value="' + esc(o.label || "") + '" placeholder="' + esc(t.label) + '"></td><td><select id="tm' + n + '">' + opts + '</select></td>' +
+            '<td><button class="tiny" data-t="' + n + '">Save</button></td></tr>';
+        }).join("") + "</tbody></table>";
+      var list = r.topics.filter(function (t) { return t.id !== "other"; });
+      list.forEach(function (t, n) { el("tm" + n).value = (t.override && t.override.mergeInto) || ""; });
+      Array.prototype.forEach.call(el("topics").querySelectorAll("button[data-t]"), function (b) {
+        b.addEventListener("click", function () {
+          var n = +b.getAttribute("data-t");
+          PI.post("topics/override", { id: list[n].id, label: el("tl" + n).value, mergeInto: el("tm" + n).value })
+            .then(function () { b.textContent = "Saved"; setTimeout(function () { b.textContent = "Save"; }, 1500); })
+            .catch(function (e) { alert(e.message); });
+        });
+      });
+    }).catch(function () { el("topics").innerHTML = '<span class="muted small">Topics appear after the first scan.</span>'; });
+  }
+
+  el("rebuild").title = "Applies the current partner list to the saved results. No Box, no Claude.";
+  Promise.all([loadRoster(), loadStatus()]).then(function () { loadReview(); loadTopics(); pollRuns(false); })
+    .catch(function (e) { el("status").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; });
+})();
+</script>
+</body>
+</html>

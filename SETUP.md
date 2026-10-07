@@ -47,6 +47,9 @@ gated by the shared admin accounts, never a password of its own.
 | `public/apprenticeship/` | Worker static assets | Apprenticeship Readiness Toolbox: the employer's front door (`index.html` — signed in goes to their dashboard, everyone else to sign-in/registration), sign-in (`account.html`), the respondent chat (`respond.html`), the workforce needs assessment (`workforce.html`), their readiness dashboard (`dashboard.html`), and the control panel (`control-panel/index.html` and `control-panel/responses.html`, both admin-gated). See **15 · Apprenticeship Readiness Toolbox** below. |
 | `src/apprenticeship_workforce.js` | Cloudflare Worker | Step 2's Manufacturing Workforce Needs Assessment: role normalisation, the gap arithmetic, the apprentice projection and the CSV. No Claude call anywhere in it. |
 | `src/apprenticeship.js` | Cloudflare Worker | `/api/apprenticeship/*`. The respondent chat, results and dashboard routes are public and unauthenticated; projects, the assessment editor, responses, the issue log and the CSV are admin-gated. Its own Claude key, `apprenticeship_claude_api`, is called live from the Worker (see step 15). |
+| `public/partner-intel/` | Worker static assets | Partner Intelligence, staff only: the app (`index.html`: Home, Ask, Companies, Explore) and its control panel (`control-panel/index.html`: Box folder, scans, partner list, names to review, topics). Both always require a signed-in admin account. |
+| `src/partner_intel.js` | Cloudflare Worker | `/api/partner-intel/*`. Every route except the pipeline relay requires an admin session. Holds the Box credential, so the pipeline only sees file bytes. Its own Claude key, `partner_intel_claude_api`, answers Ask (see step 16). |
+| `partner_intel/` + `.github/workflows/partner_intel_run.yml` | Python / GitHub Actions | The scan: Box files to text, to units, to one Claude call each, verified and published. Runs every morning and from the control panel. |
 
 ---
 
@@ -991,6 +994,68 @@ No Box folder is involved; the admin CSV is the export path.
 
 ---
 
+## 16 · Partner Intelligence
+
+A staff-only tool that reads every meeting note in one Box folder and answers four questions: what is urgent right now, which issues the most partners share, who can help with a given need, and what a given company's wins, issues and solutions are. It is for Conexus staff only. Nothing in it is shown to members, and every route except the pipeline's own requires an admin sign-in, whatever the app-visibility tier says.
+
+### Setup
+
+1. Add a repository secret named exactly **`partner_intel_claude_api`**, an Anthropic API key used only by this tool. Run **Set Cloudflare secrets** from the Actions tab: it pushes the key to the Worker (Ask needs it) and the scan reads the repository copy.
+2. Make sure `.github/workflows/partner_intel_run.yml` is on `main`. GitHub runs the daily schedule only from the default branch.
+3. Box must already be connected (step 5). `BOX_RELAY_URL`, `BOX_RELAY_SECRET` and `PANEL_GITHUB_TOKEN` are the same ones the other tools use.
+4. Open `/partner-intel/control-panel/`. Under **Partner list**, upload the Salesforce export (see below).
+5. Under **Box folder**, choose the folder that holds all the folders of notes.
+6. Click **Trial run (first 5 files)**. When it finishes, read **Last scan**, then open the tool and check a few results against their source quotes.
+7. Click **Scan now** for everything. From then on a scan runs every morning at about 6 to 7 a.m. Indiana time.
+
+### What a scan reads
+
+- Read: `.docx`, `.txt`, `.md`, `.vtt`, `.srt`, `.html` and PDFs that have a text layer.
+- Ignored without comment: images, audio, spreadsheets and anything else.
+- Reported on the control panel, never silently skipped: `.doc` and other formats that need saving as `.docx`; PDFs that are scans (not OCR'd); unreadable or oversize files.
+- Subfolders are walked. A file Box says has not changed is not downloaded. Moving a file keeps its results; deleting it from Box removes it from the tool at the next full scan.
+
+### How a note becomes data
+
+1. The file becomes text. Word tables are kept, because meeting templates put the discussion inside table cells.
+2. The note's format is recognized and cut into units: one unit per company in a running Copilot onboarding file, one per President and CEO Network template, one per transcript. Placeholders ("Theme 3: Insert") and ice-breaker themes are removed in code.
+3. Each unit is sent to Claude once, with a strict tool schema. Every row it returns must carry a verbatim quote. Code checks the quote against the notes, and a row whose quote is not there is dropped and counted in **Last scan** (rows dropped).
+4. Company and person names are matched to the partner list in code. A name that fits two partners (for example "Toyota") is queued for review, never guessed.
+5. The same date and company in two files (a Word file and a text summary of one meeting) counts as one meeting.
+
+### Dates
+
+The date in the text comes first (the top of the document, or a line labelled "Date"), then a date in the file name, then the Box upload date. A date after the upload date is never accepted from the text. Every date records which of the three it came from. Rows that only have the upload date show an "estimated date" tag, and **Exact dates only** hides them. A section added to a running file later takes the date it arrived, not the file's first upload date.
+
+### Keeping the partner list current
+
+The partner list drives industry, member status, contacts, and how names in the notes are recognized.
+
+- **Update from a Salesforce export**: choose the CSV and **Preview changes**. With *full current list*, partners missing from the file become Former member, new ones are added and returning ones are reactivated. With *only add and update*, nobody is deactivated. Nobody is ever deleted by an upload, so a partner who left keeps their history. The file may be UTF-8 or Windows-1252.
+- **Add or edit one partner**: name, industry, status, contacts, and other names the notes use.
+- **Names to review** lists companies named in the notes that the list does not recognize. Match one to a partner, or add it as a non-member.
+- After any of these, click **Re-link now**. It re-applies the list to every stored result. It reads no files and makes no Claude call.
+
+### Cost
+
+- The first scan is the expensive one. Use the trial run first. **Last scan** shows tokens used.
+- A day with no new notes uses no Claude: unchanged files are skipped by Box checksum, and text already read is served from the stored results, keyed by the text, the prompt version and the model, so renaming or moving a file costs nothing.
+- Ask makes one Claude call per new question, over a deterministic shortlist of about ten companies. The answer is saved against the data version, so the same question costs nothing until the next scan changes the data.
+- No Anthropic prompt caching is used (see CLAUDE.md: scans are hours or days apart).
+- `claude-opus-5` is used for both. Changing the extraction prompt or topic list means bumping `PROMPT_VERSION` in `partner_intel/extract.py`, which re-reads everything.
+
+### Where things live
+
+Box holds only the notes. Everything the tool produces lives in Workers KV: `pi:roster` (the partner list), `pi:state:*` (which files were read, and every stored Claude result), `pi:data:*` (the published data), `pi:ask:*` (saved answers). If KV were ever emptied, a full scan rebuilds the data at full cost.
+
+### Known limits
+
+- A solution is linked to a problem by topic, not one to one.
+- A transcript speaker who is only a first name is resolved only through the meeting's attendee table.
+- Industry and member status come from the partner list. Companies that appear only in the notes show as "Unknown" until added to it.
+
+---
+
 ## Notes for a security review
 
 - **Box access is user-delegated, one shared app**: the app acts as you, so it can reach
@@ -1067,6 +1132,12 @@ No Box folder is involved; the admin CSV is the export path.
   sensitive — it's sent in plain text as part of SEC EDGAR's required fair-access
   request header, the same way any browser's user agent is — it's a repository secret
   only because there's no other per-repo config file for it.
+- **Partner Intelligence holds members' candid statements, so it has no public tier.** Every
+  `/api/partner-intel/*` route except `relay/*` requires a beta-account session, and both pages
+  redirect to sign-in without one, regardless of the app-visibility setting. The relay routes
+  require the shared `BOX_RELAY_SECRET`. The Box credential never leaves the Worker: the pipeline
+  receives folder listings and file bytes through the relay. Notes are fenced as data in every
+  prompt, and every extracted row must quote the notes, checked in code.
 
 ---
 
@@ -1097,3 +1168,9 @@ No Box folder is involved; the admin CSV is the export path.
 | Issue Network Mapper's network/timeline pages look empty after switching projects | Each project has its own network/timeline, only populated once that specific project has run its pipeline at least once — check the URL's `?project=` matches the one you just ran. |
 | A new Issue Network Mapper project's name collides with an existing one | Its id gets a numeric suffix automatically (`-2`, `-3`, ...) rather than failing — check the **Project** dropdown for the exact name if you're not sure which is which. |
 | A meeting shows "Failed" in the Meetings table | Its error is shown right in the table — often an unreadable/corrupt file for its declared type; fix the file and re-upload it as a new meeting (the failed one is left as-is, not retried automatically). |
+| Partner Intelligence shows "There is no data yet" | No scan has finished. Choose the folder and run a trial scan in `/partner-intel/control-panel/`. |
+| Partner Intelligence "Scan now" says GitHub refused the trigger (404) | `partner_intel_run.yml` is not on the branch the Worker dispatches to (`GITHUB_BRANCH`, default `main`). Merge it. |
+| A Partner Intelligence scan reports "PARTNER_INTEL_CLAUDE_API_KEY is not set" | The repository secret `partner_intel_claude_api` is missing. Nothing new was read, and the files retry on the next scan. |
+| Ask says "Ranked by keyword match only" | `partner_intel_claude_api` has not been pushed to the Worker. Run **Set Cloudflare secrets**. |
+| A company shows industry "Unknown" | It is in the notes but not on the partner list. Add it under **Names to review** or **Partner list**, then Re-link. |
+| Dates on many Partner Intelligence rows say "estimated date" | Those notes carry no date in the text or the file name, so the Box upload date is used. Put the date in the file name to fix it, or filter with **Exact dates only**. |

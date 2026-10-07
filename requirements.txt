@@ -9,3 +9,4 @@ networkx==3.4.2
 pandas>=2.0
 lxml>=5.0
 pydantic>=2.5
+pypdf>=4.0

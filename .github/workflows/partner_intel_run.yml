@@ -1,0 +1,67 @@
+name: Partner Intelligence -- scan notes
+
+# Reads the meeting notes in the Box folder chosen on the Partner Intelligence control panel,
+# and publishes the result to the Worker. Three ways it starts:
+#
+#   1. Every day, below. It lists the folder, skips every file Box says has not changed,
+#      and calls Claude only for text it has never read. A day with no new notes costs no
+#      Claude usage.
+#   2. The control panel's "Scan now" (mode scan) and "Re-link" (mode rebuild) buttons.
+#   3. By hand from the Actions tab.
+#
+# mode   scan     walk Box, read what is new, rebuild, publish.
+#        rebuild  no Box, no Claude: re-join stored results with the current partner list.
+# limit  stop after this many changed files. 0 means no limit. Use a small number for a first
+#        trial so the first bill is small.
+# force  re-read every file. Text already read is still served from the stored results.
+#
+# Needs repository secrets: partner_intel_claude_api, BOX_RELAY_URL, BOX_RELAY_SECRET.
+on:
+  schedule:
+    # 11:07 UTC, which is 6 or 7 in the morning in Indiana.
+    - cron: "7 11 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "scan or rebuild"
+        required: false
+        default: "scan"
+        type: string
+      limit:
+        description: "Stop after this many changed files (0 = no limit)"
+        required: false
+        default: "0"
+        type: string
+      force:
+        description: "Re-read every file (true or false)"
+        required: false
+        default: "false"
+        type: string
+
+concurrency:
+  group: partner-intel-run
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Scan, read and publish
+        env:
+          PI_MODE: ${{ inputs.mode || 'scan' }}
+          PI_LIMIT: ${{ inputs.limit || '0' }}
+          PI_FORCE: ${{ inputs.force || 'false' }}
+          PARTNER_INTEL_CLAUDE_API_KEY: ${{ secrets.partner_intel_claude_api }}
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: python -m partner_intel.run
