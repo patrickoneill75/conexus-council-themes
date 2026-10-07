@@ -20,6 +20,10 @@ from .extract import normalize
 from .resolve import Match, Resolver, core_key
 from .roster import Roster
 
+# Bumped when the published dataset gains fields the Worker's pages depend on. The control panel
+# offers a one-time rebuild to datasets published before it (no Box, no Claude).
+SCHEMA_VERSION = 2
+
 CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
 URGENCY_RANK = {"high": 3, "medium": 2, "low": 1, "none": 0}
 _STOP = {"the", "a", "an", "and", "of", "to", "for", "in", "on", "with", "is", "are", "at", "by"}
@@ -47,6 +51,28 @@ def source_folder(path: str) -> str:
     A file sitting directly in the root has no sub-folder and is "(root)"."""
     parts = [p for p in (path or "").split("/") if p]
     return parts[1] if len(parts) > 1 else "(root)"
+
+
+def _file_stem(name: str) -> str:
+    stem = re.sub(r"\.[A-Za-z0-9]{2,5}$", "", name or "")
+    return " ".join(stem.replace("_", " ").split()) or "Untitled"
+
+
+def _meeting(shape: str, series: str, event_type: str, company_name: str, single_company: str, stem: str):
+    """Which meeting a row belongs to, so a program's data can be shown as meetings.
+
+    A cohort is one meeting however many companies spoke. A running onboarding file holds one
+    call per company. A file about one company is a visit to that company. Anything else (a
+    council meeting, a board meeting, a workshop) is one meeting per file.
+    Returns (label, kind).
+    """
+    if series and series != event_type:
+        return series, "cohort"
+    if shape == "copilot_recap":
+        return company_name or "Unattributed", "company"
+    if single_company:
+        return single_company, "company"
+    return stem, "meeting"
 
 
 def _note_company_id(raw: str) -> str:
@@ -113,6 +139,7 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
     for file_id, entry in sorted(registry.items(), key=lambda kv: (kv[1].get("event", {}).get("date", ""), kv[1].get("path", ""))):
         event = entry.get("event") or {}
         used_units = 0
+        entry_rows: list[dict] = []
         for unit in entry.get("units", []):
             cached = cache.get(unit["key"])
             if not cached:
@@ -162,7 +189,7 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     review.append("estimated_date")
                 date = unit.get("date") or event.get("date") or ""
                 meeting_key = f"{date}|{company_id or core_key(raw_name)}"
-                rows_out.append({
+                row_dict = {
                     "id": hashlib.sha1(f"{unit['key']}:{index}".encode()).hexdigest()[:12],
                     "kind": row["kind"], "company_id": company_id,
                     "company_raw": raw_name, "speaker": row["speaker"],
@@ -176,7 +203,22 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     "source_folder": entry.get("source") or source_folder(entry.get("path", "")),
                     "source_folders": [entry.get("source") or source_folder(entry.get("path", ""))],
                     "sources": [{"id": file_id, "name": entry.get("name", ""), "path": entry.get("path", "")}],
-                })
+                }
+                entry_rows.append(row_dict)
+                rows_out.append(row_dict)
+        # Meetings are decided per file, once every row's company is known.
+        file_ids = {r["company_id"] for r in entry_rows if r["company_id"]}
+
+        def display(cid: str, raw: str) -> str:
+            return (partners.get(cid, {}).get("name") or notes_companies.get(cid, {}).get("name") or raw or "")
+
+        single = display(next(iter(file_ids)), "") if len(file_ids) == 1 else ""
+        stem = _file_stem(entry.get("name", ""))
+        for r in entry_rows:
+            label, kind = _meeting(event.get("shape", ""), event.get("series", ""), event.get("type", ""),
+                                   display(r["company_id"], r["company_raw"]), single, stem)
+            r["meeting_label"], r["meeting_kind"] = label, kind
+            r["meeting_id"] = hashlib.sha1(f"{r['date']}|{core_key(label) or label.lower()}".encode()).hexdigest()[:10]
         if used_units:
             events.append({"id": file_id, "name": entry.get("name", ""), "path": entry.get("path", ""),
                            "date": event.get("date", ""), "date_source": event.get("date_source", ""),
@@ -197,7 +239,7 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
         info["candidates"] = [{"id": c, "name": partners[c]["name"]} for c in info["candidates"] if c in partners]
     version = hashlib.sha1((generated_at + "".join(i["id"] for i in insights)).encode()).hexdigest()[:12]
     return {
-        "version": version, "generated_at": generated_at, "roster_updated_at": roster.updated_at,
+        "schema": SCHEMA_VERSION, "version": version, "generated_at": generated_at, "roster_updated_at": roster.updated_at,
         "topics": topics.as_dataset(), "events": events, "insights": insights,
         "companies": sorted(notes_companies.values(), key=lambda c: c["name"].lower()),
         "unmatched": sorted(unmatched.values(), key=lambda u: -u["count"]),

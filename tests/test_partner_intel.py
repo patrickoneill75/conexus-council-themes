@@ -900,5 +900,67 @@ class ExportTests(unittest.TestCase):
 
 
 
+# ------------------------------------------------------------------------------ meetings
+class MeetingTests(unittest.TestCase):
+    def build(self, *files, shape_by_id=None, series_by_id=None, type_by_id=None):
+        reg, cache = registry_with(*files)
+        for fid, entry in reg.items():
+            entry["event"]["shape"] = (shape_by_id or {}).get(fid, "generic")
+            entry["event"]["type"] = (type_by_id or {}).get(fid, entry["event"]["type"])
+            # As in the real scan, the series is the event type unless the notes name a cohort.
+            entry["event"]["series"] = (series_by_id or {}).get(fid, entry["event"]["type"])
+        return build.build_dataset(reg, cache, ROSTER, "t")
+
+    def test_the_dataset_says_which_schema_it_is(self):
+        ds = self.build(("1", "a.docx", "2026-04-24", "text", [row()], "partner"))
+        self.assertEqual(ds["schema"], build.SCHEMA_VERSION)
+        self.assertGreaterEqual(build.SCHEMA_VERSION, 2, "the Worker's one-time update keys on this")
+
+    def test_a_cohort_is_one_meeting_across_files_and_formats_on_the_same_date(self):
+        """The admin's rule: the same date and cohort is one meeting however many files hold it."""
+        ds = self.build(("1", "04.24.26 Cohort 2 Notes.docx", "2026-04-24", "text", [row(company="Lucas Oil", speaker="")], "partner"),
+                        ("2", "2026-04-24 Cohort 2 Meeting.txt", "2026-04-24", "text", [row(company="Zoeller", speaker="", title="Other point entirely")], "partner"),
+                        ("3", "05.22.26 Cohort 2 Notes.docx", "2026-05-22", "text", [row(company="Lucas Oil", speaker="")], "partner"),
+                        series_by_id={"1": "Cohort 2", "2": "Cohort 2", "3": "Cohort 2"},
+                        type_by_id={"1": "President and CEO Network Call", "2": "President and CEO Network Call", "3": "President and CEO Network Call"},
+                        shape_by_id={"1": "pcn_template", "2": "generic", "3": "pcn_template"})
+        by_date = {}
+        for i in ds["insights"]:
+            by_date.setdefault(i["date"], set()).add((i["meeting_id"], i["meeting_label"], i["meeting_kind"]))
+        self.assertEqual(len(by_date["2026-04-24"]), 1, "two companies in two files: one meeting")
+        self.assertEqual(next(iter(by_date["2026-04-24"]))[1:], ("Cohort 2", "cohort"))
+        self.assertNotEqual(next(iter(by_date["2026-04-24"]))[0], next(iter(by_date["2026-05-22"]))[0], "another date is another meeting")
+
+    def test_a_running_onboarding_file_is_one_call_per_company(self):
+        """BUG guard: one Copilot file holds 19 companies' calls under one date. Grouping by
+        file would show them as a single 'meeting'."""
+        ds = self.build(("1", "Copilot Onboarding Notes.docx", "2026-01-01", "box_upload",
+                         [row(company="Zoeller", speaker=""), row(company="Lucas Oil", speaker="", title="A different point")], "partner"),
+                        shape_by_id={"1": "copilot_recap"}, type_by_id={"1": "Onboarding Call"})
+        labels = {i["company_id"]: (i["meeting_label"], i["meeting_kind"]) for i in ds["insights"]}
+        self.assertEqual(labels, {"c-zoeller": ("Zoeller Custom Molding", "company"), "c-lucas": ("Lucas Oil", "company")})
+        self.assertEqual(len({i["meeting_id"] for i in ds["insights"]}), 2)
+
+    def test_a_file_about_one_company_is_a_visit_to_that_company(self):
+        ds = self.build(("1", "Zoeller - 10.05.26.docx", "2026-10-05", "filename",
+                         [row(company="Zoeller", speaker=""), row(company="", speaker="", title="A point with no company named")], "partner"),
+                        type_by_id={"1": "Site Visit"})
+        self.assertEqual({(i["meeting_label"], i["meeting_kind"]) for i in ds["insights"]}, {("Zoeller Custom Molding", "company")},
+                         "rows that name no company still belong to the visit")
+        self.assertEqual(len({i["meeting_id"] for i in ds["insights"]}), 1)
+
+    def test_a_meeting_of_many_companies_is_named_for_its_file(self):
+        ds = self.build(("1", "CIAIC_Q4_2025_Meeting.docx", "2025-11-12", "text",
+                         [row(company="Zoeller", speaker=""), row(company="Lucas Oil", speaker="", title="Another")], "partner"))
+        self.assertEqual({(i["meeting_label"], i["meeting_kind"]) for i in ds["insights"]}, {("CIAIC Q4 2025 Meeting", "meeting")})
+
+    def test_the_csv_names_the_meeting(self):
+        from partner_intel import export
+        ds = self.build(("1", "CIAIC_Q4_2025_Meeting.docx", "2025-11-12", "text",
+                         [row(company="Zoeller", speaker=""), row(company="Lucas Oil", speaker="", title="Another")], "partner"))
+        self.assertIn("Meeting", export.COLUMNS)
+        self.assertIn("CIAIC Q4 2025 Meeting", export.insights_csv(ds, ROSTER))
+
+
 if __name__ == "__main__":
     unittest.main()

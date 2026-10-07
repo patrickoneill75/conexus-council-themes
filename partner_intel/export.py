@@ -19,7 +19,7 @@ INSIGHTS_FILE = "partner_intel_insights.csv"
 STATE_FILE = "partner_intel_state.json"
 FILES = (DATABASE_FILE, INSIGHTS_FILE, STATE_FILE)
 
-COLUMNS = ["InsightID", "Date", "DateSource", "SourceFolder", "EventType", "Series", "Company",
+COLUMNS = ["InsightID", "Date", "DateSource", "SourceFolder", "EventType", "Series", "Meeting", "Company",
            "MemberStatus", "Industry", "Type", "Topic", "Title", "Detail", "Quote", "Urgency",
            "UrgencyReason", "Status", "Addresses", "Tags", "Confidence", "Speaker", "Scope",
            "SourceFiles", "ReviewFlags"]
@@ -46,7 +46,7 @@ def insights_csv(dataset: dict, roster: Roster) -> str:
         status = MEMBER_LABEL.get(partner["status"], partner["status"]) if partner else "Not on the partner list"
         writer.writerow([_safe(v) for v in [
             i["id"], i["date"], i["date_source"], ", ".join(i.get("source_folders") or [i.get("source_folder", "")]),
-            i["event_type"], i["series"], name, status, (partner or {}).get("industry") or "Unknown",
+            i["event_type"], i["series"], i.get("meeting_label", ""), name, status, (partner or {}).get("industry") or "Unknown",
             i["kind"], topics.get(i["topic"], i["topic"]), i["title"], i["detail"], i["quote"], i["urgency"],
             i["urgency_reason"], i["status"], i["solves"], "; ".join(i["tags"]), i["confidence"], i["speaker"],
             i["scope"], "; ".join(sorted({s["name"] for s in i["sources"]})), "; ".join(i["review"]),

@@ -996,7 +996,7 @@ No Box folder is involved; the admin CSV is the export path.
 
 ## 16 · Partner Intelligence
 
-A staff-only tool that reads every meeting note in one Box folder and answers four questions: what is urgent right now, which issues the most partners share, who can help with a given need, and what a given company's wins, issues and solutions are. It is for Conexus staff only. Nothing in it is shown to members, and every route except the pipeline's own requires an admin sign-in, whatever the app-visibility tier says.
+A staff-only tool that reads every meeting note in one Box folder and answers four questions: which topics the most partners are raising, what each program's meetings produced, who can help with a given need, and what a given company's wins, issues and solutions are. It is for Conexus staff only. Nothing in it is shown to members, and every route except the pipeline's own requires an admin sign-in, whatever the app-visibility tier says.
 
 ### Setup
 
@@ -1037,6 +1037,20 @@ If no Database folder is chosen the scan still works, and **Last scan** says not
 
 The date in the text comes first (the top of the document, or a line labelled "Date"), then a date in the file name, then the Box upload date. A date after the upload date is never accepted from the text. Every date records which of the three it came from. Rows that only have the upload date show an "estimated date" tag, and **Exact dates only** hides them. A section added to a running file later takes the date it arrived, not the file's first upload date.
 
+### Trending topics and programs
+
+**Home** ranks topics by how many companies raised them in the last 30, 60 or 90 days (problems and asks only). Each topic shows up to five bullet points written by Claude from the notes behind it. A chevron on each bullet opens the supporting examples with their source quotes. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. The page appears at once and the bullets fill in a few seconds later.
+
+**Programs** is a new tab. Each source folder (Board Meetings, PCN, Industry Exchange Workshops and so on) is a program. A program page has its own top topics, built the same way, over 90 days, a year or all time, and a **Recent data** list of its meetings, newest first. A meeting is whatever the notes make it:
+
+- a **cohort** (PCN notes are grouped by cohort and date; the Word and text copies of one cohort on one date are one meeting),
+- a **company** (a site visit, or one company's call in the running onboarding file, grouped by company and date),
+- or **one meeting per file** (a council or board meeting), named for the file.
+
+Click a meeting to see its issues, solutions, wins and other items.
+
+Summaries cost one Claude call per batch of up to eight topics, and each is saved under the topic and the exact notes behind it. The same notes are never paid for twice: a summary is rewritten only when a scan changes the evidence for that topic. Opening a program, or changing a filter, can write new ones the first time.
+
 ### Source folders
 
 The top-level sub-folders under the notes folder (ADAPT, Board Meetings, CIAIC and so on) are each a **source**. Home, Ask and Explore show a row of source buttons: switch on one or several to limit the view to them, and clear to see everything. Choosing Board Meetings shows those rows even though board notes are otherwise kept out as Conexus's own business. The CSV has a SourceFolder column.
@@ -1059,6 +1073,12 @@ The partner list drives industry, member status, contacts, and how names in the 
 - Ask makes one Claude call per new question, over a deterministic shortlist of about ten companies. The answer is saved against the data version, so the same question costs nothing until the next scan changes the data.
 - No Anthropic prompt caching is used (see CLAUDE.md: scans are hours or days apart).
 - `claude-opus-5` is used for both. Changing the extraction prompt or topic list means bumping `PROMPT_VERSION` in `partner_intel/extract.py`, which re-reads everything.
+
+### The one-time update
+
+When a release adds fields to the saved data (the Programs release does), the control panel shows a card at the top: **One-time update**. Its button rebuilds the saved data from the results already stored. It reads nothing from Box and makes no Claude call, so it is not a re-scan and is cheap. It starts once and the card then disappears for good. If you never press it, the same rebuild happens at the next scan, because every scan ends by rebuilding. Until then Programs groups meetings as well as it can and says so.
+
+If the update fails to start (for example the GitHub token is missing) the use is not spent and the card stays.
 
 ### Where things live
 
