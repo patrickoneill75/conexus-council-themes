@@ -2785,18 +2785,132 @@ test("partner_intel: Home has no urgent-problems list any more, only a high-urge
   assert.equal(home.counts.issues, 3);
 });
 
-test("partner_intel: trending topics rank by distinct companies, then mentions, and leave out 'other'", async () => {
+test("partner_intel: trending topics rank by distinct companies, then distinct meetings, and leave out 'other'", async () => {
   const { env, token } = await piEnv([
-    ...Array.from({ length: 5 }, () => ins({ topic: "quality", company_id: "c-a" })),
+    ...Array.from({ length: 5 }, () => ins({ topic: "quality", company_id: "c-a" })),   // one company, one meeting, five rows
     ins({ topic: "talent_pipeline", company_id: "c-a" }), ins({ topic: "talent_pipeline", company_id: "c-b" }),
     ins({ topic: "ai_adoption", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "" }),
     ins({ topic: "other", company_id: "c-a" }), ins({ topic: "other", company_id: "c-b" }),
   ]);
   const home = await getJson("home?days=30", env, token);
-  assert.deepEqual(home.trending.map((g) => [g.topic, g.companyCount, g.mentions]),
-    [["talent_pipeline", 2, 2], ["quality", 1, 5], ["ai_adoption", 1, 2]],
-    "two companies outrank five mentions by one, and 'other' is not ranked");
+  assert.deepEqual(home.trending.map((g) => [g.topic, g.companyCount, g.meetingCount]),
+    [["talent_pipeline", 2, 2], ["ai_adoption", 1, 2], ["quality", 1, 1]],
+    "two companies outrank one; of the rest, two meetings outrank five rows from one meeting; 'other' is not ranked");
   assert.equal(home.uncategorized, 2);
+});
+
+const row = (over) => ins({ date: isoAgo(5), ...over });
+const longMeeting = (id, n, over = {}) => Array.from({ length: n }, (_, k) => row({ meeting_id: id, meeting_label: id, title: `${id} point ${k}`, ...over }));
+
+test("partner_intel: one long meeting with dozens of notes does not outweigh several short ones", async () => {
+  // The reported bug: long, detailed meetings (API Alliance, Aegis) produced the most rows, so they drove the ranking.
+  const { env, token } = await piEnv([
+    ...longMeeting("long-aegis", 40, { topic: "quality", company_id: "c-a" }),                      // 1 company, 1 meeting, 40 rows
+    row({ topic: "talent_pipeline", company_id: "c-b", meeting_id: "m1", meeting_label: "m1" }),     // 1 company, 2 meetings, 2 rows
+    row({ topic: "talent_pipeline", company_id: "c-b", meeting_id: "m2", meeting_label: "m2", date: isoAgo(9) }),
+    row({ topic: "ai_adoption", company_id: "c-b", meeting_id: "m3", meeting_label: "m3" }),         // 2 companies, 2 meetings, 2 rows
+    row({ topic: "ai_adoption", company_id: "c-c", meeting_id: "m4", meeting_label: "m4" }),
+  ]);
+  const home = await getJson("home?days=30", env, token);
+  assert.deepEqual(home.trending.map((g) => [g.topic, g.companyCount, g.meetingCount, g.mentions]),
+    [["ai_adoption", 2, 2, 2], ["talent_pipeline", 1, 2, 2], ["quality", 1, 1, 40]],
+    "the 40-row meeting is last: it is one company in one meeting");
+});
+
+test("partner_intel: high urgency counts the meetings that called a topic urgent, not the rows", async () => {
+  const { env, token } = await piEnv([
+    ...longMeeting("m-long", 10, { topic: "quality", company_id: "c-a", urgency: "high" }),
+    row({ topic: "quality", company_id: "c-b", meeting_id: "m-b", urgency: "high" }),
+    row({ topic: "quality", company_id: "c-b", meeting_id: "m-c", urgency: "medium", date: isoAgo(8) }),
+  ]);
+  const quality = (await getJson("home?days=30", env, token)).trending[0];
+  assert.deepEqual([quality.highUrgency, quality.meetingCount, quality.mentions], [2, 3, 12], "eleven high rows, but two meetings");
+});
+
+test("partner_intel: summaries hear every company and meeting before any one meeting twice", async () => {
+  const rows = [
+    ...longMeeting("long-api", 30, { topic: "quality", company_id: "c-a", urgency: "high" }),
+    row({ topic: "quality", company_id: "c-b", meeting_id: "b1", meeting_label: "b1", title: "from b" }),
+    row({ topic: "quality", company_id: "c-c", meeting_id: "c1", meeting_label: "c1", title: "from c" }),
+  ];
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  let sent;
+  await withFetch((url, init) => { sent = topicsIn(init).payload[0]; return summaryOut([sent], (t) => ({ topic_id: t.topic_id,
+    bullets: [{ text: "Point.", evidence_ids: [t.evidence[0].id] }] })); },
+  () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env));
+  const byMeeting = {};
+  for (const e of sent.evidence) byMeeting[e.meeting] = (byMeeting[e.meeting] || 0) + 1;
+  assert.equal(byMeeting["long-api"], 3, "the 30-row meeting gives three rows at most");
+  assert.equal(byMeeting.b1, 1);
+  assert.equal(byMeeting.c1, 1, "and the other companies are in the evidence even though they said less");
+  assert.equal(sent.evidence.length, 5);
+  assert.deepEqual([sent.companies_in_topic, sent.meetings_in_topic], [3, 3], "the model is told the true breadth, not the row count");
+  assert.equal("mentions_in_topic" in sent, false);
+});
+
+test("partner_intel: the summary prompt tells the model never to judge breadth by rows", async () => {
+  const { env, token } = await piEnv(trendingRows(), { partner_intel_claude_api: "k" });
+  let system = "";
+  await withFetch((url, init) => { const t = topicsIn(init); system = t.body.system; return summaryOut(t.payload, (x) => ({ topic_id: x.topic_id,
+    bullets: [{ text: "P.", evidence_ids: [x.evidence[0].id] }] })); },
+  () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env));
+  assert.match(system, /NEVER by the number of rows/);
+  assert.match(system, /one voice/);
+});
+
+test("partner_intel: a company's top issues count each meeting once, so one long meeting is not a pattern", async () => {
+  const { env, token } = await piEnv([
+    ...longMeeting("long", 12, { topic: "quality", urgency: "medium" }),                                   // 12 rows, one meeting
+    row({ topic: "talent_pipeline", urgency: "medium", meeting_id: "t1", meeting_label: "t1" }),           // two meetings, one row each
+    row({ topic: "talent_pipeline", urgency: "medium", meeting_id: "t2", meeting_label: "t2" }),
+  ]);
+  const p = await getJson("company?id=c-a", env, token);
+  assert.deepEqual(p.topIssues.map((t) => [t.topic, t.count]), [["talent_pipeline", 2], ["quality", 1]],
+    "two meetings outrank twelve rows from one");
+});
+
+test("partner_intel: Ask scores a company on its best row from each meeting, not on several rows from one", async () => {
+  const mk = (company, meeting, n) => Array.from({ length: n }, (_, k) => ins({ kind: "solution", urgency: "none", company_id: company,
+    meeting_id: meeting, meeting_label: meeting, title: "Camera quality inspection", detail: "Machine vision quality inspection.",
+    topic: "quality", tags: ["inspection"], date: isoAgo(5), id: `${meeting}-${k}` }));
+  const { env, token } = await piEnv([...mk("c-a", "long-a", 6), ...mk("c-b", "short-b", 1)]);
+  const body = await (await pi("ask", piReq("ask", "POST", { question: "Who has quality inspection with machine vision?" }, token), env)).json();
+  const evidence = Object.fromEntries(body.matches.map((m) => [m.company.id, m.evidence.length]));
+  assert.deepEqual(Object.keys(evidence).sort(), ["c-a", "c-b"]);
+  const { shortlist } = await mod("partner_intel.js");
+  const data = JSON.parse(JSON.stringify({ insights: [...mk("c-a", "long-a", 6), ...mk("c-b", "short-b", 1)] }));
+  const short = shortlist("Who has quality inspection with machine vision?", data,
+    { get: () => null }, {}, new Map([["quality", "Quality"]]), 10, null);
+  const scores = Object.fromEntries(short.companies.map((c) => [c.id, c.score]));
+  assert.ok(Math.abs(scores["c-a"] - scores["c-b"]) < 1e-9, `six rows from one meeting must score like one row (${scores["c-a"]} vs ${scores["c-b"]})`);
+});
+
+test("partner_intel: the Home dashboard counts what the notes hold, and follows the source and member choices but not the window", async () => {
+  const { env, token } = await piEnv([
+    ins({ kind: "problem", company_id: "c-a", date: isoAgo(3), sources: [{ id: "1", name: "a", path: "Raw Notes/CIAIC" }], meeting_id: "m1", meeting_label: "m1" }),
+    ins({ kind: "ask", company_id: "c-a", date: isoAgo(3), sources: [{ id: "1", name: "a", path: "Raw Notes/CIAIC" }], meeting_id: "m1", meeting_label: "m1" }),
+    ins({ kind: "solution", company_id: "c-b", date: isoAgo(400), sources: [{ id: "2", name: "b", path: "Raw Notes/ADAPT" }], meeting_id: "m2", meeting_label: "m2" }),
+    ins({ kind: "win", company_id: "c-c", date: isoAgo(2), sources: [{ id: "3", name: "c", path: "Raw Notes/ADAPT" }], meeting_id: "m3", meeting_label: "m3" }),
+    ins({ kind: "news", company_id: "", date: isoAgo(1), sources: [{ id: "4", name: "d", path: "Raw Notes/CIAIC" }], meeting_id: "m4", meeting_label: "m4" }),
+    ins({ kind: "problem", company_id: "c-a", date: isoAgo(1), scope: "internal", sources: [{ id: "5", name: "e", path: "Raw Notes/Board Meetings" }], meeting_id: "m5", meeting_label: "m5" }),
+  ]);
+  const d = (q = "") => getJson(`home?days=30${q}`, env, token).then((r) => r.dashboard);
+  const all = await d();
+  assert.deepEqual([all.insights, all.issues, all.solutions, all.wins, all.other], [5, 2, 1, 1, 1], "the 400-day-old row is counted: the bar is the whole dataset; internal rows are not");
+  assert.deepEqual([all.partners, all.members, all.meetings, all.programs], [3, 2, 4, 2], "Gamma Labs is a partner but, being Inactive, not a member");
+  assert.equal(all.last, isoAgo(1));
+  assert.equal((await d("&days=90")).insights, 5, "the window does not change it");
+  const ciaic = await d("&source=CIAIC");
+  assert.deepEqual([ciaic.insights, ciaic.issues, ciaic.partners], [3, 2, 1]);
+  const members = await d("&status=Active");
+  assert.deepEqual([members.insights, members.partners, members.members], [3, 2, 2], "Members only drops Gamma Labs' win and the note that names no company");
+  assert.equal((await d("&source=Board%20Meetings")).insights, 1, "naming Board Meetings includes its internal row");
+});
+
+test("partner_intel: the tabs run Home, Programs, Companies, Ask, Explore", () => {
+  const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "index.html"), "utf8");
+  const nav = [...html.slice(html.indexOf('id="nav"'), html.indexOf("</nav>")).matchAll(/data-r="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(nav, ["home", "programs", "companies", "ask", "explore"]);
 });
 
 test("partner_intel: a topic merge applies to the ranking, and a merge loop is refused", async () => {
