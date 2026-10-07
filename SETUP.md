@@ -1037,6 +1037,21 @@ If no Database folder is chosen the scan still works, and **Last scan** says not
 
 The date in the text comes first (the top of the document, or a line labelled "Date"), then a date in the file name, then the Box upload date. A date after the upload date is never accepted from the text. Every date records which of the three it came from. Rows that only have the upload date show an "estimated date" tag, and **Exact dates only** hides them. A section added to a running file later takes the date it arrived, not the file's first upload date.
 
+### The bar at the top of Home
+
+One stacked bar shows what the notes hold: issues (problems and asks), solutions (solutions, offers, equipment), wins, and other (news and commitments), with the totals beside it: insights, partners (and how many are members), meetings and programs. It is the whole dataset, not a time window, and follows the source buttons and **Members only**.
+
+### How topics are weighted
+
+Long meetings have detailed notes, so they produce many more rows than short ones. Rows are therefore never the measure of how much a topic matters:
+
+- **Trending topics** rank by the number of different **companies** that raised the topic, then the number of different **meetings** it came up in. High urgency counts meetings in which the topic was called urgent. A meeting is one voice however much was written down.
+- **Summaries** are written from up to 25 rows chosen so every company and every meeting is heard before any one is heard twice, with at most three rows from any one meeting. The model is told the true number of companies and meetings and never to judge breadth by rows.
+- **A company's top issues** count each meeting once per topic.
+- **Ask** scores a company on its best row from each of its meetings.
+
+The totals on the dashboard and in the Explore list are still plain counts, because they say what is in the data.
+
 ### Trending topics and programs
 
 **Home** ranks topics by how many companies raised them in the last 30, 60 or 90 days (problems and asks only). Each topic shows up to five bullet points written by Claude from the notes behind it. A chevron on each bullet opens the supporting examples with their source quotes. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. The page appears at once and the bullets fill in a few seconds later.

@@ -50,9 +50,10 @@ const DATA_META = "pi:data:meta";
 const DATA_EXTRA = "pi:data:extra";
 const ASK_RECENT = "pi:ask:recent";
 const ROSTER_SYNC_KEY = "pi:roster-sync";
-const SUMMARY_PROMPT_VERSION = "pi-sum-1";
+const SUMMARY_PROMPT_VERSION = "pi-sum-2";
 const MAX_SUMMARY_TOPICS = 8;     // topics written in one Claude call
 const EVIDENCE_PER_TOPIC = 25;    // rows the model reads per topic
+const MAX_ROWS_PER_MEETING = 3;   // however long the meeting, it is one voice
 // One-time updates the control panel offers, each usable once. See pendingUpdate().
 const ONE_TIME_UPDATES = [{
   id: "programs-v1", schema: 2, title: "One-time update: Programs",
@@ -725,48 +726,73 @@ function facetsOf(rows, index, labels, overrides) {
 
 /* ------------------------------------------------------------------ home, explore, profiles */
 
-/** Group issue rows (problems and asks) by topic and rank the topics: the most companies first,
- * then the most mentions, then the most high-urgency. Rows with no topic are counted apart. */
+/**
+ * Group issue rows (problems and asks) by topic and rank the topics.
+ *
+ * What is counted is the number of different COMPANIES that raised a topic, then the number of
+ * different MEETINGS it came up in. Rows are never the measure. A long meeting with detailed
+ * notes produces dozens of rows, and counting rows would let two or three such meetings outvote
+ * everyone else. A company in a meeting is one voice however much was written down. The same
+ * holds for high urgency: it counts meetings in which the topic was called urgent.
+ */
 function issueGroups(issues, index, overrides, labels) {
   const byTopic = new Map();
   let uncategorized = 0;
   for (const i of issues) {
     const topic = finalTopic(overrides, i.topic);
     if (topic === "other") { uncategorized++; continue; }
-    if (!byTopic.has(topic)) byTopic.set(topic, { topic, mentions: 0, companies: new Map(), high: 0, items: [] });
+    if (!byTopic.has(topic)) byTopic.set(topic, { topic, rows: 0, companies: new Map(), meetings: new Set(), highMeetings: new Set(), items: [] });
     const g = byTopic.get(topic);
-    g.mentions++;
-    if (i.urgency === "high") g.high++;
+    const meeting = meetingOf(i, index).id;
+    g.rows++;
+    g.meetings.add(meeting);
+    if (i.urgency === "high") g.highMeetings.add(meeting);
     const c = companyOf(index, i);
     if (c.id) g.companies.set(c.id, c.name);
     g.items.push(i);
   }
   const groups = [...byTopic.values()].map((g) => ({
-    topic: g.topic, label: labels.get(g.topic) || g.topic, companyCount: g.companies.size, mentions: g.mentions,
-    highUrgency: g.high, companies: [...g.companies.values()].sort(), items: g.items,
-  })).sort((a, b) => b.companyCount - a.companyCount || b.mentions - a.mentions || b.highUrgency - a.highUrgency
+    topic: g.topic, label: labels.get(g.topic) || g.topic, companyCount: g.companies.size, meetingCount: g.meetings.size,
+    mentions: g.rows, highUrgency: g.highMeetings.size, companies: [...g.companies.values()].sort(), items: g.items,
+  })).sort((a, b) => b.companyCount - a.companyCount || b.meetingCount - a.meetingCount || b.highUrgency - a.highUrgency
     || a.label.localeCompare(b.label));
   return { groups, uncategorized };
 }
 
-/** The rows a topic summary is written from: up to 25, urgent and recent first, taking turns
- * between companies so one talkative company cannot be the whole story. */
+/**
+ * The rows a topic summary is written from: up to 25, urgent and recent first, and spread so
+ * every company and every meeting is heard before any one of them is heard twice. A company
+ * takes its turns across its different meetings first, and no meeting gives more than three
+ * rows. One talkative long meeting therefore cannot be the whole story.
+ */
 function pickEvidence(items, index) {
   const sorted = [...items].sort((a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
     || b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
-  const queues = new Map();
+  const companies = new Map();
   for (const i of sorted) {
-    const key = i.company_id || `raw:${nameKey(i.company_raw)}`;
-    if (!queues.has(key)) queues.set(key, []);
-    queues.get(key).push(i);
+    const ckey = i.company_id || `raw:${nameKey(i.company_raw)}`;
+    if (!companies.has(ckey)) companies.set(ckey, new Map());
+    const meetings = companies.get(ckey);
+    const mkey = meetingOf(i, index).id;
+    if (!meetings.has(mkey)) meetings.set(mkey, []);
+    meetings.get(mkey).push(i);
   }
+  const orders = [...companies.values()].map((meetings) => {
+    const lists = [...meetings.values()].map((rows) => rows.slice(0, MAX_ROWS_PER_MEETING));
+    const order = [];
+    for (let k = 0; k < MAX_ROWS_PER_MEETING; k++) for (const list of lists) if (list[k]) order.push(list[k]);
+    return order;
+  });
   const out = [];
-  while (out.length < EVIDENCE_PER_TOPIC && queues.size) {
-    for (const [key, q] of queues) {
-      out.push(q.shift());
-      if (!q.length) queues.delete(key);
+  for (let round = 0; out.length < EVIDENCE_PER_TOPIC; round++) {
+    let any = false;
+    for (const order of orders) {
+      if (!order[round]) continue;
+      any = true;
+      out.push(order[round]);
       if (out.length >= EVIDENCE_PER_TOPIC) break;
     }
+    if (!any) break;
   }
   return out;
 }
@@ -800,7 +826,7 @@ async function trendingView(env, data, index, overrides, labels, params, limit =
   const trending = await Promise.all(groups.slice(0, limit).map(async (g, n) => {
     const evidence = pickEvidence(g.items, index);
     const stored = n < 10 ? await readJson(env, await summaryKey(g.topic, evidence), null) : null;
-    return { topic: g.topic, label: g.label, companyCount: g.companyCount, mentions: g.mentions,
+    return { topic: g.topic, label: g.label, companyCount: g.companyCount, meetingCount: g.meetingCount, mentions: g.mentions,
       highUrgency: g.highUrgency, companies: g.companies.slice(0, 12),
       examples: stored ? [] : evidence.slice(0, 3).map((i) => shapeInsight(i, index, labels, overrides)),
       summary: stored ? presentSummary(stored, evidence, index, labels, overrides) : null };
@@ -835,7 +861,10 @@ const SUMMARY_SYSTEM =
   "2. Each bullet is one plain sentence of at most 30 words that states a distinct point: a common " +
   "problem, a specific cause, an approach someone is trying, or a point where companies differ. " +
   "Never repeat a point.\n" +
-  "3. Say how widespread a point is only when the evidence shows it. Count distinct companies yourself.\n" +
+  "3. Judge how widespread a point is by companies_in_topic and meetings_in_topic and by counting the " +
+  "distinct companies in the evidence. NEVER by the number of rows. Several rows can come from one long meeting " +
+  "and are one voice. Write 'several companies' or 'most' only when at least two companies raised the point, " +
+  "and say 'one company' when only one did.\n" +
   "4. Never pad. If the evidence supports only three distinct points, write three. Five is the most, not a target.\n" +
   "5. evidence_ids lists the ids of the rows that support the bullet: at least one, at most four.\n" +
   "6. Order the bullets from the most widespread or urgent point to the least.\n" +
@@ -897,9 +926,9 @@ async function summarizeTopics(env, data, index, overrides, labels, params, topi
     return { summaries, unavailable: "Claude is not set up for this tool yet, so summaries cannot be written." };
   }
   const payload = missing.map(({ g, evidence }) => ({
-    topic_id: g.topic, topic: g.label, companies_in_topic: g.companyCount, mentions_in_topic: g.mentions,
-    evidence: evidence.map((i) => ({ id: i.id, company: companyOf(index, i).name, date: i.date, kind: i.kind,
-      urgency: i.urgency, title: i.title, detail: i.detail })),
+    topic_id: g.topic, topic: g.label, companies_in_topic: g.companyCount, meetings_in_topic: g.meetingCount,
+    evidence: evidence.map((i) => ({ id: i.id, company: companyOf(index, i).name, meeting: meetingOf(i, index).label,
+      date: i.date, kind: i.kind, urgency: i.urgency, title: i.title, detail: i.detail })),
   }));
   const { input, usage } = await callClaudeTool(env, SUMMARY_SYSTEM,
     `<topics>\n${JSON.stringify(payload, null, 1)}\n</topics>`, SUMMARY_TOOL, 4000 + 900 * payload.length);
@@ -929,6 +958,24 @@ function meetingOf(i, index) {
   const company = companyOf(index, i);
   const label = cohort ? i.series : (company.id ? company.name : ((i.sources[0] || {}).name || "Untitled"));
   return { id: `${i.date}|${nameKey(label)}`, label, kind: cohort ? "cohort" : (company.id ? "company" : "meeting") };
+}
+
+/** The numbers behind the bar at the top of Home: what the notes contain, before any window. */
+function dashboardOf(rows, index) {
+  const partners = new Set(), members = new Set(), meetings = new Set(), programs = new Set();
+  const counts = { issues: 0, solutions: 0, wins: 0, other: 0 };
+  let first = "", last = "";
+  for (const i of rows) {
+    counts[CATEGORY_OF[i.kind] || "other"]++;
+    const c = companyOf(index, i);
+    if (c.id) { partners.add(c.id); if (c.member) members.add(c.id); }
+    meetings.add(meetingOf(i, index).id);
+    for (const p of sourcesOf(i)) programs.add(p);
+    if (i.date && (!first || i.date < first)) first = i.date;
+    if (i.date && i.date > last) last = i.date;
+  }
+  return { insights: rows.length, ...counts, partners: partners.size, members: members.size,
+    meetings: meetings.size, programs: programs.size, first, last };
 }
 
 function programsView(data, index) {
@@ -983,19 +1030,23 @@ function recencyFactor(date) {
   return 1 / (1 + age / RECENCY_DAYS);
 }
 
-/** Group a company's rows by topic and rank the topics: live, urgent and recent ones first. */
+/** Group a company's rows by topic and rank the topics: live, urgent and recent ones first.
+ * Each meeting counts once per topic (its strongest row), so a company's one long meeting does
+ * not make every topic it touched look like a pattern. */
 function rankTopics(rows, index, labels, overrides, weigh) {
   const groups = new Map();
   for (const i of rows) {
     const topic = finalTopic(overrides, i.topic);
-    if (!groups.has(topic)) groups.set(topic, { topic, score: 0, count: 0, best: null, bestScore: -1 });
-    const g = groups.get(topic);
+    if (!groups.has(topic)) groups.set(topic, new Map());
+    const meetings = groups.get(topic);
+    const m = meetingOf(i, index).id;
     const w = weigh(i) * recencyFactor(i.date);
-    g.score += w;
-    g.count++;
-    if (w > g.bestScore) { g.best = i; g.bestScore = w; }
+    if (!meetings.has(m) || w > meetings.get(m).w) meetings.set(m, { w, row: i });
   }
-  return [...groups.values()].sort((a, b) => b.score - a.score).slice(0, 5).map((g) => ({
+  return [...groups.entries()].map(([topic, meetings]) => {
+    const best = [...meetings.values()].sort((a, b) => b.w - a.w)[0];
+    return { topic, score: [...meetings.values()].reduce((sum, x) => sum + x.w, 0), count: meetings.size, best: best.row };
+  }).sort((a, b) => b.score - a.score).slice(0, 5).map((g) => ({
     topic: g.topic, label: labels.get(g.topic) || "Other", count: g.count,
     lead: shapeInsight(g.best, index, labels, overrides),
   }));
@@ -1134,9 +1185,21 @@ export function shortlist(question, data, index, overrides, labels, limit = 10, 
   }
   const companies = [];
   for (const [id, list] of byCompany) {
-    list.sort((a, b) => b.score - a.score);
-    const total = list[0].score + 0.35 * (list[1] ? list[1].score : 0) + 0.15 * (list[2] ? list[2].score : 0);
-    companies.push({ id, score: total, bestCoverage: list[0].coverage, evidence: list.slice(0, 3).map((s) => s.i) });
+    // A company is scored on its best row from each of its meetings, so three rows from one long
+    // meeting count once, not three times.
+    const perMeeting = new Map();
+    for (const sc of list) {
+      const m = meetingOf(sc.i, index).id;
+      if (!perMeeting.has(m) || sc.score > perMeeting.get(m).score) perMeeting.set(m, sc);
+    }
+    const best = [...perMeeting.values()].sort((a, b) => b.score - a.score);
+    const total = best[0].score + 0.35 * (best[1] ? best[1].score : 0) + 0.15 * (best[2] ? best[2].score : 0);
+    const evidence = best.slice(0, 3).map((sc) => sc.i);
+    for (const sc of [...list].sort((a, b) => b.score - a.score)) {
+      if (evidence.length >= 3) break;
+      if (!evidence.includes(sc.i)) evidence.push(sc.i);
+    }
+    companies.push({ id, score: total, bestCoverage: best[0].coverage, evidence });
   }
   companies.sort((a, b) => b.score - a.score);
   if (!companies.length) return { companies: [], docs: docs.length };
@@ -1644,7 +1707,10 @@ export async function handlePartnerIntelApi(route, request, env) {
       if (params.get("exact") === "1") view.set("exact", "1");
       for (const name of ["source", "status", "industry"]) for (const v of params.getAll(name)) view.append(name, v);
       const t = await trendingView(env, data, index, overrides, labels, view);
+      const scope = new URLSearchParams();
+      for (const name of ["source", "status", "industry"]) for (const v of params.getAll(name)) scope.append(name, v);
       return json({ days, since: daysAgo(days), generatedAt: data.generated_at, trending: t.trending,
+        dashboard: dashboardOf(filterInsights(data, index, overrides, scope), index),
         uncategorized: t.uncategorized,
         counts: { issues: t.issues.length, estimatedDates: t.rows.filter((i) => i.date_source === "box_upload").length } });
     }

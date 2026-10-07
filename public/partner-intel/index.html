@@ -18,8 +18,8 @@
     <nav class="nav" id="nav">
       <a href="#/home" data-r="home">Home</a>
       <a href="#/programs" data-r="programs">Programs</a>
-      <a href="#/ask" data-r="ask">Ask</a>
       <a href="#/companies" data-r="companies">Companies</a>
+      <a href="#/ask" data-r="ask">Ask</a>
       <a href="#/explore" data-r="explore">Explore</a>
     </nav>
     <div class="tools">
@@ -86,7 +86,7 @@
 
   function topicCard(t, n) {
     var meta = (t.companyCount ? t.companyCount + " compan" + (t.companyCount === 1 ? "y" : "ies") + " &middot; " : "") +
-      t.mentions + " mention" + (t.mentions === 1 ? "" : "s") + (t.highUrgency ? " &middot; " + t.highUrgency + " high urgency" : "");
+      t.meetingCount + " meeting" + (t.meetingCount === 1 ? "" : "s") + (t.highUrgency ? " &middot; called urgent in " + t.highUrgency : "");
     return '<div class="topic" data-topic="' + esc(t.topic) + '"><h3>' + (n + 1) + ". " + esc(t.label) + '</h3><p class="meta">' + meta + "</p>" +
       (t.companies.length ? '<div class="chips">' + t.companies.slice(0, 6).map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") +
         (t.companies.length > 6 ? '<span class="chip">+' + (t.companies.length - 6) + " more</span>" : "") + "</div>" : "") +
@@ -145,6 +145,44 @@
     next();
   }
 
+  /* ------------------------------------------------------------------ Dashboard bar */
+  // Issues coral, solutions sky, wins brand blue, other a neutral. This order and these three
+  // passed the palette check (adjacent pairs separate for colour-blind readers). Text on each
+  // fill is chosen for contrast: navy on coral and sky, white on blue.
+  var SEGS = [["issues", "Issues", "#F26B43", "#07214E"], ["solutions", "Solutions", "#00B0F0", "#07214E"],
+              ["wins", "Wins", "#325EAE", "#FFFFFF"], ["other", "Other", "#CBD0DA", "#16202B"]];
+
+  function dashboardHtml(d) {
+    var total = d.issues + d.solutions + d.wins + d.other;
+    if (!total) return "";
+    var pct = function (n) { var p = Math.round(n * 100 / total); return n && !p ? "<1%" : p + "%"; };
+    var tile = function (n, label, sub) { return '<span class="stat"><b>' + n.toLocaleString() + "</b><span>" + label + "</span>" + (sub ? "<small>" + sub + "</small>" : "") + "</span>"; };
+    var span = d.first && d.last ? PI.fmtDate(d.first).replace(/ \d+,/, "") + " to " + PI.fmtDate(d.last).replace(/ \d+,/, "") : "";
+    var label = SEGS.map(function (s) { return s[1] + " " + d[s[0]] + " (" + pct(d[s[0]]) + ")"; }).join(", ");
+    return '<div class="dash"><div class="tiles">' + tile(d.insights, "insights", span) +
+      tile(d.partners, "partners", d.members + " are members") + tile(d.meetings, "meetings") + tile(d.programs, "programs") + "</div>" +
+      '<div class="sbar" role="img" aria-label="' + esc("Insights by type: " + label) + '">' + SEGS.filter(function (s) { return d[s[0]]; }).map(function (s) {
+        return '<div class="seg" data-name="' + s[1] + '" data-n="' + d[s[0]] + '" style="flex:' + d[s[0]] + ' 1 0;background:' + s[2] + ";color:" + s[3] +
+          '" data-tip="' + esc(s[1] + ": " + d[s[0]].toLocaleString() + " (" + pct(d[s[0]]) + ")") + '"></div>';
+      }).join("") + "</div>" +
+      '<div class="legend">' + SEGS.map(function (s) {
+        return "<span><i style=\"background:" + s[2] + '"></i>' + s[1] + " <b>" + d[s[0]].toLocaleString() + "</b> &middot; " + pct(d[s[0]]) + "</span>";
+      }).join("") + "</div>" +
+      '<table class="sr-only"><caption>Insights by type</caption><thead><tr><th>Type</th><th>Insights</th></tr></thead><tbody>' +
+      SEGS.map(function (s) { return "<tr><td>" + s[1] + "</td><td>" + d[s[0]] + "</td></tr>"; }).join("") + "</tbody></table></div>";
+  }
+
+  /** A label goes inside a segment only when the rendered text fits with room to spare. */
+  function fitSegmentLabels(root) {
+    Array.prototype.forEach.call(root.querySelectorAll(".sbar .seg"), function (seg) {
+      var span = document.createElement("span");
+      span.textContent = seg.getAttribute("data-name") + " " + Number(seg.getAttribute("data-n")).toLocaleString();
+      seg.appendChild(span);
+      // Padding on both sides plus a little air; otherwise the label is left to the legend below.
+      if (span.offsetWidth + 24 > seg.clientWidth) seg.removeChild(span);
+    });
+  }
+
   /* ------------------------------------------------------------------ Home */
   function home() {
     var mine = ++seq;
@@ -154,13 +192,13 @@
       return PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "") + statusQ + sourceParam());
     }).then(function (d) {
       if (mine !== seq) return;
-      var html = chipsHtml() + '<div class="row spread" style="margin-bottom:14px">' +
+      var html = chipsHtml() + '<div class="row small" style="margin:-4px 0 12px"><label><input type="checkbox" id="mem"' + (state.membersOnly ? " checked" : "") + "> Members only</label></div>" +
+        dashboardHtml(d.dashboard) +
+        '<div class="row spread" style="margin-bottom:14px">' +
         '<div class="seg" id="win">' + [30, 60, 90].map(function (n) {
           return '<button data-d="' + n + '"' + (state.days === n ? ' class="on"' : "") + ">Last " + n + " days</button>";
         }).join("") + "</div>" +
-        '<div class="row small">' +
-        '<label><input type="checkbox" id="mem"' + (state.membersOnly ? " checked" : "") + "> Members only</label>" +
-        '<label><input type="checkbox" id="exact"' + (state.exact ? " checked" : "") + "> Exact dates only</label></div></div>";
+        '<div class="row small"><label><input type="checkbox" id="exact"' + (state.exact ? " checked" : "") + "> Exact dates only</label></div></div>";
       if (d.counts.estimatedDates && !state.exact) {
         html += '<p class="small muted" style="margin:-4px 0 12px">' + d.counts.estimatedDates +
           " item" + (d.counts.estimatedDates === 1 ? "" : "s") + " in this window use the Box upload date because the notes carry no date. They are marked.</p>";
@@ -169,6 +207,7 @@
         '<p class="sub">The topics raised by the most companies since ' + esc(PI.fmtDate(d.since)) + ". Open a point to see who said it." +
         (d.uncategorized ? " " + d.uncategorized + " issue" + (d.uncategorized === 1 ? "" : "s") + " did not fit a topic and are not ranked." : "") + '</p><div id="trend"></div>';
       view.innerHTML = html;
+      fitSegmentLabels(view);
       renderTrending(el("trend"), d.trending, { days: state.days, exact: state.exact, source: chosenList(), status: state.membersOnly ? ["Active"] : [] }, mine);
       Array.prototype.forEach.call(view.querySelectorAll("#win button"), function (b) {
         b.addEventListener("click", function () { state.days = Number(b.getAttribute("data-d")); home(); });
@@ -371,7 +410,7 @@
     items.forEach(function (it) {
       var i = it.lead || it;
       html += '<div class="item' + (kind === "issue" && (i.urgency === "high" || i.urgency === "medium") ? " u-" + i.urgency : "") + '">' +
-        (it.label ? '<div class="head">' + PI.pill("info", it.label) + (it.count > 1 ? PI.pill("info", it.count + " mentions") : "") + "</div>" : "") +
+        (it.label ? '<div class="head">' + PI.pill("info", it.label) + (it.count > 1 ? PI.pill("info", it.count + " meetings") : "") + "</div>" : "") +
         '<div class="title">' + esc(i.title) + "</div><div class=\"detail\">" + esc(i.detail) + "</div>" +
         (i.urgencyReason && kind === "issue" ? '<div class="why"><b>Why it is urgent:</b> ' + esc(i.urgencyReason) + "</div>" : "") +
         '<div class="meta">' + esc(PI.fmtDate(i.date)) + (i.estimated ? " " + PI.pill("est", "estimated date") : "") +
