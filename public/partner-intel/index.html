@@ -43,7 +43,7 @@
   el("signOut").addEventListener("click", PI.signOut);
   PI.whoami(el("whoami"));
 
-  var state = { days: 30, exact: false, membersOnly: false, programDays: 0, programRank: "distinct", explore: { facets: null },
+  var state = { days: 30, exact: false, membersOnly: false, programDays: 0, explore: { facets: null },
                 sources: {}, sourceList: null };
   var chosen = {}; // source folders switched on; shared by Home, Ask and Explore
 
@@ -84,14 +84,9 @@
      fill in after, because writing them takes a few seconds the first time. */
   var PAGE = 5;
 
-  function pctOf(x) { var p = Math.round(x * 100); return x && !p ? "<1%" : p + "%"; }
-
   function topicCard(t, n) {
     var meta = (t.companyCount ? t.companyCount + " compan" + (t.companyCount === 1 ? "y" : "ies") + " &middot; " : "") +
       t.meetingCount + " meeting" + (t.meetingCount === 1 ? "" : "s") + (t.highUrgency ? " &middot; called urgent in " + t.highUrgency : "");
-    if (t.programMeetings) {
-      meta += " &middot; raised in " + t.meetingCount + " of the " + t.programMeetings + " meetings here that logged issues, vs " + pctOf(t.elsewhereShare) + " in other programs";
-    }
     return '<div class="topic" data-topic="' + esc(t.topic) + '"><h3>' + (n + 1) + ". " + esc(t.label) + '</h3><p class="meta">' + meta + "</p>" +
       (t.companies.length ? '<div class="chips">' + t.companies.slice(0, 6).map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") +
         (t.companies.length > 6 ? '<span class="chip">+' + (t.companies.length - 6) + " more</span>" : "") + "</div>" : "") +
@@ -269,7 +264,7 @@
   function program(name) {
     var mine = ++seq;
     view.innerHTML = loading("Loading…");
-    PI.api("program?name=" + encodeURIComponent(name) + "&days=" + state.programDays + "&rank=" + state.programRank).then(function (r) {
+    PI.api("program?name=" + encodeURIComponent(name) + "&days=" + state.programDays).then(function (r) {
       if (mine !== seq) return;
       var p = r.program;
       var html = updateBanner(r.needsUpdate) + '<p class="small"><a href="#/programs">&larr; All programs</a></p>' +
@@ -279,14 +274,8 @@
         '<div class="seg" id="pwin">' + [[90, "Last 90 days"], [365, "Last year"], [0, "All time"]].map(function (w) {
           return '<button data-d="' + w[0] + '"' + (state.programDays === w[0] ? ' class="on"' : "") + ">" + w[1] + "</button>";
         }).join("") + "</div></div>" +
-        '<div class="row spread" style="margin-top:22px"><h2 style="margin:0">Trending topics</h2><div class="seg" id="prank">' +
-        [["distinct", "Most distinctive"], ["common", "Most raised"]].map(function (w) {
-          return '<button data-r="' + w[0] + '"' + (state.programRank === w[0] ? ' class="on"' : "") + ">" + w[1] + "</button>";
-        }).join("") + "</div></div><p class=\"sub\">" +
-        (state.programRank === "common" ? "The topics raised by the most companies in this program, as on Home."
-          : r.compared ? "The topics that set this program apart: raised in many of its meetings and less often in other programs."
-          : "No other program has issues in this window to compare with, so these are the topics raised by the most companies.") +
-        (state.programDays ? " Window applied." : "") + "</p><div id=\"trend\"></div>" +
+        '<h2 style="margin-top:22px">Trending topics</h2><p class="sub">The topics raised by the most companies in this program' +
+        (state.programDays ? " in the window" : "") + ".</p><div id=\"trend\"></div>" +
         '<h2 style="margin-top:26px">Recent data</h2><p class="sub">Grouped by date, and by cohort, company or meeting. Open one for its issues, solutions and wins.</p>' +
         '<div id="meetings"></div><div id="moreM"></div>';
       view.innerHTML = html;
@@ -301,9 +290,6 @@
         var b = el("moreMeet"); if (b) b.addEventListener("click", more);
       }
       if (!r.meetings.length) el("meetings").innerHTML = '<div class="empty">No data in this program yet.</div>'; else more();
-      Array.prototype.forEach.call(view.querySelectorAll("#prank button"), function (b) {
-        b.addEventListener("click", function () { state.programRank = b.getAttribute("data-r"); program(name); });
-      });
       Array.prototype.forEach.call(view.querySelectorAll("#pwin button"), function (b) {
         b.addEventListener("click", function () { state.programDays = Number(b.getAttribute("data-d")); program(name); });
       });

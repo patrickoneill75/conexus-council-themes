@@ -834,77 +834,19 @@ function presentSummary(stored, evidence, index, labels, overrides) {
  * exist. Writing a missing one is a separate request (summarizeTopics), so the page appears
  * at once and the summaries fill in.
  */
-async function trendingView(env, data, index, overrides, labels, params, limit = 15, opts = {}) {
+async function trendingView(env, data, index, overrides, labels, params, limit = 15) {
   const rows = filterInsights(data, index, overrides, params);
   const issues = rows.filter((i) => ISSUE_KINDS.has(i.kind));
-  let { groups, uncategorized } = issueGroups(issues, index, overrides, labels);
-  if (opts.program && opts.rank !== "common") {
-    groups = rankDistinctive(groups, issues, index, overrides, restOfData(data, index, overrides, opts.program, opts.days, opts.exact));
-  }
+  const { groups, uncategorized } = issueGroups(issues, index, overrides, labels);
   const trending = await Promise.all(groups.slice(0, limit).map(async (g, n) => {
     const evidence = pickEvidence(g.items, index);
     const stored = n < 10 ? await readJson(env, await summaryKey(g.topic, evidence), null) : null;
     return { topic: g.topic, label: g.label, companyCount: g.companyCount, meetingCount: g.meetingCount, mentions: g.mentions,
       highUrgency: g.highUrgency, companies: g.companies.slice(0, 12),
-      ...(g.programShare === undefined ? {} : { programShare: g.programShare, elsewhereShare: g.elsewhereShare,
-        programMeetings: g.programMeetings }),
       examples: stored ? [] : evidence.slice(0, 3).map((i) => shapeInsight(i, index, labels, overrides)),
       summary: stored ? presentSummary(stored, evidence, index, labels, overrides) : null };
   }));
   return { rows, issues, uncategorized, trending, groups };
-}
-
-/** Every other program's issue rows in the same window: what "normal" looks like for this program to be compared with. */
-function restOfData(data, index, overrides, program, days, exact) {
-  // Internal rows count on both sides: the program's own rows include them (naming a source
-  // does), so the comparison must too.
-  const view = new URLSearchParams({ internal: "1" });
-  if (days) view.set("days", String(days));
-  if (exact) view.set("exact", "1");
-  return filterInsights(data, index, overrides, view)
-    .filter((i) => ISSUE_KINDS.has(i.kind) && !sourcesOf(i).includes(program));
-}
-
-/**
- * Order a program's topics by what is distinctive about THIS program.
- *
- * Ranked by raw counts, the same few topics (workforce, AI, ERP) top every program, because
- * every program talks about them. A program's top five should say what sets it apart. A topic
- * is scored by the share of the program's meetings that raised it, times the square root of
- * how much more common that is here than in every other program. The square root keeps a topic
- * that is simply very common in the program from being buried under a rare one. A topic raised
- * in only one meeting of a program with several is a one-off, not a trend, so topics with
- * support come first. When there is nothing to compare with, the order is by raw counts.
- */
-function rankDistinctive(groups, issues, index, overrides, rest) {
-  const meetingsOf = (rows) => {
-    const all = new Set(), byTopic = new Map();
-    for (const i of rows) {
-      const topic = finalTopic(overrides, i.topic);
-      if (topic === "other") continue;
-      const m = meetingOf(i, index).id;
-      all.add(m);
-      if (!byTopic.has(topic)) byTopic.set(topic, new Set());
-      byTopic.get(topic).add(m);
-    }
-    return { total: all.size, byTopic };
-  };
-  const mine = meetingsOf(issues);
-  const others = meetingsOf(rest);
-  if (!mine.total || !others.total) return groups;
-  const scored = groups.map((g) => {
-    const share = g.meetingCount / mine.total;
-    const there = (others.byTopic.get(g.topic) || { size: 0 }).size;
-    // Smoothed for scoring only, so a topic no other program raised does not divide by zero.
-    // The page shows the true share: "0% elsewhere" must mean none.
-    const lift = ((g.meetingCount + 0.5) / (mine.total + 1)) / ((there + 0.5) / (others.total + 1));
-    return { ...g, programShare: share, elsewhereShare: there / others.total, programMeetings: mine.total,
-      score: share * Math.sqrt(lift) };
-  });
-  const needed = mine.total >= 2 ? 2 : 1;
-  const byScore = (a, b) => b.score - a.score || b.companyCount - a.companyCount || b.meetingCount - a.meetingCount
-    || a.label.localeCompare(b.label);
-  return [...scored.filter((g) => g.meetingCount >= needed).sort(byScore), ...scored.filter((g) => g.meetingCount < needed).sort(byScore)];
 }
 
 const SUMMARY_TOOL = {
@@ -1918,15 +1860,10 @@ export async function handlePartnerIntelApi(route, request, env) {
       const view = new URLSearchParams({ source: name });
       if (days) view.set("days", String(days));
       if (params.get("exact") === "1") view.set("exact", "1");
-      const rank = params.get("rank") === "common" ? "common" : "distinct";
-      const t = await trendingView(env, data, index, overrides, labels, view, 15,
-        { program: name, rank, days, exact: params.get("exact") === "1" });
+      const t = await trendingView(env, data, index, overrides, labels, view, 15);
       const meetings = meetingGroups(filterInsights(data, index, overrides, new URLSearchParams({ source: name })),
         index, overrides, labels);
-      // "compared" is false when no other program has issues in the window to compare with;
-      // the order is then by counts, and the page must not claim otherwise.
-      const compared = rank === "distinct" && t.groups.some((g) => g.programShare !== undefined);
-      return json({ program, days, rank, compared, trending: t.trending, uncategorized: t.uncategorized,
+      return json({ program, days, trending: t.trending, uncategorized: t.uncategorized,
         issueCount: t.issues.length, meetings: meetings.slice(0, 300), meetingTotal: meetings.length,
         needsUpdate: (Number(data.schema) || 1) < 2 });
     }
