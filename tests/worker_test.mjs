@@ -3598,11 +3598,29 @@ test("partner_intel: a program's topic carries how many of its meetings raised i
   const q = pcn.trending.find((t) => t.topic === "quality");
   assert.equal(q.programMeetings, 3);
   assert.equal(q.meetingCount, 2, "raised in two of PCN's three meetings");
-  assert.ok(q.elsewhereShare < 0.2, "and almost never in the other program");
   const t = pcn.trending.find((x) => x.topic === "talent_pipeline");
-  assert.ok(t.elsewhereShare > 0.8, "hiring is raised nearly everywhere");
+  assert.equal(t.elsewhereShare, 1, "hiring came up in all five meetings of the other programs");
   const home = await getJson("home?days=30", env, token);
   assert.equal(home.trending[0].programMeetings, undefined, "Home has no program to compare against");
+});
+
+test("partner_intel: BUG the share elsewhere showed a smoothed figure, so a topic no other program raised read as 8%", async () => {
+  const { env, token } = await distinctiveEnv();
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  const q = pcn.trending.find((t) => t.topic === "quality");
+  assert.equal(q.elsewhereShare, 0, "no meeting outside PCN raised quality, so the card must say 0%");
+});
+
+test("partner_intel: BUG internal rows counted for a program but not for the programs it was compared with", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  const board = (m) => ins({ topic: "quality", scope: "internal", company_id: "", date: isoAgo(10), meeting_id: m, meeting_label: m,
+    meeting_kind: "meeting", sources: [{ id: `f-${m}`, name: `${m}.docx`, path: "Raw Notes/Board Meetings" }] });
+  await publishV2(env, [...distinctiveRows(), board("b1"), board("b2")],
+    { topics: [...TOPICS, { id: "supply_chain", label: "Supply chain", keywords: "" }] });
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  const q = pcn.trending.find((t) => t.topic === "quality");
+  assert.equal(q.elsewhereShare, 2 / 7, "the two Board meetings that raised quality count as elsewhere");
 });
 
 test("partner_intel: 'Most raised' keeps the plain count order for a program", async () => {

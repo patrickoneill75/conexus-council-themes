@@ -841,7 +841,9 @@ async function trendingView(env, data, index, overrides, labels, params, limit =
 
 /** Every other program's issue rows in the same window: what "normal" looks like for this program to be compared with. */
 function restOfData(data, index, overrides, program, days, exact) {
-  const view = new URLSearchParams();
+  // Internal rows count on both sides: the program's own rows include them (naming a source
+  // does), so the comparison must too.
+  const view = new URLSearchParams({ internal: "1" });
   if (days) view.set("days", String(days));
   if (exact) view.set("exact", "1");
   return filterInsights(data, index, overrides, view)
@@ -877,9 +879,12 @@ function rankDistinctive(groups, issues, index, overrides, rest) {
   if (!mine.total || !others.total) return groups;
   const scored = groups.map((g) => {
     const share = g.meetingCount / mine.total;
-    const elsewhere = ((others.byTopic.get(g.topic) || { size: 0 }).size + 0.5) / (others.total + 1);
-    const lift = ((g.meetingCount + 0.5) / (mine.total + 1)) / elsewhere;
-    return { ...g, programShare: share, elsewhereShare: elsewhere, programMeetings: mine.total, score: share * Math.sqrt(lift) };
+    const there = (others.byTopic.get(g.topic) || { size: 0 }).size;
+    // Smoothed for scoring only, so a topic no other program raised does not divide by zero.
+    // The page shows the true share: "0% elsewhere" must mean none.
+    const lift = ((g.meetingCount + 0.5) / (mine.total + 1)) / ((there + 0.5) / (others.total + 1));
+    return { ...g, programShare: share, elsewhereShare: there / others.total, programMeetings: mine.total,
+      score: share * Math.sqrt(lift) };
   });
   const needed = mine.total >= 2 ? 2 : 1;
   const byScore = (a, b) => b.score - a.score || b.companyCount - a.companyCount || b.meetingCount - a.meetingCount

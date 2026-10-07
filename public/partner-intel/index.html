@@ -90,7 +90,7 @@
     var meta = (t.companyCount ? t.companyCount + " compan" + (t.companyCount === 1 ? "y" : "ies") + " &middot; " : "") +
       t.meetingCount + " meeting" + (t.meetingCount === 1 ? "" : "s") + (t.highUrgency ? " &middot; called urgent in " + t.highUrgency : "");
     if (t.programMeetings) {
-      meta += " &middot; in " + t.meetingCount + " of " + t.programMeetings + " meetings here, vs " + pctOf(t.elsewhereShare) + " elsewhere";
+      meta += " &middot; raised in " + t.meetingCount + " of the " + t.programMeetings + " meetings here that logged issues, vs " + pctOf(t.elsewhereShare) + " in other programs";
     }
     return '<div class="topic" data-topic="' + esc(t.topic) + '"><h3>' + (n + 1) + ". " + esc(t.label) + '</h3><p class="meta">' + meta + "</p>" +
       (t.companies.length ? '<div class="chips">' + t.companies.slice(0, 6).map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") +
