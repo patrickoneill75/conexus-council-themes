@@ -1064,6 +1064,8 @@ The totals on the dashboard and in the Explore list are still plain counts, beca
 
 Click a meeting to see its issues, solutions, wins and other items.
 
+**A program's top five is not Home's top five.** Ranked by raw counts, the same few topics (hiring, AI, ERP) lead every program, because every program talks about them. A program page therefore defaults to **Most distinctive**. A topic scores by the share of the program's meetings that raised it, multiplied by the square root of how much more common that is here than in all other programs over the same window. Each card says "in 3 of 4 meetings here, vs 12% elsewhere". A topic raised in only one meeting of a program with several is listed after the topics raised repeatedly. The **Most raised** button restores the count order used on Home. A very common topic can still appear in a program's top five when it dominates that program. The ranking chooses among the 30 fixed topics, so two programs with similar interests will still overlap. If that proves too coarse, the next step is to have Claude propose themes per program.
+
 Summaries cost one Claude call per batch of up to eight topics, and each is saved under the topic and the exact notes behind it. The same notes are never paid for twice: a summary is rewritten only when a scan changes the evidence for that topic. Opening a program, or changing a filter, can write new ones the first time.
 
 ### Source folders

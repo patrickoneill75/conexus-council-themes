@@ -3555,6 +3555,74 @@ test("partner_intel: each program has its own trending topics, over its own wind
   assert.equal(recent.meetings.length, 2, "Recent data lists every meeting, whatever the window");
 });
 
+/** Three programs that all talk about hiring, plus one thing each is about. Rows are (program, meeting, company, topic). */
+function distinctiveRows() {
+  const row = (program, meeting, company, topic) => ins({ topic, company_id: company, date: isoAgo(10), meeting_id: meeting,
+    meeting_label: meeting, meeting_kind: "meeting", sources: [{ id: `f-${meeting}`, name: `${meeting}.docx`, path: `Raw Notes/${program}` }] });
+  const rows = [];
+  for (const m of ["p1", "p2", "p3"]) for (const c of ["c-a", "c-b", "c-c"]) rows.push(row("PCN", m, c, "talent_pipeline"));
+  for (const m of ["p1", "p2"]) for (const c of ["c-a", "c-b"]) rows.push(row("PCN", m, c, "quality"));
+  for (const m of ["a1", "a2", "a3"]) {
+    rows.push(row("ADAPT", m, "c-a", "talent_pipeline"));
+    rows.push(row("ADAPT", m, "c-b", "ai_adoption"));
+  }
+  // Site Visits: hiring in both meetings, and one topic that three companies raised in a single meeting
+  for (const m of ["v1", "v2"]) rows.push(row("Site Visits", m, "c-a", "talent_pipeline"));
+  for (const c of ["c-a", "c-b", "c-c"]) rows.push(row("Site Visits", "v1", c, "supply_chain"));
+  return rows;
+}
+async function distinctiveEnv() {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await publishV2(env, distinctiveRows(), { topics: [...TOPICS, { id: "supply_chain", label: "Supply chain", keywords: "" }] });
+  return { env, token };
+}
+
+test("partner_intel: BUG each program showed the same top topics as Home; a program now leads with what is distinctive about it", async () => {
+  const { env, token } = await distinctiveEnv();
+  const home = await getJson("home?days=30", env, token);
+  assert.equal(home.trending[0].topic, "talent_pipeline", "Home ranks by how many companies raised a topic");
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  assert.deepEqual(pcn.trending.map((t) => t.topic), ["quality", "talent_pipeline"],
+    "hiring is in every PCN meeting but also in every other program's, so what sets PCN apart comes first");
+  const adapt = await getJson("program?name=ADAPT&days=0", env, token);
+  assert.equal(adapt.trending[0].topic, "ai_adoption");
+  assert.notEqual(pcn.trending[0].topic, adapt.trending[0].topic, "two programs do not share a number one");
+  assert.notEqual(pcn.trending[0].topic, home.trending[0].topic, "and a program's number one is not simply Home's");
+  assert.equal(pcn.rank, "distinct");
+});
+
+test("partner_intel: a program's topic carries how many of its meetings raised it and how often other programs did", async () => {
+  const { env, token } = await distinctiveEnv();
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  const q = pcn.trending.find((t) => t.topic === "quality");
+  assert.equal(q.programMeetings, 3);
+  assert.equal(q.meetingCount, 2, "raised in two of PCN's three meetings");
+  assert.ok(q.elsewhereShare < 0.2, "and almost never in the other program");
+  const t = pcn.trending.find((x) => x.topic === "talent_pipeline");
+  assert.ok(t.elsewhereShare > 0.8, "hiring is raised nearly everywhere");
+  const home = await getJson("home?days=30", env, token);
+  assert.equal(home.trending[0].programMeetings, undefined, "Home has no program to compare against");
+});
+
+test("partner_intel: 'Most raised' keeps the plain count order for a program", async () => {
+  const { env, token } = await distinctiveEnv();
+  const pcn = await getJson("program?name=PCN&days=0&rank=common", env, token);
+  assert.equal(pcn.rank, "common");
+  assert.deepEqual(pcn.trending.map((t) => t.topic), ["talent_pipeline", "quality"]);
+  assert.equal(pcn.trending[0].programMeetings, undefined);
+  assert.equal((await getJson("program?name=PCN&days=0&rank=nonsense", env, token)).rank, "distinct", "an unknown value falls back to the default");
+});
+
+test("partner_intel: a one-meeting topic does not outrank topics a program raised repeatedly, however distinctive", async () => {
+  const { env, token } = await distinctiveEnv();
+  const adapt = await getJson("program?name=ADAPT&days=0", env, token);
+  assert.deepEqual(adapt.trending.map((t) => t.topic), ["ai_adoption", "talent_pipeline"]);
+  const visits = await getJson("program?name=Site%20Visits&days=0", env, token);
+  assert.deepEqual(visits.trending.map((t) => t.topic), ["talent_pipeline", "supply_chain"],
+    "supply chain scores higher but came up in one of two meetings, so it is listed after the repeated topic");
+});
+
 test("partner_intel: data published before meetings existed is still grouped, and says an update is needed", async () => {
   const { env, token } = await signedInEnv();
   await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
