@@ -2993,7 +2993,7 @@ const SOLVERS = () => [
   ins({ kind: "offer", urgency: "none", company_id: "c-b", title: "Quality system consulting", detail: "Offers help standing up an ISO quality management system.", topic: "quality", tags: ["iso"], solves: "quality system" }),
   ins({ kind: "win", urgency: "none", company_id: "c-c", title: "Hired apprentices", detail: "Placed five apprentices in the machine shop.", topic: "talent_pipeline", tags: ["apprentice"] }),
 ];
-const rankOut = (matches, extra = {}) => okJson({ content: [{ type: "tool_use", input: { summary: "s", matches, gaps: "", ...extra } }], usage: { input_tokens: 10, output_tokens: 5 } });
+const rankOut = (matches, extra = {}) => okJson({ content: [{ type: "tool_use", name: "rank_matches", input: { summary: "s", matches, gaps: "", ...extra } }], usage: { input_tokens: 10, output_tokens: 5 } });
 
 test("partner_intel: ask without a Claude key returns a labeled keyword ranking and saves nothing", async () => {
   const { env, token } = await piEnv(SOLVERS());
@@ -3005,7 +3005,7 @@ test("partner_intel: ask without a Claude key returns a labeled keyword ranking 
   assert.equal([...env.BOX_KV.store.keys()].filter((k) => k.startsWith("pi:ask:") && k !== "pi:ask:recent").length, 0);
 });
 
-test("partner_intel: ask never shows a company or evidence the model was not given, and caches by dataset version", async () => {
+test("partner_intel: ask never shows a company or evidence the model was not given, and caches by what Claude would read", async () => {
   const rows = SOLVERS();
   const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
   let bodies = [];
@@ -3024,16 +3024,29 @@ test("partner_intel: ask never shows a company or evidence the model was not giv
   assert.deepEqual(first.matches[0].evidence.map((e) => e.id), [rows[0].id]);
   assert.equal(first.cached, false);
   assert.equal(bodies.length, 1);
-  assert.equal(bodies[0].model, "claude-opus-5");
+  assert.equal(bodies[0].model, "claude-sonnet-5-5", "Ask decides introductions, so it runs on Sonnet");
   assert.equal(bodies[0].tools[0].strict, true);
+  assert.deepEqual(bodies[0].tool_choice, { type: "auto" }, "Sonnet 5.5 rejects a forced tool choice");
+  assert.deepEqual(bodies[0].output_config, { effort: "medium" });
+  assert.equal(bodies[0].fallbacks, "default", "a declined question falls back server-side");
+  assert.match(bodies[0].system, /calling the rank_matches tool/);
   assert.match(bodies[0].messages[0].content, /<question>\nWho has an AI powered quality inspection system\?\n<\/question>/);
   const second = await (await ask()).json();
   assert.equal(second.cached, true);
   assert.equal(bodies.length, 1, "the repeat question made no Claude call");
-  // A republish is a new dataset version, so the saved answer is no longer trusted.
+  // COST: every daily scan publishes a new version. When nothing the question touches changed,
+  // the prompt is the same, so the saved answer is reused instead of paid for again.
   await pi("relay/publish", relay("publish", "POST", { version: "new-version", generated_at: "x", roster_updated_at: "r1", topics: TOPICS, events: [], insights: rows, companies: [], unmatched: [], stats: {} }), env);
+  assert.equal((await (await ask()).json()).cached, true, "a republish that changed nothing relevant costs nothing");
+  assert.equal(bodies.length, 1);
+  // A new row that answers the question changes what Claude would read, so it is asked again.
+  const more = [...rows, ins({ kind: "solution", urgency: "none", company_id: "c-c", title: "AI inspection cameras on the press line",
+    detail: "Installed vision inspection with AI.", topic: "quality", tags: ["ai", "inspection"], solves: "quality inspection" })];
+  await pi("relay/publish", relay("publish", "POST", { version: "v3", generated_at: "x", roster_updated_at: "r1", topics: TOPICS, events: [], insights: more, companies: [], unmatched: [], stats: {} }), env);
   assert.equal((await (await ask()).json()).cached, false);
   assert.equal(bodies.length, 2);
+  const usage = (await getJson("status", env, token)).usage.thisMonth.ask;
+  assert.deepEqual([usage.calls, usage.input, usage.output, usage.reused], [2, 20, 10, 2], "the meter counts paid calls and reuses");
 });
 
 test("partner_intel: a failed Claude call is an error and is not saved as an answer", async () => {
@@ -3221,7 +3234,7 @@ test("partner_intel: database files go to the chosen Box folder, as a new versio
   const save = (name, text = "{}") => pi("relay/box/save", relay("box/save", "POST", { name, text }), env);
   assert.equal((await save("partner_intel_database.json")).status, 409, "no database folder chosen yet");
   await setFolder(env, token, "data", "22", "Database");
-  assert.equal((await save("../../evil.json")).status, 400, "only the three database files may be written");
+  assert.equal((await save("../../evil.json")).status, 400, "only the database files may be written");
   assert.equal((await save("notes.docx")).status, 400);
   const uploads = [];
   const handler = boxFake({ 22: [fileItem("700", "partner_intel_state.json", "2026-01-01T00:00:00Z")] }, {}, uploads);
@@ -3234,6 +3247,9 @@ test("partner_intel: database files go to the chosen Box folder, as a new versio
   assert.equal(updated.updated, true, "Box answers 409 to a second upload of the same name, so it is a new version");
   assert.match(uploads[1].url, /files\/700\/content$/);
   assert.equal((await pi("relay/box/save", relay("box/save", "POST", { name: "partner_intel_state.json", text: "x" }, "wrong"), env)).status, 401);
+  const archived = await withFetch(handler, async () => (await save("partner_intel_results_archive.json", "{}")).json());
+  assert.equal(archived.ok, true, "the results archive is a database file too");
+  assert.equal((await pi("relay/box/load", relay("box/load", "GET"), env)).status, 400);
 });
 
 test("partner_intel: a saved state file can be read back, and a missing one is a plain 404", async () => {
@@ -3381,7 +3397,7 @@ const publishV2 = (env, insights, extra = {}) => pi("relay/publish", relay("publ
   schema: 2, version: `v${++insightSeq}`, generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [],
   insights, companies: [], unmatched: [], stats: {}, ...extra }), env);
 
-const summaryOut = (payload, make) => okJson({ content: [{ type: "tool_use", input: { topics: payload.map(make) } }], usage: { input_tokens: 50, output_tokens: 20 } });
+const summaryOut = (payload, make) => okJson({ content: [{ type: "tool_use", name: "write_summaries", input: { topics: payload.map(make) } }], usage: { input_tokens: 50, output_tokens: 20 } });
 const topicsIn = (init) => { const body = JSON.parse(init.body); const sent = body.messages[0].content;
   return { body, payload: JSON.parse(sent.slice(sent.indexOf("<topics>") + 8, sent.indexOf("</topics>"))) }; };
 
@@ -3417,8 +3433,12 @@ test("partner_intel: Home answers at once with the examples, then the bullet sum
   const out = await sum(["talent_pipeline", "quality"]);
   assert.equal(calls.length, 1, "both topics were written in ONE Claude call");
   assert.equal(calls[0].payload.length, 2);
-  assert.equal(calls[0].body.model, "claude-opus-5");
+  assert.equal(calls[0].body.model, "claude-haiku-5-5", "summaries are short and checked, so they run on Haiku");
   assert.equal(calls[0].body.tools[0].strict, true);
+  assert.deepEqual(calls[0].body.tool_choice, { type: "auto" });
+  assert.deepEqual(calls[0].body.output_config, { effort: "low" });
+  assert.equal(calls[0].body.fallbacks, undefined, "Haiku has no server-side fallback");
+  assert.match(calls[0].body.system, /calling the write_summaries tool/);
   assert.ok(calls[0].payload[0].evidence[0].company, "the model is told which company said it");
   const bullets = out.summaries.talent_pipeline.bullets;
   assert.deepEqual(bullets.map((b) => b.text), ["Companies in Talent pipeline and recruiting describe a first problem.", "A second point."],
@@ -3484,6 +3504,106 @@ test("partner_intel: summaries follow the filters they were asked under, so a so
   await sum({ days: 30, topics: ["quality"] });
   await sum({ days: 30, topics: ["quality"], source: ["ADAPT"] });
   assert.deepEqual(seen, [2, 1], "the ADAPT summary was written from ADAPT's rows only");
+});
+
+const oneBullet = (t) => ({ topic_id: t.topic_id, bullets: [
+  { text: "First point.", evidence_ids: [t.evidence[0].id] }, { text: "Second point.", evidence_ids: t.evidence.slice(1).map((e) => e.id).slice(0, 4) }] });
+
+test("partner_intel: COST a summary is reused when the window rolls and only a row changes, not paid for again", async () => {
+  const base = Array.from({ length: 10 }, (_, k) => ins({ topic: "quality", company_id: ["c-a", "c-b", "c-c"][k % 3], meeting_id: `m-q${k}`, title: `Quality point ${k}` }));
+  const { env, token } = await piEnv(base, { partner_intel_claude_api: "k" });
+  let calls = 0;
+  const handler = (url, init) => { calls++; return summaryOut(topicsIn(init).payload, oneBullet); };
+  const sum = () => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  await sum();
+  assert.equal(calls, 1);
+  // A day later: one new row came in. Ten of the eleven rows are the ones the summary was written from.
+  await publishV2(env, [...base, ins({ topic: "quality", company_id: "c-c", meeting_id: "m-new", title: "A newer quality point" })]);
+  const again = await sum();
+  assert.equal(calls, 1, "ten of eleven rows unchanged: the saved summary is reused");
+  assert.equal(again.summaries.quality.bullets.length, 2);
+  assert.equal((await getJson("status", env, token)).usage.thisMonth.summaries.reused, 1);
+});
+
+test("partner_intel: a summary is written again when the rows have moved on, and reuse never drifts", async () => {
+  const base = Array.from({ length: 10 }, (_, k) => ins({ topic: "quality", company_id: ["c-a", "c-b", "c-c"][k % 3], meeting_id: `m-d${k}`, title: `Quality point ${k}` }));
+  const { env, token } = await piEnv(base, { partner_intel_claude_api: "k" });
+  let calls = 0;
+  const handler = (url, init) => { calls++; return summaryOut(topicsIn(init).payload, oneBullet); };
+  const sum = () => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  await sum();
+  // Each step adds one row: 10/11, then 10/12, then 10/13 of the rows it was WRITTEN from.
+  // Measured against the last reuse instead, every step would look 90% the same forever.
+  const rows = [...base];
+  for (let k = 0; k < 3; k++) {
+    rows.push(ins({ topic: "quality", company_id: "c-a", meeting_id: `m-step${k}`, title: `Step ${k}` }));
+    await publishV2(env, rows);
+    await sum();
+  }
+  assert.equal(calls, 2, "10/11 and 10/12 reuse; 10/13 is under 80% of the original rows, so it is written again");
+});
+
+test("partner_intel: a summary is not reused when one of its bullets has lost all its rows", async () => {
+  const base = Array.from({ length: 10 }, (_, k) => ins({ topic: "quality", company_id: ["c-a", "c-b", "c-c"][k % 3], meeting_id: `m-l${k}`, title: `Quality point ${k}` }));
+  const { env, token } = await piEnv(base, { partner_intel_claude_api: "k" });
+  let calls = 0, firstEvidence;
+  const handler = (url, init) => { calls++; const { payload } = topicsIn(init); firstEvidence = firstEvidence || payload[0].evidence[0].id;
+    return summaryOut(payload, oneBullet); };
+  const sum = () => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  await sum();
+  // The row the first bullet stands on leaves; 9 of 10 rows are still the same.
+  await publishV2(env, base.filter((r) => r.id !== firstEvidence));
+  await sum();
+  assert.equal(calls, 2, "the first bullet would have nothing to show, so the summary is written again");
+});
+
+test("partner_intel: the scan report adds the pipeline's Claude use to the monthly meter, batch and direct apart", async () => {
+  const { env, token } = await piEnv([]);
+  await pi("relay/report", relay("report", "POST", { mode: "scan", claude_calls: 5, claude_calls_batch: 4, tokens_in_batch: 4000,
+    tokens_out_batch: 800, claude_calls_sync: 1, tokens_in_sync: 900, tokens_out_sync: 300, units_cached: 2, units_from_archive: 3 }), env);
+  const u = (await getJson("status", env, token)).usage.thisMonth;
+  assert.deepEqual([u.extractionBatch.calls, u.extractionBatch.input, u.extractionBatch.output], [4, 4000, 800]);
+  assert.deepEqual([u.extraction.calls, u.extraction.input, u.extraction.output, u.extraction.reused], [1, 900, 300, 5]);
+  await pi("relay/report", relay("report", "POST", { mode: "scan" }), env);
+  assert.equal((await getJson("status", env, token)).usage.thisMonth.extraction.calls, 1, "a quiet scan adds nothing");
+});
+
+test("partner_intel: Ask sends the fallback beta header, summaries do not", async () => {
+  const rows = SOLVERS();
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const heads = [];
+  await withFetch((url, init) => { heads.push(init.headers["anthropic-beta"]); return rankOut([
+    { company_id: "c-a", strength: "high", why: "Built it.", evidence_ids: [rows[0].id], caution: "" }]); },
+  () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
+  assert.deepEqual(heads, ["server-side-fallback-2026-07-01"]);
+});
+
+test("partner_intel: with no forced tool choice, an answer that skips the tool is asked once more, then is an error", async () => {
+  const { env, token } = await piEnv(trendingRows(), { partner_intel_claude_api: "k" });
+  let calls = 0;
+  const textOnly = () => okJson({ content: [{ type: "text", text: "Here are your summaries." }], stop_reason: "end_turn", usage: {} });
+  const sum = (handler) => withFetch(handler, () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env));
+  const second = await (await sum((url, init) => { calls++;
+    return calls === 1 ? textOnly() : summaryOut(topicsIn(init).payload, (t) => ({ topic_id: t.topic_id,
+      bullets: [{ text: "Real.", evidence_ids: [t.evidence[0].id] }] })); })).json();
+  assert.equal(calls, 2, "asked again after an answer with no tool call");
+  assert.equal(second.summaries.quality.bullets[0].text, "Real.");
+  const { env: env2, token: token2 } = await piEnv(trendingRows(), { partner_intel_claude_api: "k" });
+  let tries = 0;
+  const failed = await withFetch(() => { tries++; return textOnly(); },
+    () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token2), env2));
+  assert.equal(failed.status, 502);
+  assert.equal(tries, 2, "two tries, not a loop");
+});
+
+test("partner_intel: a declined request is a clear error and is not saved", async () => {
+  const rows = SOLVERS();
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const res = await withFetch(() => okJson({ content: [], stop_reason: "refusal", stop_details: { type: "refusal", category: "general_harms" } }),
+    () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
+  assert.equal(res.status, 502);
+  assert.match((await res.json()).error, /declined.*general_harms/);
+  assert.equal([...env.BOX_KV.store.keys()].filter((k) => k.startsWith("pi:ask:") && k !== "pi:ask:recent").length, 0);
 });
 
 const PROGRAM_ROWS = () => [
@@ -3553,6 +3673,101 @@ test("partner_intel: each program has its own trending topics, over its own wind
   const recent = await getJson("program?name=PCN&days=90", env, token);
   assert.deepEqual(recent.trending.map((t) => [t.topic, t.companyCount]), [["quality", 1]]);
   assert.equal(recent.meetings.length, 2, "Recent data lists every meeting, whatever the window");
+});
+
+/** Three programs that all talk about hiring, plus one thing each is about. Rows are (program, meeting, company, topic). */
+function distinctiveRows() {
+  const row = (program, meeting, company, topic) => ins({ topic, company_id: company, date: isoAgo(10), meeting_id: meeting,
+    meeting_label: meeting, meeting_kind: "meeting", sources: [{ id: `f-${meeting}`, name: `${meeting}.docx`, path: `Raw Notes/${program}` }] });
+  const rows = [];
+  for (const m of ["p1", "p2", "p3"]) for (const c of ["c-a", "c-b", "c-c"]) rows.push(row("PCN", m, c, "talent_pipeline"));
+  for (const m of ["p1", "p2"]) for (const c of ["c-a", "c-b"]) rows.push(row("PCN", m, c, "quality"));
+  for (const m of ["a1", "a2", "a3"]) {
+    rows.push(row("ADAPT", m, "c-a", "talent_pipeline"));
+    rows.push(row("ADAPT", m, "c-b", "ai_adoption"));
+  }
+  // Site Visits: hiring in both meetings, and one topic that three companies raised in a single meeting
+  for (const m of ["v1", "v2"]) rows.push(row("Site Visits", m, "c-a", "talent_pipeline"));
+  for (const c of ["c-a", "c-b", "c-c"]) rows.push(row("Site Visits", "v1", c, "supply_chain"));
+  return rows;
+}
+async function distinctiveEnv() {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await publishV2(env, distinctiveRows(), { topics: [...TOPICS, { id: "supply_chain", label: "Supply chain", keywords: "" }] });
+  return { env, token };
+}
+
+test("partner_intel: BUG each program showed the same top topics as Home; a program now leads with what is distinctive about it", async () => {
+  const { env, token } = await distinctiveEnv();
+  const home = await getJson("home?days=30", env, token);
+  assert.equal(home.trending[0].topic, "talent_pipeline", "Home ranks by how many companies raised a topic");
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  assert.deepEqual(pcn.trending.map((t) => t.topic), ["quality", "talent_pipeline"],
+    "hiring is in every PCN meeting but also in every other program's, so what sets PCN apart comes first");
+  const adapt = await getJson("program?name=ADAPT&days=0", env, token);
+  assert.equal(adapt.trending[0].topic, "ai_adoption");
+  assert.notEqual(pcn.trending[0].topic, adapt.trending[0].topic, "two programs do not share a number one");
+  assert.notEqual(pcn.trending[0].topic, home.trending[0].topic, "and a program's number one is not simply Home's");
+  assert.equal(pcn.rank, "distinct");
+  assert.equal(pcn.compared, true);
+});
+
+test("partner_intel: BUG a program with nothing to compare against still claimed a distinctive ranking", async () => {
+  const rows = [ins({ topic: "quality", sources: [{ id: "1", name: "a", path: "Raw Notes/PCN" }] })];
+  const { env, token } = await piEnv(rows);
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  assert.equal(pcn.compared, false, "no other program, so the order is by counts and the page must say so");
+  assert.equal((await getJson("program?name=PCN&days=0&rank=common", env, token)).compared, false);
+});
+
+test("partner_intel: a program's topic carries how many of its meetings raised it and how often other programs did", async () => {
+  const { env, token } = await distinctiveEnv();
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  const q = pcn.trending.find((t) => t.topic === "quality");
+  assert.equal(q.programMeetings, 3);
+  assert.equal(q.meetingCount, 2, "raised in two of PCN's three meetings");
+  const t = pcn.trending.find((x) => x.topic === "talent_pipeline");
+  assert.equal(t.elsewhereShare, 1, "hiring came up in all five meetings of the other programs");
+  const home = await getJson("home?days=30", env, token);
+  assert.equal(home.trending[0].programMeetings, undefined, "Home has no program to compare against");
+});
+
+test("partner_intel: BUG the share elsewhere showed a smoothed figure, so a topic no other program raised read as 8%", async () => {
+  const { env, token } = await distinctiveEnv();
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  const q = pcn.trending.find((t) => t.topic === "quality");
+  assert.equal(q.elsewhereShare, 0, "no meeting outside PCN raised quality, so the card must say 0%");
+});
+
+test("partner_intel: BUG internal rows counted for a program but not for the programs it was compared with", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  const board = (m) => ins({ topic: "quality", scope: "internal", company_id: "", date: isoAgo(10), meeting_id: m, meeting_label: m,
+    meeting_kind: "meeting", sources: [{ id: `f-${m}`, name: `${m}.docx`, path: "Raw Notes/Board Meetings" }] });
+  await publishV2(env, [...distinctiveRows(), board("b1"), board("b2")],
+    { topics: [...TOPICS, { id: "supply_chain", label: "Supply chain", keywords: "" }] });
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  const q = pcn.trending.find((t) => t.topic === "quality");
+  assert.equal(q.elsewhereShare, 2 / 7, "the two Board meetings that raised quality count as elsewhere");
+});
+
+test("partner_intel: 'Most raised' keeps the plain count order for a program", async () => {
+  const { env, token } = await distinctiveEnv();
+  const pcn = await getJson("program?name=PCN&days=0&rank=common", env, token);
+  assert.equal(pcn.rank, "common");
+  assert.deepEqual(pcn.trending.map((t) => t.topic), ["talent_pipeline", "quality"]);
+  assert.equal(pcn.trending[0].programMeetings, undefined);
+  assert.equal((await getJson("program?name=PCN&days=0&rank=nonsense", env, token)).rank, "distinct", "an unknown value falls back to the default");
+});
+
+test("partner_intel: a one-meeting topic does not outrank topics a program raised repeatedly, however distinctive", async () => {
+  const { env, token } = await distinctiveEnv();
+  const adapt = await getJson("program?name=ADAPT&days=0", env, token);
+  assert.deepEqual(adapt.trending.map((t) => t.topic), ["ai_adoption", "talent_pipeline"]);
+  const visits = await getJson("program?name=Site%20Visits&days=0", env, token);
+  assert.deepEqual(visits.trending.map((t) => t.topic), ["talent_pipeline", "supply_chain"],
+    "supply chain scores higher but came up in one of two meetings, so it is listed after the repeated topic");
 });
 
 test("partner_intel: data published before meetings existed is still grouped, and says an update is needed", async () => {

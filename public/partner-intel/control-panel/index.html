@@ -74,6 +74,12 @@
   </section>
 
   <section class="card">
+    <h2>Claude use</h2>
+    <p class="desc">Tokens Claude read and wrote, by what they were for. Reading notes goes through the batch, which costs half. "Reused" counts answers served from saved results instead of a new call.</p>
+    <div id="usage" class="small muted">Nothing used yet.</div>
+  </section>
+
+  <section class="card">
     <h2>3. Partner list</h2>
     <p class="desc">Industry, member status and contacts come from here, and it is how a company named in the notes is recognized. Update it whenever partners join or leave: upload a fresh Salesforce export, or edit one partner below. Nobody is deleted by an upload. A partner missing from a full list is marked Former member and keeps their history.</p>
     <div id="rosterSummary" class="small" style="margin-bottom:12px"></div>
@@ -186,8 +192,27 @@
         " (" + s.rosterSync.counts.added + " added, " + s.rosterSync.counts.reactivated + " returning, " + s.rosterSync.counts.deactivated + " marked Former)." +
         (s.rosterSync.warning ? " " + s.rosterSync.warning : "") : "";
       renderReport(s.report);
+      renderUsage(s.usage);
       el("rosterSummary").innerHTML = s.roster.Active + " members &middot; " + s.roster.Inactive + " former &middot; " + s.roster["Non-member"] + " not members";
     });
+  }
+
+  var USAGE_ROWS = [["extractionBatch", "Reading notes (batch, half price)"], ["extraction", "Reading notes (direct)"],
+                    ["summaries", "Trending topic summaries"], ["ask", "Ask"]];
+  function renderUsage(u) {
+    if (!u) return;
+    var fmt = function (n) { return (n || 0).toLocaleString(); };
+    var table = function (m) {
+      var rows = USAGE_ROWS.filter(function (k) { return m[k[0]]; });
+      if (!rows.length) return "<p class=\"muted\">Nothing used.</p>";
+      return "<table><thead><tr><th>Use</th><th>Calls</th><th>Tokens in</th><th>Tokens out</th><th>Reused</th></tr></thead><tbody>" +
+        rows.map(function (k) { var r = m[k[0]];
+          return "<tr><td>" + k[1] + "</td><td>" + fmt(r.calls) + "</td><td>" + fmt(r.input) + "</td><td>" + fmt(r.output) + "</td><td>" + fmt(r.reused) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    };
+    el("usage").className = "small";
+    el("usage").innerHTML = "<h3>This month (" + esc(u.thisMonth.month) + ")</h3>" + table(u.thisMonth) +
+      "<h3 style=\"margin-top:12px\">Last month (" + esc(u.lastMonth.month) + ")</h3>" + table(u.lastMonth);
   }
 
   function renderReport(r) {
@@ -210,7 +235,10 @@
       (r.box_note ? '<div class="msg err">' + esc(r.box_note) + "</div>" : "") +
       (r.restored_from_box ? "<div>The saved state was restored from the Box database folder.</div>" : "") +
       (r.roster_sync && (r.roster_sync.skipped || r.roster_sync.error || r.roster_sync.saved) ? "<div>Member list: " + esc(r.roster_sync.error || r.roster_sync.skipped || ("applied " + (r.roster_sync.file || {}).name)) + (r.roster_sync.warning ? " " + esc(r.roster_sync.warning) : "") + "</div>" : "") +
-      (r.tokens_in ? "<div>Tokens used: " + r.tokens_in.toLocaleString() + " in, " + (r.tokens_out || 0).toLocaleString() + " out.</div>" : "") +
+      (r.tokens_in ? "<div>Tokens used: " + r.tokens_in.toLocaleString() + " in, " + (r.tokens_out || 0).toLocaleString() + " out" +
+        (r.claude_calls_batch ? " (" + r.claude_calls_batch + " of " + r.claude_calls + " calls through the half-price batch)" : "") + ".</div>" : "") +
+      (r.units_from_archive ? "<div>" + r.units_from_archive + " section" + (r.units_from_archive === 1 ? "" : "s") + " came back from the Box results archive at no cost.</div>" : "") +
+      (r.batch_note ? "<div>" + esc(r.batch_note) + "</div>" : "") +
       (ign ? "<div>Ignored (not notes): " + esc(ign) + "</div>" : "") +
       list("Errors", r.errors) + list("Could not save to Box", r.box_errors) + list("Need converting to .docx", r.needs_conversion) + list("Unreadable", r.unreadable) +
       list("PDFs with no text (scans)", r.no_text) + list("Too large", r.too_large);
@@ -219,7 +247,7 @@
   /* ------------------------------------------------------------ folders */
   var FOLDERS = [
     { which: "notes", id: "folderId", name: "folderName", label: "Meeting notes", use: "Read. Every subfolder is read too. Word, text, VTT, SRT, HTML and PDFs with a text layer are used; images, audio and spreadsheets are ignored." },
-    { which: "data", id: "dataFolderId", name: "dataFolderName", label: "Database", use: "Written after every scan: partner_intel_database.json, partner_intel_insights.csv (opens in Excel) and partner_intel_state.json. The state file lets the tool restore itself without reading the notes again." },
+    { which: "data", id: "dataFolderId", name: "dataFolderName", label: "Database", use: "Written after every scan: partner_intel_database.json, partner_intel_insights.csv (opens in Excel) and partner_intel_state.json. The state file lets the tool restore itself without reading the notes again. partner_intel_results_archive.json keeps every Claude result ever paid for, so none is paid for twice." },
     { which: "roster", id: "rosterFolderId", name: "rosterFolderName", label: "Member list", use: "Read. Put the member list here as a .csv or .xlsx. The newest file is used, and it is re-read at the start of every scan." }
   ];
   var settings = {};

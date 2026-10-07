@@ -1015,6 +1015,7 @@ The Worker serves the data from Workers KV. The durable copy lives in the **Data
 - `partner_intel_database.json`: everything the tool serves.
 - `partner_intel_insights.csv`: the same insights as a flat table that opens in Excel (company, member status, industry, source folder, type, topic, urgency, quote, source file and more).
 - `partner_intel_state.json`: which files were read and every saved Claude result. If the Worker's own copy is ever empty, the next scan restores from this file and does not read the notes again.
+- `partner_intel_results_archive.json`: every Claude result the live state no longer needs (a file edited, removed, or read with a model you tried and dropped). Every scan looks here before paying Claude, so a file put back, restored from Box's trash, or a model you switch back to (under the same prompt version) costs nothing. Written only when something is archived. Capped at 40 MB; past that the oldest results go first.
 
 If no Database folder is chosen the scan still works, and **Last scan** says nothing was saved to Box.
 
@@ -1064,6 +1065,8 @@ The totals on the dashboard and in the Explore list are still plain counts, beca
 
 Click a meeting to see its issues, solutions, wins and other items.
 
+**A program's top five is not Home's top five.** Ranked by raw counts, the same few topics (hiring, AI, ERP) lead every program, because every program talks about them. A program page therefore defaults to **Most distinctive**. A topic scores by the share of the program's meetings that raised it, multiplied by the square root of how much more common that is here than in all other programs over the same window. Each card says, for example, "raised in 3 of the 4 meetings here that logged issues, vs 12% in other programs". Conexus-internal rows count on both sides of the comparison. A topic raised in only one meeting of a program with several is listed after the topics raised repeatedly. The **Most raised** button restores the count order used on Home. A very common topic can still appear in a program's top five when it dominates that program. The ranking chooses among the 30 fixed topics, so two programs with similar interests will still overlap. If that proves too coarse, the next step is to have Claude propose themes per program.
+
 Summaries cost one Claude call per batch of up to eight topics, and each is saved under the topic and the exact notes behind it. The same notes are never paid for twice: a summary is rewritten only when a scan changes the evidence for that topic. Opening a program, or changing a filter, can write new ones the first time.
 
 ### Source folders
@@ -1083,11 +1086,15 @@ The partner list drives industry, member status, contacts, and how names in the 
 ### Cost
 
 - The first scan is the expensive one. Use the trial run first. **Last scan** shows tokens used.
+- **Notes are read through Anthropic's Message Batches API, at half the price of direct calls** ([Anthropic batch processing docs](https://platform.claude.com/docs/en/build-with-claude/batch-processing): "reducing costs by 50%", "most batches finishing in less than 1 hour"). A scan waits up to 60 minutes for its batch (`PARTNER_INTEL_BATCH_WAIT_MINUTES`), then cancels it, keeps what finished, and reads the rest directly at full price. A section whose answer runs out of room is also read directly, because only the direct path can split it. Set `PARTNER_INTEL_BATCH=false` on the workflow to read everything directly (faster, twice the cost).
+- **Claude use** in the control panel totals this month's and last month's calls and tokens by purpose (notes by batch, notes direct, summaries, Ask), and counts answers served from saved results instead. It shows tokens, not dollars: price them against your Anthropic rate card.
 - A day with no new notes uses no Claude: unchanged files are skipped by Box checksum, and text already read is served from the stored results, keyed by the text, the prompt version and the model, so renaming or moving a file costs nothing.
 - A section too dense for one answer is read in halves and the results merged, so a large section costs a few extra calls, not a failure. **Last scan** counts those.
-- Ask makes one Claude call per new question, over a deterministic shortlist of about ten companies. The answer is saved against the data version, so the same question costs nothing until the next scan changes the data.
-- No Anthropic prompt caching is used (see CLAUDE.md: scans are hours or days apart).
-- `claude-opus-5` is used for both. Changing the extraction prompt or topic list means bumping `PROMPT_VERSION` in `partner_intel/extract.py`, which re-reads everything.
+- Ask makes one Claude call per new question, over a deterministic shortlist of about ten companies. The answer is saved under exactly what Claude would read (the question, the shortlist and its evidence). A daily scan that changes nothing relevant to the question reuses it; a new matching row, or a partner's name or status changing, asks again.
+- Trending summaries are reused across small changes. When a window rolls a day, or a filter adds a row or two, a saved summary is used if at least 80% of the rows it was written from are still the rows behind the topic, and every bullet still has one of its rows to show. The comparison is always with the rows the summary was written from, never with a reuse, so a summary cannot drift one day at a time. The page also waits 0.7 seconds before asking for summaries, so clicking through windows and filters does not start a paid call for every view passed through.
+- No Anthropic prompt caching is used. The instructions and schema shared by every call are about 1,700 tokens, input is the smaller part of an extraction's cost (Claude's written answer is most of it), and inside a batch a cache hit is not guaranteed. Low-volume Worker calls are minutes to days apart (see CLAUDE.md).
+- **Models.** Claude Sonnet 5.5 (`claude-sonnet-5-5`) reads the notes, at medium effort, and answers Ask. Claude Haiku 5.5 (`claude-haiku-5-5`) writes the trending summaries, at low effort: they are short, bounded, and every bullet must cite a row it was shown. List prices per million tokens, from Anthropic's model table as of 2026-10-06 (check the live pricing page before budgeting): Sonnet 5.5 $2 in / $10 out, Haiku 5.5 $0.10 / $0.50 for prompts up to 100K tokens; the batch halves both. Both models think before answering, and thinking is billed as output, so the effort level is set on every call. Neither model accepts a forced tool choice, so each prompt asks for the tool call, and an answer without it is asked once more. A section or question Claude declines is recorded as declined, not retried daily; direct Sonnet calls turn on Anthropic's server-side fallback (`fallbacks: "default"`), which the batch does not allow.
+- Changing the extraction prompt or topic list means bumping `PROMPT_VERSION` in `partner_intel/extract.py`. Files already read keep their results; only files that change, or a **Re-read every file**, are read under the new version.
 
 ### The one-time update
 

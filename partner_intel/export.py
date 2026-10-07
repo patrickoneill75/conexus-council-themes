@@ -17,6 +17,10 @@ from .roster import Roster
 DATABASE_FILE = "partner_intel_database.json"
 INSIGHTS_FILE = "partner_intel_insights.csv"
 STATE_FILE = "partner_intel_state.json"
+# Every Claude result ever paid for, so none is paid for twice. Not one of FILES: it is
+# written only when a result is retired, not after every scan.
+ARCHIVE_FILE = "partner_intel_results_archive.json"
+ARCHIVE_MAX_CHARS = 40_000_000
 FILES = (DATABASE_FILE, INSIGHTS_FILE, STATE_FILE)
 
 COLUMNS = ["InsightID", "Date", "DateSource", "SourceFolder", "EventType", "Series", "Meeting", "Company",
@@ -60,4 +64,9 @@ def database_json(dataset: dict) -> str:
 
 def state_json(registry: dict, cache: dict, saved_at: str) -> str:
     return json.dumps({"version": 1, "saved_at": saved_at, "registry": registry, "cache": cache},
+                      ensure_ascii=False, separators=(",", ":"))
+
+
+def archive_json(results: dict, saved_at: str) -> str:
+    return json.dumps({"version": 1, "saved_at": saved_at, "results": results},
                       ensure_ascii=False, separators=(",", ":"))

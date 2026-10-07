@@ -58,7 +58,9 @@ def _unit_record(unit, key: str, date: str, source: str) -> dict:
 
 
 def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
-        caller=extract.call_claude, model: str | None = None) -> dict:
+        caller=extract.call_claude, model: str | None = None, batch_client=None) -> dict:
+    """batch_client is swapped in by tests. Real scans use the Batches API when config.USE_BATCH
+    is on and the real caller is in use."""
     api = api or Api()
     model = model or config.MODEL
     report: dict = {"mode": mode, "started_at": now_iso(), "model": model,
@@ -73,6 +75,7 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
             registry, cache = restored
             report["restored_from_box"] = True
     stats = Counter()
+    archive = _Archive(api, cfg)
 
     if mode == "scan":
         if not cfg.get("folderId"):
@@ -88,11 +91,12 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
     roster = Roster.from_payload(api.roster())
 
     if mode == "scan":
-        _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report)
+        _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive, batch_client)
 
     dataset = build_dataset(registry, cache, roster, now_iso())
     api.publish(dataset)
     _save_to_box(api, cfg, dataset, registry, cache, roster, report)
+    archive.save(report)
     report.update({
         "finished_at": now_iso(), "insights": dataset["stats"].get("insights", 0),
         "merged_duplicates": dataset["stats"].get("merged_duplicates", 0),
@@ -142,7 +146,68 @@ def _save_to_box(api, cfg, dataset, registry, cache, roster, report) -> None:
         report["box_errors"] = errors
 
 
-def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report):
+class _Archive:
+    """Every Claude result ever paid for, kept in the Box database folder.
+
+    The live results shrink to what the current files need, so the Worker's copy stays small.
+    A result dropped from it (a file edited, removed, or a model tried and abandoned) is moved
+    here instead of being lost, and every scan looks here before paying Claude. Box storage is
+    effectively free; a re-read is not. Loaded at most once a run, and only when needed.
+    """
+
+    def __init__(self, api, cfg):
+        self.api, self.enabled = api, bool(cfg.get("dataFolderId"))
+        self.results: dict | None = None
+        self.retired: dict = {}
+        self.unreadable = False
+
+    def _load(self) -> dict:
+        if self.results is None:
+            self.results = {}
+            try:
+                text = self.api.load_from_box(export.ARCHIVE_FILE) if self.enabled else None
+                saved = json.loads(text) if text else {}
+                if isinstance(saved.get("results"), dict):
+                    self.results = saved["results"]
+            except Exception:
+                # Box did not answer. Saving now would replace the whole archive with this
+                # run's few results, so this run will not save it at all.
+                self.results, self.unreadable = {}, True
+        return self.results
+
+    def find(self, keys) -> dict:
+        if not self.enabled or not keys:
+            return {}
+        results = self._load()
+        return {k: results[k] for k in keys if k in results}
+
+    def retire(self, key: str, entry: dict) -> None:
+        self.retired[key] = entry
+
+    def save(self, report: dict) -> None:
+        if not self.enabled or not self.retired:
+            return
+        results = self._load()
+        if self.unreadable:
+            report.setdefault("box_errors", []).append(
+                f"{export.ARCHIVE_FILE}: could not be read, so it was left as it was; {len(self.retired)} result(s) were not archived.")
+            return
+        results.update(self.retired)
+        text = export.archive_json(results, now_iso())
+        # Box takes 50 MB through the relay. Past the cap the oldest results go first.
+        while len(text) > export.ARCHIVE_MAX_CHARS and results:
+            oldest = sorted(results, key=lambda k: results[k].get("created_at", ""))
+            for k in oldest[:max(1, len(oldest) // 10)]:
+                del results[k]
+            text = export.archive_json(results, now_iso())
+        try:
+            self.api.save_to_box(export.ARCHIVE_FILE, text)
+            report["archived_results"] = len(self.retired)
+        except Exception as e:
+            report.setdefault("box_errors", []).append(f"{export.ARCHIVE_FILE}: {str(e)[:200]}")
+
+
+def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive=None, batch_client=None):
     seen_ids: set[str] = set()
     pending: list[dict] = []
     ignored: Counter = Counter()
@@ -231,7 +296,14 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
         entry["_pending"] = [u["key"] for u in units if u["key"] in to_run]
         registry[f["id"]] = entry
 
-    # Phase 2: the only step that costs money. Each unit once, in parallel, checkpointed.
+    # Results paid for in an earlier life of a file come back from the Box archive for free.
+    if archive is not None:
+        for key, entry in archive.find(list(to_run)).items():
+            cache[key] = entry
+            del to_run[key]
+            stats["units_from_archive"] += 1
+
+    # Phase 2: the only step that costs money. Each unit once, checkpointed.
     stats["units_to_read"] = len(to_run)
     errors: list[str] = []
     lock = threading.Lock()
@@ -245,6 +317,47 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
         errors.append("PARTNER_INTEL_CLAUDE_API_KEY is not set. Add the repository secret "
                       "partner_intel_claude_api. Nothing new was read.")
         to_run = {}
+
+    def record(key: str, result: dict) -> None:
+        nonlocal done_since_push
+        with lock:
+            cache[key] = result
+            how = "batch" if result.get("batch") else "sync"
+            calls = 1 + result.get("split_calls", 0)
+            stats["claude_calls"] += calls
+            stats[f"claude_calls_{how}"] += calls
+            stats["sections_split"] += 1 if result.get("split_calls") else 0
+            for side in ("in", "out"):
+                n = result["usage"].get("input" if side == "in" else "output", 0)
+                stats[f"tokens_{side}"] += n
+                stats[f"tokens_{side}_{how}"] += n
+            stats["rows_kept"] += len(result["rows"])
+            stats["rows_rejected"] += result["rejected"]
+            if result.get("refused"):
+                stats["sections_refused"] += 1
+                errors.append(f"{to_run_all[key][2]}: {result['refused']}"[:300])
+            done_since_push += 1
+            if done_since_push >= CHECKPOINT_EVERY:
+                done_since_push = 0
+                _store(api, registry, cache)
+
+    to_run_all = dict(to_run)
+    use_batch = batch_client is not None or (caller is extract.call_claude and config.USE_BATCH)
+    if to_run and use_batch:
+        jobs = {k: (unit, event_type) for k, (unit, event_type, _) in to_run.items()}
+        try:
+            got, leftover, note = extract.extract_batch(jobs, roster.staff, model, client=batch_client,
+                                                        wait_minutes=config.BATCH_WAIT_MINUTES)
+        except Exception as e:  # a batch that cannot start must not stop the scan
+            got, leftover, note = {}, list(jobs), f"The batch could not run ({str(e)[:150]}); every section was read directly."
+        for key, result in got.items():
+            record(key, result)
+        if note:
+            report["batch_note"] = note
+        to_run = {k: to_run[k] for k in leftover}
+        if to_run:
+            _store(api, registry, cache)
+
     if to_run:
         with ThreadPoolExecutor(max_workers=max(1, config.WORKERS)) as pool:
             futures = {pool.submit(one, k): k for k in to_run}
@@ -256,18 +369,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
                     unit, _, file_name = to_run[key]
                     errors.append(f"{file_name}, section {unit.label or '(unnamed)'}: {e}"[:300])
                     continue
-                with lock:
-                    cache[key] = result
-                    stats["claude_calls"] += 1 + result.get("split_calls", 0)
-                    stats["sections_split"] += 1 if result.get("split_calls") else 0
-                    stats["tokens_in"] += result["usage"].get("input", 0)
-                    stats["tokens_out"] += result["usage"].get("output", 0)
-                    stats["rows_kept"] += len(result["rows"])
-                    stats["rows_rejected"] += result["rejected"]
-                    done_since_push += 1
-                    if done_since_push >= CHECKPOINT_EVERY:
-                        done_since_push = 0
-                        _store(api, registry, cache)
+                record(key, result)
 
     for entry in registry.values():
         pending_keys = entry.pop("_pending", [])
@@ -283,6 +385,8 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             stats["files_removed"] += 1
         live = {u["key"] for e in registry.values() for u in e.get("units", [])}
         for stale in [k for k in cache if k not in live]:
+            if archive is not None:
+                archive.retire(stale, cache[stale])
             del cache[stale]
 
     _store(api, registry, cache)
