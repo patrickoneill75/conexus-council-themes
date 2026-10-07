@@ -28,6 +28,12 @@
     <div class="row" style="margin-top:8px"><button class="primary" id="relinkBtn">Re-link now</button><span class="msg" id="relinkMsg"></span></div>
   </div>
 
+  <section class="card" id="oneoff" hidden style="border-color:rgba(251,174,64,.7)">
+    <h2 id="oneoffTitle"></h2>
+    <p class="desc" id="oneoffBody"></p>
+    <div class="row"><button class="primary" id="oneoffBtn">Apply the update</button><span class="msg" id="oneoffMsg"></span></div>
+  </section>
+
   <section class="card">
     <h2>Status</h2>
     <div id="status"><span class="spinner"></span>Loading…</div>
@@ -169,6 +175,12 @@
         '<span class="stat"><b>' + s.roster.total + "</b><span>partners listed</span></span>";
       el("relink").hidden = !s.relinkNeeded;
       settings = s.settings || {};
+      var upd = s.oneTimeUpdate;
+      el("oneoff").hidden = !upd;
+      if (upd) {
+        el("oneoffTitle").textContent = upd.title; el("oneoffBody").textContent = upd.body;
+        el("oneoff").setAttribute("data-id", upd.id); el("oneoffBtn").disabled = false; msg("oneoffMsg", "");
+      }
       renderFolders();
       el("syncLast").textContent = s.rosterSync ? "Last applied: " + s.rosterSync.name + ", " + PI.fmtStamp(s.rosterSync.at) +
         " (" + s.rosterSync.counts.added + " added, " + s.rosterSync.counts.reactivated + " returning, " + s.rosterSync.counts.deactivated + " marked Former)." +
@@ -262,6 +274,15 @@
     if (confirm("Re-read every file? Text that was already read is reused, so this is cheap unless the files changed.")) start({ mode: "scan", force: true }, "Full re-read");
   });
   el("rebuild").addEventListener("click", function () { start({ mode: "rebuild" }, "Re-link"); });
+  // A one-time update: the server marks it used before it starts, so the card is gone for good.
+  el("oneoffBtn").addEventListener("click", function () {
+    el("oneoffBtn").disabled = true; msg("oneoffMsg", "Starting…");
+    PI.post("update/apply", { id: el("oneoff").getAttribute("data-id") }).then(function () {
+      el("oneoff").hidden = true;
+      msg("runMsg", "The update started. It takes about a minute. This page refreshes when it finishes.", "ok");
+      pollRuns(true);
+    }).catch(function (e) { el("oneoffBtn").disabled = false; msg("oneoffMsg", e.message, "err"); });
+  });
   el("relinkBtn").addEventListener("click", function () {
     msg("relinkMsg", "Starting…");
     PI.post("run", { mode: "rebuild" }).then(function () { msg("relinkMsg", "Started. Refresh in a minute.", "ok"); pollRuns(true); })

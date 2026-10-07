@@ -2761,30 +2761,31 @@ test("partner_intel: pipeline state round-trips across several shards and sheds 
     "shards beyond the new count are deleted");
 });
 
-test("partner_intel: home keeps to the window and leaves out Conexus-internal rows", async () => {
+test("partner_intel: Trending Topics keeps to the window and leaves out Conexus-internal rows", async () => {
   const { env, token } = await piEnv([
-    ins({ title: "recent high", urgency: "high", date: isoAgo(3) }),
-    ins({ title: "inside 30", urgency: "medium", date: isoAgo(29) }),
-    ins({ title: "inside 90 only", urgency: "high", date: isoAgo(70) }),
-    ins({ title: "too old", urgency: "high", date: isoAgo(200) }),
-    ins({ title: "board talk", urgency: "high", date: isoAgo(2), scope: "internal" }),
+    ins({ title: "recent", topic: "quality", date: isoAgo(3) }),
+    ins({ title: "inside 30", topic: "quality", date: isoAgo(29) }),
+    ins({ title: "inside 90 only", topic: "quality", date: isoAgo(70) }),
+    ins({ title: "too old", topic: "quality", date: isoAgo(200) }),
+    ins({ title: "board talk", topic: "quality", date: isoAgo(2), scope: "internal" }),
   ]);
-  const titles = (b) => b.urgent.map((u) => u.title);
-  assert.deepEqual(titles(await getJson("home?days=30", env, token)), ["recent high", "inside 30"]);
-  assert.deepEqual(titles(await getJson("home?days=90", env, token)), ["recent high", "inside 90 only", "inside 30"],
-    "high urgency first, then medium");
+  const mentions = async (days) => (await getJson(`home?days=${days}`, env, token)).trending.map((t) => [t.topic, t.mentions]);
+  assert.deepEqual(await mentions(30), [["quality", 2]]);
+  assert.deepEqual(await mentions(90), [["quality", 3]]);
 });
 
-test("partner_intel: the urgent list holds only open high and medium problems", async () => {
+test("partner_intel: Home has no urgent-problems list any more, only a high-urgency count on each topic", async () => {
   const { env, token } = await piEnv([
-    ins({ title: "open high", urgency: "high" }), ins({ title: "resolved", urgency: "high", status: "resolved" }),
-    ins({ title: "low", urgency: "low" }), ins({ title: "a win", kind: "win", urgency: "none" }),
-    ins({ title: "a solution", kind: "solution", urgency: "none" }),
+    ins({ topic: "quality", urgency: "high" }), ins({ topic: "quality", urgency: "medium" }), ins({ topic: "quality", urgency: "low" }),
   ]);
-  assert.deepEqual((await getJson("home?days=30", env, token)).urgent.map((u) => u.title), ["open high"]);
+  const home = await getJson("home?days=30", env, token);
+  assert.equal("urgent" in home, false, "the urgent list was removed from Home");
+  assert.equal("shared" in home, false);
+  assert.equal(home.trending[0].highUrgency, 1);
+  assert.equal(home.counts.issues, 3);
 });
 
-test("partner_intel: shared issues count distinct companies, not mentions", async () => {
+test("partner_intel: trending topics rank by distinct companies, then mentions, and leave out 'other'", async () => {
   const { env, token } = await piEnv([
     ...Array.from({ length: 5 }, () => ins({ topic: "quality", company_id: "c-a" })),
     ins({ topic: "talent_pipeline", company_id: "c-a" }), ins({ topic: "talent_pipeline", company_id: "c-b" }),
@@ -2792,27 +2793,26 @@ test("partner_intel: shared issues count distinct companies, not mentions", asyn
     ins({ topic: "other", company_id: "c-a" }), ins({ topic: "other", company_id: "c-b" }),
   ]);
   const home = await getJson("home?days=30", env, token);
-  assert.deepEqual(home.shared.map((g) => [g.topic, g.companyCount, g.mentions]), [["talent_pipeline", 2, 2]],
-    "five mentions by one company is not a shared issue, and 'other' is not ranked");
-  assert.equal(home.single, 2);
+  assert.deepEqual(home.trending.map((g) => [g.topic, g.companyCount, g.mentions]),
+    [["talent_pipeline", 2, 2], ["quality", 1, 5], ["ai_adoption", 1, 2]],
+    "two companies outrank five mentions by one, and 'other' is not ranked");
   assert.equal(home.uncategorized, 2);
 });
 
-test("partner_intel: a topic merge applies to the ranking, and a merge loop is ignored", async () => {
+test("partner_intel: a topic merge applies to the ranking, and a merge loop is refused", async () => {
   const { env, token } = await piEnv([
     ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "c-b" }),
   ]);
-  assert.equal((await getJson("home?days=30", env, token)).shared.length, 0);
+  const ranked = async () => (await getJson("home?days=30", env, token)).trending.map((g) => [g.topic, g.companyCount]);
+  assert.deepEqual(await ranked(), [["ai_adoption", 1], ["quality", 1]]);
   const merge = (id, mergeInto) => pi("topics/override", piReq("topics/override", "POST", { id, mergeInto }, token), env);
   assert.equal((await merge("ai_adoption", "quality")).status, 200);
-  const merged = await getJson("home?days=30", env, token);
-  assert.deepEqual(merged.shared.map((g) => [g.topic, g.companyCount]), [["quality", 2]]);
+  assert.deepEqual(await ranked(), [["quality", 2]]);
   assert.equal((await merge("quality", "ai_adoption")).status, 400, "a loop is refused when it is saved");
-  assert.equal((await getJson("home?days=30", env, token)).shared.length, 1, "and the earlier merge still holds");
+  assert.deepEqual(await ranked(), [["quality", 2]], "and the earlier merge still holds");
   assert.equal((await merge("talent_pipeline", "ai_adoption")).status, 400, "no chains either: ai_adoption is merged away");
-  // Even a hand-edited loop in KV cannot hang a read.
   await env.BOX_KV.put("pi:topics", JSON.stringify({ overrides: { quality: { mergeInto: "ai_adoption" }, ai_adoption: { mergeInto: "quality" } } }));
-  assert.equal((await pi("home", piGet("home?days=30", token), env)).status, 200);
+  assert.equal((await pi("home", piGet("home?days=30", token), env)).status, 200, "a hand-edited loop in KV cannot hang a read");
   assert.equal((await merge("quality", "quality")).status, 400);
   assert.equal((await merge("other", "quality")).status, 400);
 });
@@ -3234,7 +3234,8 @@ test("partner_intel: source folders filter every view, and naming Board Meetings
   assert.deepEqual(await titles("source=Board%20Meetings"), ["board issue"], "an explicit source choice includes the internal rows");
   assert.equal((await titles("")).includes("board issue"), false, "and without it they stay out");
   const home = await getJson("home?days=30&source=ADAPT", env, token);
-  assert.deepEqual(home.urgent.map((u) => u.title), ["adapt issue", "both"], "Home follows the source choice too; the row from two sources counts under each");
+  assert.equal(home.counts.issues, 2, "Home follows the source choice too; the row from two sources counts under each");
+  assert.equal((await getJson("home?days=30&source=CIAIC", env, token)).counts.issues, 2);
   const facets = await getJson("facets", env, token);
   assert.deepEqual(facets.sources, [{ value: "(root)", count: 1 }, { value: "ADAPT", count: 2 }, { value: "Board Meetings", count: 1 }, { value: "CIAIC", count: 2 }]);
   assert.equal((await pi("facets", piGet("facets"), env)).status, 401);
@@ -3259,6 +3260,236 @@ test("partner_intel: Ask can be limited to source folders, and the saved answer 
   assert.equal(calls, 2);
   assert.equal((await ask(["ADAPT"])).cached, true, "the same question and sources reuse the saved answer");
   assert.equal(calls, 2);
+});
+
+/* ------------------------------------------------ partner_intel: trending summaries, programs, one-time update */
+const publishV2 = (env, insights, extra = {}) => pi("relay/publish", relay("publish", "POST", {
+  schema: 2, version: `v${++insightSeq}`, generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [],
+  insights, companies: [], unmatched: [], stats: {}, ...extra }), env);
+
+const summaryOut = (payload, make) => okJson({ content: [{ type: "tool_use", input: { topics: payload.map(make) } }], usage: { input_tokens: 50, output_tokens: 20 } });
+const topicsIn = (init) => { const body = JSON.parse(init.body); const sent = body.messages[0].content;
+  return { body, payload: JSON.parse(sent.slice(sent.indexOf("<topics>") + 8, sent.indexOf("</topics>"))) }; };
+
+function trendingRows() {
+  return [
+    ins({ topic: "talent_pipeline", company_id: "c-a", title: "Cannot hire machinists" }),
+    ins({ topic: "talent_pipeline", company_id: "c-b", title: "Apprentices leave early" }),
+    ins({ topic: "talent_pipeline", company_id: "c-c", title: "Few applicants" }),
+    ins({ topic: "quality", company_id: "c-a", title: "Scrap on line 3" }),
+    ins({ topic: "quality", company_id: "c-b", title: "Inspection backlog" }),
+  ];
+}
+
+test("partner_intel: Home answers at once with the examples, then the bullet summaries are written and saved", async () => {
+  const rows = trendingRows();
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  let calls = [];
+  const handler = (url, init) => {
+    const { body, payload } = topicsIn(init);
+    calls.push({ body, payload });
+    return summaryOut(payload, (t) => ({ topic_id: t.topic_id, bullets: [
+      { text: `Companies in ${t.topic} describe a first problem.`, evidence_ids: [t.evidence[0].id, t.evidence[1].id] },
+      { text: "A second point.", evidence_ids: [t.evidence[1].id, "not-shown"] },
+      { text: "A bullet citing nothing real is dropped.", evidence_ids: ["made-up"] },
+    ] }));
+  };
+  const first = await getJson("home?days=30", env, token);
+  assert.deepEqual(first.trending.map((t) => t.topic), ["talent_pipeline", "quality"]);
+  assert.equal(first.trending[0].summary, null, "nothing written yet");
+  assert.equal(first.trending[0].examples.length, 3, "so the page can still show examples");
+
+  const sum = (topics, extra = {}) => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics, ...extra }, token), env)).json());
+  const out = await sum(["talent_pipeline", "quality"]);
+  assert.equal(calls.length, 1, "both topics were written in ONE Claude call");
+  assert.equal(calls[0].payload.length, 2);
+  assert.equal(calls[0].body.model, "claude-opus-5");
+  assert.equal(calls[0].body.tools[0].strict, true);
+  assert.ok(calls[0].payload[0].evidence[0].company, "the model is told which company said it");
+  const bullets = out.summaries.talent_pipeline.bullets;
+  assert.deepEqual(bullets.map((b) => b.text), ["Companies in Talent pipeline and recruiting describe a first problem.", "A second point."],
+    "a bullet that cites no row the model was shown is dropped");
+  assert.equal(bullets[1].examples.length, 1, "and a made-up evidence id is dropped from a bullet that has a real one");
+  assert.ok(bullets[0].examples[0].company.name, "the examples are full insight cards");
+
+  assert.equal((await sum(["talent_pipeline", "quality"])).summaries.quality.bullets.length, 2);
+  assert.equal(calls.length, 1, "asked again: saved, no second call");
+  const home = await getJson("home?days=30", env, token);
+  assert.equal(home.trending[0].summary.bullets.length, 2, "Home now carries the saved summary");
+  assert.equal(home.trending[0].examples.length, 0);
+
+  // One topic's evidence changes, so only that topic is written again.
+  await publishV2(env, [...rows, ins({ topic: "quality", company_id: "c-c", title: "A new quality issue" })]);
+  await sum(["talent_pipeline", "quality"]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].payload.map((t) => t.topic_id), ["quality"], "an unchanged topic is not paid for again");
+});
+
+test("partner_intel: a summary that cites nothing real is not saved, and a Claude failure is an error, not a saved blank", async () => {
+  const { env, token } = await piEnv(trendingRows(), { partner_intel_claude_api: "k" });
+  const sum = (handler) => withFetch(handler, () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env));
+  const bad = await sum((url, init) => summaryOut(topicsIn(init).payload, (t) => ({ topic_id: t.topic_id,
+    bullets: [{ text: "Invented.", evidence_ids: ["nope"] }] })));
+  assert.deepEqual((await bad.json()).summaries, {}, "nothing usable came back");
+  const failed = await sum(() => new Response("overloaded", { status: 529 }));
+  assert.equal(failed.status, 502);
+  let calls = 0;
+  const good = await (await sum((url, init) => { calls++; return summaryOut(topicsIn(init).payload, (t) => ({ topic_id: t.topic_id,
+    bullets: [{ text: "Real.", evidence_ids: [t.evidence[0].id] }] })); })).json();
+  assert.equal(calls, 1, "neither the empty answer nor the failure was cached");
+  assert.equal(good.summaries.quality.bullets[0].text, "Real.");
+});
+
+test("partner_intel: summaries are capped at eight topics per call, ignore unknown topics, and say when Claude is not set up", async () => {
+  const topicsMany = Array.from({ length: 12 }, (_, n) => ({ id: `t${n}`, label: `Topic ${n}`, keywords: "" }));
+  const { env, token } = await signedInEnv();
+  Object.assign(env, { partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await publishV2(env, topicsMany.map((t) => ins({ topic: t.id, company_id: "c-a" })), { topics: topicsMany });
+  let sent;
+  const out = await withFetch((url, init) => { sent = topicsIn(init).payload; return summaryOut(sent, (t) => ({ topic_id: t.topic_id,
+    bullets: [{ text: "Point.", evidence_ids: [t.evidence[0].id] }] })); },
+  async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: [...topicsMany.map((t) => t.id), "ghost"] }, token), env)).json());
+  assert.equal(sent.length, 8, "at most eight topics in one call");
+  assert.equal(Object.keys(out.summaries).length, 8);
+  delete env.partner_intel_claude_api;
+  const none = await (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["t9"] }, token), env)).json();
+  assert.match(none.unavailable, /Claude is not set up/);
+});
+
+test("partner_intel: summaries follow the filters they were asked under, so a source folder gets its own", async () => {
+  const rows = [
+    ins({ topic: "quality", company_id: "c-a", sources: [{ id: "f1", name: "a", path: "Raw Notes/CIAIC" }] }),
+    ins({ topic: "quality", company_id: "c-b", sources: [{ id: "f2", name: "b", path: "Raw Notes/ADAPT" }] }),
+  ];
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const seen = [];
+  const handler = (url, init) => { const { payload } = topicsIn(init); seen.push(payload[0].evidence.length);
+    return summaryOut(payload, (t) => ({ topic_id: t.topic_id, bullets: [{ text: "Point.", evidence_ids: [t.evidence[0].id] }] })); };
+  const sum = (body) => withFetch(handler, async () => (await pi("summarize", piReq("summarize", "POST", body, token), env)).json());
+  await sum({ days: 30, topics: ["quality"] });
+  await sum({ days: 30, topics: ["quality"], source: ["ADAPT"] });
+  assert.deepEqual(seen, [2, 1], "the ADAPT summary was written from ADAPT's rows only");
+});
+
+const PROGRAM_ROWS = () => [
+  // PCN: two files for the same cohort and date are one meeting
+  ins({ title: "pcn a", topic: "quality", date: "2026-04-24", series: "Cohort 2", event_type: "President and CEO Network Call", meeting_id: "m-c2", meeting_label: "Cohort 2", meeting_kind: "cohort", sources: [{ id: "1", name: "04.24.26 Cohort 2.docx", path: "Raw Notes/PCN" }] }),
+  ins({ title: "pcn b", kind: "solution", urgency: "none", topic: "quality", date: "2026-04-24", company_id: "c-b", series: "Cohort 2", event_type: "President and CEO Network Call", meeting_id: "m-c2", meeting_label: "Cohort 2", meeting_kind: "cohort", sources: [{ id: "2", name: "2026-04-24 Cohort 2.txt", path: "Raw Notes/PCN" }] }),
+  ins({ title: "pcn c3", topic: "talent_pipeline", date: "2026-05-22", series: "Cohort 3", meeting_id: "m-c3", meeting_label: "Cohort 3", meeting_kind: "cohort", sources: [{ id: "3", name: "05.22.26 Cohort 3.docx", path: "Raw Notes/PCN" }] }),
+  // Site visits: one company, one date
+  ins({ title: "visit win", kind: "win", urgency: "none", topic: "quality", date: "2026-10-05", company_id: "c-a", meeting_id: "m-v1", meeting_label: "Acme Corp", meeting_kind: "company", sources: [{ id: "4", name: "Acme - 10.05.26.docx", path: "Raw Notes/Site Visits" }] }),
+  ins({ title: "visit issue", topic: "talent_pipeline", date: "2026-10-05", company_id: "c-a", meeting_id: "m-v1", meeting_label: "Acme Corp", meeting_kind: "company", sources: [{ id: "4", name: "Acme - 10.05.26.docx", path: "Raw Notes/Site Visits" }] }),
+  // Board: internal, one meeting per file
+  ins({ title: "board point", topic: "conexus_programs", date: "2026-03-04", scope: "internal", company_id: "", meeting_id: "m-b1", meeting_label: "Conexus Board Minutes March 4 2026", meeting_kind: "meeting", sources: [{ id: "5", name: "Board.docx", path: "Raw Notes/Board Meetings" }] }),
+];
+
+test("partner_intel: programs are the source folders, with their counts, dates and an internal flag", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await publishV2(env, PROGRAM_ROWS());
+  const r = await getJson("programs", env, token);
+  assert.equal(r.needsUpdate, false);
+  assert.deepEqual(r.programs.map((p) => [p.name, p.meetings, p.notes, p.last, p.internal]), [
+    ["Site Visits", 1, 2, "2026-10-05", false], ["PCN", 2, 3, "2026-05-22", false], ["Board Meetings", 1, 1, "2026-03-04", true]]);
+  assert.equal((await pi("programs", piGet("programs"), env)).status, 401);
+});
+
+test("partner_intel: a program's recent data groups notes into meetings: a cohort, a company visit, or a file", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await publishV2(env, PROGRAM_ROWS());
+  const pcn = await getJson("program?name=PCN", env, token);
+  assert.deepEqual(pcn.meetings.map((m) => [m.label, m.kind, m.date]), [["Cohort 3", "cohort", "2026-05-22"], ["Cohort 2", "cohort", "2026-04-24"]],
+    "newest first; the docx and the txt of Cohort 2 on one date are ONE meeting");
+  assert.deepEqual(pcn.meetings[1].counts, { issues: 1, solutions: 1, wins: 0, other: 0 });
+  assert.deepEqual(pcn.meetings[1].topics, ["Quality systems and inspection"]);
+  assert.equal(pcn.meetings[1].files.length, 2);
+  const visits = await getJson("program?name=Site%20Visits", env, token);
+  assert.deepEqual(visits.meetings.map((m) => [m.label, m.kind, m.counts.wins, m.counts.issues]), [["Acme Corp", "company", 1, 1]]);
+  const board = await getJson("program?name=Board%20Meetings", env, token);
+  assert.equal(board.meetings.length, 1, "a program shows its own rows even when they are Conexus-internal");
+  assert.equal((await pi("program", piGet("program?name=Nope", token), env)).status, 404);
+});
+
+test("partner_intel: clicking into a meeting shows its issues, solutions and wins, and only from that program", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await publishV2(env, PROGRAM_ROWS());
+  const m = await getJson("meeting?program=PCN&id=m-c2", env, token);
+  assert.equal(m.meeting.label, "Cohort 2");
+  assert.deepEqual([m.issues.map((i) => i.title), m.solutions.map((i) => i.title), m.wins.length], [["pcn a"], ["pcn b"], 0]);
+  const v = await getJson("meeting?program=Site%20Visits&id=m-v1", env, token);
+  assert.deepEqual([v.issues.length, v.wins.length], [1, 1]);
+  assert.equal((await pi("meeting", piGet("meeting?program=Site%20Visits&id=m-c2", token), env)).status, 404, "a meeting id from another program is not found here");
+  assert.equal((await pi("meeting", piGet("meeting?program=PCN&id=zzz", token), env)).status, 404);
+});
+
+test("partner_intel: each program has its own trending topics, over its own window", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  const rows = [
+    ins({ topic: "quality", company_id: "c-a", date: isoAgo(10), sources: [{ id: "1", name: "a", path: "Raw Notes/PCN" }] }),
+    ins({ topic: "quality", company_id: "c-b", date: isoAgo(300), sources: [{ id: "1", name: "a", path: "Raw Notes/PCN" }] }),
+    ins({ topic: "talent_pipeline", company_id: "c-b", date: isoAgo(10), sources: [{ id: "2", name: "b", path: "Raw Notes/ADAPT" }] }),
+  ];
+  await publishV2(env, rows);
+  const all = await getJson("program?name=PCN&days=0", env, token);
+  assert.deepEqual(all.trending.map((t) => [t.topic, t.companyCount]), [["quality", 2]], "ADAPT's topic is not in PCN's list");
+  const recent = await getJson("program?name=PCN&days=90", env, token);
+  assert.deepEqual(recent.trending.map((t) => [t.topic, t.companyCount]), [["quality", 1]]);
+  assert.equal(recent.meetings.length, 2, "Recent data lists every meeting, whatever the window");
+});
+
+test("partner_intel: data published before meetings existed is still grouped, and says an update is needed", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await pi("relay/publish", relay("publish", "POST", { version: "old", generated_at: "x", roster_updated_at: "r1", topics: TOPICS, events: [],
+    insights: [
+      ins({ date: "2026-04-24", series: "Cohort 2", event_type: "President and CEO Network Call", sources: [{ id: "1", name: "c2.docx", path: "Raw Notes/PCN" }] }),
+      ins({ date: "2026-04-24", company_id: "c-a", series: "Workshop", event_type: "Workshop", sources: [{ id: "2", name: "w.docx", path: "Raw Notes/PCN" }] }),
+    ], companies: [], unmatched: [], stats: {} }), env);
+  const r = await getJson("program?name=PCN", env, token);
+  assert.equal(r.needsUpdate, true);
+  assert.deepEqual(r.meetings.map((m) => [m.label, m.kind]).sort(), [["Acme Corp", "company"], ["Cohort 2", "cohort"]]);
+  assert.equal((await getJson("programs", env, token)).needsUpdate, true);
+});
+
+const apply = (env, token, id = "programs-v1") => pi("update/apply", piReq("update/apply", "POST", { id }, token), env);
+
+test("partner_intel: the one-time update is offered once, runs a rebuild only, and is gone after one use", async () => {
+  const { env, token } = await piEnv([ins()]);            // data from before the update (schema 1)
+  const offered = (await getJson("status", env, token)).oneTimeUpdate;
+  assert.equal(offered.id, "programs-v1");
+  assert.match(offered.body, /no Claude/i);
+  let sent = [];
+  const handler = (url, init) => { sent.push(JSON.parse(init.body)); return new Response(null, { status: 204 }); };
+  const res = await withFetch(handler, () => apply(env, token));
+  assert.equal(res.status, 200);
+  assert.deepEqual(sent[0].inputs, { mode: "rebuild", limit: "0", force: "false" }, "a rebuild: no Box, no Claude, not a re-scan");
+  assert.equal((await getJson("status", env, token)).oneTimeUpdate, null, "the card is gone even though the new data has not published yet");
+  const again = await withFetch(handler, () => apply(env, token));
+  assert.equal(again.status, 409, "single use");
+  assert.equal(sent.length, 1, "and the second click started nothing");
+});
+
+test("partner_intel: a one-time update that could not start is not used up, and one the data does not need is never offered", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const failed = await withFetch(() => new Response("nope", { status: 403 }), () => apply(env, token));
+  assert.equal(failed.status, 502);
+  assert.equal((await getJson("status", env, token)).oneTimeUpdate.id, "programs-v1", "still offered: nothing ran");
+  const ok = await withFetch(() => new Response(null, { status: 204 }), () => apply(env, token));
+  assert.equal(ok.status, 200);
+  assert.equal((await apply(env, token, "something-else")).status, 409, "an unknown update id is refused");
+
+  const fresh = await signedInEnv();
+  await fresh.env.BOX_KV.put("pi:roster", JSON.stringify({ partners: [], aliases: {}, staff: [], updatedAt: "r1" }));
+  await publishV2(fresh.env, [ins()]);
+  assert.equal((await getJson("status", fresh.env, fresh.token)).oneTimeUpdate, null, "current data needs no update");
+  assert.equal((await withFetch(() => new Response(null, { status: 204 }), () => apply(fresh.env, fresh.token))).status, 409);
+  const empty = await signedInEnv();
+  assert.equal((await getJson("status", empty.env, empty.token)).oneTimeUpdate, null, "nothing to update before the first scan");
+  assert.equal((await pi("update/apply", piReq("update/apply", "POST", { id: "programs-v1" }), env)).status, 401);
 });
 
 /* ------------------------------------------------------------------------- runner */

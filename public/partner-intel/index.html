@@ -17,6 +17,7 @@
     </div>
     <nav class="nav" id="nav">
       <a href="#/home" data-r="home">Home</a>
+      <a href="#/programs" data-r="programs">Programs</a>
       <a href="#/ask" data-r="ask">Ask</a>
       <a href="#/companies" data-r="companies">Companies</a>
       <a href="#/explore" data-r="explore">Explore</a>
@@ -42,7 +43,7 @@
   el("signOut").addEventListener("click", PI.signOut);
   PI.whoami(el("whoami"));
 
-  var state = { days: 30, exact: false, includeMedium: true, membersOnly: false, explore: { facets: null },
+  var state = { days: 30, exact: false, membersOnly: false, programDays: 0, explore: { facets: null },
                 sources: {}, sourceList: null };
   var chosen = {}; // source folders switched on; shared by Home, Ask and Explore
 
@@ -78,54 +79,191 @@
 
   function loading(text) { return '<div class="card"><span class="spinner"></span>' + esc(text) + "</div>"; }
 
+  /* ------------------------------------------------------------------ Trending topics
+     Used by Home and by every program. The page appears at once; the Claude-written bullets
+     fill in after, because writing them takes a few seconds the first time. */
+  var PAGE = 5;
+
+  function topicCard(t, n) {
+    var meta = (t.companyCount ? t.companyCount + " compan" + (t.companyCount === 1 ? "y" : "ies") + " &middot; " : "") +
+      t.mentions + " mention" + (t.mentions === 1 ? "" : "s") + (t.highUrgency ? " &middot; " + t.highUrgency + " high urgency" : "");
+    return '<div class="topic" data-topic="' + esc(t.topic) + '"><h3>' + (n + 1) + ". " + esc(t.label) + '</h3><p class="meta">' + meta + "</p>" +
+      (t.companies.length ? '<div class="chips">' + t.companies.slice(0, 6).map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") +
+        (t.companies.length > 6 ? '<span class="chip">+' + (t.companies.length - 6) + " more</span>" : "") + "</div>" : "") +
+      '<div data-body>' + (t.summary ? bulletsHtml(t.summary) : '<div class="pending"><span class="spinner"></span>Writing the summary…</div>') + "</div></div>";
+  }
+
+  function bulletsHtml(summary) {
+    return '<ul class="bullets">' + summary.bullets.map(function (b) {
+      return '<li><details class="bullet"><summary><span class="txt">' + esc(b.text) + '</span></summary><div class="examples">' +
+        b.examples.map(function (i) { return PI.insightCard(i, { why: false }); }).join("") + "</div></details></li>";
+    }).join("") + "</ul>";
+  }
+
+  function fallbackHtml(t, note) {
+    return (note ? '<p class="small muted" style="margin:10px 0 0">' + esc(note) + "</p>" : "") +
+      (t.examples && t.examples.length ? '<details class="src"><summary>Examples</summary>' + t.examples.map(function (i) { return PI.insightCard(i, { why: false }); }).join("") + "</details>" : "");
+  }
+
+  /** Cards for t[from..to), then the summaries the page does not have yet. scope is the filter
+   * set the topics were ranked under; the server recomputes the evidence from it. */
+  function showTopics(box, trending, from, to, scope, mine) {
+    var chunk = trending.slice(from, to);
+    box.insertAdjacentHTML("beforeend", chunk.map(function (t, k) { return topicCard(t, from + k); }).join(""));
+    var need = chunk.filter(function (t) { return !t.summary; });
+    if (!need.length) return;
+    PI.post("summarize", Object.assign({}, scope, { topics: need.map(function (t) { return t.topic; }) })).then(function (r) {
+      if (mine !== seq) return;
+      need.forEach(function (t) {
+        var body = box.querySelector('.topic[data-topic="' + t.topic + '"] [data-body]');
+        if (!body) return;
+        body.innerHTML = r.summaries[t.topic] ? bulletsHtml(r.summaries[t.topic])
+          : fallbackHtml(t, r.unavailable || "No summary could be written for this topic.");
+      });
+    }).catch(function (err) {
+      if (mine !== seq) return;
+      need.forEach(function (t) {
+        var body = box.querySelector('.topic[data-topic="' + t.topic + '"] [data-body]');
+        if (body) body.innerHTML = fallbackHtml(t, "The summary could not be written: " + err.message);
+      });
+    });
+  }
+
+  function renderTrending(box, trending, scope, mine) {
+    if (!trending.length) { box.innerHTML = '<div class="empty">No topics in this selection.</div>'; return; }
+    var shown = 0;
+    box.innerHTML = '<div data-list></div><div data-more></div>';
+    var list = box.querySelector("[data-list]"), more = box.querySelector("[data-more]");
+    function next() {
+      var to = Math.min(trending.length, shown + PAGE);
+      showTopics(list, trending, shown, to, scope, mine);
+      shown = to;
+      more.innerHTML = shown < trending.length ? '<div class="row" style="margin-top:12px"><button id="moreTopics">Show ' + Math.min(PAGE, trending.length - shown) + " more topics</button></div>" : "";
+      var btn = more.querySelector("#moreTopics");
+      if (btn) btn.addEventListener("click", next);
+    }
+    next();
+  }
+
   /* ------------------------------------------------------------------ Home */
   function home() {
     var mine = ++seq;
     view.innerHTML = loading("Loading…");
+    var statusQ = state.membersOnly ? "&status=Active" : "";
     loadSources().then(function () {
-      return PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "") + (state.membersOnly ? "&status=Active" : "") + sourceParam());
+      return PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "") + statusQ + sourceParam());
     }).then(function (d) {
       if (mine !== seq) return;
-      var urgent = d.urgent.filter(function (u) { return state.includeMedium || u.urgency === "high"; });
       var html = chipsHtml() + '<div class="row spread" style="margin-bottom:14px">' +
         '<div class="seg" id="win">' + [30, 60, 90].map(function (n) {
           return '<button data-d="' + n + '"' + (state.days === n ? ' class="on"' : "") + ">Last " + n + " days</button>";
         }).join("") + "</div>" +
         '<div class="row small">' +
-        '<label><input type="checkbox" id="med"' + (state.includeMedium ? " checked" : "") + "> Include medium urgency</label>" +
         '<label><input type="checkbox" id="mem"' + (state.membersOnly ? " checked" : "") + "> Members only</label>" +
         '<label><input type="checkbox" id="exact"' + (state.exact ? " checked" : "") + "> Exact dates only</label></div></div>";
       if (d.counts.estimatedDates && !state.exact) {
         html += '<p class="small muted" style="margin:-4px 0 12px">' + d.counts.estimatedDates +
           " item" + (d.counts.estimatedDates === 1 ? "" : "s") + " in this window use the Box upload date because the notes carry no date. They are marked.</p>";
       }
-      html += '<div class="grid"><section><h2>Urgent problems</h2>' +
-        '<p class="sub">' + d.counts.urgentHigh + " high" + (state.includeMedium ? ", " + d.counts.urgentMedium + " medium" : "") +
-        " &middot; since " + esc(PI.fmtDate(d.since)) + "</p>" +
-        (urgent.length ? urgent.map(function (i) { return PI.insightCard(i); }).join("")
-                       : '<div class="empty">No urgent problems in this window.</div>') + "</section>";
-      html += '<section><h2>Shared issues</h2><p class="sub">Issues raised by two or more companies, most companies first.' +
-        (d.single ? " " + d.single + " more raised by one company." : "") + "</p>";
-      if (!d.shared.length) html += '<div class="empty">No issue has been raised by more than one company in this window.</div>';
-      d.shared.forEach(function (g, n) {
-        html += '<div class="item"><div class="head"><span class="co">' + (n + 1) + ". " + esc(g.label) + "</span></div>" +
-          '<div class="small"><b>' + g.companyCount + " companies</b> &middot; " + g.mentions + " mentions" +
-          (g.highUrgency ? " &middot; " + g.highUrgency + " high urgency" : "") + "</div>" +
-          '<div class="chips">' + g.companies.map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") + "</div>" +
-          '<details class="src"><summary>Examples</summary>' + g.examples.map(function (i) {
-            return PI.insightCard(i, { why: false });
-          }).join("") + "</details></div>";
-      });
-      if (d.uncategorized) html += '<p class="small muted">' + d.uncategorized + " issue" + (d.uncategorized === 1 ? "" : "s") + " did not fit a topic and are not ranked.</p>";
-      html += "</section></div>";
+      html += "<h2>Trending topics</h2>" +
+        '<p class="sub">The topics raised by the most companies since ' + esc(PI.fmtDate(d.since)) + ". Open a point to see who said it." +
+        (d.uncategorized ? " " + d.uncategorized + " issue" + (d.uncategorized === 1 ? "" : "s") + " did not fit a topic and are not ranked." : "") + '</p><div id="trend"></div>';
       view.innerHTML = html;
+      renderTrending(el("trend"), d.trending, { days: state.days, exact: state.exact, source: chosenList(), status: state.membersOnly ? ["Active"] : [] }, mine);
       Array.prototype.forEach.call(view.querySelectorAll("#win button"), function (b) {
         b.addEventListener("click", function () { state.days = Number(b.getAttribute("data-d")); home(); });
       });
-      el("med").addEventListener("change", function (e) { state.includeMedium = e.target.checked; home(); });
       el("exact").addEventListener("change", function (e) { state.exact = e.target.checked; home(); });
       el("mem").addEventListener("change", function (e) { state.membersOnly = e.target.checked; home(); });
       wireChips(view, home);
+    }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
+  }
+
+  /* ------------------------------------------------------------------ Programs */
+  var KIND_LABEL = { cohort: "Cohort", company: "Company", meeting: "Meeting" };
+
+  function updateBanner(needs) {
+    return needs ? '<div class="banner">Meetings are grouped approximately until the one-time update is applied. Open the <a href="/partner-intel/control-panel/">control panel</a> and use the button at the top. It takes about a minute and uses no Claude.</div>' : "";
+  }
+
+  function programs() {
+    var mine = ++seq;
+    view.innerHTML = loading("Loading…");
+    PI.api("programs").then(function (r) {
+      if (mine !== seq) return;
+      view.innerHTML = updateBanner(r.needsUpdate) + "<h2>Programs</h2>" +
+        '<p class="sub">Each source folder is a program. Open one for its trending topics and its meetings.</p><div class="pgrid" style="margin-top:14px">' +
+        r.programs.map(function (p) {
+          return '<a class="pcard" href="#/program/' + encodeURIComponent(p.name) + '"><b>' + esc(p.name) + "</b>" +
+            (p.internal ? " " + PI.pill("info", "Conexus internal") : "") +
+            '<div class="small muted" style="margin-top:6px">' + p.meetings + " meeting" + (p.meetings === 1 ? "" : "s") + " &middot; " + p.notes + " notes" +
+            (p.companies ? " &middot; " + p.companies + " companies" : "") + "</div>" +
+            '<div class="small muted">' + (p.last ? "Latest " + esc(PI.fmtDate(p.last)) : "") + "</div></a>";
+        }).join("") + "</div>";
+    }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
+  }
+
+  function meetingCard(program, m) {
+    var c = m.counts;
+    var parts = [c.issues && c.issues + " issue" + (c.issues === 1 ? "" : "s"), c.solutions && c.solutions + " solution" + (c.solutions === 1 ? "" : "s"),
+      c.wins && c.wins + " win" + (c.wins === 1 ? "" : "s"), c.other && c.other + " other"].filter(Boolean).join(" &middot; ");
+    return '<a class="mcard" href="#/meeting/' + encodeURIComponent(program) + "/" + encodeURIComponent(m.id) + '">' +
+      '<div class="head" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="t">' + esc(m.label) + "</span>" + PI.pill("info", KIND_LABEL[m.kind] || "Meeting") + "</div>" +
+      '<div class="small muted" style="margin-top:2px">' + esc(PI.fmtDate(m.date)) + (m.estimated ? " " + PI.pill("est", "estimated date") : "") +
+      (m.kind !== "company" && m.companyCount ? " &middot; " + m.companyCount + " compan" + (m.companyCount === 1 ? "y" : "ies") : "") + " &middot; " + parts + "</div>" +
+      (m.topics.length ? '<div class="chips">' + m.topics.map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; }).join("") + "</div>" : "") + "</a>";
+  }
+
+  function program(name) {
+    var mine = ++seq;
+    view.innerHTML = loading("Loading…");
+    PI.api("program?name=" + encodeURIComponent(name) + "&days=" + state.programDays).then(function (r) {
+      if (mine !== seq) return;
+      var p = r.program;
+      var html = updateBanner(r.needsUpdate) + '<p class="small"><a href="#/programs">&larr; All programs</a></p>' +
+        '<div class="row spread"><div><h2 style="font-size:20px">' + esc(p.name) + "</h2>" +
+        '<p class="sub">' + p.meetings + " meeting" + (p.meetings === 1 ? "" : "s") + " &middot; " + p.notes + " notes" +
+        (p.first ? " &middot; " + esc(PI.fmtDate(p.first)) + " to " + esc(PI.fmtDate(p.last)) : "") + (p.internal ? " &middot; Conexus internal" : "") + "</p></div>" +
+        '<div class="seg" id="pwin">' + [[90, "Last 90 days"], [365, "Last year"], [0, "All time"]].map(function (w) {
+          return '<button data-d="' + w[0] + '"' + (state.programDays === w[0] ? ' class="on"' : "") + ">" + w[1] + "</button>";
+        }).join("") + "</div></div>" +
+        '<h2 style="margin-top:22px">Trending topics</h2><p class="sub">The five topics raised most in this program' +
+        (state.programDays ? " in the window" : "") + ".</p><div id=\"trend\"></div>" +
+        '<h2 style="margin-top:26px">Recent data</h2><p class="sub">Grouped by date, and by cohort, company or meeting. Open one for its issues, solutions and wins.</p>' +
+        '<div id="meetings"></div><div id="moreM"></div>';
+      view.innerHTML = html;
+      renderTrending(el("trend"), r.trending, { days: state.programDays, source: [name] }, mine);
+      var shown = 0;
+      function more() {
+        var to = Math.min(r.meetings.length, shown + 12);
+        el("meetings").insertAdjacentHTML("beforeend", r.meetings.slice(shown, to).map(function (m) { return meetingCard(name, m); }).join(""));
+        shown = to;
+        el("moreM").innerHTML = shown < r.meetings.length ? '<div class="row" style="margin-top:12px"><button id="moreMeet">Show more</button></div>'
+          : (r.meetingTotal > r.meetings.length ? '<p class="small muted">Showing the latest ' + r.meetings.length + " of " + r.meetingTotal + ".</p>" : "");
+        var b = el("moreMeet"); if (b) b.addEventListener("click", more);
+      }
+      if (!r.meetings.length) el("meetings").innerHTML = '<div class="empty">No data in this program yet.</div>'; else more();
+      Array.prototype.forEach.call(view.querySelectorAll("#pwin button"), function (b) {
+        b.addEventListener("click", function () { state.programDays = Number(b.getAttribute("data-d")); program(name); });
+      });
+    }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
+  }
+
+  function meeting(name, id) {
+    var mine = ++seq;
+    view.innerHTML = loading("Loading…");
+    PI.api("meeting?program=" + encodeURIComponent(name) + "&id=" + encodeURIComponent(id)).then(function (r) {
+      if (mine !== seq) return;
+      var m = r.meeting;
+      function section(title, items) {
+        return items.length ? '<h2 style="margin-top:22px">' + esc(title) + " (" + items.length + ")</h2>" + items.map(function (i) { return PI.insightCard(i); }).join("") : "";
+      }
+      view.innerHTML = '<p class="small"><a href="#/program/' + encodeURIComponent(name) + '">&larr; ' + esc(name) + "</a></p>" +
+        '<div class="card"><div class="row" style="gap:8px"><h2 style="font-size:20px">' + esc(m.label) + "</h2>" + PI.pill("info", KIND_LABEL[m.kind] || "Meeting") + "</div>" +
+        '<p class="sub">' + esc(PI.fmtDate(m.date)) + (m.estimated ? " " + PI.pill("est", "estimated date") : "") +
+        (m.companyCount ? " &middot; " + m.companyCount + " compan" + (m.companyCount === 1 ? "y" : "ies") + ": " + m.companies.map(esc).join(", ") : "") + "</p>" +
+        '<p class="small muted" style="margin:6px 0 0">From ' + m.files.map(esc).join(", ") + "</p></div>" +
+        section("Issues", r.issues) + section("Solutions", r.solutions) + section("Wins", r.wins) + section("Other", r.other);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
 
@@ -342,9 +480,12 @@
     var parts = h.split("/");
     var name = parts[0];
     Array.prototype.forEach.call(document.querySelectorAll("#nav a"), function (a) {
-      a.classList.toggle("on", a.getAttribute("data-r") === (name === "company" ? "companies" : name));
+      a.classList.toggle("on", a.getAttribute("data-r") === (name === "company" ? "companies" : (name === "program" || name === "meeting") ? "programs" : name));
     });
-    if (name === "ask") ask();
+    if (name === "programs") programs();
+    else if (name === "program" && parts[1]) program(decodeURIComponent(parts[1]));
+    else if (name === "meeting" && parts[2]) meeting(decodeURIComponent(parts[1]), decodeURIComponent(parts[2]));
+    else if (name === "ask") ask();
     else if (name === "companies") companies();
     else if (name === "company" && parts[1]) company(decodeURIComponent(parts[1]));
     else if (name === "explore") explore();

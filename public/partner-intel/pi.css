@@ -120,3 +120,30 @@ tr.click:hover td { background:var(--wash); }
 .spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent);
            border-radius:50%; animation:spin .8s linear infinite; vertical-align:-2px; margin-right:6px; }
 @keyframes spin { to { transform:rotate(360deg); } }
+
+/* Trending topics: a topic card, its bullets, and a chevron that opens each bullet's examples. */
+.topic { border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-top:12px; background:#fff; }
+.topic h3 { font-size:16px; }
+.topic .meta { font-size:12.5px; color:var(--text-secondary); margin:2px 0 0; }
+ul.bullets { list-style:none; margin:12px 0 0; padding:0; }
+ul.bullets > li { border-top:1px solid var(--border); }
+ul.bullets > li:first-child { border-top:0; }
+details.bullet > summary { list-style:none; cursor:pointer; display:flex; gap:12px; align-items:flex-start;
+                           justify-content:space-between; padding:9px 0; }
+details.bullet > summary::-webkit-details-marker { display:none; }
+details.bullet > summary .txt { flex:1; }
+details.bullet > summary::after { content:""; flex:0 0 8px; width:8px; height:8px; margin:7px 4px 0 8px;
+                                  border-right:2px solid var(--accent); border-bottom:2px solid var(--accent);
+                                  transform:rotate(45deg); transition:transform .15s ease; }
+details.bullet[open] > summary::after { transform:rotate(225deg); margin-top:11px; }
+details.bullet > summary:hover .txt { color:var(--navy); }
+details.bullet .examples { padding:0 0 10px 0; }
+details.bullet .examples .item { margin-top:8px; }
+.pending { color:var(--text-muted); font-size:13px; margin-top:12px; }
+.pcard { display:block; border:1px solid var(--border); border-radius:12px; padding:14px 16px; background:#fff; color:inherit; }
+.pcard:hover { border-color:var(--accent); text-decoration:none; }
+.pcard b { color:var(--navy); font-size:15px; }
+.pgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px; }
+.mcard { display:block; border:1px solid var(--border); border-radius:10px; padding:12px 15px; margin-top:10px; background:#fff; color:inherit; }
+.mcard:hover { border-color:var(--accent); text-decoration:none; }
+.mcard .t { font-weight:650; color:var(--navy); }
