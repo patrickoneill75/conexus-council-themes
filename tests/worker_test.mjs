@@ -2603,6 +2603,424 @@ test("workforce: junk in the role form cannot become junk in the totals", async 
   assert.deepEqual(role.skillsGaps, ["Welding"], "deduplicated case-insensitively");
 });
 
+/* ================================================================== partner_intel */
+const { handlePartnerIntelApi, parseCsv, applyRosterCsv } = await mod("partner_intel.js");
+const pi = (route, request, env) => handlePartnerIntelApi(route, request, env);
+const piReq = (route, method, body, token) => jsonReq(`/api/partner-intel/${route}`, method, body, token);
+const piGet = (route, token) => req(`/api/partner-intel/${route}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+const relay = (route, method, body, secret = "relay-secret") => req(`/api/partner-intel/relay/${route}`, {
+  method, headers: { "content-type": "application/json", "x-pipeline-key": secret },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+const isoAgo = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+
+let insightSeq = 0;
+function ins(over = {}) {
+  insightSeq++;
+  return {
+    id: `i${insightSeq}`, kind: "problem", company_id: "c-a", company_raw: "Acme", speaker: "", title: `Issue ${insightSeq}`,
+    detail: "Some detail.", quote: "A quote from the notes.", topic: "talent_pipeline", tags: [], urgency: "medium",
+    urgency_reason: "Active.", status: "open", solves: "", confidence: "high", scope: "partner", date: isoAgo(5),
+    date_source: "text", event_type: "Workshop", series: "Workshop", meeting_key: `k${insightSeq}`, review: [],
+    sources: [{ id: "f1", name: "notes.docx", path: "Notes" }], ...over,
+  };
+}
+const TOPICS = [
+  { id: "talent_pipeline", label: "Talent pipeline and recruiting", keywords: "" },
+  { id: "quality", label: "Quality systems and inspection", keywords: "" },
+  { id: "ai_adoption", label: "AI adoption and governance", keywords: "" },
+  { id: "other", label: "Other", keywords: "" },
+];
+const PARTNERS = [
+  { id: "c-a", name: "Acme Corp", industry: "Plastics Company", status: "Active", program: "", participationId: "P1", contacts: ["Ann A"], aliases: [] },
+  { id: "c-b", name: "Beta Works", industry: "Metals", status: "Active", program: "", participationId: "P2", contacts: ["Bob B"], aliases: [] },
+  { id: "c-c", name: "Gamma Labs", industry: "Technology/Services", status: "Inactive", program: "", participationId: "P3", contacts: [], aliases: [] },
+];
+
+async function piEnv(insights = [], extra = {}) {
+  const { env, token } = await signedInEnv();
+  Object.assign(env, extra);
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  const res = await pi("relay/publish", relay("publish", "POST", {
+    version: `v${insightSeq}`, generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1",
+    topics: TOPICS, events: [], insights, companies: [], unmatched: [], stats: {},
+  }), env);
+  assert.equal(res.status, 200, "publish should succeed");
+  return { env, token };
+}
+const getJson = async (route, env, token) => (await pi(route.split("?")[0], piGet(route, token), env)).json();
+
+test("partner_intel: the pipeline relay refuses a wrong or missing shared secret", async () => {
+  const env = makeEnv();
+  for (const route of ["config", "roster", "state"]) {
+    assert.equal((await pi(`relay/${route}`, relay(route, "GET", undefined, "wrong"), env)).status, 401, route);
+  }
+  assert.equal((await pi("relay/publish", relay("publish", "POST", { insights: [] }, ""), env)).status, 401);
+});
+
+test("partner_intel: every staff route refuses an anonymous caller, whatever the app-visibility tier", async () => {
+  const { env } = await piEnv([ins()]);
+  await env.BOX_KV.put("beta:app-visibility", JSON.stringify({ "partner-intel": "public" }));
+  const gets = ["status", "settings", "home", "insights", "companies", "company?id=c-a", "roster", "review", "topics",
+    "recent-questions", "run-status", "box/folders"];
+  for (const route of gets) assert.equal((await pi(route.split("?")[0], piGet(route), env)).status, 401, route);
+  const posts = ["ask", "run", "settings", "roster/import", "roster/partner", "roster/partner/delete", "roster/staff",
+    "roster/alias", "review/map", "review/add", "topics/override"];
+  for (const route of posts) assert.equal((await pi(route, piReq(route, "POST", {}), env)).status, 401, route);
+});
+
+test("partner_intel: parseCsv handles quoted commas, doubled quotes, embedded newlines, CRLF and a BOM", () => {
+  const rows = parseCsv('﻿a,b,c\r\n"x, y","say ""hi""","line1\nline2"\r\n\r\n1,2,3');
+  assert.deepEqual(rows, [["a", "b", "c"], ["x, y", 'say "hi"', "line1\nline2"], ["1", "2", "3"]]);
+});
+
+const SF_HEADER = '"Programs & Councils: Programs & Councils Name","Participation: Participation Name","Organization: Account Name","Organization: Industry","Status","Primary Contact","Secondary Contact"';
+const sf = (...rows) => [SF_HEADER, ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
+
+test("partner_intel: a full-list import deactivates departed partners, adds new, reactivates returning, and never deletes", () => {
+  const roster = { partners: [
+    { id: "c-a", name: "Acme Corp", industry: "Plastics", status: "Active", program: "", participationId: "P1", contacts: [], aliases: [] },
+    { id: "c-gone", name: "Leaving Inc", industry: "Metals", status: "Active", program: "", participationId: "P2", contacts: [], aliases: [] },
+    { id: "c-back", name: "Returning Co", industry: "Metals", status: "Inactive", program: "", participationId: "P3", contacts: [], aliases: [] },
+    { id: "c-vendor", name: "Hand Added Vendor", industry: "", status: "Non-member", program: "", participationId: "", contacts: [], aliases: [] },
+  ], aliases: {}, staff: [] };
+  const csv = sf(["Council", "P1", "Acme Corp", "Plastics Company", "Active", "Ann A", ""],
+    ["Council", "P3", "Returning Co", "Metals", "Active", "Rita R", ""],
+    ["Council", "P9", "Brand New LLC", "Furniture", "Active", "Nina N", "Oscar O"]);
+  const { partners, summary } = applyRosterCsv(roster, csv, "replace");
+  const byName = Object.fromEntries(partners.map((p) => [p.name, p]));
+  assert.equal(partners.length, 5, "nobody is deleted");
+  assert.equal(byName["Leaving Inc"].status, "Inactive");
+  assert.equal(byName["Returning Co"].status, "Active");
+  assert.equal(byName["Hand Added Vendor"].status, "Non-member", "hand-added non-members are not touched by a member export");
+  assert.equal(byName["Brand New LLC"].id, "c-brand-new-llc");
+  assert.deepEqual(byName["Brand New LLC"].contacts, ["Nina N", "Oscar O"]);
+  assert.deepEqual(summary.deactivated, ["Leaving Inc"]);
+  assert.deepEqual(summary.added, ["Brand New LLC"]);
+  assert.deepEqual(summary.reactivated, ["Returning Co"]);
+  const merged = applyRosterCsv(roster, csv, "merge");
+  assert.equal(merged.partners.find((p) => p.name === "Leaving Inc").status, "Active", "merge never deactivates");
+});
+
+test("partner_intel: a renamed partner is matched by participation id and keeps its history", () => {
+  const roster = { partners: [{ id: "c-old", name: "Old Name", industry: "", status: "Active", program: "", participationId: "P1", contacts: [], aliases: [] }], aliases: {}, staff: [] };
+  const { partners, summary } = applyRosterCsv(roster, sf(["C", "P1", "New Name Inc", "Metals", "Active", "", ""]), "replace");
+  assert.equal(partners.length, 1);
+  assert.equal(partners[0].id, "c-old", "same id, so every old note still points at it");
+  assert.equal(partners[0].name, "New Name Inc");
+  assert.deepEqual(summary.updated, ["New Name Inc"]);
+});
+
+test("partner_intel: a file with no organization column is refused with a reason", () => {
+  assert.match(applyRosterCsv({ partners: [], aliases: {}, staff: [] }, "foo,bar\n1,2", "replace").error, /organi[sz]ation column/i);
+});
+
+test("partner_intel: an import preview saves nothing", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const before = await env.BOX_KV.get("pi:roster");
+  const res = await pi("roster/import", piReq("roster/import", "POST",
+    { csv: sf(["C", "P9", "Brand New LLC", "Furniture", "Active", "", ""]), mode: "replace", preview: true }, token), env);
+  const body = await res.json();
+  assert.equal(body.preview, true);
+  assert.deepEqual(body.summary.added, ["Brand New LLC"]);
+  assert.equal(await env.BOX_KV.get("pi:roster"), before);
+});
+
+test("partner_intel: an alias named __proto__ is stored as data, not lost to the prototype", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const res = await pi("roster/alias", piReq("roster/alias", "POST", { alias: "__proto__", companyId: "c-a" }, token), env);
+  assert.equal(res.status, 200);
+  const roster = JSON.parse(await env.BOX_KV.get("pi:roster"));
+  assert.ok(Object.keys(roster.aliases).includes("__proto__"), "the alias must survive the round trip");
+  assert.equal(({}).constructor, Object, "and the global prototype is untouched");
+});
+
+test("partner_intel: adding a partner twice, or one with no name, is refused", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const add = (body) => pi("roster/partner", piReq("roster/partner", "POST", body, token), env);
+  assert.equal((await add({ name: "  " })).status, 400);
+  assert.equal((await add({ name: "acme corp" })).status, 409, "case-insensitive duplicate");
+  assert.equal((await add({ name: "Delta Tools", industry: "Metals", status: "Weird" })).status, 200);
+  const roster = JSON.parse(await env.BOX_KV.get("pi:roster"));
+  assert.equal(roster.partners.find((p) => p.name === "Delta Tools").status, "Active", "an unknown status falls back");
+});
+
+test("partner_intel: pipeline state round-trips across several shards and sheds old shards", async () => {
+  const env = makeEnv();
+  const registry = {}, cache = {};
+  for (let i = 0; i < 700; i++) cache[`k${i}`] = { rows: [{ detail: "x".repeat(4000) + i }] };
+  for (let i = 0; i < 5; i++) registry[`f${i}`] = { name: `n${i}`, units: [] };
+  assert.equal((await pi("relay/state", relay("state", "POST", { registry, cache }), env)).status, 200);
+  const meta = JSON.parse(await env.BOX_KV.get("pi:state:meta"));
+  assert.ok(meta.cacheShards >= 2, `expected several shards, got ${meta.cacheShards}`);
+  const back = await (await pi("relay/state", relay("state", "GET"), env)).json();
+  assert.equal(Object.keys(back.cache).length, 700);
+  assert.equal(back.cache.k699.rows[0].detail, "x".repeat(4000) + 699);
+  await pi("relay/state", relay("state", "POST", { registry, cache: { k0: cache.k0 } }), env);
+  assert.equal(await env.BOX_KV.get(`pi:state:cache:${meta.cacheShards - 1}`), meta.cacheShards - 1 === 0 ? null : null,
+    "shards beyond the new count are deleted");
+});
+
+test("partner_intel: home keeps to the window and leaves out Conexus-internal rows", async () => {
+  const { env, token } = await piEnv([
+    ins({ title: "recent high", urgency: "high", date: isoAgo(3) }),
+    ins({ title: "inside 30", urgency: "medium", date: isoAgo(29) }),
+    ins({ title: "inside 90 only", urgency: "high", date: isoAgo(70) }),
+    ins({ title: "too old", urgency: "high", date: isoAgo(200) }),
+    ins({ title: "board talk", urgency: "high", date: isoAgo(2), scope: "internal" }),
+  ]);
+  const titles = (b) => b.urgent.map((u) => u.title);
+  assert.deepEqual(titles(await getJson("home?days=30", env, token)), ["recent high", "inside 30"]);
+  assert.deepEqual(titles(await getJson("home?days=90", env, token)), ["recent high", "inside 90 only", "inside 30"],
+    "high urgency first, then medium");
+});
+
+test("partner_intel: the urgent list holds only open high and medium problems", async () => {
+  const { env, token } = await piEnv([
+    ins({ title: "open high", urgency: "high" }), ins({ title: "resolved", urgency: "high", status: "resolved" }),
+    ins({ title: "low", urgency: "low" }), ins({ title: "a win", kind: "win", urgency: "none" }),
+    ins({ title: "a solution", kind: "solution", urgency: "none" }),
+  ]);
+  assert.deepEqual((await getJson("home?days=30", env, token)).urgent.map((u) => u.title), ["open high"]);
+});
+
+test("partner_intel: shared issues count distinct companies, not mentions", async () => {
+  const { env, token } = await piEnv([
+    ...Array.from({ length: 5 }, () => ins({ topic: "quality", company_id: "c-a" })),
+    ins({ topic: "talent_pipeline", company_id: "c-a" }), ins({ topic: "talent_pipeline", company_id: "c-b" }),
+    ins({ topic: "ai_adoption", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "" }),
+    ins({ topic: "other", company_id: "c-a" }), ins({ topic: "other", company_id: "c-b" }),
+  ]);
+  const home = await getJson("home?days=30", env, token);
+  assert.deepEqual(home.shared.map((g) => [g.topic, g.companyCount, g.mentions]), [["talent_pipeline", 2, 2]],
+    "five mentions by one company is not a shared issue, and 'other' is not ranked");
+  assert.equal(home.single, 2);
+  assert.equal(home.uncategorized, 2);
+});
+
+test("partner_intel: a topic merge applies to the ranking, and a merge loop is ignored", async () => {
+  const { env, token } = await piEnv([
+    ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "c-b" }),
+  ]);
+  assert.equal((await getJson("home?days=30", env, token)).shared.length, 0);
+  const merge = (id, mergeInto) => pi("topics/override", piReq("topics/override", "POST", { id, mergeInto }, token), env);
+  assert.equal((await merge("ai_adoption", "quality")).status, 200);
+  const merged = await getJson("home?days=30", env, token);
+  assert.deepEqual(merged.shared.map((g) => [g.topic, g.companyCount]), [["quality", 2]]);
+  assert.equal((await merge("quality", "ai_adoption")).status, 400, "a loop is refused when it is saved");
+  assert.equal((await getJson("home?days=30", env, token)).shared.length, 1, "and the earlier merge still holds");
+  assert.equal((await merge("talent_pipeline", "ai_adoption")).status, 400, "no chains either: ai_adoption is merged away");
+  // Even a hand-edited loop in KV cannot hang a read.
+  await env.BOX_KV.put("pi:topics", JSON.stringify({ overrides: { quality: { mergeInto: "ai_adoption" }, ai_adoption: { mergeInto: "quality" } } }));
+  assert.equal((await pi("home", piGet("home?days=30", token), env)).status, 200);
+  assert.equal((await merge("quality", "quality")).status, 400);
+  assert.equal((await merge("other", "quality")).status, 400);
+});
+
+test("partner_intel: the industry filter follows a roster edit at once, with no re-scan", async () => {
+  const { env, token } = await piEnv([ins({ company_id: "c-a", title: "A" }), ins({ company_id: "c-b", title: "B" })]);
+  const titles = async (q) => (await getJson(`insights?${q}`, env, token)).items.map((i) => i.title).sort();
+  assert.deepEqual(await titles("industry=Metals"), ["B"]);
+  await pi("roster/partner", piReq("roster/partner", "POST", { id: "c-a", name: "Acme Corp", industry: "Metals", status: "Active" }, token), env);
+  assert.deepEqual(await titles("industry=Metals"), ["A", "B"]);
+  assert.deepEqual(await titles("status=Inactive"), [], "member status filter reads the roster too");
+});
+
+test("partner_intel: explore filters combine, and a search term must match the same note", async () => {
+  const { env, token } = await piEnv([
+    ins({ title: "Robot cell", kind: "solution", urgency: "none", topic: "quality", date: isoAgo(10), event_type: "Workshop", tags: ["robotics"] }),
+    ins({ title: "Robot hiring", kind: "problem", urgency: "high", topic: "talent_pipeline", date: isoAgo(10), event_type: "Onboarding Call" }),
+    ins({ title: "Old robot", kind: "problem", urgency: "high", topic: "talent_pipeline", date: isoAgo(300) }),
+  ]);
+  const count = async (q) => (await getJson(`insights?${q}`, env, token)).total;
+  assert.equal(await count("q=robot"), 3);
+  assert.equal(await count("q=robot&kind=problem&days=90"), 1);
+  assert.equal(await count("eventType=Onboarding%20Call"), 1);
+  assert.equal(await count("q=robot%20quality"), 0, "every term must be in the same note");
+  assert.equal(await count("q=robotics"), 1, "tags are searched");
+  assert.equal(await count("urgency=high&topic=talent_pipeline&days=30"), 1);
+});
+
+test("partner_intel: dates marked estimated can be excluded", async () => {
+  const { env, token } = await piEnv([ins({ title: "dated" }), ins({ title: "guessed", date_source: "box_upload" })]);
+  assert.equal((await getJson("insights", env, token)).total, 2);
+  assert.deepEqual((await getJson("insights?exact=1", env, token)).items.map((i) => i.title), ["dated"]);
+  const home = await getJson("home?days=30", env, token);
+  assert.equal(home.counts.estimatedDates, 1);
+});
+
+test("partner_intel: a company profile ranks live issues and leaves out resolved ones", async () => {
+  const { env, token } = await piEnv([
+    ins({ title: "Open hiring gap", topic: "talent_pipeline", urgency: "high" }),
+    ins({ title: "Fixed quality escape", topic: "quality", urgency: "high", status: "resolved" }),
+    ins({ title: "Won an award", kind: "win", urgency: "none", date: isoAgo(2) }),
+    ins({ title: "Built an AI inspector", kind: "solution", urgency: "none", topic: "quality" }),
+    ins({ title: "Someone else's", company_id: "c-b" }),
+    ins({ title: "Internal", scope: "internal" }),
+  ]);
+  const p = await getJson("company?id=c-a", env, token);
+  assert.deepEqual(p.topIssues.map((t) => t.lead.title), ["Open hiring gap"]);
+  assert.deepEqual(p.recentWins.map((w) => w.title), ["Won an award"]);
+  assert.deepEqual(p.topSolutions.map((t) => t.lead.title), ["Built an AI inspector"]);
+  assert.equal(p.counts.insights, 4, "internal and other companies' rows are not counted");
+  assert.deepEqual(p.company.contacts, ["Ann A"]);
+  assert.equal((await pi("company", piGet("company?id=nope", token), env)).status, 404);
+});
+
+test("partner_intel: asking before any scan says so instead of failing", async () => {
+  const { env, token } = await signedInEnv();
+  const res = await pi("ask", piReq("ask", "POST", { question: "Who can help with robots?" }, token), env);
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).empty, true);
+});
+
+const SOLVERS = () => [
+  ins({ kind: "solution", urgency: "none", company_id: "c-a", title: "AI visual quality inspection", detail: "Built a camera inspection system using machine learning to catch defects.", topic: "quality", tags: ["ai", "vision", "inspection"], solves: "manual inspection" }),
+  ins({ kind: "offer", urgency: "none", company_id: "c-b", title: "Quality system consulting", detail: "Offers help standing up an ISO quality management system.", topic: "quality", tags: ["iso"], solves: "quality system" }),
+  ins({ kind: "win", urgency: "none", company_id: "c-c", title: "Hired apprentices", detail: "Placed five apprentices in the machine shop.", topic: "talent_pipeline", tags: ["apprentice"] }),
+];
+const rankOut = (matches, extra = {}) => okJson({ content: [{ type: "tool_use", input: { summary: "s", matches, gaps: "", ...extra } }], usage: { input_tokens: 10, output_tokens: 5 } });
+
+test("partner_intel: ask without a Claude key returns a labeled keyword ranking and saves nothing", async () => {
+  const { env, token } = await piEnv(SOLVERS());
+  const res = await pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env);
+  const body = await res.json();
+  assert.equal(body.ranking, "keyword");
+  assert.equal(body.matches[0].company.id, "c-a");
+  assert.match(body.summary, /keyword/i);
+  assert.equal([...env.BOX_KV.store.keys()].filter((k) => k.startsWith("pi:ask:") && k !== "pi:ask:recent").length, 0);
+});
+
+test("partner_intel: ask never shows a company or evidence the model was not given, and caches by dataset version", async () => {
+  const rows = SOLVERS();
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  let bodies = [];
+  const handler = (url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return rankOut([
+      { company_id: "c-ghost", strength: "high", why: "invented", evidence_ids: [rows[0].id], caution: "" },
+      { company_id: "c-a", strength: "high", why: "Built an inspection system.", evidence_ids: ["not-shown", rows[0].id], caution: "" },
+      { company_id: "c-b", strength: "medium", why: "No evidence cited.", evidence_ids: ["made-up"], caution: "" },
+    ]);
+  };
+  const ask = () => withFetch(handler, () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
+  const first = await (await ask()).json();
+  assert.equal(first.matches.length, 1, "unknown company and match with no valid evidence are dropped");
+  assert.equal(first.matches[0].company.id, "c-a");
+  assert.deepEqual(first.matches[0].evidence.map((e) => e.id), [rows[0].id]);
+  assert.equal(first.cached, false);
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].model, "claude-opus-5");
+  assert.equal(bodies[0].tools[0].strict, true);
+  assert.match(bodies[0].messages[0].content, /<question>\nWho has an AI powered quality inspection system\?\n<\/question>/);
+  const second = await (await ask()).json();
+  assert.equal(second.cached, true);
+  assert.equal(bodies.length, 1, "the repeat question made no Claude call");
+  // A republish is a new dataset version, so the saved answer is no longer trusted.
+  await pi("relay/publish", relay("publish", "POST", { version: "new-version", generated_at: "x", roster_updated_at: "r1", topics: TOPICS, events: [], insights: rows, companies: [], unmatched: [], stats: {} }), env);
+  assert.equal((await (await ask()).json()).cached, false);
+  assert.equal(bodies.length, 2);
+});
+
+test("partner_intel: a failed Claude call is an error and is not saved as an answer", async () => {
+  const { env, token } = await piEnv(SOLVERS(), { partner_intel_claude_api: "k" });
+  const ask = (status) => withFetch(() => (status === 200 ? rankOut([]) : new Response("overloaded", { status })),
+    () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
+  assert.equal((await ask(529)).status, 502);
+  const retry = await ask(200);
+  assert.equal(retry.status, 200);
+  assert.equal((await retry.json()).cached, false, "the failure was not cached");
+});
+
+test("partner_intel: a question nothing matches costs no Claude call", async () => {
+  const { env, token } = await piEnv(SOLVERS(), { partner_intel_claude_api: "k" });
+  const body = await withFetch(() => { throw new Error("must not call Claude"); },
+    async () => (await pi("ask", piReq("ask", "POST", { question: "Who sells submarine periscopes?" }, token), env)).json());
+  assert.deepEqual(body.matches, []);
+  assert.equal(body.ranking, "none");
+});
+
+test("partner_intel: ask rejects a too-short or too-long question", async () => {
+  const { env, token } = await piEnv(SOLVERS());
+  const ask = (q) => pi("ask", piReq("ask", "POST", { question: q }, token), env);
+  assert.equal((await ask("robots")).status, 400);
+  assert.equal((await ask("x".repeat(601))).status, 400);
+});
+
+test("partner_intel: only solutions, offers, wins and equipment can answer who can help", async () => {
+  const { env, token } = await piEnv([
+    ins({ kind: "problem", company_id: "c-a", title: "Needs AI quality inspection", detail: "Struggles with inspection.", topic: "quality" }),
+    ins({ kind: "solution", urgency: "none", company_id: "c-b", title: "AI quality inspection cell", detail: "Camera inspection.", topic: "quality" }),
+  ]);
+  const body = await (await pi("ask", piReq("ask", "POST", { question: "Who has AI quality inspection?" }, token), env)).json();
+  assert.deepEqual(body.matches.map((m) => m.company.id), ["c-b"], "a company with the PROBLEM is not a solution haver");
+});
+
+test("partner_intel: run needs a folder, clamps the trial size, and sends the inputs to GitHub", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const run = (body) => pi("run", piReq("run", "POST", body, token), env);
+  assert.equal((await run({ mode: "scan" })).status, 400, "no folder chosen yet");
+  await pi("settings", piReq("settings", "POST", { folderId: "12345", folderName: "Raw Notes" }, token), env);
+  assert.equal((await pi("settings", piReq("settings", "POST", { folderId: "abc" }, token), env)).status, 400);
+  let sent;
+  const res = await withFetch((url, init) => { sent = { url, body: JSON.parse(init.body) }; return new Response(null, { status: 204 }); },
+    () => run({ mode: "scan", limit: 99999, force: true }));
+  assert.equal(res.status, 200);
+  assert.match(sent.url, /workflows\/partner_intel_run\.yml\/dispatches$/);
+  assert.deepEqual(sent.body.inputs, { mode: "scan", limit: "500", force: "true" });
+  const rebuild = await withFetch((url, init) => { sent = { body: JSON.parse(init.body) }; return new Response(null, { status: 204 }); }, () => run({ mode: "rebuild" }));
+  assert.equal(rebuild.status, 200);
+  assert.equal(sent.body.inputs.mode, "rebuild");
+  const weird = await withFetch((url, init) => { sent = { body: JSON.parse(init.body) }; return new Response(null, { status: 204 }); }, () => run({ mode: "rm -rf" }));
+  assert.equal(sent.body.inputs.mode, "scan", "an unknown mode never reaches the workflow");
+  assert.equal(weird.status, 200);
+});
+
+test("partner_intel: a roster change after the data was built asks for a re-link", async () => {
+  const { env, token } = await piEnv([ins()]);
+  assert.equal((await getJson("status", env, token)).relinkNeeded, false);
+  await pi("roster/staff", piReq("roster/staff", "POST", { names: ["Pat Staff"] }, token), env);
+  assert.equal((await getJson("status", env, token)).relinkNeeded, true);
+  assert.equal((await getJson("roster", env, token)).relinkNeeded, true);
+});
+
+test("partner_intel: the review queue maps a name to a partner or adds it as a non-member", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await pi("relay/publish", relay("publish", "POST", { version: "v", generated_at: "x", roster_updated_at: "r1", topics: TOPICS, events: [],
+    insights: [ins()], companies: [{ id: "n-gpc", name: "GPC" }, { id: "n-hartman", name: "Hartman" }],
+    unmatched: [{ raw: "GPC", companyId: "n-gpc", count: 4, candidates: [] }, { raw: "Hartman", companyId: "n-hartman", count: 2, candidates: [] }], stats: {} }), env);
+  assert.equal((await getJson("review", env, token)).items.length, 2);
+  await pi("review/map", piReq("review/map", "POST", { raw: "GPC", companyId: "c-b" }, token), env);
+  assert.equal((await pi("review/map", piReq("review/map", "POST", { raw: "X", companyId: "c-nope" }, token), env)).status, 400);
+  await pi("review/add", piReq("review/add", "POST", { raw: "Hartman" }, token), env);
+  await pi("review/add", piReq("review/add", "POST", { raw: "Hartman" }, token), env);
+  const roster = JSON.parse(await env.BOX_KV.get("pi:roster"));
+  assert.equal(roster.aliases.GPC, "c-b");
+  assert.equal(roster.partners.filter((p) => p.name === "Hartman").length, 1, "adding twice adds once");
+  assert.equal(roster.partners.find((p) => p.name === "Hartman").status, "Non-member");
+  const items = (await getJson("review", env, token)).items;
+  assert.ok(items.every((i) => i.pending), "both are marked as waiting for a re-link");
+});
+
+test("partner_intel: the relay lists every page of a Box folder and streams file bytes", async () => {
+  const env = makeEnv();
+  await env.BOX_KV.put("box:tokens", JSON.stringify({ access_token: "tok", refresh_token: "r", obtained_at: Math.floor(Date.now() / 1000), expires_in: 3600 }));
+  const entries = (from, to) => Array.from({ length: to - from }, (_, i) => ({ type: "file", id: String(from + i), name: `f${from + i}.docx`, size: 10, sha1: "s", created_at: "c", modified_at: "m" }));
+  const folder = await withFetch((url) => {
+    const offset = Number(new URL(url).searchParams.get("offset"));
+    return okJson({ total_count: 1500, entries: offset === 0 ? entries(0, 1000) : entries(1000, 1500) });
+  }, async () => (await pi("relay/box/folder", req("/api/partner-intel/relay/box/folder?id=77", { headers: { "x-pipeline-key": "relay-secret" } }), env)).json());
+  assert.equal(folder.entries.length, 1500);
+  const file = await withFetch((url, init) => {
+    assert.equal(init.headers.authorization, "Bearer tok");
+    return new Response(new Uint8Array([1, 2, 3, 250]));
+  }, async () => (await pi("relay/box/file", req("/api/partner-intel/relay/box/file?id=5", { headers: { "x-pipeline-key": "relay-secret" } }), env)).arrayBuffer());
+  assert.deepEqual([...new Uint8Array(file)], [1, 2, 3, 250]);
+  const bad = await pi("relay/box/file", req("/api/partner-intel/relay/box/file?id=../x", { headers: { "x-pipeline-key": "relay-secret" } }), env);
+  assert.equal(bad.status, 400, "a file id is digits only");
+});
+
 /* ------------------------------------------------------------------------- runner */
 let failed = 0;
 for (const { name, fn } of tests) {

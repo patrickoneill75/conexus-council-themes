@@ -92,4 +92,13 @@ const APPS = [
     baseUrl: "/apprenticeship",
     controlPanelUrl: "/apprenticeship/control-panel",
   },
+  {
+    id: "partner-intel",
+    name: "Partner Intelligence",
+    description: "Staff only. Reads every meeting note in a Box folder and answers who is " +
+      "stuck on what and who can help: urgent problems in the last 30/60/90 days, the issues " +
+      "the most partners share, a question search for matchmaking, and a profile per company.",
+    baseUrl: "/partner-intel",
+    controlPanelUrl: "/partner-intel/control-panel",
+  },
 ];
