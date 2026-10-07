@@ -333,11 +333,15 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
                 stats[f"tokens_{side}_{how}"] += n
             stats["rows_kept"] += len(result["rows"])
             stats["rows_rejected"] += result["rejected"]
+            if result.get("refused"):
+                stats["sections_refused"] += 1
+                errors.append(f"{to_run_all[key][2]}: {result['refused']}"[:300])
             done_since_push += 1
             if done_since_push >= CHECKPOINT_EVERY:
                 done_since_push = 0
                 _store(api, registry, cache)
 
+    to_run_all = dict(to_run)
     use_batch = batch_client is not None or (caller is extract.call_claude and config.USE_BATCH)
     if to_run and use_batch:
         jobs = {k: (unit, event_type) for k, (unit, event_type, _) in to_run.items()}

@@ -2993,7 +2993,7 @@ const SOLVERS = () => [
   ins({ kind: "offer", urgency: "none", company_id: "c-b", title: "Quality system consulting", detail: "Offers help standing up an ISO quality management system.", topic: "quality", tags: ["iso"], solves: "quality system" }),
   ins({ kind: "win", urgency: "none", company_id: "c-c", title: "Hired apprentices", detail: "Placed five apprentices in the machine shop.", topic: "talent_pipeline", tags: ["apprentice"] }),
 ];
-const rankOut = (matches, extra = {}) => okJson({ content: [{ type: "tool_use", input: { summary: "s", matches, gaps: "", ...extra } }], usage: { input_tokens: 10, output_tokens: 5 } });
+const rankOut = (matches, extra = {}) => okJson({ content: [{ type: "tool_use", name: "rank_matches", input: { summary: "s", matches, gaps: "", ...extra } }], usage: { input_tokens: 10, output_tokens: 5 } });
 
 test("partner_intel: ask without a Claude key returns a labeled keyword ranking and saves nothing", async () => {
   const { env, token } = await piEnv(SOLVERS());
@@ -3024,8 +3024,12 @@ test("partner_intel: ask never shows a company or evidence the model was not giv
   assert.deepEqual(first.matches[0].evidence.map((e) => e.id), [rows[0].id]);
   assert.equal(first.cached, false);
   assert.equal(bodies.length, 1);
-  assert.equal(bodies[0].model, "claude-opus-5");
+  assert.equal(bodies[0].model, "claude-sonnet-5-5", "Ask decides introductions, so it runs on Sonnet");
   assert.equal(bodies[0].tools[0].strict, true);
+  assert.deepEqual(bodies[0].tool_choice, { type: "auto" }, "Sonnet 5.5 rejects a forced tool choice");
+  assert.deepEqual(bodies[0].output_config, { effort: "medium" });
+  assert.equal(bodies[0].fallbacks, "default", "a declined question falls back server-side");
+  assert.match(bodies[0].system, /calling the rank_matches tool/);
   assert.match(bodies[0].messages[0].content, /<question>\nWho has an AI powered quality inspection system\?\n<\/question>/);
   const second = await (await ask()).json();
   assert.equal(second.cached, true);
@@ -3393,7 +3397,7 @@ const publishV2 = (env, insights, extra = {}) => pi("relay/publish", relay("publ
   schema: 2, version: `v${++insightSeq}`, generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [],
   insights, companies: [], unmatched: [], stats: {}, ...extra }), env);
 
-const summaryOut = (payload, make) => okJson({ content: [{ type: "tool_use", input: { topics: payload.map(make) } }], usage: { input_tokens: 50, output_tokens: 20 } });
+const summaryOut = (payload, make) => okJson({ content: [{ type: "tool_use", name: "write_summaries", input: { topics: payload.map(make) } }], usage: { input_tokens: 50, output_tokens: 20 } });
 const topicsIn = (init) => { const body = JSON.parse(init.body); const sent = body.messages[0].content;
   return { body, payload: JSON.parse(sent.slice(sent.indexOf("<topics>") + 8, sent.indexOf("</topics>"))) }; };
 
@@ -3429,8 +3433,12 @@ test("partner_intel: Home answers at once with the examples, then the bullet sum
   const out = await sum(["talent_pipeline", "quality"]);
   assert.equal(calls.length, 1, "both topics were written in ONE Claude call");
   assert.equal(calls[0].payload.length, 2);
-  assert.equal(calls[0].body.model, "claude-opus-5");
+  assert.equal(calls[0].body.model, "claude-haiku-5-5", "summaries are short and checked, so they run on Haiku");
   assert.equal(calls[0].body.tools[0].strict, true);
+  assert.deepEqual(calls[0].body.tool_choice, { type: "auto" });
+  assert.deepEqual(calls[0].body.output_config, { effort: "low" });
+  assert.equal(calls[0].body.fallbacks, undefined, "Haiku has no server-side fallback");
+  assert.match(calls[0].body.system, /calling the write_summaries tool/);
   assert.ok(calls[0].payload[0].evidence[0].company, "the model is told which company said it");
   const bullets = out.summaries.talent_pipeline.bullets;
   assert.deepEqual(bullets.map((b) => b.text), ["Companies in Talent pipeline and recruiting describe a first problem.", "A second point."],
@@ -3558,6 +3566,44 @@ test("partner_intel: the scan report adds the pipeline's Claude use to the month
   assert.deepEqual([u.extraction.calls, u.extraction.input, u.extraction.output, u.extraction.reused], [1, 900, 300, 5]);
   await pi("relay/report", relay("report", "POST", { mode: "scan" }), env);
   assert.equal((await getJson("status", env, token)).usage.thisMonth.extraction.calls, 1, "a quiet scan adds nothing");
+});
+
+test("partner_intel: Ask sends the fallback beta header, summaries do not", async () => {
+  const rows = SOLVERS();
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const heads = [];
+  await withFetch((url, init) => { heads.push(init.headers["anthropic-beta"]); return rankOut([
+    { company_id: "c-a", strength: "high", why: "Built it.", evidence_ids: [rows[0].id], caution: "" }]); },
+  () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
+  assert.deepEqual(heads, ["server-side-fallback-2026-07-01"]);
+});
+
+test("partner_intel: with no forced tool choice, an answer that skips the tool is asked once more, then is an error", async () => {
+  const { env, token } = await piEnv(trendingRows(), { partner_intel_claude_api: "k" });
+  let calls = 0;
+  const textOnly = () => okJson({ content: [{ type: "text", text: "Here are your summaries." }], stop_reason: "end_turn", usage: {} });
+  const sum = (handler) => withFetch(handler, () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env));
+  const second = await (await sum((url, init) => { calls++;
+    return calls === 1 ? textOnly() : summaryOut(topicsIn(init).payload, (t) => ({ topic_id: t.topic_id,
+      bullets: [{ text: "Real.", evidence_ids: [t.evidence[0].id] }] })); })).json();
+  assert.equal(calls, 2, "asked again after an answer with no tool call");
+  assert.equal(second.summaries.quality.bullets[0].text, "Real.");
+  const { env: env2, token: token2 } = await piEnv(trendingRows(), { partner_intel_claude_api: "k" });
+  let tries = 0;
+  const failed = await withFetch(() => { tries++; return textOnly(); },
+    () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token2), env2));
+  assert.equal(failed.status, 502);
+  assert.equal(tries, 2, "two tries, not a loop");
+});
+
+test("partner_intel: a declined request is a clear error and is not saved", async () => {
+  const rows = SOLVERS();
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const res = await withFetch(() => okJson({ content: [], stop_reason: "refusal", stop_details: { type: "refusal", category: "general_harms" } }),
+    () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
+  assert.equal(res.status, 502);
+  assert.match((await res.json()).error, /declined.*general_harms/);
+  assert.equal([...env.BOX_KV.store.keys()].filter((k) => k.startsWith("pi:ask:") && k !== "pi:ask:recent").length, 0);
 });
 
 const PROGRAM_ROWS = () => [

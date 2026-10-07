@@ -43,8 +43,14 @@ Decisions already made and settled. Act on these rather than re-asking.
 ## Claude API usage
 
 1. `claude-opus-5` is the default. Do not downgrade for cost without being asked.
-   `claude-sonnet-5` and `claude-haiku-4-5` are the current cheaper tiers where a
-   guide or the user calls for one.
+   `claude-sonnet-5-5` and `claude-haiku-5-5` are the current cheaper tiers where a
+   guide or the user calls for one (`claude-sonnet-5` and `claude-haiku-4-5` are the
+   previous generation).
+   **Partner Intelligence is the exception, by the owner's choice:** `claude-sonnet-5-5`
+   reads the notes and answers Ask; `claude-haiku-5-5` writes the trending summaries.
+   Keep that split; do not move it back to Opus or further down to Haiku unasked.
+   Claude Sonnet 5.5 rejects a forced `tool_choice` (`tool` / `any`) with a 400: use
+   `auto`, `strict: true`, a prompt that asks for the call, and a check that it came.
 2. Budget **two Claude calls per user session** as the target. Everything between them
    should be the user confirming what an earlier call already extracted.
 3. Set `strict: true` on tool definitions, with `additionalProperties: false` and a
