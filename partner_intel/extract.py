@@ -14,6 +14,7 @@ Three rules shape this module:
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -24,10 +25,24 @@ from datetime import datetime, timezone
 from rapidfuzz import fuzz
 
 from . import config, topics
-from .shape import Unit
+from .shape import Unit, chunk, words
 
 # Bump when the prompt, schema or topic list changes. A new version re-reads everything.
 PROMPT_VERSION = "pi-extract-1"
+
+# Room for the answer. A dense section can hold forty statements, each a row of fourteen
+# fields, and Claude Opus 5 thinks before it writes, so the old 8,000 ran out on real notes.
+# Streaming is required by the SDK for a limit this large.
+MAX_OUTPUT_TOKENS = 32000
+# When even that is not enough the unit is read in halves, down to this depth.
+MAX_SPLIT_DEPTH = 3
+MIN_SPLIT_WORDS = 200
+
+
+class OutOfRoom(Exception):
+    """The answer did not fit. Deliberately not a RuntimeError: retrying the same request
+    would spend the same tokens and fail the same way, so the caller splits the unit instead."""
+
 
 KINDS = ["problem", "solution", "win", "offer", "ask", "equipment", "news", "commitment"]
 URGENCY = ["high", "medium", "low", "none"]
@@ -91,7 +106,7 @@ def system_prompt() -> str:
         "1. Use only what the text says. Do not infer a problem from a silence, and do not "
         "add facts. If the text does not say, leave the field empty.\n"
         "2. quote must be copied exactly from the notes, character for character, as one "
-        "contiguous span of at most 300 characters. If you cannot copy a span that supports the "
+        "contiguous span of at most 200 characters. If you cannot copy a span that supports the "
         "row, do not record the row.\n"
         "3. company is the organization the statement is about, as the notes name it. Use the "
         "section heading when one is given. If the statement belongs to a whole group, or the "
@@ -216,20 +231,25 @@ def get_client():
 
 
 def call_claude(unit: Unit, event_type: str, staff: list[str], model: str) -> tuple[list[dict], dict]:
-    """The single model call. Returns (raw rows, usage). Raises on a malformed answer."""
+    """The single model call. Returns (raw rows, usage).
+
+    Raises OutOfRoom when the answer was cut off, and RuntimeError on any other malformed
+    answer. Network and API errors are retried; OutOfRoom is not.
+    """
     import anthropic
     from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
     @retry(retry=retry_if_exception_type((anthropic.APIError, RuntimeError)),
            wait=wait_exponential(multiplier=1, min=2, max=30), stop=stop_after_attempt(4), reraise=True)
     def go():
-        response = get_client().messages.create(
-            model=model, max_tokens=8000, system=system_prompt(),
+        with get_client().messages.stream(
+            model=model, max_tokens=MAX_OUTPUT_TOKENS, system=system_prompt(),
             messages=[{"role": "user", "content": user_message(unit, event_type, staff)}],
             tools=[TOOL], tool_choice={"type": "tool", "name": TOOL["name"]},
-        )
+        ) as stream:
+            response = stream.get_final_message()
         if response.stop_reason == "max_tokens":
-            raise RuntimeError("Claude ran out of room for this unit; it needs to be split smaller.")
+            raise OutOfRoom("Claude ran out of room for this section.")
         for block in response.content:
             if block.type == "tool_use":
                 usage = {"input": response.usage.input_tokens, "output": response.usage.output_tokens}
@@ -239,9 +259,41 @@ def call_claude(unit: Unit, event_type: str, staff: list[str], model: str) -> tu
     return go()
 
 
+def _halves(unit: Unit) -> list[Unit]:
+    pieces = chunk(unit.text, max_words=max(MIN_SPLIT_WORDS // 2, words(unit.text) // 2), overlap=60)
+    if len(pieces) < 2:
+        return []
+    return [dataclasses.replace(unit, text=p, part=i + 1, parts=len(pieces)) for i, p in enumerate(pieces)]
+
+
+def _read(unit: Unit, event_type: str, staff: list[str], model: str, caller, depth: int = 0):
+    """Read a unit, splitting it and reading the pieces if the answer does not fit.
+    Returns (raw rows, usage, number of extra calls caused by splitting)."""
+    try:
+        rows, usage = caller(unit, event_type, staff, model)
+        return rows, dict(usage), 0
+    except OutOfRoom:
+        pieces = _halves(unit) if depth < MAX_SPLIT_DEPTH and words(unit.text) >= MIN_SPLIT_WORDS else []
+        if not pieces:
+            raise
+    rows, usage, extra, seen = [], {"input": 0, "output": 0}, len(pieces) - 1, set()
+    for piece in pieces:
+        got, used, more = _read(piece, event_type, staff, model, caller, depth + 1)
+        extra += more
+        usage["input"] += used.get("input", 0)
+        usage["output"] += used.get("output", 0)
+        for row in got:  # the pieces overlap, so the same statement can come back twice
+            key = normalize(str(row.get("quote", "")))
+            if key and key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+    return rows, usage, extra
+
+
 def extract_unit(unit: Unit, event_type: str, staff: list[str], model: str, caller=call_claude) -> dict:
     """Run one unit and return the cache entry to store. caller is swapped out in tests."""
-    raw_rows, usage = caller(unit, event_type, staff, model)
+    raw_rows, usage, splits = _read(unit, event_type, staff, model, caller)
     checked = check_rows(raw_rows, unit.text)
     return {
         "key": cache_key(unit, event_type, model),
@@ -251,6 +303,7 @@ def extract_unit(unit: Unit, event_type: str, staff: list[str], model: str, call
         "usage": usage,
         "label": unit.label,
         "words": len(unit.text.split()),
+        "split_calls": splits,
         "raw_count": checked.raw_count,
         "rejected": checked.rejected,
         "rows": checked.rows,

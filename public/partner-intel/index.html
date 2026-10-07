@@ -42,7 +42,30 @@
   el("signOut").addEventListener("click", PI.signOut);
   PI.whoami(el("whoami"));
 
-  var state = { days: 30, exact: false, includeMedium: true, explore: { facets: null } };
+  var state = { days: 30, exact: false, includeMedium: true, membersOnly: false, explore: { facets: null },
+                sources: {}, sourceList: null };
+  var chosen = {}; // source folders switched on; shared by Home, Ask and Explore
+
+  function loadSources() {
+    return state.sourceList ? Promise.resolve(state.sourceList)
+      : PI.api("facets").then(function (r) { state.sourceList = r.sources; return r.sources; });
+  }
+  function chosenList() { return Object.keys(chosen).filter(function (k) { return chosen[k]; }); }
+  function sourceParam() { var l = chosenList(); return l.length ? "&source=" + encodeURIComponent(l.join("|")) : ""; }
+  function chipsHtml() {
+    if (!state.sourceList || !state.sourceList.length) return "";
+    return '<div class="row small" style="margin-bottom:12px"><span class="muted">Source folder</span><div class="chips" style="margin-top:0" data-chips>' +
+      state.sourceList.map(function (s) {
+        return '<button class="chip btn' + (chosen[s.value] ? " on" : "") + '" data-s="' + esc(s.value) + '">' + esc(s.value) + ' <span style="opacity:.7">' + s.count + "</span></button>";
+      }).join("") + "</div>" + (chosenList().length ? '<button class="link small" data-clear>Clear</button>' : "") + "</div>";
+  }
+  function wireChips(root, onChange) {
+    Array.prototype.forEach.call(root.querySelectorAll("[data-chips] button"), function (b) {
+      b.addEventListener("click", function () { var k = b.getAttribute("data-s"); chosen[k] = !chosen[k]; onChange(); });
+    });
+    var clear = root.querySelector("[data-clear]");
+    if (clear) clear.addEventListener("click", function () { chosen = {}; onChange(); });
+  }
   var seq = 0; // drops the answer to a request that a newer navigation has made stale
 
   function emptyState(err) {
@@ -59,15 +82,18 @@
   function home() {
     var mine = ++seq;
     view.innerHTML = loading("Loading…");
-    PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "")).then(function (d) {
+    loadSources().then(function () {
+      return PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "") + (state.membersOnly ? "&status=Active" : "") + sourceParam());
+    }).then(function (d) {
       if (mine !== seq) return;
       var urgent = d.urgent.filter(function (u) { return state.includeMedium || u.urgency === "high"; });
-      var html = '<div class="row spread" style="margin-bottom:14px">' +
+      var html = chipsHtml() + '<div class="row spread" style="margin-bottom:14px">' +
         '<div class="seg" id="win">' + [30, 60, 90].map(function (n) {
           return '<button data-d="' + n + '"' + (state.days === n ? ' class="on"' : "") + ">Last " + n + " days</button>";
         }).join("") + "</div>" +
         '<div class="row small">' +
         '<label><input type="checkbox" id="med"' + (state.includeMedium ? " checked" : "") + "> Include medium urgency</label>" +
+        '<label><input type="checkbox" id="mem"' + (state.membersOnly ? " checked" : "") + "> Members only</label>" +
         '<label><input type="checkbox" id="exact"' + (state.exact ? " checked" : "") + "> Exact dates only</label></div></div>";
       if (d.counts.estimatedDates && !state.exact) {
         html += '<p class="small muted" style="margin:-4px 0 12px">' + d.counts.estimatedDates +
@@ -98,6 +124,8 @@
       });
       el("med").addEventListener("change", function (e) { state.includeMedium = e.target.checked; home(); });
       el("exact").addEventListener("change", function (e) { state.exact = e.target.checked; home(); });
+      el("mem").addEventListener("change", function (e) { state.membersOnly = e.target.checked; home(); });
+      wireChips(view, home);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
 
@@ -106,16 +134,18 @@
     var mine = ++seq;
     view.innerHTML = '<div class="card"><h2>Who can we connect them with?</h2>' +
       '<p class="desc">Describe what the partner needs. The answer lists companies whose own meeting notes show they have solved or offer it, with the evidence.</p>' +
-      '<textarea id="q" rows="3" maxlength="600" placeholder="A partner is looking for something to help them with an AI-powered quality system. Who can we connect them with?"></textarea>' +
+      '<div id="askSrc"></div><textarea id="q" rows="3" maxlength="600" placeholder="A partner is looking for something to help them with an AI-powered quality system. Who can we connect them with?"></textarea>' +
       '<div class="row" style="margin-top:10px"><button class="primary" id="go">Find matches</button><span id="busy"></span></div></div>' +
       '<div id="out"></div><div id="recent"></div>';
     var q = el("q");
+    function drawChips() { el("askSrc").innerHTML = chipsHtml(); wireChips(el("askSrc"), drawChips); }
+    loadSources().then(function () { if (mine === seq) drawChips(); }).catch(function () {});
     function run() {
       var question = q.value.trim();
       if (question.length < 8) { el("out").innerHTML = '<div class="msg err">Ask a full question, such as what the partner needs.</div>'; return; }
       el("go").disabled = true;
       el("busy").innerHTML = '<span class="spinner"></span>Reading the notes…';
-      PI.post("ask", { question: question }).then(function (a) {
+      PI.post("ask", { question: question, sources: chosenList() }).then(function (a) {
         el("out").innerHTML = renderAnswer(a);
         loadRecent();
       }).catch(function (err) { el("out").innerHTML = emptyState(err); })
@@ -150,7 +180,7 @@
       html += '<div class="item"><div class="rank"><div class="n">' + (n + 1) + '</div><div style="flex:1">' +
         '<div class="head"><a class="co" href="#/company/' + encodeURIComponent(c.id) + '">' + esc(c.name) + "</a>" +
         PI.pill(m.strength === "high" ? "good" : m.strength === "medium" ? "medium" : "low", m.strength + " match") +
-        PI.pill("info", c.industry) + (c.status !== "Active" ? PI.pill("info", PI.statusLabel[c.status] || c.status) : "") + "</div>" +
+        PI.pill("info", c.industry) + PI.pill(c.status === "Active" ? "good" : "info", PI.statusLabel[c.status] || c.status) + "</div>" +
         '<div class="detail">' + esc(m.why) + "</div>" +
         (m.caution ? '<div class="caution"><b>Check first:</b> ' + esc(m.caution) + "</div>" : "") +
         (c.contacts && c.contacts.length ? '<div class="small muted">Contacts on file: ' + c.contacts.map(esc).join(", ") + "</div>" : "") +
@@ -247,7 +277,7 @@
   function explore() {
     var mine = ++seq;
     var offset = 0;
-    view.innerHTML = '<div class="card"><div class="fields">' +
+    view.innerHTML = '<div class="card"><div id="exSrc"></div><div class="fields">' +
       '<div><label class="field" for="eq">Search</label><input id="eq" placeholder="Words in the note or company"></div>' +
       '<div><label class="field" for="ek">Type</label><select id="ek"><option value="">All types</option>' + KINDS.map(function (k) { return '<option value="' + k + '">' + PI.kindLabel[k] + "</option>"; }).join("") + "</select></div>" +
       '<div><label class="field" for="et">Topic</label><select id="et"><option value="">All topics</option></select></div>' +
@@ -269,6 +299,7 @@
       if (el("ex").checked) p.push("exact=1");
       if (el("in").checked) p.push("internal=1");
       add("sort", el("so").value);
+      if (chosenList().length) add("source", chosenList().join("|"));
       p.push("limit=25"); if (withOffset) p.push("offset=" + offset);
       return p.join("&");
     }
@@ -296,6 +327,8 @@
         if (hasMore) el("moreBtn").addEventListener("click", function () { offset += 25; load(true); });
       }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
     }
+    function drawChips() { el("exSrc").innerHTML = chipsHtml(); wireChips(el("exSrc"), function () { drawChips(); load(false); }); }
+    loadSources().then(function () { if (mine === seq) drawChips(); }).catch(function () {});
     var t;
     el("eq").addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { load(false); }, 250); });
     ["ek", "et", "ei", "es", "ee", "eu", "ed", "ex", "in", "so"].forEach(function (id) { el(id).addEventListener("change", function () { load(false); }); });

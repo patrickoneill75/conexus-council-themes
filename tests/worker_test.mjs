@@ -3021,6 +3021,246 @@ test("partner_intel: the relay lists every page of a Box folder and streams file
   assert.equal(bad.status, 400, "a file id is digits only");
 });
 
+/* ---------------------------------------------------- partner_intel: Box folders, member list, sources */
+const { xlsxRows } = await mod("partner_intel.js");
+
+function buildZip(entries) {
+  const enc = new TextEncoder();
+  const u16 = (v) => [v & 0xff, (v >> 8) & 0xff];
+  const u32 = (v) => [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff];
+  const local = [], central = [];
+  for (const [name, content] of Object.entries(entries)) {
+    const n = enc.encode(name), d = enc.encode(content);
+    const offset = local.length;
+    local.push(...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(d.length),
+      ...u32(d.length), ...u16(n.length), ...u16(0), ...n, ...d);
+    central.push(...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0),
+      ...u32(d.length), ...u32(d.length), ...u16(n.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset), ...n);
+  }
+  const count = Object.keys(entries).length;
+  return new Uint8Array([...local, ...central, ...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(count), ...u16(count),
+    ...u32(central.length), ...u32(local.length), ...u16(0)]);
+}
+
+const XLSX_SHEET = `<?xml version="1.0"?><worksheet><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="D1" t="inlineStr"><is><t>Status</t></is></c></row>
+<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c><c r="C2"/><c r="D2" t="str"><v>Active</v></c></row>
+</sheetData></worksheet>`;
+const XLSX_STRINGS = `<?xml version="1.0"?><sst><si><t>Organization: Account Name</t></si><si><t>Organization: Industry</t></si>
+<si><t>Acci&#243;n &amp; Co</t></si><si><r><t>Plastics </t></r><r><t>Company</t></r></si></sst>`;
+
+test("partner_intel: an .xlsx member list is read, with shared strings, rich text, gaps and entities", async () => {
+  const rows = await xlsxRows(buildZip({ "xl/sharedStrings.xml": XLSX_STRINGS, "xl/worksheets/sheet1.xml": XLSX_SHEET }));
+  assert.deepEqual(rows, [["Organization: Account Name", "Organization: Industry", "", "Status"],
+    ["Acción & Co", "Plastics Company", "", "Active"]]);
+  await assert.rejects(() => xlsxRows(new Uint8Array([1, 2, 3, 4])), /valid \.xlsx/);
+  await assert.rejects(() => xlsxRows(buildZip({ "readme.txt": "x" })), /No worksheet/);
+});
+
+async function adminEnv(extra = {}) {
+  const { env, token } = await signedInEnv();
+  Object.assign(env, extra);
+  await env.BOX_KV.put("box:tokens", JSON.stringify({ access_token: "tok", refresh_token: "r", obtained_at: Math.floor(Date.now() / 1000), expires_in: 3600 }));
+  return { env, token };
+}
+const setFolder = (env, token, which, id, name) => pi("settings", piReq("settings", "POST", { which, folderId: id, folderName: name }, token), env);
+
+test("partner_intel: the three Box folders are chosen separately and never overwrite each other", async () => {
+  const { env, token } = await adminEnv();
+  assert.equal((await setFolder(env, token, "notes", "11", "Raw Notes")).status, 200);
+  assert.equal((await setFolder(env, token, "data", "22", "Database")).status, 200);
+  assert.equal((await setFolder(env, token, "roster", "33", "Members")).status, 200);
+  const s = JSON.parse(await env.BOX_KV.get("pi:settings"));
+  assert.deepEqual([s.folderId, s.dataFolderId, s.rosterFolderId, s.folderName, s.dataFolderName, s.rosterFolderName],
+    ["11", "22", "33", "Raw Notes", "Database", "Members"]);
+  assert.equal((await setFolder(env, token, "data", "abc", "x")).status, 400);
+  assert.equal((await setFolder(env, token, "data", "0", "All Files")).status, 400, "the Box root is not a folder to write to");
+  assert.equal((await setFolder(env, token, "toString", "5", "x")).status, 400, "an unknown setting is refused, prototype names included");
+  assert.equal((await setFolder(env, token, undefined, "44", "Old Client")).status, 200, "a client that sends no 'which' still sets the notes folder");
+  assert.equal(JSON.parse(await env.BOX_KV.get("pi:settings")).folderId, "44");
+});
+
+function boxFake(folders, files = {}, uploads = []) {
+  return (url, init = {}) => {
+    const u = new URL(url);
+    const items = u.pathname.match(/\/folders\/(\d+)\/items$/);
+    if (items) {
+      const list = folders[items[1]] || [];
+      return okJson({ total_count: list.length, entries: list });
+    }
+    const content = u.pathname.match(/\/files\/(\d+)\/content$/);
+    if (content && !url.startsWith("https://upload.")) {
+      const f = files[content[1]];
+      return f === undefined ? new Response("no", { status: 404 }) : new Response(f);
+    }
+    if (url.startsWith("https://upload.box.com")) {
+      uploads.push({ url, form: init.body });
+      return okJson({ entries: [{ id: "999" }] });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+}
+const fileItem = (id, name, modified, sha1 = "s" + id) => ({ type: "file", id, name, size: 10, sha1, created_at: modified, modified_at: modified });
+
+test("partner_intel: database files go to the chosen Box folder, as a new version when the name already exists", async () => {
+  const { env, token } = await adminEnv();
+  const save = (name, text = "{}") => pi("relay/box/save", relay("box/save", "POST", { name, text }), env);
+  assert.equal((await save("partner_intel_database.json")).status, 409, "no database folder chosen yet");
+  await setFolder(env, token, "data", "22", "Database");
+  assert.equal((await save("../../evil.json")).status, 400, "only the three database files may be written");
+  assert.equal((await save("notes.docx")).status, 400);
+  const uploads = [];
+  const handler = boxFake({ 22: [fileItem("700", "partner_intel_state.json", "2026-01-01T00:00:00Z")] }, {}, uploads);
+  const created = await withFetch(handler, async () => (await save("partner_intel_database.json", '{"a":1}')).json());
+  assert.equal(created.updated, false);
+  assert.match(uploads[0].url, /upload\.box\.com\/api\/2\.0\/files\/content$/);
+  assert.equal(JSON.parse(uploads[0].form.get("attributes")).parent.id, "22");
+  assert.equal(await uploads[0].form.get("file").text(), '{"a":1}');
+  const updated = await withFetch(handler, async () => (await save("partner_intel_state.json", "{}")).json());
+  assert.equal(updated.updated, true, "Box answers 409 to a second upload of the same name, so it is a new version");
+  assert.match(uploads[1].url, /files\/700\/content$/);
+  assert.equal((await pi("relay/box/save", relay("box/save", "POST", { name: "partner_intel_state.json", text: "x" }, "wrong"), env)).status, 401);
+});
+
+test("partner_intel: a saved state file can be read back, and a missing one is a plain 404", async () => {
+  const { env, token } = await adminEnv();
+  await setFolder(env, token, "data", "22", "Database");
+  const load = (name) => pi("relay/box/load", req(`/api/partner-intel/relay/box/load?name=${name}`, { headers: { "x-pipeline-key": "relay-secret" } }), env);
+  const handler = boxFake({ 22: [fileItem("700", "partner_intel_state.json", "2026-01-01T00:00:00Z")] }, { 700: '{"registry":{}}' });
+  const hit = await withFetch(handler, async () => load("partner_intel_state.json"));
+  assert.equal(await hit.text(), '{"registry":{}}');
+  assert.equal((await withFetch(handler, async () => load("partner_intel_database.json"))).status, 404);
+  assert.equal((await withFetch(handler, async () => load("secrets.json"))).status, 400);
+});
+
+const MEMBER_CSV = (rows) => [SF_HEADER, ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
+
+test("partner_intel: the member list in Box is read from the newest file, Windows-1252 accents included", async () => {
+  const { env, token } = await adminEnv();
+  await setFolder(env, token, "roster", "33", "Members");
+  const older = MEMBER_CSV([["C", "P1", "Old Only Inc", "Metals", "Active", "", ""]]);
+  const newer = MEMBER_CSV([["C", "P1", "Acción Performance", "3PL Company", "Active", "Tiffany H", ""],
+    ["C", "P2", "Beta Works", "Metals", "Active", "", ""]]);
+  const handler = boxFake({ 33: [fileItem("1", "members-old.csv", "2026-01-01T00:00:00Z"), fileItem("2", "members-new.csv", "2026-06-01T00:00:00Z"),
+    fileItem("3", "~$members.csv", "2026-07-01T00:00:00Z"), fileItem("4", "notes.docx", "2026-07-01T00:00:00Z")] },
+  { 1: Buffer.from(older, "latin1"), 2: Buffer.from(newer, "latin1") });
+  const sync = (body) => withFetch(handler, async () => (await pi("roster/sync", piReq("roster/sync", "POST", body, token), env)).json());
+  const preview = await sync({ preview: true });
+  assert.equal(preview.file.name, "members-new.csv", "the newest real file wins; lock files and Word files are ignored");
+  assert.deepEqual(preview.summary.added, ["Acción Performance", "Beta Works"], "the accent survived a Windows-1252 file");
+  assert.equal(JSON.parse((await env.BOX_KV.get("pi:roster")) || '{"partners":[]}').partners.length, 0, "a preview saves nothing");
+  const applied = await sync({});
+  assert.equal(applied.saved, true);
+  assert.equal(JSON.parse(await env.BOX_KV.get("pi:roster")).partners.length, 2);
+  const status = await getJson("status", env, token);
+  assert.equal(status.rosterSync.name, "members-new.csv");
+  assert.equal(status.rosterSync.counts.added, 2);
+});
+
+test("partner_intel: the daily refresh skips an unchanged file, and a shrunken file is applied as add-only", async () => {
+  const { env, token } = await adminEnv();
+  await setFolder(env, token, "roster", "33", "Members");
+  const twelve = Array.from({ length: 12 }, (_, i) => ["C", `P${i}`, `Partner ${i}`, "Metals", "Active", "", ""]);
+  const full = MEMBER_CSV(twelve);
+  let current = { 2: full };
+  let sha = "a";
+  const handler = (url, init) => boxFake({ 33: [fileItem("2", "members.csv", "2026-06-01T00:00:00Z", sha)] }, current)(url, init);
+  const auto = () => withFetch(handler, async () => (await pi("relay/roster-sync", relay("roster-sync", "POST", {}), env)).json());
+  assert.equal((await auto()).saved, true);
+  assert.equal((await auto()).skipped.startsWith("The member list has not changed"), true, "same file, nothing to do");
+
+  current = { 2: MEMBER_CSV(twelve.slice(0, 5)) };  // a half-exported file
+  sha = "b";
+  const guarded = await auto();
+  assert.equal(guarded.mode, "merge");
+  assert.match(guarded.warning, /7 of 12 members/);
+  const roster = JSON.parse(await env.BOX_KV.get("pi:roster"));
+  assert.equal(roster.partners.filter((p) => p.status === "Active").length, 12, "nobody was marked Former");
+
+  const manual = await withFetch(handler, async () => (await pi("roster/sync", piReq("roster/sync", "POST", { mode: "replace" }, token), env)).json());
+  assert.equal(manual.summary.deactivated.length, 7, "a person who chooses it and sees the preview can still apply a full list");
+});
+
+test("partner_intel: member-list sync says why it did nothing, and rejects a file it cannot read", async () => {
+  const { env, token } = await adminEnv();
+  const sync = (handler) => withFetch(handler, async () => (await pi("roster/sync", piReq("roster/sync", "POST", {}, token), env)).json());
+  assert.match((await sync(boxFake({}))).skipped, /No member list folder/);
+  await setFolder(env, token, "roster", "33", "Members");
+  assert.match((await sync(boxFake({ 33: [] }))).skipped, /no \.csv or \.xlsx/i);
+  const bad = await withFetch(boxFake({ 33: [fileItem("2", "members.xlsx", "2026-06-01T00:00:00Z")] }, { 2: "not a zip" }),
+    () => pi("roster/sync", piReq("roster/sync", "POST", {}, token), env));
+  assert.equal(bad.status, 502);
+  assert.match((await bad.json()).error, /Could not read members\.xlsx/);
+  const noCol = await withFetch(boxFake({ 33: [fileItem("2", "members.csv", "2026-06-01T00:00:00Z")] }, { 2: "foo,bar\n1,2" }),
+    () => pi("roster/sync", piReq("roster/sync", "POST", {}, token), env));
+  assert.match((await noCol.json()).error, /organi[sz]ation column/i);
+});
+
+const publishRaw = (env, insights, companies = []) => pi("relay/publish", relay("publish", "POST", {
+  version: `v${++insightSeq}`, generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [],
+  insights, companies, unmatched: [], stats: {} }), env);
+
+test("partner_intel: a company the notes named shows as a member the moment the list has it, with no re-link", async () => {
+  const { env, token } = await signedInEnv();
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: [], aliases: {}, staff: [], updatedAt: "r0" }));
+  await publishRaw(env, [ins({ company_id: "n-acme-corp", company_raw: "Acme Corp", title: "Hiring" }),
+    ins({ company_id: "n-gpc", company_raw: "GPC", title: "Scrap" })],
+  [{ id: "n-acme-corp", name: "Acme Corp" }, { id: "n-gpc", name: "GPC" }]);
+  let item = (await getJson("insights", env, token)).items.find((i) => i.title === "Hiring");
+  assert.deepEqual([item.company.status, item.company.member, item.company.industry], ["Non-member", false, "Unknown"],
+    "before the list has it, it is not shown as a member");
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: { GPC: "c-b" }, staff: [], updatedAt: "r1" }));
+  const after = (await getJson("insights", env, token)).items;
+  item = after.find((i) => i.title === "Hiring");
+  assert.deepEqual([item.company.id, item.company.status, item.company.member, item.company.industry], ["c-a", "Active", true, "Plastics Company"]);
+  assert.equal(after.find((i) => i.title === "Scrap").company.id, "c-b", "an admin alias is applied the same way");
+  assert.equal((await getJson("insights?status=Active", env, token)).total, 2, "and the member filter now finds them");
+  assert.equal((await pi("company", piGet("company?id=n-acme-corp", token), env)).status, 200, "an old link to the n- id still opens the profile");
+  assert.equal((await getJson("companies?withInsights=1", env, token)).items.some((c) => c.id.startsWith("n-")), false, "no duplicate left behind");
+});
+
+test("partner_intel: source folders filter every view, and naming Board Meetings shows its rows", async () => {
+  const { env, token } = await piEnv([
+    ins({ title: "ciaic issue", sources: [{ id: "f1", name: "q4.docx", path: "Raw Notes/CIAIC/2025" }], urgency: "high" }),
+    ins({ title: "adapt issue", sources: [{ id: "f2", name: "a.docx", path: "Raw Notes/ADAPT" }], urgency: "high" }),
+    ins({ title: "board issue", sources: [{ id: "f3", name: "b.docx", path: "Raw Notes/Board Meetings" }], scope: "internal", urgency: "high" }),
+    ins({ title: "loose file", sources: [{ id: "f4", name: "l.docx", path: "Raw Notes" }] }),
+    ins({ title: "both", source_folders: ["ADAPT", "CIAIC"], sources: [{ id: "f5", name: "x.docx", path: "Raw Notes/ADAPT" }] }),
+  ]);
+  const titles = async (q) => (await getJson(`insights?${q}`, env, token)).items.map((i) => i.title).sort();
+  assert.deepEqual(await titles("source=CIAIC"), ["both", "ciaic issue"], "derived from the path, and a merged row matches any of its sources");
+  assert.deepEqual(await titles("source=ADAPT%7CCIAIC"), ["adapt issue", "both", "ciaic issue"], "several sources at once");
+  assert.deepEqual(await titles("source=(root)"), ["loose file"]);
+  assert.deepEqual(await titles("source=Board%20Meetings"), ["board issue"], "an explicit source choice includes the internal rows");
+  assert.equal((await titles("")).includes("board issue"), false, "and without it they stay out");
+  const home = await getJson("home?days=30&source=ADAPT", env, token);
+  assert.deepEqual(home.urgent.map((u) => u.title), ["adapt issue", "both"], "Home follows the source choice too; the row from two sources counts under each");
+  const facets = await getJson("facets", env, token);
+  assert.deepEqual(facets.sources, [{ value: "(root)", count: 1 }, { value: "ADAPT", count: 2 }, { value: "Board Meetings", count: 1 }, { value: "CIAIC", count: 2 }]);
+  assert.equal((await pi("facets", piGet("facets"), env)).status, 401);
+});
+
+test("partner_intel: Ask can be limited to source folders, and the saved answer is kept per choice", async () => {
+  const rows = [
+    ins({ kind: "solution", urgency: "none", company_id: "c-a", title: "Quality inspection cell", topic: "quality", sources: [{ id: "f1", name: "a", path: "Raw Notes/CIAIC" }] }),
+    ins({ kind: "solution", urgency: "none", company_id: "c-b", title: "Quality inspection camera", topic: "quality", sources: [{ id: "f2", name: "b", path: "Raw Notes/ADAPT" }] }),
+  ];
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  let calls = 0;
+  const handler = (url, init) => {
+    calls++;
+    const sent = JSON.parse(init.body).messages[0].content;
+    const ids = [...sent.matchAll(/"company_id": "(c-\w)"/g)].map((m) => m[1]);
+    return rankOut(ids.map((id) => ({ company_id: id, strength: "high", why: "Has it.", evidence_ids: [rows[id === "c-a" ? 0 : 1].id], caution: "" })));
+  };
+  const ask = (sources) => withFetch(handler, async () => (await pi("ask", piReq("ask", "POST", { question: "Who has quality inspection systems?", sources }, token), env)).json());
+  assert.deepEqual((await ask([])).matches.map((m) => m.company.id).sort(), ["c-a", "c-b"]);
+  assert.deepEqual((await ask(["ADAPT"])).matches.map((m) => m.company.id), ["c-b"], "only the chosen source's companies were offered");
+  assert.equal(calls, 2);
+  assert.equal((await ask(["ADAPT"])).cached, true, "the same question and sources reuse the saved answer");
+  assert.equal(calls, 2);
+});
+
 /* ------------------------------------------------------------------------- runner */
 let failed = 0;
 for (const { name, fn } of tests) {

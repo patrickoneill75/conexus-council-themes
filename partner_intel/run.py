@@ -14,6 +14,7 @@ rebuild  skip Box and Claude entirely; re-join the stored results with the curre
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
@@ -22,7 +23,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from . import config, extract, shape as shape_mod, text as text_mod
-from .build import build_dataset
+from .build import build_dataset, source_folder
+from . import export
 from .dates import resolve_date
 from .relay import Api
 from .roster import Roster
@@ -64,19 +66,33 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
     state = api.get_state()
     registry: dict = state.get("registry") or {}
     cache: dict = state.get("cache") or {}
-    roster = Roster.from_payload(api.roster())
+    cfg = api.config()
+    if not registry and not cache and cfg.get("dataFolderId"):
+        restored = _restore_from_box(api)
+        if restored:
+            registry, cache = restored
+            report["restored_from_box"] = True
     stats = Counter()
 
     if mode == "scan":
-        cfg = api.config()
         if not cfg.get("folderId"):
             report.update(finished_at=now_iso(), error="No Box folder is set. Choose one in the control panel.")
             api.report(report)
             return report
+        # The member list is refreshed first so a partner who joined or left is recognized by
+        # the scan that follows. A failure here must not stop the notes being read.
+        try:
+            report["roster_sync"] = api.sync_roster()
+        except Exception as e:
+            report["roster_sync"] = {"error": str(e)[:200]}
+    roster = Roster.from_payload(api.roster())
+
+    if mode == "scan":
         _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report)
 
     dataset = build_dataset(registry, cache, roster, now_iso())
     api.publish(dataset)
+    _save_to_box(api, cfg, dataset, registry, cache, roster, report)
     report.update({
         "finished_at": now_iso(), "insights": dataset["stats"].get("insights", 0),
         "merged_duplicates": dataset["stats"].get("merged_duplicates", 0),
@@ -85,6 +101,45 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
     })
     api.report(report)
     return report
+
+
+def _restore_from_box(api):
+    """Bring back the saved registry and results from the Box database folder, if the
+    Worker's own copy is empty. Returns (registry, cache) or None."""
+    try:
+        text = api.load_from_box(export.STATE_FILE)
+        if not text:
+            return None
+        saved = json.loads(text)
+        if isinstance(saved.get("registry"), dict) and isinstance(saved.get("cache"), dict):
+            return saved["registry"], saved["cache"]
+    except Exception:
+        return None
+    return None
+
+
+def _save_to_box(api, cfg, dataset, registry, cache, roster, report) -> None:
+    """Write the database files to the chosen Box folder. A failure is reported, never fatal:
+    the Worker's copy has already been published and the next scan writes the files again."""
+    if not cfg.get("dataFolderId"):
+        report["box_note"] = "No database folder is chosen, so nothing was saved to Box."
+        return
+    saved, errors = [], []
+    clean = {i: {k: v for k, v in e.items() if k != "_pending"} for i, e in registry.items()}
+    files = {
+        export.DATABASE_FILE: lambda: export.database_json(dataset),
+        export.INSIGHTS_FILE: lambda: export.insights_csv(dataset, roster),
+        export.STATE_FILE: lambda: export.state_json(clean, cache, now_iso()),
+    }
+    for name, make in files.items():
+        try:
+            api.save_to_box(name, make())
+            saved.append(name)
+        except Exception as e:
+            errors.append(f"{name}: {str(e)[:200]}")
+    report["box_saved"] = saved
+    if errors:
+        report["box_errors"] = errors
 
 
 def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report):
@@ -119,7 +174,8 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     for f in pending:
         entry = {"id": f["id"], "name": f["name"], "path": f["path"], "ext": text_mod.extension(f["name"]),
                  "sha1": f.get("sha1", ""), "size": f.get("size", 0), "created_at": f.get("created_at", ""),
-                 "modified_at": f.get("modified_at", ""), "processed_at": now_iso()}
+                 "modified_at": f.get("modified_at", ""), "processed_at": now_iso(),
+                 "source": source_folder(f["path"])}
         if (f.get("size") or 0) > config.MAX_FILE_BYTES:
             entry.update(status="too_large", error="Larger than the 40 MB read limit.")
             registry[f["id"]] = entry
@@ -166,7 +222,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
                 date, source = file_date, file_source
             units.append(_unit_record(unit, key, date, source))
             if key not in cache:
-                to_run[key] = (unit, s.event_type)
+                to_run.setdefault(key, (unit, s.event_type, f["name"]))
             else:
                 stats["units_cached"] += 1
         entry.update(status="done", event={
@@ -182,7 +238,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     done_since_push = 0
 
     def one(key: str):
-        unit, event_type = to_run[key]
+        unit, event_type, _ = to_run[key]
         return key, extract.extract_unit(unit, event_type, roster.staff, model, caller=caller)
 
     if to_run and caller is extract.call_claude and not config.CLAUDE_API_KEY:
@@ -197,11 +253,13 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
                 try:
                     _, result = fut.result()
                 except Exception as e:  # one bad unit must not lose the rest
-                    errors.append(f"{to_run[key][0].label or 'unit'}: {e}"[:300])
+                    unit, _, file_name = to_run[key]
+                    errors.append(f"{file_name}, section {unit.label or '(unnamed)'}: {e}"[:300])
                     continue
                 with lock:
                     cache[key] = result
-                    stats["claude_calls"] += 1
+                    stats["claude_calls"] += 1 + result.get("split_calls", 0)
+                    stats["sections_split"] += 1 if result.get("split_calls") else 0
                     stats["tokens_in"] += result["usage"].get("input", 0)
                     stats["tokens_out"] += result["usage"].get("output", 0)
                     stats["rows_kept"] += len(result["rows"])

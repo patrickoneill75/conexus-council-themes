@@ -90,6 +90,9 @@ details.src summary { cursor:pointer; color:var(--accent); }
 blockquote { margin:6px 0 0; padding:6px 12px; border-left:3px solid var(--border); color:var(--text-secondary);
              font-size:12.5px; background:var(--wash); border-radius:0 6px 6px 0; }
 .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+.chip.btn { cursor:pointer; border:1px solid var(--border); background:#fff; color:var(--text-secondary); font-weight:600; }
+.chip.btn:hover { background:var(--wash); }
+.chip.btn.on { background:var(--navy); border-color:var(--navy); color:#fff; }
 .chip { font-size:12px; padding:2px 9px; border-radius:6px; background:var(--wash); color:var(--text-secondary); }
 
 .rank { display:flex; gap:12px; align-items:flex-start; }

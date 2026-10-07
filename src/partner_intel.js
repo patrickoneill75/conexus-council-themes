@@ -39,6 +39,7 @@
 import { requireBetaAuth } from "./beta_auth.js";
 
 const BOX_API = "https://api.box.com/2.0";
+const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 const SETTINGS_KEY = "pi:settings";
 const ROSTER_KEY = "pi:roster";
 const TOPICS_KEY = "pi:topics";
@@ -48,6 +49,9 @@ const STATE_META = "pi:state:meta";
 const DATA_META = "pi:data:meta";
 const DATA_EXTRA = "pi:data:extra";
 const ASK_RECENT = "pi:ask:recent";
+const ROSTER_SYNC_KEY = "pi:roster-sync";
+// The only files the pipeline may write to the database folder in Box.
+const DB_FILES = new Set(["partner_intel_database.json", "partner_intel_insights.csv", "partner_intel_state.json"]);
 
 const MODEL = "claude-opus-5";
 const ASK_PROMPT_VERSION = "pi-ask-1";
@@ -130,6 +134,177 @@ async function boxAccessToken(env) {
   };
   await env.BOX_KV.put("box:tokens", JSON.stringify(fresh));
   return fresh.access_token;
+}
+
+
+/** Every item in a Box folder, all pages. */
+async function boxItems(token, folderId) {
+  const headers = { authorization: `Bearer ${token}` };
+  const entries = [];
+  for (let offset = 0; offset < 20000; offset += 1000) {
+    const res = await fetch(`${BOX_API}/folders/${folderId}/items?fields=type,id,name,size,sha1,created_at,modified_at&limit=1000&offset=${offset}`, { headers });
+    if (!res.ok) throw new Error(`Box API error (${res.status})`);
+    const page = await res.json();
+    for (const e of page.entries || []) {
+      entries.push({ type: e.type, id: e.id, name: e.name, size: e.size || 0, sha1: e.sha1 || "",
+        created_at: e.created_at || "", modified_at: e.modified_at || "" });
+    }
+    if (offset + 1000 >= (page.total_count || 0)) break;
+  }
+  return entries;
+}
+
+/** Write a text file into a Box folder, as a new version if the name is already there.
+ * Box rejects a second upload under the same name with a 409, so it is looked up first. */
+async function boxSaveText(token, folderId, name, content) {
+  const existing = (await boxItems(token, folderId)).find((e) => e.type === "file" && e.name === name);
+  const form = new FormData();
+  if (!existing) form.append("attributes", JSON.stringify({ name, parent: { id: folderId } }));
+  form.append("file", new Blob([content], { type: name.endsWith(".json") ? "application/json" : "text/csv" }), name);
+  const res = await fetch(existing ? `${BOX_UPLOAD_API}/files/${existing.id}/content` : `${BOX_UPLOAD_API}/files/content`,
+    { method: "POST", headers: { authorization: `Bearer ${token}` }, body: form });
+  if (!res.ok) throw new Error(`Box upload failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  const body = await res.json();
+  return { id: existing ? existing.id : ((body.entries || [])[0] || {}).id, updated: Boolean(existing) };
+}
+
+/** A UTF-8 file, or failing that Windows-1252: Salesforce and Excel export either. */
+function decodeBytes(bytes) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch { return new TextDecoder("windows-1252").decode(bytes); }
+}
+
+/* ---- a minimal .xlsx reader (a ZIP of XML), so the member list can be a spreadsheet ---- */
+
+const u16 = (b, o) => b[o] | (b[o + 1] << 8);
+const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+
+function zipDirectory(bytes) {
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+    if (u32(bytes, i) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0) throw new Error("Not a valid .xlsx file.");
+  const count = u16(bytes, end + 10);
+  let cursor = u32(bytes, end + 16);
+  const dec = new TextDecoder();
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    if (u32(bytes, cursor) !== 0x02014b50) throw new Error("Not a valid .xlsx file (bad directory).");
+    const nameLen = u16(bytes, cursor + 28), extraLen = u16(bytes, cursor + 30), commentLen = u16(bytes, cursor + 32);
+    out.push({ name: dec.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLen)), method: u16(bytes, cursor + 10),
+      size: u32(bytes, cursor + 20), offset: u32(bytes, cursor + 42) });
+    cursor += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
+async function zipRead(bytes, entry) {
+  if (u32(bytes, entry.offset) !== 0x04034b50) throw new Error("Not a valid .xlsx file (bad entry).");
+  const start = entry.offset + 30 + u16(bytes, entry.offset + 26) + u16(bytes, entry.offset + 28);
+  const data = bytes.subarray(start, start + entry.size);
+  if (entry.method === 0) return data;
+  if (entry.method !== 8) throw new Error(`Unsupported compression in .xlsx (${entry.method}).`);
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function decodeXml(t) {
+  return t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (w, c) => { const n = Number(c); return n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : w; })
+    .replace(/&amp;/g, "&");
+}
+
+const xmlText = (inner) => decodeXml([...inner.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((m) => m[1]).join(""));
+
+/** The first worksheet of an .xlsx as rows of strings. */
+export async function xlsxRows(bytes) {
+  const dir = zipDirectory(bytes);
+  const read = async (name) => {
+    const entry = dir.find((d) => d.name === name);
+    return entry ? new TextDecoder().decode(await zipRead(bytes, entry)) : null;
+  };
+  const shared = [];
+  const sst = await read("xl/sharedStrings.xml");
+  if (sst) for (const si of sst.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)) shared.push(xmlText(si[1]));
+  const sheet = dir.find((d) => d.name === "xl/worksheets/sheet1.xml")
+    || dir.filter((d) => /^xl\/worksheets\/sheet\d+\.xml$/.test(d.name)).sort((a, b) => a.name.localeCompare(b.name))[0];
+  if (!sheet) throw new Error("No worksheet found in the .xlsx file.");
+  const xml = new TextDecoder().decode(await zipRead(bytes, sheet));
+  const rows = [];
+  for (const row of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+    const cells = [];
+    for (const c of row[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const ref = /\br="([A-Z]+)\d+"/.exec(c[1]);
+      if (!ref) continue;
+      let col = 0;
+      for (const ch of ref[1]) col = col * 26 + (ch.charCodeAt(0) - 64);
+      const type = /\bt="(\w+)"/.exec(c[1]);
+      const inner = c[2] || "";
+      const v = /<v>([\s\S]*?)<\/v>/.exec(inner);
+      let value = "";
+      if (type && type[1] === "s") value = v ? (shared[Number(v[1])] ?? "") : "";
+      else if (type && type[1] === "inlineStr") value = xmlText(inner);
+      else if (v) value = decodeXml(v[1]);
+      cells[col - 1] = value;
+    }
+    rows.push(Array.from(cells, (x) => x ?? ""));
+  }
+  return rows;
+}
+
+/**
+ * Refresh the partner list from the newest .csv or .xlsx in the member-list folder in Box.
+ *
+ * An automatic refresh (the daily scan) is careful: it does nothing if the file is the one
+ * already applied, and if applying it as a full list would remove more than 30% of current
+ * members it adds and updates only, and says so, because a half-exported file would otherwise
+ * quietly mark half the members Former. A manual refresh previews first and applies what the
+ * person chose.
+ */
+async function syncRosterFromBox(env, opts) {
+  const settings = await readJson(env, SETTINGS_KEY, {});
+  if (!settings.rosterFolderId) return { skipped: "No member list folder is chosen." };
+  const token = await boxAccessToken(env);
+  if (!token) return { error: "Box is not connected." };
+  const files = (await boxItems(token, settings.rosterFolderId))
+    .filter((e) => e.type === "file" && !e.name.startsWith("~$") && /\.(csv|xlsx)$/i.test(e.name))
+    .sort((a, b) => b.modified_at.localeCompare(a.modified_at) || a.name.localeCompare(b.name));
+  if (!files.length) return { skipped: "There is no .csv or .xlsx file in the member list folder." };
+  const file = files[0];
+  const last = await readJson(env, ROSTER_SYNC_KEY, null);
+  if (opts.auto && last && last.fileId === file.id && last.sha1 === file.sha1) {
+    return { skipped: `The member list has not changed since ${String(last.at).slice(0, 10)}.`, file: { name: file.name } };
+  }
+  const res = await fetch(`${BOX_API}/files/${file.id}/content`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) return { error: `Box download failed (${res.status}).` };
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let rows;
+  try { rows = /\.xlsx$/i.test(file.name) ? await xlsxRows(bytes) : parseCsv(decodeBytes(bytes)); }
+  catch (e) { return { error: `Could not read ${file.name}: ${e.message}` }; }
+
+  const roster = await getRoster(env);
+  let mode = opts.mode === "merge" ? "merge" : "replace";
+  let result = applyRosterRows(roster, rows, mode);
+  if (result.error) return { error: `${file.name}: ${result.error}` };
+  let warning = "";
+  if (opts.auto && mode === "replace") {
+    const active = roster.partners.filter((p) => p.status === "Active").length;
+    if (active >= 10 && result.summary.deactivated.length > active * 0.3) {
+      warning = `The file would have marked ${result.summary.deactivated.length} of ${active} members as Former, so it was applied as add-and-update only. Check the file, then apply it by hand from the control panel.`;
+      mode = "merge";
+      result = applyRosterRows(roster, rows, "merge");
+    }
+  }
+  const out = { file: { name: file.name, modified_at: file.modified_at }, mode, summary: result.summary, warning };
+  if (opts.preview) return { preview: true, ...out };
+  roster.partners = result.partners;
+  await saveRoster(env, roster);
+  await env.BOX_KV.put(ROSTER_SYNC_KEY, JSON.stringify({ fileId: file.id, sha1: file.sha1, name: file.name,
+    at: new Date().toISOString(), mode, warning,
+    counts: { added: result.summary.added.length, deactivated: result.summary.deactivated.length,
+      reactivated: result.summary.reactivated.length, updated: result.summary.updated.length } }));
+  return { saved: true, ...out };
 }
 
 function githubHeaders(env) {
@@ -278,7 +453,11 @@ function columnIndex(header) {
  * Nothing is ever deleted: a partner who left keeps their history.
  */
 export function applyRosterCsv(roster, csvText, mode) {
-  const rows = parseCsv(csvText);
+  return applyRosterRows(roster, parseCsv(csvText), mode);
+}
+
+/** Same as applyRosterCsv, for rows already read from a CSV or a spreadsheet. */
+export function applyRosterRows(roster, rows, mode) {
   if (rows.length < 2) return { error: "The file has no data rows." };
   const index = columnIndex(rows[0]);
   if (index.name === undefined) {
@@ -390,6 +569,38 @@ async function publishDataset(env, dataset) {
   return meta;
 }
 
+let remapMemo = null; // { key, live }
+
+/**
+ * The dataset as seen with today's partner list. A company the notes named that the list did
+ * not have yet is stored as "n-<name>"; once the list has a partner of exactly that name (or
+ * an alias for it) the rows are pointed at it here, so a new member shows as a member at once
+ * without waiting for a re-link. Fuzzier matches still need the re-link, which does them in
+ * the pipeline, because there is one name-matching implementation and it is not this one.
+ */
+function withRoster(data, roster) {
+  const key = `${data.version}|${roster.updatedAt}`;
+  if (remapMemo && remapMemo.key === key) return remapMemo.live;
+  const byName = new Map();
+  for (const p of roster.partners) {
+    byName.set(nameKey(p.name), p.id);
+    for (const a of p.aliases) byName.set(nameKey(a), p.id);
+  }
+  const known = new Set(roster.partners.map((p) => p.id));
+  for (const [alias, id] of Object.entries(roster.aliases)) if (known.has(id)) byName.set(nameKey(alias), id);
+  const remap = new Map();
+  for (const c of data.companies || []) {
+    const id = byName.get(nameKey(c.name));
+    if (id) remap.set(c.id, id);
+  }
+  const live = remap.size
+    ? { ...data, remap, companies: data.companies.filter((c) => !remap.has(c.id)),
+        insights: data.insights.map((i) => (remap.has(i.company_id) ? { ...i, company_id: remap.get(i.company_id) } : i)) }
+    : { ...data, remap };
+  remapMemo = { key, live };
+  return live;
+}
+
 /** Every company a row can point to: the roster, plus companies the notes named that the
  * roster does not have. Roster edits show up here at once, with no re-scan. */
 function companyIndex(roster, data) {
@@ -425,6 +636,19 @@ function shapeInsight(i, index, labels, overrides) {
   };
 }
 
+/** The top-level Box sub-folders a row came from ("CIAIC", "Board Meetings"). Older datasets
+ * carry no source_folders field, so it is read from the file paths: "Notes/CIAIC/x.docx". */
+function sourcesOf(i) {
+  if (Array.isArray(i.source_folders) && i.source_folders.length) return i.source_folders;
+  if (i.source_folder) return [i.source_folder];
+  const found = new Set();
+  for (const s of i.sources || []) {
+    const parts = text(s.path).split("/").filter(Boolean);
+    found.add(parts.length > 1 ? parts[1] : "(root)");
+  }
+  return found.size ? [...found] : ["(root)"];
+}
+
 const first = (params, name) => text(params.get(name));
 const many = (params, name) => params.getAll(name).flatMap((v) => v.split("|")).map(text).filter(Boolean);
 
@@ -440,7 +664,10 @@ function filterInsights(data, index, overrides, params, extra = {}) {
   const days = Number(first(params, "days")) || 0;
   const from = first(params, "from") || (days ? daysAgo(days) : "");
   const to = first(params, "to");
-  const includeInternal = first(params, "internal") === "1";
+  const sources = new Set(many(params, "source"));
+  // Naming a source is an explicit choice, so Board Meetings shows its rows without the
+  // separate "internal" switch.
+  const includeInternal = first(params, "internal") === "1" || sources.size > 0;
   const excludeEstimated = first(params, "exact") === "1";
   const terms = nameKey(first(params, "q")).split(" ").filter(Boolean);
   const out = [];
@@ -450,6 +677,7 @@ function filterInsights(data, index, overrides, params, extra = {}) {
     if (kinds.size && !kinds.has(i.kind)) continue;
     if (topics.size && !topics.has(finalTopic(overrides, i.topic))) continue;
     if (events.size && !events.has(i.event_type)) continue;
+    if (sources.size && !sourcesOf(i).some((x) => sources.has(x))) continue;
     if (urgencies.size && !urgencies.has(i.urgency)) continue;
     if (company && i.company_id !== company) continue;
     if (from && (!i.date || i.date < from)) continue;
@@ -472,22 +700,22 @@ const URGENCY_ORDER = { high: 0, medium: 1, low: 2, none: 3 };
 function tally(map, key) { map.set(key, (map.get(key) || 0) + 1); }
 
 function facetsOf(rows, index, labels, overrides) {
-  const topic = new Map(), kind = new Map(), industry = new Map(), status = new Map(), event = new Map();
+  const topic = new Map(), kind = new Map(), industry = new Map(), status = new Map(), event = new Map(), source = new Map();
   for (const i of rows) {
     tally(topic, finalTopic(overrides, i.topic)); tally(kind, i.kind); tally(event, i.event_type || "Other");
+    for (const s of sourcesOf(i)) tally(source, s);
     const c = companyOf(index, i);
     tally(industry, c.industry); tally(status, c.status);
   }
   const list = (m, label = (k) => k) => [...m.entries()].sort((a, b) => b[1] - a[1])
     .map(([value, count]) => ({ value, label: label(value), count }));
   return { topic: list(topic, (t) => labels.get(t) || t), kind: list(kind), industry: list(industry),
-    status: list(status), eventType: list(event) };
+    status: list(status), eventType: list(event), source: list(source) };
 }
 
 /* ------------------------------------------------------------------ home, explore, profiles */
 
-function homeView(data, index, overrides, labels, days, exact) {
-  const params = new URLSearchParams({ days: String(days), ...(exact ? { exact: "1" } : {}) });
+function homeView(data, index, overrides, labels, days, params) {
   const rows = filterInsights(data, index, overrides, params);
   const issues = rows.filter((i) => ISSUE_KINDS.has(i.kind));
   const urgent = rows
@@ -643,11 +871,12 @@ function weightedTerms(i, label) {
  * evidence makes a decision. Only rows that describe something a company has (a solution,
  * an offer, a win, equipment) can answer "who can help", so problems are not searched.
  */
-export function shortlist(question, data, index, overrides, labels, limit = 10) {
+export function shortlist(question, data, index, overrides, labels, limit = 10, sources = null) {
   const query = [...new Set(tokenize(question))];
   const empty = { companies: [], docs: 0 };
   if (!query.length) return empty;
-  const docs = data.insights.filter((i) => i.scope !== "internal" && SOLVER_KINDS.has(i.kind) && i.company_id);
+  const docs = data.insights.filter((i) => i.scope !== "internal" && SOLVER_KINDS.has(i.kind) && i.company_id
+    && (!sources || !sources.size || sourcesOf(i).some((x) => sources.has(x))));
   if (!docs.length) return empty;
 
   const indexed = docs.map((i) => ({ i, terms: weightedTerms(i, labels.get(finalTopic(overrides, i.topic)) || "") }));
@@ -791,7 +1020,7 @@ function presentAnswer(stored, data, index, overrides, labels) {
   return {
     summary: stored.answer.summary, gaps: stored.answer.gaps, ranking: stored.ranking,
     matches: stored.answer.matches.map((m) => {
-      const c = index.get(m.company_id);
+      const c = index.get((data.remap && data.remap.get(m.company_id)) || m.company_id);
       return {
         strength: m.strength, why: m.why, caution: m.caution,
         company: c ? { id: c.id, name: c.name, industry: c.industry || "Unknown", status: c.status,
@@ -804,14 +1033,15 @@ function presentAnswer(stored, data, index, overrides, labels) {
   };
 }
 
-async function ask(env, data, roster, overrides, question) {
+async function ask(env, data, roster, overrides, question, sourceList = []) {
   const index = companyIndex(roster, data);
   const labels = topicLabels(data, overrides);
-  const key = `pi:ask:${await sha(`${ASK_PROMPT_VERSION}|${MODEL}|${data.version}|${nameKey(question)}`)}`;
+  const sources = new Set(sourceList);
+  const key = `pi:ask:${await sha(`${ASK_PROMPT_VERSION}|${MODEL}|${data.version}|${[...sources].sort().join(",")}|${nameKey(question)}`)}`;
   const hit = await readJson(env, key, null);
   if (hit) return presentAnswer({ ...hit, cached: true }, data, index, overrides, labels);
 
-  const short = shortlist(question, data, index, overrides, labels);
+  const short = shortlist(question, data, index, overrides, labels, 10, sources);
   const considered = { companies: short.companies.length, insights: short.docs };
   if (!short.companies.length) {
     return presentAnswer({ answer: { summary: "", matches: [], gaps: "Nothing in the notes matches that closely." },
@@ -882,19 +1112,39 @@ async function handleRelay(route, request, env) {
     if (!token) return json({ error: "Box is not connected." }, 409);
     const id = url.searchParams.get("id") || "";
     if (!/^\d+$/.test(id)) return json({ error: "A Box folder id is required." }, 400);
-    const headers = { authorization: `Bearer ${token}` };
-    const entries = [];
-    for (let offset = 0; offset < 20000; offset += 1000) {
-      const res = await fetch(`${BOX_API}/folders/${id}/items?fields=type,id,name,size,sha1,created_at,modified_at&limit=1000&offset=${offset}`, { headers });
-      if (!res.ok) return json({ error: `Box API error (${res.status})` }, 502);
-      const page = await res.json();
-      for (const e of page.entries || []) {
-        entries.push({ type: e.type, id: e.id, name: e.name, size: e.size || 0, sha1: e.sha1 || "",
-          created_at: e.created_at || "", modified_at: e.modified_at || "" });
-      }
-      if (offset + 1000 >= (page.total_count || 0)) break;
-    }
-    return json({ entries });
+    try { return json({ entries: await boxItems(token, id) }); }
+    catch (e) { return json({ error: String(e.message).slice(0, 200) }, 502); }
+  }
+  if (sub === "roster-sync" && method === "POST") {
+    return json(await syncRosterFromBox(env, { auto: true }));
+  }
+  if (sub === "box/save" && method === "POST") {
+    const body = await readBody(request);
+    const name = text(body && body.name);
+    if (!DB_FILES.has(name)) return json({ error: "That file name is not allowed." }, 400);
+    const content = typeof (body && body.text) === "string" ? body.text : "";
+    if (content.length > 45_000_000) return json({ error: "That file is over Box's 50 MB upload limit." }, 413);
+    const settings = await readJson(env, SETTINGS_KEY, {});
+    if (!settings.dataFolderId) return json({ error: "No database folder is chosen." }, 409);
+    const token = await boxAccessToken(env);
+    if (!token) return json({ error: "Box is not connected." }, 409);
+    try { return json({ ok: true, name, bytes: content.length, ...(await boxSaveText(token, settings.dataFolderId, name, content)) }); }
+    catch (e) { return json({ error: String(e.message).slice(0, 300) }, 502); }
+  }
+  if (sub === "box/load" && method === "GET") {
+    const name = url.searchParams.get("name") || "";
+    if (!DB_FILES.has(name)) return json({ error: "That file name is not allowed." }, 400);
+    const settings = await readJson(env, SETTINGS_KEY, {});
+    if (!settings.dataFolderId) return json({ error: "No database folder is chosen." }, 409);
+    const token = await boxAccessToken(env);
+    if (!token) return json({ error: "Box is not connected." }, 409);
+    let file;
+    try { file = (await boxItems(token, settings.dataFolderId)).find((e) => e.type === "file" && e.name === name); }
+    catch (e) { return json({ error: String(e.message).slice(0, 200) }, 502); }
+    if (!file) return json({ error: "Not found" }, 404);
+    const res = await fetch(`${BOX_API}/files/${file.id}/content`, { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) return json({ error: `Box download failed (${res.status})` }, 502);
+    return new Response(res.body, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
   }
   if (sub === "box/file" && method === "GET") {
     const token = await boxAccessToken(env);
@@ -956,20 +1206,32 @@ export async function handlePartnerIntelApi(route, request, env) {
       const [settings, roster, meta, report, token] = await Promise.all([
         readJson(env, SETTINGS_KEY, { folderId: "", folderName: "" }), getRoster(env),
         readJson(env, DATA_META, null), readJson(env, REPORT_KEY, null), boxAccessToken(env)]);
+      const rosterSync = await readJson(env, ROSTER_SYNC_KEY, null);
       return json({
         settings, roster: rosterSummary(roster), dataset: meta,
         relinkNeeded: Boolean(meta) && (meta.roster_updated_at || "") !== (roster.updatedAt || ""),
-        report, boxConnected: Boolean(token), githubConfigured: Boolean(env.GITHUB_TOKEN && env.GITHUB_REPO),
+        report, rosterSync, boxConnected: Boolean(token), githubConfigured: Boolean(env.GITHUB_TOKEN && env.GITHUB_REPO),
         claudeConfigured: Boolean(env.partner_intel_claude_api),
       });
     }
     if (route === "settings" && method === "POST") {
-      const body = await readBody(request);
-      const folderId = text(body && body.folderId);
-      if (!/^\d+$/.test(folderId)) return json({ error: "Choose a Box folder." }, 400);
-      const settings = { folderId, folderName: text(body.folderName).slice(0, 200), updatedAt: new Date().toISOString() };
+      const body = (await readBody(request)) || {};
+      const fields = { notes: ["folderId", "folderName"], data: ["dataFolderId", "dataFolderName"],
+        roster: ["rosterFolderId", "rosterFolderName"] };
+      const which = text(body.which) || "notes";
+      if (!hasOwn(fields, which)) return json({ error: "Unknown folder setting." }, 400);
+      const folderId = text(body.folderId);
+      if (!/^\d+$/.test(folderId) || folderId === "0") return json({ error: "Choose a Box folder." }, 400);
+      const settings = { ...(await readJson(env, SETTINGS_KEY, {})), updatedAt: new Date().toISOString() };
+      settings[fields[which][0]] = folderId;
+      settings[fields[which][1]] = text(body.folderName).slice(0, 200);
       await env.BOX_KV.put(SETTINGS_KEY, JSON.stringify(settings));
       return json({ settings });
+    }
+    if (route === "roster/sync" && method === "POST") {
+      const body = (await readBody(request)) || {};
+      const result = await syncRosterFromBox(env, { auto: false, preview: Boolean(body.preview), mode: text(body.mode) });
+      return json(result, result.error ? 502 : 200);
     }
     if (route === "box/folders" && method === "GET") {
       const token = await boxAccessToken(env);
@@ -1138,19 +1400,22 @@ export async function handlePartnerIntelApi(route, request, env) {
     }
 
     // ---- everything below reads the published dataset --------------------------------
-    const needsData = ["home", "insights", "companies", "company", "ask"];
+    const needsData = ["home", "insights", "companies", "company", "ask", "facets"];
     if (!needsData.includes(route) && route !== "recent-questions") return json({ error: "Not found" }, 404);
     if (route === "recent-questions" && method === "GET") return json({ items: await readJson(env, ASK_RECENT, []) });
 
-    const [data, roster, overrides] = await Promise.all([loadDataset(env), getRoster(env), getTopicOverrides(env)]);
-    if (!data) return json({ error: "There is no data yet. Run a scan from the control panel.", empty: true }, 409);
+    const [raw, roster, overrides] = await Promise.all([loadDataset(env), getRoster(env), getTopicOverrides(env)]);
+    if (!raw) return json({ error: "There is no data yet. Run a scan from the control panel.", empty: true }, 409);
+    const data = withRoster(raw, roster);
     const index = companyIndex(roster, data);
     const labels = topicLabels(data, overrides);
 
     if (route === "home" && method === "GET") {
       const days = Math.min(365, Math.max(1, Math.floor(Number(params.get("days"))) || 30));
-      return json({ ...homeView(data, index, overrides, labels, days, params.get("exact") === "1"),
-        generatedAt: data.generated_at });
+      const view = new URLSearchParams({ days: String(days) });
+      if (params.get("exact") === "1") view.set("exact", "1");
+      for (const name of ["source", "status", "industry"]) for (const v of params.getAll(name)) view.append(name, v);
+      return json({ ...homeView(data, index, overrides, labels, days, view), generatedAt: data.generated_at });
     }
     if (route === "insights" && method === "GET") {
       const rows = filterInsights(data, index, overrides, params);
@@ -1164,13 +1429,19 @@ export async function handlePartnerIntelApi(route, request, env) {
         items: rows.slice(offset, offset + limit).map((i) => shapeInsight(i, index, labels, overrides)),
         facets: facetsOf(rows, index, labels, overrides), generatedAt: data.generated_at });
     }
+    if (route === "facets" && method === "GET") {
+      const counts = new Map();
+      for (const i of data.insights) for (const s of sourcesOf(i)) tally(counts, s);
+      return json({ sources: [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([value, count]) => ({ value, count })) });
+    }
     if (route === "companies" && method === "GET") {
       const list = companiesView(data, roster, params);
       return json({ total: list.length, items: list.slice(0, 500),
         industries: [...new Set([...index.values()].map((c) => c.industry || "Unknown"))].sort() });
     }
     if (route === "company" && method === "GET") {
-      const view = profileView(data, roster, overrides, labels, text(params.get("id")), params.get("internal") === "1");
+      const asked = text(params.get("id"));
+      const view = profileView(data, roster, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
       return view ? json(view) : json({ error: "Company not found." }, 404);
     }
     if (route === "ask" && method === "POST") {
@@ -1178,7 +1449,8 @@ export async function handlePartnerIntelApi(route, request, env) {
       const question = text(body && body.question);
       if (question.length < 8) return json({ error: "Ask a full question, such as what the partner needs." }, 400);
       if (question.length > 600) return json({ error: "Keep the question under 600 characters." }, 400);
-      return json(await ask(env, data, roster, overrides, question));
+      const sources = (Array.isArray(body.sources) ? body.sources : []).map(text).filter(Boolean).slice(0, 40);
+      return json(await ask(env, data, roster, overrides, question, sources));
     }
     return json({ error: "Not found" }, 404);
   } catch (e) {
