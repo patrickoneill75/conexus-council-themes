@@ -1800,7 +1800,10 @@ export async function handlePartnerIntelApi(route, request, env) {
         { program: name, rank, days, exact: params.get("exact") === "1" });
       const meetings = meetingGroups(filterInsights(data, index, overrides, new URLSearchParams({ source: name })),
         index, overrides, labels);
-      return json({ program, days, rank, trending: t.trending, uncategorized: t.uncategorized,
+      // "compared" is false when no other program has issues in the window to compare with;
+      // the order is then by counts, and the page must not claim otherwise.
+      const compared = rank === "distinct" && t.groups.some((g) => g.programShare !== undefined);
+      return json({ program, days, rank, compared, trending: t.trending, uncategorized: t.uncategorized,
         issueCount: t.issues.length, meetings: meetings.slice(0, 300), meetingTotal: meetings.length,
         needsUpdate: (Number(data.schema) || 1) < 2 });
     }

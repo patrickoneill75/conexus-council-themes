@@ -3590,6 +3590,15 @@ test("partner_intel: BUG each program showed the same top topics as Home; a prog
   assert.notEqual(pcn.trending[0].topic, adapt.trending[0].topic, "two programs do not share a number one");
   assert.notEqual(pcn.trending[0].topic, home.trending[0].topic, "and a program's number one is not simply Home's");
   assert.equal(pcn.rank, "distinct");
+  assert.equal(pcn.compared, true);
+});
+
+test("partner_intel: BUG a program with nothing to compare against still claimed a distinctive ranking", async () => {
+  const rows = [ins({ topic: "quality", sources: [{ id: "1", name: "a", path: "Raw Notes/PCN" }] })];
+  const { env, token } = await piEnv(rows);
+  const pcn = await getJson("program?name=PCN&days=0", env, token);
+  assert.equal(pcn.compared, false, "no other program, so the order is by counts and the page must say so");
+  assert.equal((await getJson("program?name=PCN&days=0&rank=common", env, token)).compared, false);
 });
 
 test("partner_intel: a program's topic carries how many of its meetings raised it and how often other programs did", async () => {

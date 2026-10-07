@@ -275,8 +275,9 @@
         [["distinct", "Most distinctive"], ["common", "Most raised"]].map(function (w) {
           return '<button data-r="' + w[0] + '"' + (state.programRank === w[0] ? ' class="on"' : "") + ">" + w[1] + "</button>";
         }).join("") + "</div></div><p class=\"sub\">" +
-        (state.programRank === "common" ? "The topics raised in the most meetings of this program, as on Home."
-          : "The topics that set this program apart: raised in many of its meetings and less often in other programs.") +
+        (state.programRank === "common" ? "The topics raised by the most companies in this program, as on Home."
+          : r.compared ? "The topics that set this program apart: raised in many of its meetings and less often in other programs."
+          : "No other program has issues in this window to compare with, so these are the topics raised by the most companies.") +
         (state.programDays ? " Window applied." : "") + "</p><div id=\"trend\"></div>" +
         '<h2 style="margin-top:26px">Recent data</h2><p class="sub">Grouped by date, and by cohort, company or meeting. Open one for its issues, solutions and wins.</p>' +
         '<div id="meetings"></div><div id="moreM"></div>';
