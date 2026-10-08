@@ -1032,6 +1032,8 @@ If no Database folder is chosen the scan still works, and **Last scan** says not
 2. The note's format is recognized and cut into units: one unit per company in a running Copilot onboarding file, one per President and CEO Network template, one per transcript. Placeholders ("Theme 3: Insert") and ice-breaker themes are removed in code.
 3. Each unit is sent to Claude once, with a strict tool schema. Every row it returns must carry a verbatim quote. Code checks the quote against the notes, and a row whose quote is not there is dropped and counted in **Last scan** (rows dropped).
 4. Company and person names are matched to the partner list in code. A name that fits two partners (for example "Toyota") is queued for review, never guessed.
+   - **The file name counts.** A call's notes often never say the company's name: "Ben Larson - Evonik.txt" says "Evonik" only in its name, and Ben mentions that Eli Lilly founded the site. When the file name, a partner contact named in it ("30 Minutes with Patrick O'Neill - Jerry Grangier.vtt"), or a folder below the program folder ("Field Demo Visits/Aegis - 10.05.26") points to exactly one partner, Claude is told the file is named for that partner and not to take the company from history mentioned in passing. A name that points to two partners, or to none, adds nothing. A file with company section headings (the Copilot onboarding file) keeps its headings.
+   - A row that still names a different partner from the file's is kept as Claude read it (it is often a supplier or customer mentioned in the call) and shows a **Check company** marker on its card.
 5. The same date and company in two files (a Word file and a text summary of one meeting) counts as one meeting.
 
 ### Dates

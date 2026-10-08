@@ -57,6 +57,9 @@ class Unit:
     hint: str = ""
     part: int = 1
     parts: int = 1
+    # The one partner the file's name points to ("Ben Larson - Evonik.txt"), set by the scan
+    # from the partner list. Notes often never say the company's name; the file name does.
+    file_company: str = ""
 
 
 @dataclass

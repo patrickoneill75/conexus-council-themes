@@ -158,6 +158,12 @@ def user_message(unit: Unit, event_type: str, staff: list[str]) -> str:
         context.append(f"About this text: {unit.hint}")
     if unit.default_company:
         context.append(f"Section heading (the company this section is about): {unit.default_company}")
+    if unit.file_company:
+        context.append(f"The file is named for {unit.file_company}. In a one-on-one call or a visit, the "
+                       "people speaking who are not Conexus staff or outside consultants work for it: use it "
+                       "as the company for their statements unless the notes say they work elsewhere. Do not "
+                       "take the company from history mentioned in passing, such as who founded or used to "
+                       "own a site.")
     if unit.attendees:
         context.append("Attendees (name | affiliation as written):\n"
                        + "\n".join(f"{n} | {a}" if a else n for n, a in unit.attendees))
@@ -175,6 +181,9 @@ def cache_key(unit: Unit, event_type: str, model: str) -> str:
         "text": normalize(unit.text), "company": unit.default_company,
         "attendees": unit.attendees, "hint": unit.hint, "part": [unit.part, unit.parts],
     }
+    # Only when set, so every unit without one keeps the key it always had and is not re-read.
+    if unit.file_company:
+        payload["file_company"] = unit.file_company
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()[:32]
 
 

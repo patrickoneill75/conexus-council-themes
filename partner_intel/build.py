@@ -179,6 +179,13 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                         review.append("not_on_roster")
                 if not company_id:
                     review.append("no_company")
+                elif unit.get("file_company"):
+                    # The file is named for one partner and the row names another. Often right (a
+                    # supplier or customer mentioned in the call), sometimes a misreading, so it
+                    # is flagged for a person to check rather than changed.
+                    named = resolver.company(unit["file_company"])
+                    if named.ok and named.company_id != company_id:
+                        review.append("company_differs_from_file")
                 scope = entry.get("event", {}).get("scope", "partner")
                 if (row["speaker_is_conexus_staff"] or staff_resolver.is_staff(row["speaker"])
                         or _CONEXUS.search(row["company"] or "")):

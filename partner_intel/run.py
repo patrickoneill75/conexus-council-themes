@@ -14,8 +14,10 @@ rebuild  skip Box and Claude entirely; re-join the stored results with the curre
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import re
 import sys
 import threading
 from collections import Counter
@@ -23,10 +25,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from . import config, extract, shape as shape_mod, text as text_mod
-from .build import build_dataset, source_folder
+from .build import _file_stem, build_dataset, source_folder
 from . import export
 from .dates import resolve_date
 from .relay import Api
+from .resolve import Resolver
 from .roster import Roster
 
 IGNORED_NAMES = {".ds_store", "thumbs.db"}
@@ -54,7 +57,31 @@ def walk(api, root_id: str, root_name: str):
 def _unit_record(unit, key: str, date: str, source: str) -> dict:
     return {"key": key, "label": unit.label, "default_company": unit.default_company,
             "attendees": [list(a) for a in unit.attendees], "part": unit.part, "parts": unit.parts,
-            "date": date, "date_source": source}
+            "date": date, "date_source": source, "file_company": unit.file_company}
+
+
+def file_company(resolver: Resolver, name: str, path: str = "") -> str:
+    """The one partner a file's name points to, or "".
+
+    "Ben Larson - Evonik.txt" gives Evonik Industries; so does a call named for a partner's
+    contact ("30 Minutes with Patrick O'Neill - Jerry Grangier.vtt" gives Zoeller), and so does
+    a folder below the program folder ("Field Demo Visits/Aegis - 10.05.26/transcript.txt").
+    Every piece is tried; when the pieces point to two partners, or to none, the answer is
+    nothing, because a guess here would be repeated for every statement in the file."""
+    folders = [p for p in (path or "").split("/") if p][2:]  # below the chosen root and the program
+    found: set[str] = set()
+    for text in [_file_stem(name)] + folders:
+        for piece in [text] + [p.strip() for p in re.split(r"\s[-\u2013\u2014]\s|[_,;|()+]", text) if p.strip()]:
+            hit = resolver.company(piece)
+            if hit.ok:
+                found.add(hit.company_id)
+            elif not resolver.is_staff(piece):
+                person = resolver.person(piece)
+                if person:
+                    found.add(person)
+    if len(found) != 1:
+        return ""
+    return resolver.roster.by_id()[found.pop()]["name"]
 
 
 def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
@@ -211,6 +238,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     seen_ids: set[str] = set()
     pending: list[dict] = []
     ignored: Counter = Counter()
+    resolver = Resolver(roster)
     needs_conversion, unreadable, no_text, too_large = [], [], [], []
 
     for f in walk(api, cfg["folderId"], cfg.get("folderName") or "Notes"):
@@ -259,6 +287,11 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             unreadable.append({"file": f["path"] + "/" + f["name"], "error": str(e)})
             continue
         s = shape_mod.classify(f["name"], f["path"], doc)
+        # A file with section headings already names the company of each section.
+        if s.units and not any(u.default_company for u in s.units):
+            named = file_company(resolver, f["name"], f["path"])
+            if named:
+                s.units = [dataclasses.replace(u, file_company=named) for u in s.units]
         if not s.units:
             entry.update(status="done", error=s.skipped_reason, units=[],
                          event={"date": "", "date_source": "", "type": s.event_type, "series": s.series,
