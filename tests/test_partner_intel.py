@@ -863,6 +863,55 @@ class RunTests(unittest.TestCase):
         self.assertNotIn("archived_results", report)
         self.assertFalse(report.get("box_errors"))
 
+    def test_BUG_a_call_named_for_one_partner_was_credited_to_a_company_only_mentioned_in_it(self):
+        """BUG: "Ben Larson - Evonik.txt" never says "Evonik". Ben said the site was founded by
+        Eli Lilly, Claude credited his statements to Eli Lilly, and nothing checked it, because
+        the file name, the only place the company was named, never reached Claude or the build."""
+        call = ("Megan: Our plant was founded by Zoeller decades ago, and today the hardest problem is hiring "
+                "machinists because so many are retiring.\n" * 3).encode()
+        api = FakeApi({"30": {"name": "Megan Burakiewicz - Lucas Oil.txt", "folder": "Industry Connection", "data": call}})
+        seen = []
+
+        def model(unit, event_type, staff, model_id):
+            seen.append(extract.user_message(unit, event_type, staff))
+            line = unit.text.split("\n")[0]
+            # What Claude did: took the company from the site's history.
+            return [row(company="Zoeller", speaker="Megan", quote=line[:80], title="Hiring machinists is hard",
+                        detail=line[:100])], {"input": 1, "output": 1}
+        run.run("scan", api=api, caller=model, model="m")
+        self.assertIn("The file is named for Lucas Oil.", seen[0], "the company from the file name reaches Claude")
+        self.assertIn("who founded or used to own a site", seen[0])
+        flagged = api.published["insights"][0]
+        self.assertEqual(flagged["company_id"], "c-zoeller", "Claude's reading is kept, not overwritten")
+        self.assertIn("company_differs_from_file", flagged["review"], "and flagged for a person to check")
+
+    def test_a_file_named_for_a_contact_or_in_a_company_folder_points_to_that_partner(self):
+        res = resolve.Resolver(ROSTER)
+        self.assertEqual(run.file_company(res, "Ben Larson - Lucas Oil.txt"), "Lucas Oil")
+        self.assertEqual(run.file_company(res, "30 Minutes with Patrick O'Neill - Jerry Grangier.vtt"), "Zoeller Custom Molding",
+                         "a partner's contact names the partner; Conexus staff are ignored")
+        self.assertEqual(run.file_company(res, "transcript.txt", "Notes/Field Demo Visits/Mursix - 10.05.26"), "Mursix")
+        self.assertEqual(run.file_company(res, "Q3 Southern CIAIC Meeting Notes.pdf", "Notes/CIAIC"), "")
+        self.assertEqual(run.file_company(res, "Lucas Oil + Mursix joint call.txt"), "", "two partners: no guess")
+        self.assertEqual(run.file_company(res, "Jerry Grangier - Lucas Oil.txt"), "", "a contact and a company that disagree: no guess")
+
+    def test_only_units_named_for_a_partner_change_their_cache_key(self):
+        """A unit with no file company keeps the key it always had, so this change re-reads nothing else."""
+        unit = shape.Unit(text="Some notes.", default_company="")
+        old_payload = {"v": extract.PROMPT_VERSION, "model": "m", "event_type": "Other", "text": extract.normalize(unit.text),
+                       "company": "", "attendees": [], "hint": "", "part": [1, 1]}
+        old_key = hashlib.sha256(json.dumps(old_payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()[:32]
+        self.assertEqual(extract.cache_key(unit, "Other", "m"), old_key)
+        named = shape.Unit(text="Some notes.", file_company="Lucas Oil")
+        self.assertNotEqual(extract.cache_key(named, "Other", "m"), old_key)
+
+    def test_headed_sections_keep_their_own_company_not_the_file_name(self):
+        api, claude = FakeApi(self.files()), Counter()
+        api.files["10"]["name"] = "Lucas Oil Copilot Onboarding Notes.docx"
+        run.run("scan", api=api, caller=claude, model="m")
+        units = api.state["registry"]["10"]["units"]
+        self.assertEqual({u["file_company"] for u in units}, {""}, "each section names its own company")
+
     def test_trial_limit_reads_only_that_many_files(self):
         api, claude = FakeApi(self.files()), Counter()
         report = run.run("scan", limit=1, api=api, caller=claude, model="m")

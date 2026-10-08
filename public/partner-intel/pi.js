@@ -59,6 +59,11 @@
                     : '<span class="co">' + PI.esc(co.name) + "</span>";
       head += PI.pill("info", co.industry || "Unknown");
       head += PI.pill(co.status === "Active" ? "good" : "info", PI.statusLabel[co.status] || co.status || "Unknown");
+      // The notes' file is named for a different partner. Often right (a supplier mentioned in
+      // the call), sometimes a misreading, so it is shown for a person to check.
+      if ((i.review || []).indexOf("company_differs_from_file") >= 0) {
+        head += '<span class="pill medium" title="The source file is named for a different partner. Check which company said this.">Check company</span>';
+      }
     }
     var urgentProblem = i.kind === "problem" && i.urgency !== "none";
     if (!urgentProblem) head += PI.pill("info", PI.kindLabel[i.kind] || i.kind);
