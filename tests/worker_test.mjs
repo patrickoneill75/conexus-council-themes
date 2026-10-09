@@ -2993,6 +2993,10 @@ const SOLVERS = () => [
   ins({ kind: "offer", urgency: "none", company_id: "c-b", title: "Quality system consulting", detail: "Offers help standing up an ISO quality management system.", topic: "quality", tags: ["iso"], solves: "quality system" }),
   ins({ kind: "win", urgency: "none", company_id: "c-c", title: "Hired apprentices", detail: "Placed five apprentices in the machine shop.", topic: "talent_pipeline", tags: ["apprentice"] }),
 ];
+/** Ask makes a small Haiku call for related search terms before ranking; this answers it. */
+const termsOut = (terms) => okJson({ content: [{ type: "tool_use", name: "search_terms", input: { terms } }], usage: { input_tokens: 5, output_tokens: 3 } });
+const isExpand = (init) => { try { return JSON.parse(init.body).tools[0].name === "search_terms"; } catch { return false; } };
+const expanding = (handler, terms = []) => (url, init) => (isExpand(init) ? termsOut(terms) : handler(url, init));
 const rankOut = (matches, extra = {}) => okJson({ content: [{ type: "tool_use", name: "rank_matches", input: { summary: "s", matches, gaps: "", ...extra } }], usage: { input_tokens: 10, output_tokens: 5 } });
 
 test("partner_intel: ask without a Claude key returns a labeled keyword ranking and saves nothing", async () => {
@@ -3017,7 +3021,7 @@ test("partner_intel: ask never shows a company or evidence the model was not giv
       { company_id: "c-b", strength: "medium", why: "No evidence cited.", evidence_ids: ["made-up"], caution: "" },
     ]);
   };
-  const ask = () => withFetch(handler, () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
+  const ask = () => withFetch(expanding(handler), () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
   const first = await (await ask()).json();
   assert.equal(first.matches.length, 1, "unknown company and match with no valid evidence are dropped");
   assert.equal(first.matches[0].company.id, "c-a");
@@ -3046,7 +3050,8 @@ test("partner_intel: ask never shows a company or evidence the model was not giv
   assert.equal((await (await ask()).json()).cached, false);
   assert.equal(bodies.length, 2);
   const usage = (await getJson("status", env, token)).usage.thisMonth.ask;
-  assert.deepEqual([usage.calls, usage.input, usage.output, usage.reused], [2, 20, 10, 2], "the meter counts paid calls and reuses");
+  assert.deepEqual([usage.calls, usage.input, usage.output, usage.reused], [3, 25, 13, 2],
+    "the meter counts paid calls (two rankings and one search-term call, saved for the repeats) and reuses");
 });
 
 test("partner_intel: a failed Claude call is an error and is not saved as an answer", async () => {
@@ -3384,7 +3389,7 @@ test("partner_intel: Ask can be limited to source folders, and the saved answer 
     const ids = [...sent.matchAll(/"company_id": "(c-\w)"/g)].map((m) => m[1]);
     return rankOut(ids.map((id) => ({ company_id: id, strength: "high", why: "Has it.", evidence_ids: [rows[id === "c-a" ? 0 : 1].id], caution: "" })));
   };
-  const ask = (sources) => withFetch(handler, async () => (await pi("ask", piReq("ask", "POST", { question: "Who has quality inspection systems?", sources }, token), env)).json());
+  const ask = (sources) => withFetch(expanding(handler), async () => (await pi("ask", piReq("ask", "POST", { question: "Who has quality inspection systems?", sources }, token), env)).json());
   assert.deepEqual((await ask([])).matches.map((m) => m.company.id).sort(), ["c-a", "c-b"]);
   assert.deepEqual((await ask(["ADAPT"])).matches.map((m) => m.company.id), ["c-b"], "only the chosen source's companies were offered");
   assert.equal(calls, 2);
@@ -3572,8 +3577,8 @@ test("partner_intel: Ask sends the fallback beta header, summaries do not", asyn
   const rows = SOLVERS();
   const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
   const heads = [];
-  await withFetch((url, init) => { heads.push(init.headers["anthropic-beta"]); return rankOut([
-    { company_id: "c-a", strength: "high", why: "Built it.", evidence_ids: [rows[0].id], caution: "" }]); },
+  await withFetch(expanding((url, init) => { heads.push(init.headers["anthropic-beta"]); return rankOut([
+    { company_id: "c-a", strength: "high", why: "Built it.", evidence_ids: [rows[0].id], caution: "" }]); }),
   () => pi("ask", piReq("ask", "POST", { question: "Who has an AI powered quality inspection system?" }, token), env));
   assert.deepEqual(heads, ["server-side-fallback-2026-07-01"]);
 });
@@ -3792,6 +3797,76 @@ test("partner_intel: Find solution asks for other partners, never the company th
   assert.deepEqual(excluded.matches.map((m) => m.company.id), ["c-b"], "the company with the problem is left out");
   assert.deepEqual((await ask({ question, exclude: "constructor" })).matches.map((m) => m.company.id).sort(), ["c-a", "c-b"],
     "an unknown company to exclude is ignored");
+});
+
+/** The CMMC question from the field, and the real notes that answer it (from the Box export),
+ * among ordinary notes about other things. */
+const CMMC_QUESTION = "CMMC work limits what can be put into AI\nCompany is still in the middle of CMMC and unsure what can be put into AI tools.";
+function cmmcRows() {
+  const sol = (company, title, detail, tags = [], kind = "solution") => ins({ kind, urgency: "none", status: "not_applicable", company_id: company,
+    title, detail, tags, solves: "", topic: "ai_adoption", meeting_id: `m-${company}-${title.length}`, meeting_label: company });
+  const prob = (company, title, detail, kind = "problem") => ins({ kind, urgency: "medium", status: "open", company_id: company, title, detail,
+    tags: [], topic: "ai_adoption", meeting_id: `m-${company}-${title.length}`, meeting_label: company });
+  const noise = ["Apprenticeship with Ivy Tech for machinists", "Robotic welding cell cut cycle time", "ERP migration to a cloud system",
+    "Lean training for supervisors", "Bar-fed machines allow lights-out production", "Vision inspection on the press line",
+    "Wage study used to set technician pay", "New CNC lathe added capacity", "Forklift safety program cut incidents",
+    "Shared maintenance technicians across shifts", "Supplier scorecards improved on-time delivery", "Solar array lowered energy cost",
+    "Customer portal for order status", "Cross-training plan for assemblers", "Predictive maintenance sensors on compressors",
+    "Recruiting through high school tours", "Kaizen events every quarter", "3D printed fixtures for assembly", "AI quoting pilot for sheet metal jobs",
+    "AI scheduling tool for the paint line"];
+  return [
+    ...noise.map((t, n) => sol(`c-n${n}`, t, `${t}. Results were reported in the meeting.`, ["operations"])),
+    sol("c-evonik", "Secure AI use via Copilot and sanitized offline development",
+      "Evonik is compliant and secure within Microsoft Copilot, builds offline without sensitive data, and moves human-vetted code into a private production environment.", ["copilot", "data security"]),
+    sol("c-jasper", "Starting small with AI and focusing on data security",
+      "The company starts with reasonable first AI projects and avoids putting sensitive information into public models.", ["ai", "data security"]),
+    sol("c-astemo", "Corporate Copilot license rolled out with approved AI tools",
+      "Corporate approved AI tools with safeguards, including Copilot with Claude and ChatGPT agents, are available.", ["copilot", "ai tools"]),
+    sol("c-flexible", "Claude Teams adopted for prints, quoting and tooling",
+      "Engineering uses it to evaluate prints, quote, and figure out tooling, keeping ITAR drawings out.", ["claude", "itar"]),
+    sol("c-leaf", "Introduce Connexus to Carmel cybersecurity advisory firm",
+      "Chad offered to introduce a Carmel-based cybersecurity advisory company working with larger organizations.", ["cybersecurity"], "offer"),
+    prob("c-aegis", "CMMC work limits what can be put into AI", "Company is still in the middle of CMMC and unsure what can be put into AI tools."),
+    prob("c-ts", "Pursuing CMMC certification with audit this year", "Thomas & Skinner is pursuing CMMC certification, audit scheduled this year, seen as a sales advantage."),
+    prob("c-overton", "Complete CMMC certification by 2026", "Overton plans CMMC certification by 2026 for DoD contracts.", "commitment"),
+  ];
+}
+const CMMC_TERMS = ["cybersecurity", "NIST 800-171", "CUI", "ITAR", "data security", "sensitive data", "AI policy", "AI governance",
+  "approved AI tools", "Copilot", "compliance"];
+
+test("partner_intel: BUG Ask found no one for a long question, because a note had to share a third of its words", async () => {
+  const { shortlist } = await mod("partner_intel.js");
+  const data = { insights: cmmcRows() };
+  const ids = (opts) => shortlist(CMMC_QUESTION, data, { get: () => null }, {}, new Map(), 10, null, "c-aegis", opts).companies.map((c) => c.id);
+  // Without related terms, only the question's own words: the notes that share "AI" and "tools" still come through.
+  assert.ok(ids({}).includes("c-astemo"), `a long question still finds notes sharing two of its words (${ids({})})`);
+  // With the related terms Claude supplies, the notes that actually answer it come first.
+  const found = ids({ terms: CMMC_TERMS });
+  for (const id of ["c-evonik", "c-jasper", "c-astemo", "c-flexible", "c-leaf"]) assert.ok(found.includes(id), `${id} is a candidate (${found})`);
+  assert.ok(!found.some((id) => /^c-n\d/.test(id) && !["c-n18", "c-n19"].includes(id)), `unrelated notes stay out (${found})`);
+  assert.ok(!found.includes("c-aegis"), "never the company that asked");
+});
+
+test("partner_intel: Ask searches with related terms, and lists companies working through the same thing", async () => {
+  const rows = cmmcRows();
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  let offered = [];
+  const handler = (url, init) => {
+    const sent = JSON.parse(init.body).messages[0].content;
+    offered = [...new Set([...sent.matchAll(/"company_id": "([\w-]+)"/g)].map((m) => m[1]))];
+    const evidence = (id) => rows.find((r) => r.company_id === id).id;
+    return rankOut(offered.filter((id) => ["c-evonik", "c-jasper"].includes(id)).map((id) => ({ company_id: id, strength: "medium",
+      why: "Has secured its own AI use.", evidence_ids: [evidence(id)], caution: "" })));
+  };
+  const ask = () => withFetch(expanding(handler, CMMC_TERMS), async () =>
+    (await pi("ask", piReq("ask", "POST", { question: CMMC_QUESTION, exclude: "c-aegis" }, token), env)).json());
+  const a = await ask();
+  assert.ok(["c-evonik", "c-jasper", "c-flexible", "c-leaf"].every((id) => offered.includes(id)), `the right notes reach Claude (${offered})`);
+  assert.deepEqual(a.matches.map((m) => m.company.id).sort(), ["c-evonik", "c-jasper"]);
+  assert.deepEqual(a.searchTerms, CMMC_TERMS, "the page can say what else was searched");
+  assert.deepEqual(a.peers.map((p) => p.company.id).sort(), ["c-overton", "c-ts"],
+    "companies working through CMMC are listed as peers, never the one that asked");
+  assert.ok(a.peers[0].evidence[0].sources, "with their evidence");
 });
 
 const PROGRAM_ROWS = () => [
