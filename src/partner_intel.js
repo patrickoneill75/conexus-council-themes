@@ -1310,6 +1310,10 @@ function rankTopics(rows, index, labels, overrides, weigh) {
   }));
 }
 
+// What each "See all" list on a company page holds. Problems include asks (a company asking for
+// help is stating a problem), as Top issues does; solutions include offers and equipment.
+const COMPANY_LISTS = { wins: ["win"], problems: ["problem", "ask"], solutions: ["solution", "offer", "equipment"] };
+
 function profileView(data, roster, overrides, labels, id, includeInternal) {
   const index = companyIndex(roster, data);
   const company = index.get(id);
@@ -1318,18 +1322,30 @@ function profileView(data, roster, overrides, labels, id, includeInternal) {
   const wins = rows.filter((i) => i.kind === "win").sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   const issues = rows.filter((i) => ISSUE_KINDS.has(i.kind) && i.status !== "resolved");
   const solutions = rows.filter((i) => SOLVER_KINDS.has(i.kind) && i.kind !== "win");
+  // The meetings this company's notes came from, each with the files behind it, linked to Box.
   const meetings = new Map();
-  for (const i of rows) if (!meetings.has(i.meeting_key)) meetings.set(i.meeting_key, { date: i.date, eventType: i.event_type, series: i.series, estimated: i.date_source === "box_upload" });
+  for (const i of rows) {
+    const m = meetingOf(i, index);
+    const key = `${i.date}|${m.id}`;
+    if (!meetings.has(key)) meetings.set(key, { date: i.date, label: m.label, eventType: i.event_type, series: i.series,
+      estimated: i.date_source === "box_upload", programs: new Set(), files: new Map() });
+    const g = meetings.get(key);
+    for (const p of sourcesOf(i)) g.programs.add(p);
+    for (const f of i.sources || []) if (!g.files.has(f.id || f.name)) g.files.set(f.id || f.name, { id: f.id, name: f.name, url: boxFileUrl(f.id) });
+  }
+  // The "See all" lists on the company page: every row of each kind, newest first.
+  const count = (kinds) => rows.filter((i) => kinds.includes(i.kind)).length;
   return {
     company: { id: company.id, name: company.name, industry: company.industry || "Unknown", status: company.status,
       program: company.program, contacts: company.contacts, source: company.source },
-    counts: { insights: rows.length, wins: rows.filter((i) => i.kind === "win").length,
-      problems: rows.filter((i) => i.kind === "problem").length,
-      solutions: solutions.length, meetings: meetings.size },
+    counts: { insights: rows.length, wins: count(COMPANY_LISTS.wins), problems: count(COMPANY_LISTS.problems),
+      solutions: count(COMPANY_LISTS.solutions), meetings: meetings.size },
     recentWins: wins.map((i) => shapeInsight(i, index, labels, overrides)),
     topIssues: rankTopics(issues, index, labels, overrides, (i) => URGENCY_WEIGHT[i.urgency] + (i.kind === "ask" ? 0.5 : 0)),
     topSolutions: rankTopics(solutions, index, labels, overrides, (i) => (i.confidence === "high" ? 2 : 1) + (i.kind === "offer" ? 0.5 : 0)),
-    meetings: [...meetings.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30),
+    meetings: [...meetings.values()].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label)).slice(0, 60)
+      .map((g) => ({ ...g, programs: [...g.programs], files: [...g.files.values()] })),
+    meetingTotal: meetings.size,
   };
 }
 

@@ -3718,6 +3718,39 @@ test("partner_intel: BUG a quote was sometimes shown without its file; every quo
   assert.deepEqual(program.meetings[0].files.map((f) => f.url), ["https://app.box.com/file/123", ""]);
 });
 
+test("partner_intel: BUG a company page listed its source documents with no file and no link to Box", async () => {
+  const visit = (over) => ins({ company_id: "c-a", date: "2026-10-05", meeting_id: "m-v", meeting_label: "Acme Corp", meeting_kind: "company",
+    sources: [{ id: "111", name: "Acme - 10.05.26.docx", path: "Raw Notes/Site Visits" }], ...over });
+  const rows = [visit({}), visit({ kind: "win", urgency: "none", sources: [{ id: "111", name: "Acme - 10.05.26.docx", path: "Raw Notes/Site Visits" },
+    { id: "112", name: "Acme - transcript.txt", path: "Raw Notes/Site Visits" }] }),
+  ins({ company_id: "c-a", date: "2026-09-01", meeting_id: "m-c", meeting_label: "Cohort 2", meeting_kind: "cohort",
+    sources: [{ id: "222", name: "Cohort 2.docx", path: "Raw Notes/PCN" }] })];
+  const { env, token } = await piEnv(rows);
+  const p = await getJson("company?id=c-a", env, token);
+  assert.deepEqual(p.meetings.map((m) => [m.date, m.label, m.programs, m.files.map((f) => [f.name, f.url])]), [
+    ["2026-10-05", "Acme Corp", ["Site Visits"], [["Acme - 10.05.26.docx", "https://app.box.com/file/111"], ["Acme - transcript.txt", "https://app.box.com/file/112"]]],
+    ["2026-09-01", "Cohort 2", ["PCN"], [["Cohort 2.docx", "https://app.box.com/file/222"]]],
+  ], "one line per meeting, every file behind it once, each linked to Box");
+  assert.equal(p.counts.meetings, 2);
+});
+
+test("partner_intel: a company page's See all buttons count what their lists hold, problems including asks", async () => {
+  const rows = [
+    ins({ company_id: "c-a", kind: "problem" }), ins({ company_id: "c-a", kind: "problem", status: "resolved" }),
+    ins({ company_id: "c-a", kind: "ask" }), ins({ company_id: "c-a", kind: "win", urgency: "none" }),
+    ins({ company_id: "c-a", kind: "solution", urgency: "none" }), ins({ company_id: "c-a", kind: "offer", urgency: "none" }),
+    ins({ company_id: "c-a", kind: "equipment", urgency: "none" }), ins({ company_id: "c-a", kind: "news", urgency: "none" }),
+    ins({ company_id: "c-b", kind: "problem" }),
+  ];
+  const { env, token } = await piEnv(rows);
+  const p = await getJson("company?id=c-a", env, token);
+  assert.deepEqual([p.counts.wins, p.counts.problems, p.counts.solutions], [1, 3, 3]);
+  // The list pages ask the insights route for exactly these kinds, for this company only.
+  const list = async (kinds) => (await getJson(`insights?company=c-a&kind=${encodeURIComponent(kinds)}&sort=date&limit=50`, env, token)).total;
+  assert.deepEqual([await list("win"), await list("problem|ask"), await list("solution|offer|equipment")], [1, 3, 3],
+    "each button's count matches the list it opens, resolved problems included");
+});
+
 const PROGRAM_ROWS = () => [
   // PCN: two files for the same cohort and date are one meeting
   ins({ title: "pcn a", topic: "quality", date: "2026-04-24", series: "Cohort 2", event_type: "President and CEO Network Call", meeting_id: "m-c2", meeting_label: "Cohort 2", meeting_kind: "cohort", sources: [{ id: "1", name: "04.24.26 Cohort 2.docx", path: "Raw Notes/PCN" }] }),

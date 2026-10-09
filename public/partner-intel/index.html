@@ -412,9 +412,10 @@
     load();
   }
 
-  function column(title, hint, items, kind) {
+  function column(title, hint, items, kind, more) {
     var html = '<section class="card"><h3>' + esc(title) + '</h3><p class="desc">' + esc(hint) + "</p>";
-    if (!items.length) return html + '<div class="muted small">None recorded yet.</div></section>';
+    var foot = more && more.count ? '<div class="row" style="margin-top:12px"><a class="button" href="' + esc(more.href) + '">' + esc(more.label) + " (" + more.count + ")</a></div>" : "";
+    if (!items.length) return html + '<div class="muted small">None recorded yet.</div>' + foot + "</section>";
     items.forEach(function (it) {
       var i = it.lead || it;
       html += '<div class="item' + (kind === "issue" && (i.urgency === "high" || i.urgency === "medium") ? " u-" + i.urgency : "") + '">' +
@@ -425,7 +426,7 @@
         (i.eventType ? " &middot; " + esc(i.eventType) : "") + "</div>" +
         PI.sourceHtml(i) + "</div>";
     });
-    return html + "</section>";
+    return html + foot + "</section>";
   }
 
   function company(id) {
@@ -444,15 +445,53 @@
         (c.contacts.length ? '<p class="small muted" style="margin:10px 0 0">Contacts on file: ' + c.contacts.map(esc).join(", ") + "</p>" : "") +
         (c.source === "notes" ? '<p class="small muted" style="margin:6px 0 0">This company is in the notes but not on the partner list. Add it in the control panel to give it an industry.</p>' : "") + "</div>" +
         '<div class="grid3">' +
-        column("Recent wins", "The latest results this company reported.", p.recentWins, "win") +
-        column("Top issues", "Open problems and asks, ranked by urgency and how recent they are.", p.topIssues, "issue") +
-        column("Top solutions", "What this company has built, solved or offers.", p.topSolutions, "solution") + "</div>";
+        column("Recent wins", "The latest results this company reported.", p.recentWins, "win", { href: listHref(c.id, "wins"), label: "See all wins", count: p.counts.wins }) +
+        column("Top issues", "Open problems and asks, ranked by urgency and how recent they are.", p.topIssues, "issue", { href: listHref(c.id, "problems"), label: "See all problems", count: p.counts.problems }) +
+        column("Top solutions", "What this company has built, solved or offers.", p.topSolutions, "solution", { href: listHref(c.id, "solutions"), label: "See all solutions", count: p.counts.solutions }) + "</div>";
       if (p.meetings.length) {
-        html += '<div class="card"><h3>Meetings in the notes</h3><div class="chips">' + p.meetings.map(function (m) {
-          return '<span class="chip">' + esc(PI.fmtDate(m.date)) + (m.estimated ? " (est.)" : "") + " &middot; " + esc(m.series || m.eventType) + "</span>";
-        }).join("") + "</div></div>";
+        html += '<div class="card"><h3>Source documents</h3><p class="desc">The meetings this company appears in, and the files in Box they came from.</p>' +
+          '<table class="docs"><tbody>' + p.meetings.map(function (m) {
+            return "<tr><td class=\"nowrap\">" + esc(PI.fmtDate(m.date)) + (m.estimated ? " " + PI.pill("est", "estimated date") : "") + "</td>" +
+              "<td>" + esc(m.label || m.series || m.eventType) + (m.programs.length ? ' <span class="muted small">&middot; ' + esc(m.programs.join(", ")) + "</span>" : "") + "</td>" +
+              "<td>" + (PI.fileLinks(m.files) || '<span class="muted">No file</span>') + "</td></tr>";
+          }).join("") + "</tbody></table>" +
+          (p.meetingTotal > p.meetings.length ? '<p class="small muted">Showing the latest ' + p.meetings.length + " of " + p.meetingTotal + ".</p>" : "") + "</div>";
       }
       view.innerHTML = html;
+    }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
+  }
+
+  /* A company's full list of wins, problems or solutions, newest first. */
+  var LISTS = {
+    wins: { kinds: "win", title: "All wins", sub: "Every result this company reported." },
+    problems: { kinds: "problem|ask", title: "All problems", sub: "Every problem and ask this company raised, open or resolved." },
+    solutions: { kinds: "solution|offer|equipment", title: "All solutions", sub: "Everything this company has built, solved, offers or runs." }
+  };
+  function listHref(id, which) { return "#/company/" + encodeURIComponent(id) + "/" + which; }
+
+  function companyList(id, which) {
+    var mine = ++seq, list = LISTS[which], offset = 0;
+    if (!list) { company(id); return; }
+    view.innerHTML = loading("Loading…");
+    PI.api("company?id=" + encodeURIComponent(id)).then(function (p) {
+      if (mine !== seq) return;
+      var c = p.company;
+      view.innerHTML = '<p class="small"><a href="#/company/' + encodeURIComponent(c.id) + '">&larr; ' + esc(c.name) + "</a></p>" +
+        '<div class="row spread"><div><h2 style="font-size:20px">' + esc(list.title) + " &middot; " + esc(c.name) + '</h2><p class="sub">' + esc(list.sub) + "</p></div>" +
+        '<div class="seg">' + Object.keys(LISTS).map(function (k) {
+          return '<a class="button' + (k === which ? " on" : "") + '" href="' + listHref(c.id, k) + '">' + esc(LISTS[k].title.replace("All ", "")) + " (" + p.counts[k] + ")</a>";
+        }).join("") + "</div></div><div id=\"clist\"></div><div id=\"cmore\"></div>";
+      function page() {
+        return PI.api("insights?company=" + encodeURIComponent(c.id) + "&kind=" + encodeURIComponent(list.kinds) + "&sort=date&limit=50&offset=" + offset).then(function (r) {
+          if (mine !== seq) return;
+          if (!r.total) { el("clist").innerHTML = '<div class="empty">None recorded yet.</div>'; return; }
+          el("clist").insertAdjacentHTML("beforeend", r.items.map(function (i) { return PI.insightCard(i, { company: false }); }).join(""));
+          offset += r.items.length;
+          el("cmore").innerHTML = offset < r.total ? '<div class="row" style="margin-top:12px"><button id="cmoreBtn">Show more (' + (r.total - offset) + " left)</button></div>" : "";
+          var b = el("cmoreBtn"); if (b) b.addEventListener("click", function () { b.disabled = true; page(); });
+        });
+      }
+      return page();
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
 
@@ -534,6 +573,7 @@
     else if (name === "meeting" && parts[2]) meeting(decodeURIComponent(parts[1]), decodeURIComponent(parts[2]));
     else if (name === "ask") ask();
     else if (name === "companies") companies();
+    else if (name === "company" && parts[1] && parts[2]) companyList(decodeURIComponent(parts[1]), parts[2]);
     else if (name === "company" && parts[1]) company(decodeURIComponent(parts[1]));
     else if (name === "explore") explore();
     else home();
