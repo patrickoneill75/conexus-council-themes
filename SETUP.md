@@ -1106,7 +1106,7 @@ Pick the right company, keep the current one, or choose another partner. A decis
 
 ### Source files
 
-Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. The Excel export has a **SourceLinks** column with the same links.
+Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. A company page ends with **Source documents**: each meeting the company appears in, its program, and every file behind it, linked to Box. **See all wins**, **See all problems** (problems and asks, open or resolved) and **See all solutions** (solutions, offers and equipment) open the company's full lists, newest first. The Excel export has a **SourceLinks** column with the same links.
 
 ### Cost
 
