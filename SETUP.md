@@ -1085,6 +1085,29 @@ The partner list drives industry, member status, contacts, and how names in the 
 - **Names to review** lists companies named in the notes that the list does not recognize. Match one to a partner, or add it as a non-member.
 - A company the notes named that the list now has under exactly the same name (or an alias you set) shows as a member at once. Looser matches, such as a different spelling, need **Re-link now**, which re-applies the list to every stored result. It reads no files and makes no Claude call.
 
+### Contacts at partner companies
+
+Upload the Salesforce contact export (`.xlsx` or `.csv` with First Name, Last Name, Title, Account Name and Email) under **Contacts at partner companies**. It does not need to be complete. Each upload replaces the last; **Preview** shows how many people were kept, how many partners have at least one contact, names repaired, and rows skipped, before anything is saved. Then press **Re-link** (no Claude cost) to apply it to the stored data.
+
+- **Repairs.** Excel damages some names: a last name "True" becomes a TRUE/FALSE cell, and a first name can arrive as a number. When the email is `first.last@`, the name is taken from it; otherwise the row is skipped and counted.
+- **How it is used.** A speaker's full name on the list names their company. A first name alone ("[Ben]", "Ben - statement" in PCN notes) names one person only when exactly one contact with that first name works for a company the file is about: the partner the file is named for, a section heading, or the PCN attendee table. A name held by people at two companies is used only when the file says which. "Brian Larson" is never taken for Ben Larson (a full first name must share its first two letters with the contact's, which keeps Mike and Michael together).
+- **In the prompt.** Contacts named in a piece of notes are listed for Claude ("Ben Larson (Evonik Industries)"), so it can tell whose statement is whose. A unit's saved result is reused unless that list changes, so a new contact list re-reads nothing by itself; files that change, or **Re-read every file**, are read with it.
+- **Conexus staff** on the contact list are never treated as a partner's voice.
+
+### Statements to check
+
+When it is uncertain which company said a statement, the statement shows a **Check company** marker and is listed on the control panel under **Statements to check**:
+
+- the speaker works for a different partner from the one credited (Claude's reading is kept, because a speaker can talk about a customer or supplier; the speaker's company is offered),
+- the file is named for a different partner (that partner is offered), or
+- two contacts at different companies share the speaker's name and nothing in the file says which (both are offered).
+
+Pick the right company, keep the current one, or choose another partner. A decision applies at once, without a scan, and survives Re-link and later scans that do not re-read the file.
+
+### Source files
+
+Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. The Excel export has a **SourceLinks** column with the same links.
+
 ### Cost
 
 - The first scan is the expensive one. Use the trial run first. **Last scan** shows tokens used.

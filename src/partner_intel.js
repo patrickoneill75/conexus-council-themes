@@ -50,6 +50,11 @@ const DATA_META = "pi:data:meta";
 const DATA_EXTRA = "pi:data:extra";
 const ASK_RECENT = "pi:ask:recent";
 const ROSTER_SYNC_KEY = "pi:roster-sync";
+const CONTACTS_KEY = "pi:contacts";       // the uploaded contact list: people at partner companies
+const ATTRIBUTION_KEY = "pi:attribution"; // staff decisions on which company said a statement
+// Flags the build sets when the company a statement is credited to is in doubt. A statement with
+// one shows "Check company" and is listed on the control panel until someone decides.
+const ATTRIBUTION_FLAGS = ["speaker_company_conflict", "company_differs_from_file", "speaker_ambiguous"];
 const SUMMARY_PROMPT_VERSION = "pi-sum-3"; // 3: asks for the tool call (no forced tool choice)
 const MAX_SUMMARY_TOPICS = 8;     // topics written in one Claude call
 const EVIDENCE_PER_TOPIC = 25;    // rows the model reads per topic
@@ -271,6 +276,7 @@ export async function xlsxRows(bytes) {
       let value = "";
       if (type && type[1] === "s") value = v ? (shared[Number(v[1])] ?? "") : "";
       else if (type && type[1] === "inlineStr") value = xmlText(inner);
+      else if (type && type[1] === "b") value = v && v[1] === "1" ? "TRUE" : "FALSE";
       else if (v) value = decodeXml(v[1]);
       cells[col - 1] = value;
     }
@@ -469,6 +475,109 @@ function columnIndex(header) {
   return index;
 }
 
+const CONTACT_COLUMNS = {
+  first: ["first name", "first", "firstname"],
+  last: ["last name", "last", "lastname", "surname"],
+  full: ["full name", "contact name", "contact", "name"],
+  title: ["title", "job title"],
+  account: ["account name", "organization account name", "organization", "company", "account", "company name"],
+  email: ["email", "email address", "e mail"],
+};
+
+/** "matt.titzer@jasperengines.com" gives ["Matt", "Titzer"], or null. */
+function nameFromEmail(email) {
+  const local = text(email).split("@")[0];
+  const parts = local.split(/[._]/).filter((x) => /^[a-z]{2,}$/i.test(x));
+  if (parts.length !== 2) return null;
+  return parts.map((x) => x[0].toUpperCase() + x.slice(1).toLowerCase());
+}
+
+/**
+ * Read an uploaded contact list (people at partner companies, a Salesforce export) into
+ * {name, title, account, email} records, and say what it found. Nothing is matched to people in
+ * the notes here: the scan does that, with the one name-matching implementation it has.
+ *
+ * Excel damages some names on the way: a last name "True" becomes a TRUE/FALSE cell and a first
+ * name can arrive as a number. When the email is first.last@ the name is taken from it;
+ * otherwise the row is skipped and counted.
+ */
+export function readContacts(rows, roster) {
+  if (rows.length < 2) return { error: "The file has no data rows." };
+  const keys = rows[0].map((h) => nameKey(h));
+  const at = Object.create(null);
+  for (const [field, names] of Object.entries(CONTACT_COLUMNS)) {
+    const i = keys.findIndex((k) => names.includes(k));
+    if (i >= 0) at[field] = i;
+  }
+  if (at.account === undefined) return { error: "No company column found. Expected a header such as \"Account Name\"." };
+  if (at.full === undefined && (at.first === undefined || at.last === undefined)) {
+    return { error: "No name columns found. Expected \"First Name\" and \"Last Name\", or \"Name\"." };
+  }
+  const get = (row, field) => (at[field] === undefined ? "" : text(row[at[field]]));
+  const damaged = (v) => !v || /^\d+$/.test(v) || v === "TRUE" || v === "FALSE";
+  const partnerKeys = new Map();
+  for (const p of roster.partners) {
+    partnerKeys.set(nameKey(p.name), p.id);
+    for (const a of p.aliases || []) partnerKeys.set(nameKey(a), p.id);
+  }
+  for (const [alias, id] of Object.entries(roster.aliases || {})) partnerKeys.set(nameKey(alias), id);
+
+  const contacts = [], seen = new Set(), byPerson = new Map(), accounts = new Map();
+  const counts = { rows: rows.length - 1, kept: 0, repaired: 0, duplicates: 0, noName: 0, noCompany: 0 };
+  for (const row of rows.slice(1)) {
+    if (!row.some((c) => text(c))) { counts.rows--; continue; }
+    const account = get(row, "account"), email = get(row, "email");
+    let first = get(row, "first"), last = get(row, "last");
+    let name = at.full !== undefined && at.first === undefined ? get(row, "full") : "";
+    if (!name) {
+      if (damaged(first) || damaged(last)) {
+        const fromEmail = nameFromEmail(email);
+        if (fromEmail) {
+          if (damaged(first)) first = fromEmail[0];
+          if (damaged(last)) last = fromEmail[1];
+          counts.repaired++;
+        }
+      }
+      name = damaged(first) || damaged(last) ? "" : `${first} ${last}`;
+    }
+    if (!account) { counts.noCompany++; continue; }
+    if (name.split(/\s+/).filter(Boolean).length < 2) { counts.noName++; continue; }
+    const key = `${nameKey(name)}|${nameKey(account)}`;
+    if (seen.has(key)) { counts.duplicates++; continue; }
+    seen.add(key);
+    contacts.push({ name: name.slice(0, 120), title: get(row, "title").slice(0, 160), account: account.slice(0, 200), email: email.slice(0, 200) });
+    if (!byPerson.has(nameKey(name))) byPerson.set(nameKey(name), new Set());
+    byPerson.get(nameKey(name)).add(nameKey(account));
+    accounts.set(account, (accounts.get(account) || 0) + 1);
+  }
+  counts.kept = contacts.length;
+  const matched = [...accounts.keys()].filter((a) => partnerKeys.has(nameKey(a)));
+  const partnersCovered = new Set(matched.map((a) => partnerKeys.get(nameKey(a))));
+  const unmatched = [...accounts.entries()].filter(([a]) => !partnerKeys.has(nameKey(a))).sort((x, y) => y[1] - x[1]);
+  return {
+    contacts,
+    summary: { ...counts, companies: accounts.size, companiesMatched: matched.length,
+      partnersWithContacts: partnersCovered.size, partnersWithout: roster.partners.length - partnersCovered.size,
+      contactsAtUnlistedCompanies: unmatched.reduce((n, [, c]) => n + c, 0),
+      unlistedCompanies: unmatched.slice(0, 10).map(([name, count]) => ({ name, count })),
+      sameNameTwoCompanies: [...byPerson.values()].filter((set) => set.size > 1).length },
+  };
+}
+
+/** Bytes of an uploaded spreadsheet or CSV as rows. */
+async function uploadedRows(fileName, bytes) {
+  const zip = bytes.length > 3 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (zip || /\.xlsx$/i.test(fileName)) return xlsxRows(bytes);
+  return parseCsv(decodeBytes(bytes));
+}
+
+function base64Bytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 /**
  * Apply an uploaded roster CSV to the current roster.
  *
@@ -627,6 +736,33 @@ function withRoster(data, roster) {
   return live;
 }
 
+let decisionsMemo = null; // { key, live }
+
+/**
+ * Staff decisions on which company said a statement, laid over the dataset. A decision names
+ * a company (or none), or keeps the one the scan chose; either way the statement leaves the
+ * "Statements to check" list and loses its Check company marker. Decisions are keyed by the
+ * statement's id, which survives Re-link and scans that do not re-read its file.
+ */
+function withDecisions(data, store) {
+  const decisions = (store && store.decisions) || {};
+  const key = (store && store.updatedAt) || "";
+  if (decisionsMemo && decisionsMemo.key === key && decisionsMemo.base === data) return decisionsMemo.live;
+  let changed = false;
+  const insights = data.insights.map((i) => {
+    if (!hasOwn(decisions, i.id)) return i;
+    changed = true;
+    const d = decisions[i.id];
+    return { ...i, company_id: d.keep ? i.company_id : text(d.companyId),
+      review: [...(i.review || []).filter((f) => !ATTRIBUTION_FLAGS.includes(f)), "company_checked"] };
+  });
+  const live = changed ? { ...data, insights } : data;
+  decisionsMemo = { key, base: data, live };
+  return live;
+}
+
+const needsCheck = (i) => (i.review || []).some((f) => ATTRIBUTION_FLAGS.includes(f));
+
 /** Every company a row can point to: the roster, plus companies the notes named that the
  * roster does not have. Roster edits show up here at once, with no re-scan. */
 function companyIndex(roster, data) {
@@ -650,6 +786,13 @@ function companyOf(index, insight) {
     member: false, source: "none" };
 }
 
+/** The Box web page for a file. Box ids are digits; anything else gets no link. */
+function boxFileUrl(id) {
+  return /^\d+$/.test(text(id)) ? `https://app.box.com/file/${text(id)}` : "";
+}
+
+const sourcesWithLinks = (sources) => (sources || []).map((s) => ({ ...s, url: boxFileUrl(s.id) }));
+
 function shapeInsight(i, index, labels, overrides) {
   const topic = finalTopic(overrides, i.topic);
   return {
@@ -657,8 +800,8 @@ function shapeInsight(i, index, labels, overrides) {
     topic, topicLabel: labels.get(topic) || "Other", tags: i.tags, urgency: i.urgency,
     urgencyReason: i.urgency_reason, status: i.status, solves: i.solves, confidence: i.confidence,
     scope: i.scope, date: i.date, dateSource: i.date_source, estimated: i.date_source === "box_upload",
-    eventType: i.event_type, series: i.series, speaker: i.speaker, sources: i.sources,
-    review: i.review, company: companyOf(index, i),
+    eventType: i.event_type, series: i.series, speaker: i.speaker, sources: sourcesWithLinks(i.sources),
+    review: i.review, checkCompany: needsCheck(i), company: companyOf(index, i),
   };
 }
 
@@ -1042,6 +1185,17 @@ async function addUsage(env, kind, usage, extra = {}) {
   await env.BOX_KV.put(key, JSON.stringify(all));
 }
 
+async function contactsStatus(env) {
+  const stored = await readJson(env, CONTACTS_KEY, null);
+  return stored ? { fileName: stored.fileName, updatedAt: stored.updatedAt, summary: stored.summary } : null;
+}
+
+async function toCheckCount(env, roster) {
+  const raw = await loadDataset(env);
+  if (!raw) return 0;
+  return withDecisions(withRoster(raw, roster), await readJson(env, ATTRIBUTION_KEY, null)).insights.filter(needsCheck).length;
+}
+
 async function usageView(env) {
   const now = new Date();
   const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
@@ -1115,7 +1269,7 @@ function meetingGroups(rows, index, overrides, labels) {
     if (c.id) g.companies.set(c.id, c.name);
     const topic = finalTopic(overrides, i.topic);
     if (topic !== "other") g.topics.set(topic, (g.topics.get(topic) || 0) + 1);
-    for (const f of i.sources) g.files.add(f.name);
+    for (const f of i.sources) if (![...g.files].some((x) => x.name === f.name)) g.files.add({ id: f.id, name: f.name, url: boxFileUrl(f.id) });
   }
   return [...groups.values()].map((g) => ({
     id: g.id, label: g.label, kind: g.kind, date: g.date, estimated: g.estimated, counts: g.counts,
@@ -1490,8 +1644,9 @@ async function handleRelay(route, request, env) {
     return json(await readJson(env, SETTINGS_KEY, { folderId: "", folderName: "" }));
   }
   if (sub === "roster" && method === "GET") {
-    const roster = await getRoster(env);
-    return json({ partners: roster.partners, aliases: roster.aliases, staff: roster.staff, updatedAt: roster.updatedAt });
+    const [roster, contacts] = await Promise.all([getRoster(env), readJson(env, CONTACTS_KEY, null)]);
+    return json({ partners: roster.partners, aliases: roster.aliases, staff: roster.staff, updatedAt: roster.updatedAt,
+      contacts: contacts ? contacts.contacts : [] });
   }
   if (sub === "box/folder" && method === "GET") {
     const token = await boxAccessToken(env);
@@ -1610,6 +1765,7 @@ export async function handlePartnerIntelApi(route, request, env) {
         relinkNeeded: Boolean(meta) && (meta.roster_updated_at || "") !== (roster.updatedAt || ""),
         report, rosterSync, oneTimeUpdate, boxConnected: Boolean(token), githubConfigured: Boolean(env.GITHUB_TOKEN && env.GITHUB_REPO),
         claudeConfigured: Boolean(env.partner_intel_claude_api), usage: await usageView(env),
+        contacts: await contactsStatus(env), toCheck: await toCheckCount(env, roster),
       });
     }
     if (route === "settings" && method === "POST") {
@@ -1702,6 +1858,30 @@ export async function handlePartnerIntelApi(route, request, env) {
       roster.partners = result.partners;
       await saveRoster(env, roster);
       return json({ saved: true, mode, summary: result.summary, roster: rosterSummary(roster) });
+    }
+    if (route === "contacts" && method === "GET") {
+      const stored = await readJson(env, CONTACTS_KEY, null);
+      return json(stored ? { fileName: stored.fileName, updatedAt: stored.updatedAt, summary: stored.summary } : { summary: null });
+    }
+    if (route === "contacts/import" && method === "POST") {
+      const body = await readBody(request);
+      const data = text(body && body.data);
+      if (!data) return json({ error: "No file content received." }, 400);
+      if (data.length > 20_000_000) return json({ error: "That file is too large." }, 413);
+      const fileName = text(body.fileName).slice(0, 200);
+      let rows;
+      try { rows = await uploadedRows(fileName, base64Bytes(data)); }
+      catch (e) { return json({ error: `That file could not be read: ${String(e.message).slice(0, 160)}` }, 400); }
+      const roster = await getRoster(env);
+      const result = readContacts(rows, roster);
+      if (result.error) return json({ error: result.error }, 400);
+      if (body.preview) return json({ preview: true, summary: result.summary });
+      const stored = { fileName, updatedAt: new Date().toISOString(), by: auth.email || "", summary: result.summary, contacts: result.contacts };
+      await env.BOX_KV.put(CONTACTS_KEY, JSON.stringify(stored));
+      // Saving the partner list marks the data as needing a Re-link, which re-attributes every
+      // statement with the new contacts at no Claude cost.
+      await saveRoster(env, roster);
+      return json({ saved: true, fileName, updatedAt: stored.updatedAt, summary: result.summary });
     }
     if (route === "roster/partner" && method === "POST") {
       const body = await readBody(request);
@@ -1814,13 +1994,15 @@ export async function handlePartnerIntelApi(route, request, env) {
     }
 
     // ---- everything below reads the published dataset --------------------------------
-    const needsData = ["home", "insights", "companies", "company", "ask", "facets", "programs", "program", "meeting", "summarize"];
+    const needsData = ["home", "insights", "companies", "company", "ask", "facets", "programs", "program", "meeting", "summarize",
+      "attribution/review", "attribution/decide"];
     if (!needsData.includes(route) && route !== "recent-questions") return json({ error: "Not found" }, 404);
     if (route === "recent-questions" && method === "GET") return json({ items: await readJson(env, ASK_RECENT, []) });
 
-    const [raw, roster, overrides] = await Promise.all([loadDataset(env), getRoster(env), getTopicOverrides(env)]);
+    const [raw, roster, overrides, decisionStore] = await Promise.all([loadDataset(env), getRoster(env), getTopicOverrides(env),
+      readJson(env, ATTRIBUTION_KEY, null)]);
     if (!raw) return json({ error: "There is no data yet. Run a scan from the control panel.", empty: true }, 409);
-    const data = withRoster(raw, roster);
+    const data = withDecisions(withRoster(raw, roster), decisionStore);
     const index = companyIndex(roster, data);
     const labels = topicLabels(data, overrides);
 
@@ -1848,6 +2030,31 @@ export async function handlePartnerIntelApi(route, request, env) {
       }
       const topicIds = (Array.isArray(body.topics) ? body.topics : []).map(text).filter(Boolean).slice(0, MAX_SUMMARY_TOPICS);
       return json(await summarizeTopics(env, data, index, overrides, labels, view, topicIds));
+    }
+    if (route === "attribution/review" && method === "GET") {
+      // Statements whose company is in doubt, newest first, each with the companies a person
+      // checking it should consider and why.
+      const rows = data.insights.filter(needsCheck).sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+      const offset = Math.max(0, Math.floor(Number(params.get("offset"))) || 0);
+      const name = (id) => (index.get(id) || { name: id }).name;
+      return json({ total: rows.length, offset, items: rows.slice(offset, offset + 25).map((i) => ({
+        ...shapeInsight(i, index, labels, overrides), programs: sourcesOf(i),
+        options: (i.company_options || []).filter((o) => o && o.id && o.id !== i.company_id)
+          .map((o) => ({ id: o.id, name: name(o.id), why: text(o.why) })) })) });
+    }
+    if (route === "attribution/decide" && method === "POST") {
+      const body = (await readBody(request)) || {};
+      const id = text(body.id);
+      if (!/^[\w-]{1,64}$/.test(id) || !raw.insights.some((i) => i.id === id)) return json({ error: "That statement no longer exists." }, 404);
+      const keep = Boolean(body.keep);
+      const companyId = keep ? "" : text(body.companyId);
+      if (!keep && companyId && !index.has(companyId)) return json({ error: "Choose a partner from the list." }, 400);
+      const store = (await readJson(env, ATTRIBUTION_KEY, null)) || { decisions: {} };
+      // Rebuilt through a Map so an id can never land on Object.prototype.
+      const decisions = new Map(Object.entries(store.decisions || {}));
+      decisions.set(id, { keep, companyId, by: auth.email || "", at: new Date().toISOString() });
+      await env.BOX_KV.put(ATTRIBUTION_KEY, JSON.stringify({ decisions: Object.fromEntries(decisions), updatedAt: new Date().toISOString() }));
+      return json({ ok: true });
     }
     if (route === "programs" && method === "GET") {
       return json({ programs: programsView(data, index), needsUpdate: (Number(data.schema) || 1) < 2 });

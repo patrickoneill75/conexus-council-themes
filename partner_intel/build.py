@@ -17,7 +17,7 @@ from collections import Counter, defaultdict
 
 from . import topics
 from .extract import normalize
-from .resolve import Match, Resolver, core_key
+from .resolve import Match, Resolver, Speaker, core_key
 from .roster import Roster
 
 # Bumped when the published dataset gains fields the Worker's pages depend on. The control panel
@@ -109,6 +109,31 @@ def _absorb(base: dict, other: dict) -> None:
     base["review"] = sorted(set(base["review"]) | set(other["review"]))
 
 
+def _name(partners: dict, company_id: str) -> str:
+    return (partners.get(company_id) or {}).get("name") or company_id
+
+
+def unit_context(resolver: Resolver, unit) -> set[str]:
+    """The companies a piece of notes is about, from its structure rather than its content: the
+    partner the file is named for, its section heading, its attendee list. This is what lets a
+    first name ("Ben") point to one person. Companies merely mentioned in the text are not
+    included: Ben mentioning Eli Lilly must not make every Ben at Lilly a candidate. unit is a
+    shape.Unit or the stored record of one."""
+    get = (lambda k: getattr(unit, k, "")) if not isinstance(unit, dict) else (lambda k: unit.get(k) or "")
+    ids = set()
+    for name in (get("file_company"), get("default_company")):
+        if name:
+            hit = resolver.company(name)
+            if hit.ok:
+                ids.add(hit.company_id)
+    for _, affiliation in get("attendees") or []:
+        if affiliation:
+            hit = resolver.affiliation(affiliation)
+            if hit.ok:
+                ids.add(hit.company_id)
+    return ids
+
+
 def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str) -> dict:
     resolver = Resolver(roster)
     staff_extra: set[str] = set()
@@ -145,17 +170,25 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
             if not cached:
                 continue
             used_units += 1
+            context = unit_context(resolver, unit)
+            file_cid = resolver.company(unit["file_company"]).company_id if unit.get("file_company") else None
             for index, row in enumerate(cached["rows"]):
                 stats["rows_read"] += 1
                 review: list[str] = []
+                options: list[dict] = []  # other companies a person checking this row should consider
                 by_model = resolver.company(row["company"]) if row["company"] else Match(None, "none")
-                by_person = resolver.person(row["speaker"]) if row["speaker"] else None
+                speaker = resolver.speaker(row["speaker"], context) if row["speaker"] else Speaker()
+                by_person = speaker.company_id
                 by_section = resolver.company(unit.get("default_company", "")) if unit.get("default_company") else Match(None, "none")
                 company_id, raw_name = "", row["company"] or unit.get("default_company", "")
                 if by_model.ok:
+                    # Claude named the company. A statement can be about another company than the
+                    # speaker's (a customer, a supplier), so the speaker does not overrule it; a
+                    # disagreement is put in front of a person with the speaker's company offered.
                     company_id = by_model.company_id
                     if by_person and by_person != company_id:
                         review.append("speaker_company_conflict")
+                        options.append({"id": by_person, "why": f"{speaker.full_name} works at {_name(partners, by_person)}"})
                 elif by_section.ok:
                     # A section heading names the partner interviewed. When the model's own
                     # spelling of it is not recognized, the heading is the stronger signal.
@@ -176,16 +209,24 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                             review.append("ambiguous_company")
                         if by_person:
                             review.append("speaker_company_conflict")
+                            options.append({"id": by_person, "why": f"{speaker.full_name} works at {_name(partners, by_person)}"})
                         review.append("not_on_roster")
+                if not company_id and speaker.how == "ambiguous" and speaker.candidates:
+                    # "Ben" in a file about two companies, each with a Ben: list them, never pick.
+                    review.append("speaker_ambiguous")
+                    options.extend({"id": cid, "why": f"a {row['speaker']} works at {_name(partners, cid)}"}
+                                   for cid in speaker.candidates[:4])
                 if not company_id:
                     review.append("no_company")
-                elif unit.get("file_company"):
+                elif file_cid and file_cid != company_id:
                     # The file is named for one partner and the row names another. Often right (a
                     # supplier or customer mentioned in the call), sometimes a misreading, so it
                     # is flagged for a person to check rather than changed.
-                    named = resolver.company(unit["file_company"])
-                    if named.ok and named.company_id != company_id:
-                        review.append("company_differs_from_file")
+                    review.append("company_differs_from_file")
+                    if not any(o["id"] == file_cid for o in options):
+                        options.append({"id": file_cid, "why": f"the file is named for {_name(partners, file_cid)}"})
+                if speaker.how == "first name in context":
+                    row = {**row, "speaker": speaker.full_name}  # "Ben" in the Evonik file is Ben Larson
                 scope = entry.get("event", {}).get("scope", "partner")
                 if (row["speaker_is_conexus_staff"] or staff_resolver.is_staff(row["speaker"])
                         or _CONEXUS.search(row["company"] or "")):
@@ -206,7 +247,7 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     "solves": row["solves"], "confidence": row["confidence"], "scope": scope,
                     "date": date, "date_source": unit.get("date_source") or event.get("date_source") or "",
                     "event_type": event.get("type", ""), "series": event.get("series", ""),
-                    "meeting_key": meeting_key, "review": sorted(set(review)),
+                    "meeting_key": meeting_key, "review": sorted(set(review)), "company_options": options,
                     "source_folder": entry.get("source") or source_folder(entry.get("path", "")),
                     "source_folders": [entry.get("source") or source_folder(entry.get("path", ""))],
                     "sources": [{"id": file_id, "name": entry.get("name", ""), "path": entry.get("path", "")}],

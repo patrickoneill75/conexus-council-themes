@@ -34,6 +34,10 @@ COMMON = {"indiana", "america", "american", "national", "group", "systems", "sol
 SEED_ALIASES = {"hitachi astemo": "Astemo Indiana", "murray mentor": "Mursix"}
 
 TITLE_WORDS = {"dr", "mr", "ms", "mrs", "prof"}
+# First words of partner names that are ordinary words in a file or meeting title.
+GENERIC_FIRST = {"midwest", "central", "southern", "northern", "western", "eastern", "advanced", "precision",
+                 "applied", "general", "united", "premier", "quality", "custom", "great", "first", "major",
+                 "flexible", "progressive", "superior", "summit", "pioneer", "heritage"}
 
 
 def fold(text: str) -> str:
@@ -83,6 +87,26 @@ class Match:
         return self.company_id is not None
 
 
+def name_tokens(name: str) -> list[str]:
+    plain = re.sub(r"\([^)]*\)", " ", name or "")
+    return [t for t in re.split(r"[^a-z0-9]+", fold(plain)) if t and t not in TITLE_WORDS]
+
+
+@dataclass
+class Speaker:
+    """Who a speaker is, as far as the contact lists can say.
+
+    company_id is set when exactly one company fits. how says why: "contact" (the full name is
+    on a contact list, at one company), "contact in context" (the full name is at several
+    companies, one of them the file's), or "first name in context" (only a first name, and
+    exactly one contact with it works for a company the file is about). candidates lists the
+    companies when more than one fits."""
+    company_id: str | None = None
+    how: str = ""
+    full_name: str = ""
+    candidates: list[str] = field(default_factory=list)
+
+
 def person_keys(name: str) -> list[str]:
     """Keys a person's name can be found under: full name, nickname form, last name + initial."""
     nick = re.findall(r"\(([^)]*)\)", name)
@@ -116,6 +140,7 @@ class Resolver:
             if len(ids) == 1 and key not in self.exact:
                 self.exact[key] |= ids
         self._recount()
+        self.brand_words = [(p["id"], tokens(p["name"])[0]) for p in roster.partners if tokens(p["name"])]
         partner_ids = {p["id"] for p in roster.partners}
         ids_by_name = {core_key(p["name"]): p["id"] for p in roster.partners}
         for alias, target in {**SEED_ALIASES, **roster.aliases}.items():
@@ -130,9 +155,21 @@ class Resolver:
         self._recount()
 
         self.people: dict[str, set[str]] = defaultdict(set)
+        self.first_names: dict[str, set[tuple[str, str]]] = defaultdict(set)  # first name -> {(company, full name)}
+        self.full_names: dict[str, tuple[str, set[str]]] = {}  # "ben larson" -> (display name, companies)
+        self.by_last: dict[str, set[tuple[str, str, str]]] = defaultdict(set)  # last -> {(first, company, display)}
         for p in roster.partners:
             for contact in p["contacts"]:
                 self.learn_person(contact, p["id"])
+        # The uploaded contact list. 151 accounts carry 5,000 people, so each account name is
+        # matched once.
+        account_ids: dict[str, str | None] = {}
+        for c in roster.contacts:
+            if c["account"] not in account_ids:
+                hit = self._match_text(c["account"], allow_fuzzy=False)
+                account_ids[c["account"]] = hit.company_id
+            if account_ids[c["account"]]:
+                self.learn_person(c["name"], account_ids[c["account"]])
         self.staff_keys = {k for s in roster.staff for k in person_keys(s)}
         self.staff_names = {" ".join(re.split(r"[^a-z0-9]+", fold(s))).strip() for s in roster.staff}
 
@@ -191,6 +228,29 @@ class Resolver:
                     return Match(None, "none", candidates[:3])
         return Match(None, "none")
 
+    def companies_named(self, raw: str) -> set[str]:
+        """Every partner whose name appears whole in the text, by the superset rule, without
+        picking one: "Lucas Oil and Zoeller joint call" names two. A name that is part of a
+        longer matched name ("Lucas Oil" inside "Lucas Oil Products") counts once, as the longer."""
+        raw_set = frozenset(tokens(raw))
+        hits: list[tuple[str, frozenset]] = []
+        for cid, vt in self.variants:
+            if not vt or not vt <= raw_set:
+                continue
+            if len(vt) == 1:
+                (only,) = tuple(vt)
+                if len(only) < 5 or only in COMMON or self.df[only] != 1:
+                    continue
+            hits.append((cid, vt))
+        named = {cid for cid, vt in hits if not any(vt < other for _, other in hits)}
+        # A partner's brand word ("zoeller", "evonik", "lippert": the first word of its name, used
+        # by no other partner) names it too. Only the first word: "Development" in "Conexus
+        # Workforce Development" must not name the Indiana Economic Development Corporation.
+        for t in raw_set:
+            if len(t) >= 5 and t not in COMMON and t not in GENERIC_FIRST and self.df[t] == 1:
+                named |= {cid for cid, first in self.brand_words if first == t}
+        return named
+
     def company(self, raw: str) -> Match:
         raw = (raw or "").strip()
         if not raw or fold(raw).strip() in ("unknown", "n/a", "none", "group", "various", "multiple"):
@@ -216,13 +276,95 @@ class Resolver:
     def learn_person(self, name: str, company_id: str) -> None:
         for key in person_keys(name):
             self.people[key].add(company_id)
+        toks = name_tokens(name)
+        if len(toks) >= 2:
+            display = " ".join(re.sub(r"\([^)]*\)", " ", name).split())
+            self.first_names[toks[0]].add((company_id, display))
+            self.by_last[toks[-1]].add((toks[0], company_id, display))
+            known = self.full_names.get(" ".join(toks))
+            self.full_names[" ".join(toks)] = (known[0] if known else display, (known[1] if known else set()) | {company_id})
+
+    def speaker(self, name: str, context: set[str] | frozenset = frozenset()) -> Speaker:
+        """Who said it. context is the companies the file is about (named in its file name, its
+        section heading or its attendee list); it is what lets a first name, or a full name held
+        by two people at different companies, point to one company. Never a guess: when more
+        than one company still fits, the answer is the candidates, not a pick."""
+        if not name or self.is_staff(name):
+            return Speaker()
+        toks = name_tokens(name)
+        if len(toks) >= 2:
+            exact = self.full_names.get(" ".join(toks))
+            if exact:
+                display, ids = exact[0], exact[1]
+            else:
+                # "B. Larson", or "Michael Miller" for the contact Mike Miller. Never "Brian Larson"
+                # for Ben Larson: the first two letters must agree.
+                near = self._same_person(toks)
+                if not near:
+                    return Speaker()
+                ids = set().union(*near.values())
+                display = next(iter(near)) if len(near) == 1 else name
+            if len(ids) == 1:
+                return Speaker(next(iter(ids)), "contact", display)
+            inside = ids & set(context)
+            if len(inside) == 1:
+                return Speaker(next(iter(inside)), "contact in context", display)
+            return Speaker(None, "ambiguous", display, sorted(ids))
+        if len(toks) == 1 and context:
+            fits = {(cid, full) for cid, full in self.first_names.get(toks[0], ()) if cid in context}
+            companies = sorted({cid for cid, _ in fits})
+            if len(fits) == 1:
+                cid, full = next(iter(fits))
+                return Speaker(cid, "first name in context", full)
+            if len(companies) > 1:
+                return Speaker(None, "ambiguous", name, companies)
+        return Speaker()
+
+    def people_in_text(self, text: str, context: set[str] | frozenset = frozenset(), limit: int = 25) -> list[str]:
+        """Contacts named in a piece of notes, as "Ben Larson (Evonik Industries)", for the model
+        to tell whose statement is whose. Full names are found anywhere in the text; a first name
+        counts only as a speaker label ("[Ben]", "Ben:") and only when exactly one contact with it
+        works for a company the file is about. A name at several companies is left out."""
+        names = self.roster.by_id()
+        words = [w for w in re.split(r"[^a-z0-9]+", fold(text or "")) if w]
+        grams = {" ".join(words[i:i + n]) for n in (2, 3) for i in range(len(words) - n + 1)}
+        found: dict[str, str] = {}
+        for key in sorted(grams & self.full_names.keys()):
+            display, ids = self.full_names[key]
+            if self.is_staff(display):
+                continue
+            if len(ids) == 1 or len(ids & set(context)) == 1:
+                cid = next(iter(ids)) if len(ids) == 1 else next(iter(ids & set(context)))
+                found[display] = names[cid]["name"]
+        for label in re.findall(r"(?m)^\s*(?:\[([A-Za-z][\w'.-]*)\]|([A-Z][a-z]+):)", text or ""):
+            hit = self.speaker(label[0] or label[1], context)
+            if hit.company_id and hit.how == "first name in context":
+                found.setdefault(hit.full_name, names[hit.company_id]["name"])
+        return [f"{n} ({c})" for n, c in sorted(found.items())][:limit]
+
+    def _same_person(self, toks: list[str]) -> dict[str, set[str]]:
+        """Contacts with this last name whose first name could be this one: "B" fits any B,
+        "Michael" fits "Mike" (the first two letters agree), "Brian" does not fit "Ben".
+        Returns {display name: companies}."""
+        first = toks[0]
+        out: dict[str, set[str]] = defaultdict(set)
+        for f, cid, display in self.by_last.get(toks[-1], ()):
+            if (f[0] == first if len(first) == 1 else f[:2] == first[:2]):
+                out[display].add(cid)
+        return out
 
     def person(self, name: str) -> str | None:
         """The company a person belongs to, if their name identifies exactly one."""
         keys = person_keys(name or "")
-        for key in keys[::2] + keys[1::2]:  # full-name keys before last-name-and-initial keys
+        for key in keys[::2]:
             ids = self.people.get(key)
             if ids and len(ids) == 1:
+                return next(iter(ids))
+        toks = name_tokens(name or "")
+        if len(toks) >= 2:
+            near = self._same_person(toks)
+            ids = set().union(*near.values()) if near else set()
+            if len(ids) == 1:
                 return next(iter(ids))
         return None
 

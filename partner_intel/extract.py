@@ -167,6 +167,10 @@ def user_message(unit: Unit, event_type: str, staff: list[str]) -> str:
     if unit.attendees:
         context.append("Attendees (name | affiliation as written):\n"
                        + "\n".join(f"{n} | {a}" if a else n for n, a in unit.attendees))
+    if unit.known_people:
+        context.append("People in these notes who are on the partner contact list, with their company "
+                       "(use this to tell whose statement is whose; a statement about another company "
+                       "keeps that company): " + "; ".join(unit.known_people))
     if staff:
         context.append("Known Conexus staff: " + ", ".join(staff))
     if unit.parts > 1:
@@ -184,6 +188,8 @@ def cache_key(unit: Unit, event_type: str, model: str) -> str:
     # Only when set, so every unit without one keeps the key it always had and is not re-read.
     if unit.file_company:
         payload["file_company"] = unit.file_company
+    if unit.known_people:
+        payload["known_people"] = list(unit.known_people)
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()[:32]
 
 

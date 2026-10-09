@@ -3606,6 +3606,118 @@ test("partner_intel: a declined request is a clear error and is not saved", asyn
   assert.equal([...env.BOX_KV.store.keys()].filter((k) => k.startsWith("pi:ask:") && k !== "pi:ask:recent").length, 0);
 });
 
+/* ------------------------------------------------ partner_intel: contact list, statements to check, source links */
+const cell = (ref, v) => `<c r="${ref}" t="inlineStr"><is><t>${v}</t></is></c>`;
+function contactsXlsx(people) {
+  const head = ["First Name", "Last Name", "Title", "Account Name", "Email"];
+  const rows = [`<row r="1">${head.map((h, n) => cell(`${"ABCDE"[n]}1`, h)).join("")}</row>`];
+  people.forEach((p, k) => {
+    const r = k + 2;
+    rows.push(`<row r="${r}">${p.map((v, n) => (v === true ? `<c r="${"ABCDE"[n]}${r}" t="b"><v>1</v></c>`
+      : typeof v === "number" ? `<c r="${"ABCDE"[n]}${r}"><v>${v}</v></c>` : cell(`${"ABCDE"[n]}${r}`, v))).join("")}</row>`);
+  });
+  const xml = `<?xml version="1.0"?><worksheet><sheetData>${rows.join("")}</sheetData></worksheet>`;
+  return Buffer.from(buildZip({ "xl/worksheets/sheet1.xml": xml })).toString("base64");
+}
+const CONTACT_ROWS = [
+  ["Ben", "Larson", "Site Director", "Acme Corp", "ben.larson@acme.com"],
+  ["Sarah", true, "RN", "Beta Works", "sarah.true@beta.com"],          // Excel turned "True" into a TRUE cell
+  [3637, "Titzer", "Engineer", "Beta Works", "matt.titzer@beta.com"],  // and a first name into a number
+  ["", "", "", "Beta Works", "info@beta.com"],                          // no usable name
+  ["Ben", "Larson", "Site Director", "Acme Corp", "ben.larson@acme.com"], // duplicate
+  ["Robert", "King", "", "Acme Corp", ""],
+  ["Robert", "King", "", "Beta Works", ""],
+  ["Ann", "Other", "", "Unlisted Co", ""],
+];
+
+test("partner_intel: a contact list uploads as .xlsx, repairs names Excel damaged, and says what it found", async () => {
+  const { env, token } = await piEnv([]);
+  const data = contactsXlsx(CONTACT_ROWS);
+  const preview = await (await pi("contacts/import", piReq("contacts/import", "POST", { fileName: "All_Council_Contacts.xlsx", data, preview: true }, token), env)).json();
+  const s = preview.summary;
+  assert.deepEqual([s.kept, s.repaired, s.duplicates, s.noName, s.sameNameTwoCompanies], [6, 2, 1, 1, 1]);
+  assert.deepEqual([s.companies, s.companiesMatched, s.contactsAtUnlistedCompanies], [3, 2, 1]);
+  assert.equal(await env.BOX_KV.get("pi:contacts"), null, "a preview saves nothing");
+  const before = JSON.parse(await env.BOX_KV.get("pi:roster")).updatedAt;
+  assert.equal((await pi("contacts/import", piReq("contacts/import", "POST", { fileName: "All_Council_Contacts.xlsx", data }, token), env)).status, 200);
+  const relayed = await (await pi("relay/roster", relay("roster", "GET"), env)).json();
+  const names = relayed.contacts.map((c) => c.name);
+  assert.ok(names.includes("Sarah True") && names.includes("Matt Titzer"), "repaired from first.last@ email addresses");
+  assert.equal(relayed.contacts.find((c) => c.name === "Ben Larson").account, "Acme Corp");
+  assert.notEqual(JSON.parse(await env.BOX_KV.get("pi:roster")).updatedAt, before, "saving asks for a Re-link");
+  assert.equal((await getJson("status", env, token)).relinkNeeded, true);
+  assert.equal((await getJson("status", env, token)).contacts.summary.kept, 6);
+});
+
+test("partner_intel: a contact list also uploads as CSV, and a file without a company or name column is refused", async () => {
+  const { env, token } = await piEnv([]);
+  const csv = (t) => Buffer.from(t).toString("base64");
+  const ok = await (await pi("contacts/import", piReq("contacts/import", "POST",
+    { fileName: "c.csv", data: csv("Name,Company,Email\nBen Larson,Acme Corp,b@a.com\n"), preview: true }, token), env)).json();
+  assert.equal(ok.summary.kept, 1);
+  const noCompany = await pi("contacts/import", piReq("contacts/import", "POST", { fileName: "c.csv", data: csv("First Name,Last Name\nA,B\n") }, token), env);
+  assert.equal(noCompany.status, 400);
+  assert.equal((await pi("contacts/import", piReq("contacts/import", "POST", { data: csv("x") }), env)).status, 401);
+});
+
+/** Rows as the build leaves them: one credited to Beta Works while Ben Larson of Acme spoke. */
+function checkRows() {
+  return [
+    ins({ title: "Leaders lack AI expertise", company_id: "c-b", speaker: "Ben Larson", review: ["speaker_company_conflict", "company_differs_from_file"],
+      company_options: [{ id: "c-a", why: "Ben Larson works at Acme Corp" }], sources: [{ id: "2512011882069", name: "Ben Larson - Acme.txt", path: "Notes/IC" }] }),
+    ins({ title: "A settled statement", company_id: "c-a" }),
+  ];
+}
+
+test("partner_intel: BUG a statement credited to the wrong company could not be corrected; staff now settle it on the control panel", async () => {
+  const { env, token } = await piEnv(checkRows());
+  const list = await getJson("attribution/review", env, token);
+  assert.equal(list.total, 1, "only the statement in doubt is listed");
+  const item = list.items[0];
+  assert.equal(item.company.name, "Beta Works");
+  assert.deepEqual(item.options.map((o) => [o.name, o.why]), [["Acme Corp", "Ben Larson works at Acme Corp"]]);
+  assert.equal(item.checkCompany, true);
+  assert.equal(item.sources[0].url, "https://app.box.com/file/2512011882069");
+  assert.equal((await getJson("status", env, token)).toCheck, 1);
+
+  assert.equal((await pi("attribution/decide", piReq("attribution/decide", "POST", { id: item.id, companyId: "c-a" }, token), env)).status, 200);
+  const after = await getJson("insights?days=30", env, token);
+  const fixed = after.items.find((i) => i.id === item.id);
+  assert.equal(fixed.company.name, "Acme Corp", "the decision applies at once, with no scan");
+  assert.equal(fixed.checkCompany, false, "and the Check company marker is gone");
+  assert.equal((await getJson("attribution/review", env, token)).total, 0);
+  // A later publish of the same statement keeps the decision.
+  await publishV2(env, checkRows().map((r, n) => ({ ...r, id: n ? r.id : item.id })));
+  assert.equal((await getJson("insights?days=30", env, token)).items.find((i) => i.id === item.id).company.name, "Acme Corp");
+});
+
+test("partner_intel: keeping the current company clears the check; bad decisions are refused", async () => {
+  const { env, token } = await piEnv(checkRows());
+  const id = (await getJson("attribution/review", env, token)).items[0].id;
+  const decide = (body, t = token) => pi("attribution/decide", piReq("attribution/decide", "POST", body, t), env);
+  assert.equal((await decide({ id: "__proto__", companyId: "c-a" })).status, 404);
+  assert.equal((await decide({ id: "ffffffffffff", companyId: "c-a" })).status, 404);
+  assert.equal((await decide({ id, companyId: "constructor" })).status, 400, "only a known company");
+  assert.equal((await decide({ id, keep: true }, "")).status, 401);
+  assert.equal((await decide({ id, keep: true })).status, 200);
+  const kept = (await getJson("insights?days=30", env, token)).items.find((i) => i.id === id);
+  assert.equal(kept.company.name, "Beta Works");
+  assert.equal(kept.checkCompany, false);
+  assert.equal(Object.getPrototypeOf(JSON.parse(await env.BOX_KV.get("pi:attribution")).decisions), Object.prototype);
+});
+
+test("partner_intel: BUG a quote was sometimes shown without its file; every quote now carries the file name and a Box link", async () => {
+  const rows = [ins({ kind: "win", urgency: "none", company_id: "c-a", meeting_id: "m-1", meeting_label: "Acme visit", meeting_kind: "company",
+    sources: [{ id: "123", name: "Acme - notes.docx", path: "Raw Notes/Site Visits" }, { id: "local-x", name: "draft.txt", path: "Raw Notes/Site Visits" }] })];
+  const { env, token } = await piEnv(rows);
+  const profile = await getJson("company?id=c-a", env, token);
+  const win = profile.recentWins[0];
+  assert.deepEqual(win.sources.map((x) => [x.name, x.url]), [["Acme - notes.docx", "https://app.box.com/file/123"], ["draft.txt", ""]],
+    "the company page's quotes carry their files; an id that is not a Box id gets no link");
+  const program = await getJson("program?name=Site%20Visits", env, token);
+  assert.deepEqual(program.meetings[0].files.map((f) => f.url), ["https://app.box.com/file/123", ""]);
+});
+
 const PROGRAM_ROWS = () => [
   // PCN: two files for the same cohort and date are one meeting
   ins({ title: "pcn a", topic: "quality", date: "2026-04-24", series: "Cohort 2", event_type: "President and CEO Network Call", meeting_id: "m-c2", meeting_label: "Cohort 2", meeting_kind: "cohort", sources: [{ id: "1", name: "04.24.26 Cohort 2.docx", path: "Raw Notes/PCN" }] }),

@@ -645,6 +645,51 @@ def batch_client(batches):
     return SimpleNamespace(messages=SimpleNamespace(batches=batches))
 
 
+CONTACTS = [
+    {"name": "Ben Larson", "account": "Lucas Oil", "title": "Site Director", "email": "ben.larson@lucasoil.com"},
+    {"name": "Ben Ortiz", "account": "Zoeller Custom Molding", "title": "", "email": ""},
+    {"name": "Robert King", "account": "Lucas Oil", "title": "", "email": ""},
+    {"name": "Robert King", "account": "Mursix", "title": "", "email": ""},
+    {"name": "Patrick O'Neill", "account": "Mursix", "title": "", "email": ""},  # staff, also on a contact list
+]
+WITH_CONTACTS = Roster(ROSTER.partners, ROSTER.aliases, ROSTER.staff, ROSTER.updated_at, CONTACTS)
+
+
+class ContactTests(unittest.TestCase):
+    def setUp(self):
+        self.r = resolve.Resolver(WITH_CONTACTS)
+
+    def test_the_contact_list_arrives_with_the_partner_list(self):
+        roster = Roster.from_payload({"partners": [], "contacts": [{"name": "Ben Larson", "account": "Lucas Oil"}, {"name": "", "account": "x"}, "junk"]})
+        self.assertEqual(roster.contacts, [{"name": "Ben Larson", "account": "Lucas Oil", "title": "", "email": ""}])
+
+    def test_a_full_name_on_the_contact_list_names_the_company(self):
+        self.assertEqual(self.r.speaker("Ben Larson").company_id, "c-lucas")
+        self.assertEqual(self.r.speaker("Dr. Ben Larson").company_id, "c-lucas")
+        self.assertIsNone(self.r.speaker("Brian Larson").company_id, "not Ben Larson: the first names differ")
+        self.assertIsNone(self.r.speaker("Patrick O'Neill").company_id, "Conexus staff are never a partner's voice")
+
+    def test_a_first_name_needs_the_file_to_say_which_company(self):
+        """BUG: "[Ben]" in Ben Larson's call could not be tied to anyone. A first name alone is
+        held by people at many companies; with the file's company it is one person."""
+        self.assertIsNone(self.r.speaker("Ben").company_id, "Ben at Lucas Oil or Ben at Zoeller")
+        hit = self.r.speaker("Ben", {"c-lucas"})
+        self.assertEqual((hit.company_id, hit.full_name, hit.how), ("c-lucas", "Ben Larson", "first name in context"))
+        both = self.r.speaker("Ben", {"c-lucas", "c-zoeller"})
+        self.assertEqual((both.company_id, both.how, both.candidates), (None, "ambiguous", ["c-lucas", "c-zoeller"]))
+
+    def test_one_name_at_two_companies_is_never_guessed(self):
+        self.assertEqual(self.r.speaker("Robert King").candidates, ["c-lucas", "c-mursix"])
+        self.assertIsNone(self.r.speaker("Robert King").company_id)
+        self.assertEqual(self.r.speaker("Robert King", {"c-mursix"}).company_id, "c-mursix")
+
+    def test_people_named_in_the_notes_are_found_for_the_prompt(self):
+        text = "[Joe Simkins] Morning.\n[Ben] We were founded by another company.\nRobert King joined late. Patrick O'Neill thanked everyone."
+        self.assertEqual(self.r.people_in_text(text, {"c-lucas"}), ["Ben Larson (Lucas Oil)", "Robert King (Lucas Oil)"],
+                         "the speaker label and the full name, each tied by the file's company; staff left out")
+        self.assertEqual(self.r.people_in_text(text, set()), [], "with no context, a first name and a shared name are left out")
+
+
 class RunTests(unittest.TestCase):
     def files(self, **extra):
         files = {"10": {"name": "Copilot Onboarding Notes.docx", "folder": "Onboarding",
@@ -911,6 +956,98 @@ class RunTests(unittest.TestCase):
         run.run("scan", api=api, caller=claude, model="m")
         units = api.state["registry"]["10"]["units"]
         self.assertEqual({u["file_company"] for u in units}, {""}, "each section names its own company")
+
+    def contact_api(self, name="Ben Larson - Lucas Oil.txt", text=None):
+        text = text or ("[Joe Simkins] Thanks for taking the call this morning, it is good to finally talk.\n"
+                        "[Ben] We were founded by Zoeller decades ago and today hiring machinists is the hardest problem.\n")
+        api = FakeApi({"40": {"name": name, "folder": "Industry Connection", "data": text.encode()}})
+        api.roster = lambda: {"partners": ROSTER.partners, "aliases": {}, "staff": ROSTER.staff, "updatedAt": "t1", "contacts": CONTACTS}
+        return api
+
+    def test_BUG_a_speaker_known_only_by_first_name_was_not_tied_to_their_company(self):
+        """BUG (Ben Larson of Evonik): Claude credited "[Ben]" to the company his site's history
+        named, and nothing knew Ben was Ben Larson. With the contact list, the prompt says who he
+        is, and when Claude still names another company the statement is put up for checking
+        with Ben's company offered."""
+        api, seen = self.contact_api(), []
+
+        def model(unit, event_type, staff, model_id):
+            seen.append(extract.user_message(unit, event_type, staff))
+            line = [l for l in unit.text.split("\n") if "machinists" in l][0]
+            return [row(company="Zoeller", speaker="Ben", quote=line[-70:], title="Hiring machinists is hard", detail=line)], {"input": 1, "output": 1}
+        run.run("scan", api=api, caller=model, model="m")
+        self.assertIn("Ben Larson (Lucas Oil)", seen[0], "Claude is told who Ben is")
+        r = api.published["insights"][0]
+        self.assertEqual(r["company_id"], "c-zoeller", "Claude's reading is kept")
+        self.assertEqual(r["speaker"], "Ben Larson", "the first name is completed from the contact list")
+        self.assertIn("speaker_company_conflict", r["review"])
+        self.assertIn({"id": "c-lucas", "why": "Ben Larson works at Lucas Oil"}, r["company_options"])
+
+    def test_a_statement_with_no_company_takes_the_speakers(self):
+        api = self.contact_api()
+
+        def model(unit, event_type, staff, model_id):
+            line = [l for l in unit.text.split("\n") if "machinists" in l][0]
+            return [row(company="", speaker="Ben", quote=line[-70:], title="Hiring machinists is hard", detail=line)], {"input": 1, "output": 1}
+        run.run("scan", api=api, caller=model, model="m")
+        r = api.published["insights"][0]
+        self.assertEqual(r["company_id"], "c-lucas")
+        self.assertFalse({"speaker_company_conflict", "company_differs_from_file", "speaker_ambiguous", "no_company"} & set(r["review"]))
+
+    def test_a_first_name_two_companies_could_claim_is_put_up_for_checking(self):
+        """PCN notes read "Ben - statement". With one Ben among the attendees' companies he is that
+        Ben; with two, the statement is listed with both companies, never guessed."""
+        pcn = ("01.  ATTENDEES\nName | Organization / Title | Present\nBen Larson | Lucas Oil | x\nBen Ortiz | Zoeller Custom Molding | x\n"
+               "02.  MAIN THEMES\nTheme 1: Hiring\nKey Discussion Points:\n"
+               "Ben - hiring machinists is the hardest problem we have this year, by a long way, and it is getting worse.\n"
+               "Ben - retirements are taking our most experienced people faster than the apprenticeship can replace them.\n")
+        api = self.contact_api(name="04.24.26 Cohort 9 Notes.txt", text=pcn)
+
+        def model(unit, event_type, staff, model_id):
+            return [row(company="", speaker="Ben", quote="hiring machinists is the hardest problem we have this year",
+                        title="Hiring machinists is hard")], {"input": 1, "output": 1}
+        run.run("scan", api=api, caller=model, model="m")
+        r = api.published["insights"][0]
+        self.assertEqual(r["company_id"], "")
+        self.assertIn("speaker_ambiguous", r["review"])
+        self.assertEqual(sorted(o["id"] for o in r["company_options"]), ["c-lucas", "c-zoeller"])
+
+    def test_a_first_name_in_pcn_notes_is_the_one_attendee_with_it(self):
+        pcn = ("01.  ATTENDEES\nName | Organization / Title | Present\nBen Larson | Lucas Oil | x\nRobert King | Mursix | x\n"
+               "02.  MAIN THEMES\nTheme 1: Hiring\nKey Discussion Points:\n"
+               "Ben - hiring machinists is the hardest problem we have this year, by a long way, and it is getting worse.\n"
+               "Ben - retirements are taking our most experienced people faster than the apprenticeship can replace them.\n")
+        api = self.contact_api(name="04.24.26 Cohort 9 Notes.txt", text=pcn)
+
+        def model(unit, event_type, staff, model_id):
+            return [row(company="", speaker="Ben", quote="hiring machinists is the hardest problem we have this year",
+                        title="Hiring machinists is hard")], {"input": 1, "output": 1}
+        run.run("scan", api=api, caller=model, model="m")
+        r = api.published["insights"][0]
+        self.assertEqual((r["company_id"], r["speaker"]), ("c-lucas", "Ben Larson"))
+
+    def test_BUG_a_file_named_for_two_partners_was_credited_to_the_longer_name(self):
+        """BUG: "Lucas Oil and Zoeller joint call.txt" was read as a Lucas Oil call, because the
+        name matcher picks the longest name it finds. A name that names two partners names none."""
+        res = resolve.Resolver(ROSTER)
+        self.assertEqual(run.file_company(res, "Lucas Oil and Zoeller joint call.txt"), "")
+        self.assertEqual(run.file_company(res, "Visit to Lucas Oil.txt"), "Lucas Oil")
+
+    def test_the_csv_links_each_source_file_in_box(self):
+        from partner_intel import export
+        api = FakeApi(self.files())
+        run.run("scan", api=api, caller=Counter(), model="m")
+        text = export.insights_csv(api.published, ROSTER)
+        header = text.lstrip("\ufeff").split("\r\n")[0].split(",")
+        self.assertIn("SourceLinks", header)
+        self.assertIn("https://app.box.com/file/10", text)
+        self.assertEqual(export.box_link("local-1"), "")
+
+    def test_known_people_change_the_cache_key_only_when_there_are_some(self):
+        plain = shape.Unit(text="Notes.")
+        self.assertEqual(extract.cache_key(plain, "Other", "m"), extract.cache_key(shape.Unit(text="Notes.", known_people=[]), "Other", "m"))
+        self.assertNotEqual(extract.cache_key(plain, "Other", "m"),
+                            extract.cache_key(shape.Unit(text="Notes.", known_people=["Ben Larson (Lucas Oil)"]), "Other", "m"))
 
     def test_trial_limit_reads_only_that_many_files(self):
         api, claude = FakeApi(self.files()), Counter()
