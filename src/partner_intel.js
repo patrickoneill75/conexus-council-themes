@@ -1356,9 +1356,10 @@ function companiesView(data, roster, params) {
     if (i.scope === "internal" || !i.company_id) continue;
     const c = counts.get(i.company_id) || { insights: 0, problems: 0, solutions: 0, wins: 0, last: "" };
     c.insights++;
-    if (i.kind === "problem") c.problems++;
-    if (i.kind === "solution" || i.kind === "offer" || i.kind === "equipment") c.solutions++;
-    if (i.kind === "win") c.wins++;
+    // The same kinds the company page's See all lists count, so the two never disagree.
+    if (COMPANY_LISTS.problems.includes(i.kind)) c.problems++;
+    if (COMPANY_LISTS.solutions.includes(i.kind)) c.solutions++;
+    if (COMPANY_LISTS.wins.includes(i.kind)) c.wins++;
     if (i.date > c.last) c.last = i.date;
     counts.set(i.company_id, c);
   }
@@ -1375,8 +1376,23 @@ function companiesView(data, roster, params) {
     if (withInsightsOnly && !n.insights) continue;
     out.push({ id: c.id, name: c.name, industry: c.industry || "Unknown", status: c.status, ...n });
   }
-  return out.sort((a, b) => b.insights - a.insights || a.name.localeCompare(b.name));
+  // Sorted on the server, before the list is cut to 500, so a sort sees every company.
+  // Alphabetical by default; a number or a date sorts largest or newest first unless asked.
+  const key = COMPANY_SORTS.includes(first(params, "sort")) ? first(params, "sort") : "name";
+  const textual = ["name", "industry", "status"].includes(key);
+  const dir = first(params, "dir") === "asc" || first(params, "dir") === "desc" ? first(params, "dir") : (textual ? "asc" : "desc");
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const value = (c) => (key === "status" ? (STATUS_ORDER[c.status] ?? 9) : c[key]);
+  return out.sort((a, b) => {
+    const x = value(a), y = value(b);
+    if (key === "last" && !x !== !y) return x ? -1 : 1; // never mentioned: always at the end
+    const d = typeof x === "number" ? x - y : String(x).localeCompare(String(y), undefined, { sensitivity: "base" });
+    return (dir === "asc" ? d : -d) || byName(a, b);
+  });
 }
+
+const COMPANY_SORTS = ["name", "industry", "status", "insights", "problems", "solutions", "wins", "last"];
+const STATUS_ORDER = { Active: 0, Inactive: 1, "Non-member": 2 };
 
 /** The one-time update the control panel should offer, or null. It is offered only while the
  * data predates the schema it brings and it has not been used, so it vanishes either way. */
@@ -1426,12 +1442,12 @@ function weightedTerms(i, label) {
  * evidence makes a decision. Only rows that describe something a company has (a solution,
  * an offer, a win, equipment) can answer "who can help", so problems are not searched.
  */
-export function shortlist(question, data, index, overrides, labels, limit = 10, sources = null) {
+export function shortlist(question, data, index, overrides, labels, limit = 10, sources = null, exclude = "") {
   const query = [...new Set(tokenize(question))];
   const empty = { companies: [], docs: 0 };
   if (!query.length) return empty;
   const docs = data.insights.filter((i) => i.scope !== "internal" && SOLVER_KINDS.has(i.kind) && i.company_id
-    && (!sources || !sources.size || sourcesOf(i).some((x) => sources.has(x))));
+    && i.company_id !== exclude && (!sources || !sources.size || sourcesOf(i).some((x) => sources.has(x))));
   if (!docs.length) return empty;
 
   const indexed = docs.map((i) => ({ i, terms: weightedTerms(i, labels.get(finalTopic(overrides, i.topic)) || "") }));
@@ -1583,11 +1599,13 @@ function presentAnswer(stored, data, index, overrides, labels) {
   };
 }
 
-async function ask(env, data, roster, overrides, question, sourceList = []) {
+/** exclude is a company to leave out of the matches: "Find solution" on a company's problem
+ * looks for other partners, not the company that has the problem. */
+async function ask(env, data, roster, overrides, question, sourceList = [], exclude = "") {
   const index = companyIndex(roster, data);
   const labels = topicLabels(data, overrides);
   const sources = new Set(sourceList);
-  const short = shortlist(question, data, index, overrides, labels, 10, sources);
+  const short = shortlist(question, data, index, overrides, labels, 10, sources, index.has(exclude) ? exclude : "");
   const considered = { companies: short.companies.length, insights: short.docs };
   if (!short.companies.length) {
     return presentAnswer({ answer: { summary: "", matches: [], gaps: "Nothing in the notes matches that closely." },
@@ -2134,7 +2152,7 @@ export async function handlePartnerIntelApi(route, request, env) {
       if (question.length < 8) return json({ error: "Ask a full question, such as what the partner needs." }, 400);
       if (question.length > 600) return json({ error: "Keep the question under 600 characters." }, 400);
       const sources = (Array.isArray(body.sources) ? body.sources : []).map(text).filter(Boolean).slice(0, 40);
-      return json(await ask(env, data, roster, overrides, question, sources));
+      return json(await ask(env, data, roster, overrides, question, sources, text(body.exclude)));
     }
     return json({ error: "Not found" }, 404);
   } catch (e) {

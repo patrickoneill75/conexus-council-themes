@@ -3751,6 +3751,49 @@ test("partner_intel: a company page's See all buttons count what their lists hol
     "each button's count matches the list it opens, resolved problems included");
 });
 
+test("partner_intel: the companies page is alphabetical by default and sorts by any column", async () => {
+  const rows = [
+    ins({ company_id: "c-a", kind: "problem", date: isoAgo(40) }), ins({ company_id: "c-a", kind: "ask", date: isoAgo(40) }),
+    ins({ company_id: "c-b", kind: "win", urgency: "none", date: isoAgo(2) }), ins({ company_id: "c-b", kind: "win", urgency: "none", date: isoAgo(3) }),
+    ins({ company_id: "c-b", kind: "solution", urgency: "none", date: isoAgo(3) }),
+    ins({ company_id: "c-c", kind: "problem", date: isoAgo(10) }),
+  ];
+  const { env, token } = await piEnv(rows);
+  const names = async (q = "") => (await getJson(`companies?withInsights=1${q}`, env, token)).items.map((c) => c.name);
+  assert.deepEqual(await names(), ["Acme Corp", "Beta Works", "Gamma Labs"], "alphabetical when no sort is chosen");
+  assert.deepEqual(await names("&sort=name&dir=desc"), ["Gamma Labs", "Beta Works", "Acme Corp"]);
+  assert.deepEqual(await names("&sort=insights"), ["Beta Works", "Acme Corp", "Gamma Labs"], "a number sorts largest first, ties by name");
+  assert.deepEqual(await names("&sort=problems"), ["Acme Corp", "Gamma Labs", "Beta Works"], "problems include asks, as on the company page");
+  assert.deepEqual(await names("&sort=wins&dir=asc"), ["Acme Corp", "Gamma Labs", "Beta Works"]);
+  assert.deepEqual(await names("&sort=last"), ["Beta Works", "Gamma Labs", "Acme Corp"], "newest mention first");
+  assert.deepEqual(await names("&sort=status"), ["Acme Corp", "Beta Works", "Gamma Labs"], "members, then former members");
+  assert.deepEqual(await names("&sort=constructor"), ["Acme Corp", "Beta Works", "Gamma Labs"], "an unknown column falls back to the name");
+  const roster = JSON.parse(await env.BOX_KV.get("pi:roster"));
+  roster.partners.push({ id: "c-d", name: "Delta Co", industry: "Metals", status: "Active", program: "", participationId: "", contacts: [], aliases: [] });
+  roster.updatedAt = "r2";
+  await env.BOX_KV.put("pi:roster", JSON.stringify(roster));
+  for (const dir of ["desc", "asc"]) {
+    const items = (await getJson(`companies?sort=last&dir=${dir}`, env, token)).items;
+    assert.equal(items[items.length - 1].name, "Delta Co", `a company never mentioned sorts last (${dir})`);
+  }
+});
+
+test("partner_intel: Find solution asks for other partners, never the company that has the problem", async () => {
+  const rows = [
+    ins({ kind: "solution", urgency: "none", company_id: "c-a", title: "Machine vision quality inspection", detail: "Built AI camera inspection.", tags: ["vision", "inspection"], solves: "manual inspection" }),
+    ins({ kind: "offer", urgency: "none", company_id: "c-b", title: "Vision inspection integration", detail: "Offers machine vision inspection setup.", tags: ["vision", "inspection"], solves: "manual inspection" }),
+  ];
+  const { env, token } = await piEnv(rows);
+  const ask = async (body) => (await pi("ask", piReq("ask", "POST", body, token), env)).json();
+  const question = "Who can help with this: Manual inspection misses defects. We need machine vision inspection.";
+  const open = await ask({ question });
+  assert.deepEqual(open.matches.map((m) => m.company.id).sort(), ["c-a", "c-b"]);
+  const excluded = await ask({ question, exclude: "c-a" });
+  assert.deepEqual(excluded.matches.map((m) => m.company.id), ["c-b"], "the company with the problem is left out");
+  assert.deepEqual((await ask({ question, exclude: "constructor" })).matches.map((m) => m.company.id).sort(), ["c-a", "c-b"],
+    "an unknown company to exclude is ignored");
+});
+
 const PROGRAM_ROWS = () => [
   // PCN: two files for the same cohort and date are one meeting
   ins({ title: "pcn a", topic: "quality", date: "2026-04-24", series: "Cohort 2", event_type: "President and CEO Network Call", meeting_id: "m-c2", meeting_label: "Cohort 2", meeting_kind: "cohort", sources: [{ id: "1", name: "04.24.26 Cohort 2.docx", path: "Raw Notes/PCN" }] }),

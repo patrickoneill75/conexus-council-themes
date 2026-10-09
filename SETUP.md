@@ -1106,7 +1106,9 @@ Pick the right company, keep the current one, or choose another partner. A decis
 
 ### Source files
 
-Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. A company page ends with **Source documents**: each meeting the company appears in, its program, and every file behind it, linked to Box. **See all wins**, **See all problems** (problems and asks, open or resolved) and **See all solutions** (solutions, offers and equipment) open the company's full lists, newest first. The Excel export has a **SourceLinks** column with the same links.
+Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. A company page has tabs: **Overview** (Top issues, Top solutions and Recent wins, left to right), **Problems** (problems and asks, open or resolved), **Solutions** (solutions, offers and equipment), **Wins**, **Meetings** (each meeting the company appears in, its program, and every file behind it, linked to Box) and **Notes** (everything recorded about the company). Each tab shows its count; the list tabs are newest first, 50 at a time.
+
+**Find solution** sits under every problem and ask on a company page (Overview, Problems and Notes). It opens Ask with the problem as the question ("Who can help with this: ...") and runs it at once, leaving the company that has the problem out of the matches. Editing the question starts a normal search with no company left out. The Excel export has a **SourceLinks** column with the same links.
 
 ### Cost
 
