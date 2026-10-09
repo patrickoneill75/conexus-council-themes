@@ -1442,12 +1442,12 @@ function weightedTerms(i, label) {
  * evidence makes a decision. Only rows that describe something a company has (a solution,
  * an offer, a win, equipment) can answer "who can help", so problems are not searched.
  */
-export function shortlist(question, data, index, overrides, labels, limit = 10, sources = null) {
+export function shortlist(question, data, index, overrides, labels, limit = 10, sources = null, exclude = "") {
   const query = [...new Set(tokenize(question))];
   const empty = { companies: [], docs: 0 };
   if (!query.length) return empty;
   const docs = data.insights.filter((i) => i.scope !== "internal" && SOLVER_KINDS.has(i.kind) && i.company_id
-    && (!sources || !sources.size || sourcesOf(i).some((x) => sources.has(x))));
+    && i.company_id !== exclude && (!sources || !sources.size || sourcesOf(i).some((x) => sources.has(x))));
   if (!docs.length) return empty;
 
   const indexed = docs.map((i) => ({ i, terms: weightedTerms(i, labels.get(finalTopic(overrides, i.topic)) || "") }));
@@ -1599,11 +1599,13 @@ function presentAnswer(stored, data, index, overrides, labels) {
   };
 }
 
-async function ask(env, data, roster, overrides, question, sourceList = []) {
+/** exclude is a company to leave out of the matches: "Find solution" on a company's problem
+ * looks for other partners, not the company that has the problem. */
+async function ask(env, data, roster, overrides, question, sourceList = [], exclude = "") {
   const index = companyIndex(roster, data);
   const labels = topicLabels(data, overrides);
   const sources = new Set(sourceList);
-  const short = shortlist(question, data, index, overrides, labels, 10, sources);
+  const short = shortlist(question, data, index, overrides, labels, 10, sources, index.has(exclude) ? exclude : "");
   const considered = { companies: short.companies.length, insights: short.docs };
   if (!short.companies.length) {
     return presentAnswer({ answer: { summary: "", matches: [], gaps: "Nothing in the notes matches that closely." },
@@ -2150,7 +2152,7 @@ export async function handlePartnerIntelApi(route, request, env) {
       if (question.length < 8) return json({ error: "Ask a full question, such as what the partner needs." }, 400);
       if (question.length > 600) return json({ error: "Keep the question under 600 characters." }, 400);
       const sources = (Array.isArray(body.sources) ? body.sources : []).map(text).filter(Boolean).slice(0, 40);
-      return json(await ask(env, data, roster, overrides, question, sources));
+      return json(await ask(env, data, roster, overrides, question, sources, text(body.exclude)));
     }
     return json({ error: "Not found" }, 404);
   } catch (e) {

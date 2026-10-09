@@ -74,6 +74,15 @@ a.button:hover { background:var(--wash); }
 .seg a.button { border:0; border-radius:0; color:var(--text-secondary); }
 .seg a.button.on { background:var(--navy); color:#fff; }
 table.docs td.nowrap { white-space:nowrap; }
+/* Company page tabs. */
+nav.tabs { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--border); margin:18px 0 16px; }
+nav.tabs a { padding:9px 14px; font-weight:600; font-size:14px; color:var(--text-secondary); text-decoration:none;
+  border-bottom:3px solid transparent; margin-bottom:-1px; }
+nav.tabs a:hover { color:var(--navy); }
+nav.tabs a.on { color:var(--navy); border-bottom-color:var(--amber, #FBAE40); }
+nav.tabs .n { display:inline-block; min-width:1.6em; padding:1px 6px; margin-left:4px; border-radius:10px; background:var(--wash);
+  font-size:12px; color:var(--text-secondary); text-align:center; }
+button.find { border-color:var(--accent); color:var(--accent); font-weight:600; }
 /* Sortable table headings: the heading is a button, so it works from the keyboard too. */
 th button.sorter { background:none; border:0; padding:0; font:inherit; color:inherit; cursor:pointer; white-space:nowrap; }
 th button.sorter:hover, th button.sorter.on { color:var(--navy); }
