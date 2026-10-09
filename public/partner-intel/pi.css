@@ -74,6 +74,10 @@ a.button:hover { background:var(--wash); }
 .seg a.button { border:0; border-radius:0; color:var(--text-secondary); }
 .seg a.button.on { background:var(--navy); color:#fff; }
 table.docs td.nowrap { white-space:nowrap; }
+/* Sortable table headings: the heading is a button, so it works from the keyboard too. */
+th button.sorter { background:none; border:0; padding:0; font:inherit; color:inherit; cursor:pointer; white-space:nowrap; }
+th button.sorter:hover, th button.sorter.on { color:var(--navy); }
+th button.sorter .arrow { display:inline-block; width:1.1em; font-size:10px; margin-left:3px; }
 
 .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px; border-radius:999px;
         border:1px solid var(--border); background:var(--wash); color:var(--text-secondary); white-space:nowrap; }

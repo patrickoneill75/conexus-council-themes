@@ -378,6 +378,12 @@
   }
 
   /* ------------------------------------------------------------------ Companies */
+  // Columns of the companies table: [sort key, heading]. Alphabetical by name until a heading is
+  // clicked; clicking it again reverses. Kept while the page is open, so Back returns to it.
+  var COMPANY_COLS = [["name", "Company"], ["industry", "Industry"], ["status", "Status"], ["insights", "Notes"],
+    ["problems", "Problems"], ["solutions", "Solutions"], ["wins", "Wins"], ["last", "Last mentioned"]];
+  var companySort = { key: "name", dir: "asc" };
+
   function companies() {
     var mine = ++seq;
     view.innerHTML = '<div class="card"><div class="fields">' +
@@ -389,13 +395,18 @@
       '<div class="card" id="clist">' + "</div>";
     function load() {
       var qs = "companies?q=" + encodeURIComponent(el("cq").value) + (el("ci").value ? "&industry=" + encodeURIComponent(el("ci").value) : "") +
-        (el("cs").value ? "&status=" + encodeURIComponent(el("cs").value) : "") + (el("cw").checked ? "&withInsights=1" : "");
+        (el("cs").value ? "&status=" + encodeURIComponent(el("cs").value) : "") + (el("cw").checked ? "&withInsights=1" : "") +
+        "&sort=" + companySort.key + "&dir=" + companySort.dir;
       PI.api(qs).then(function (r) {
         if (mine !== seq) return;
         if (el("ci").options.length === 1) {
           el("ci").innerHTML = '<option value="">All</option>' + r.industries.map(function (i) { return "<option>" + esc(i) + "</option>"; }).join("");
         }
-        el("clist").innerHTML = r.items.length ? "<table><thead><tr><th>Company</th><th>Industry</th><th>Status</th><th>Notes</th><th>Problems</th><th>Solutions</th><th>Wins</th><th>Last mentioned</th></tr></thead><tbody>" +
+        el("clist").innerHTML = r.items.length ? "<table><thead><tr>" + COMPANY_COLS.map(function (col) {
+            var on = companySort.key === col[0];
+            return '<th aria-sort="' + (on ? (companySort.dir === "asc" ? "ascending" : "descending") : "none") + '"><button class="sorter' + (on ? " on" : "") +
+              '" data-sort="' + col[0] + '">' + col[1] + '<span class="arrow" aria-hidden="true">' + (on ? (companySort.dir === "asc" ? "&#9650;" : "&#9660;") : "") + "</span></button></th>";
+          }).join("") + "</tr></thead><tbody>" +
           r.items.map(function (c) {
             return '<tr class="click" data-id="' + esc(c.id) + '"><td><b>' + esc(c.name) + "</b></td><td>" + esc(c.industry) + "</td><td>" +
               esc(PI.statusLabel[c.status] || c.status) + "</td><td>" + c.insights + "</td><td>" + c.problems + "</td><td>" + c.solutions +
@@ -403,6 +414,14 @@
           }).join("") + "</tbody></table>" : '<div class="empty">No companies match.</div>';
         Array.prototype.forEach.call(el("clist").querySelectorAll("tr.click"), function (tr) {
           tr.addEventListener("click", function () { location.hash = "#/company/" + encodeURIComponent(tr.getAttribute("data-id")); });
+        });
+        Array.prototype.forEach.call(el("clist").querySelectorAll("button.sorter"), function (b) {
+          b.addEventListener("click", function () {
+            var key = b.getAttribute("data-sort");
+            var textual = key === "name" || key === "industry" || key === "status";
+            companySort = companySort.key === key ? { key: key, dir: companySort.dir === "asc" ? "desc" : "asc" } : { key: key, dir: textual ? "asc" : "desc" };
+            load();
+          });
         });
       }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
     }

@@ -1356,9 +1356,10 @@ function companiesView(data, roster, params) {
     if (i.scope === "internal" || !i.company_id) continue;
     const c = counts.get(i.company_id) || { insights: 0, problems: 0, solutions: 0, wins: 0, last: "" };
     c.insights++;
-    if (i.kind === "problem") c.problems++;
-    if (i.kind === "solution" || i.kind === "offer" || i.kind === "equipment") c.solutions++;
-    if (i.kind === "win") c.wins++;
+    // The same kinds the company page's See all lists count, so the two never disagree.
+    if (COMPANY_LISTS.problems.includes(i.kind)) c.problems++;
+    if (COMPANY_LISTS.solutions.includes(i.kind)) c.solutions++;
+    if (COMPANY_LISTS.wins.includes(i.kind)) c.wins++;
     if (i.date > c.last) c.last = i.date;
     counts.set(i.company_id, c);
   }
@@ -1375,8 +1376,23 @@ function companiesView(data, roster, params) {
     if (withInsightsOnly && !n.insights) continue;
     out.push({ id: c.id, name: c.name, industry: c.industry || "Unknown", status: c.status, ...n });
   }
-  return out.sort((a, b) => b.insights - a.insights || a.name.localeCompare(b.name));
+  // Sorted on the server, before the list is cut to 500, so a sort sees every company.
+  // Alphabetical by default; a number or a date sorts largest or newest first unless asked.
+  const key = COMPANY_SORTS.includes(first(params, "sort")) ? first(params, "sort") : "name";
+  const textual = ["name", "industry", "status"].includes(key);
+  const dir = first(params, "dir") === "asc" || first(params, "dir") === "desc" ? first(params, "dir") : (textual ? "asc" : "desc");
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const value = (c) => (key === "status" ? (STATUS_ORDER[c.status] ?? 9) : c[key]);
+  return out.sort((a, b) => {
+    const x = value(a), y = value(b);
+    if (key === "last" && !x !== !y) return x ? -1 : 1; // never mentioned: always at the end
+    const d = typeof x === "number" ? x - y : String(x).localeCompare(String(y), undefined, { sensitivity: "base" });
+    return (dir === "asc" ? d : -d) || byName(a, b);
+  });
 }
+
+const COMPANY_SORTS = ["name", "industry", "status", "insights", "problems", "solutions", "wins", "last"];
+const STATUS_ORDER = { Active: 0, Inactive: 1, "Non-member": 2 };
 
 /** The one-time update the control panel should offer, or null. It is offered only while the
  * data predates the schema it brings and it has not been used, so it vanishes either way. */
