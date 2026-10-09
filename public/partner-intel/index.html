@@ -371,7 +371,8 @@
     if (a.summary) html += '<p style="margin:0 0 4px"><b>' + esc(a.summary) + "</b></p>";
     html += '<p class="small muted" style="margin:0 0 6px">' + (a.cached ? "Saved answer from " + esc(PI.fmtStamp(a.askedAt)) + ". " : "") +
       "Looked at " + a.considered.insights + " solutions, offers and wins.</p>";
-    if (!a.matches.length) html += '<div class="empty">No partner in the notes clearly does this.</div>';
+    if (!a.matches.length) html += '<div class="empty">No partner in the notes clearly does this.' +
+      (a.peers && a.peers.length ? " Partners working through the same thing are listed below." : "") + "</div>";
     a.matches.forEach(function (m, n) {
       var c = m.company;
       html += '<div class="item"><div class="rank"><div class="n">' + (n + 1) + '</div><div style="flex:1">' +
@@ -386,7 +387,24 @@
         "</div></div></div>";
     });
     if (a.gaps) html += '<p class="small" style="margin-top:12px"><b>Not covered:</b> ' + esc(a.gaps) + "</p>";
-    return html + "</div>";
+    if (a.searchTerms && a.searchTerms.length) {
+      html += '<p class="small muted" style="margin-top:12px">Also searched for: ' + a.searchTerms.map(esc).join(", ") + "</p>";
+    }
+    html += "</div>";
+    // Companies working through the same thing: a peer to compare notes with, not a solution.
+    if (a.peers && a.peers.length) {
+      html += '<div class="card"><h3>Working through the same thing</h3><p class="desc">Partners whose notes show the same problem, ' +
+        "an ask for help with it, or a plan to tackle it. Found by matching words, not ranked by Claude.</p>" +
+        a.peers.map(function (p) {
+          var c = p.company;
+          return '<div class="item"><div class="head"><a class="co" href="#/company/' + encodeURIComponent(c.id) + '">' + esc(c.name) + "</a>" +
+            PI.pill("info", c.industry) + PI.pill(c.status === "Active" ? "good" : "info", PI.statusLabel[c.status] || c.status) + "</div>" +
+            (c.contacts && c.contacts.length ? '<div class="small muted">Contacts on file: ' + c.contacts.map(esc).join(", ") + "</div>" : "") +
+            '<details class="src"><summary>Evidence (' + p.evidence.length + ")</summary>" +
+            p.evidence.map(function (i) { return PI.insightCard(i, { company: false }); }).join("") + "</details></div>";
+        }).join("") + "</div>";
+    }
+    return html;
   }
 
   /* ------------------------------------------------------------------ Companies */
