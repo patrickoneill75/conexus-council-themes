@@ -132,20 +132,37 @@
   </section>
 
   <section class="card">
-    <h2>4. Names to review</h2>
+    <h2>4. Contacts at partner companies</h2>
+    <p class="desc">The people at partner companies, from a Salesforce export (.xlsx or .csv with First Name, Last Name, Title, Account Name and Email). The scan uses it to tell who is speaking and which company they work for, so "Ben" in a call with Evonik is Ben Larson of Evonik. It does not need to be complete. Each upload replaces the last one. After saving, press Re-link (no Claude cost).</p>
+    <div id="contactsNow" class="small" style="margin-bottom:10px"></div>
+    <div class="row">
+      <input type="file" id="contactsFile" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv">
+      <button id="contactsPreview" disabled>Preview</button>
+    </div>
+    <div id="contactsResult" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card">
+    <h2>5. Statements to check <span id="checkCount" class="small muted"></span></h2>
+    <p class="desc">Statements where it is uncertain which company said them: the speaker works for a different partner than the one credited, the file is named for another partner, or two contacts share the speaker's name. Pick the right company, or keep the current one. A decision applies at once and clears the Check company marker.</p>
+    <div id="checks"><span class="muted small">Loading…</span></div>
+  </section>
+
+  <section class="card">
+    <h2>6. Names to review</h2>
     <p class="desc">Company names that appear in the notes but could not be matched to the partner list with confidence. Match one to a partner, or add it as a non-member. Changes apply after Re-link.</p>
     <div id="review"><span class="muted small">Loading…</span></div>
   </section>
 
   <section class="card">
-    <h2>5. Conexus staff</h2>
+    <h2>7. Conexus staff</h2>
     <p class="desc">People who work for Conexus, one per line. What they say in a conversation is not counted as a partner's problem or solution.</p>
     <textarea id="staff" rows="4" style="max-width:420px"></textarea>
     <div class="row" style="margin-top:8px"><button id="saveStaff">Save staff</button><span class="msg" id="staffMsg"></span></div>
   </section>
 
   <section class="card">
-    <h2>6. Topics</h2>
+    <h2>8. Topics</h2>
     <p class="desc">Every note is filed under one topic, and the shared-issues ranking counts companies per topic. Rename a topic, or merge two that mean the same thing.</p>
     <div id="topics"><span class="muted small">Loading…</span></div>
   </section>
@@ -193,6 +210,7 @@
         (s.rosterSync.warning ? " " + s.rosterSync.warning : "") : "";
       renderReport(s.report);
       renderUsage(s.usage);
+      renderContacts(s.contacts);
       el("rosterSummary").innerHTML = s.roster.Active + " members &middot; " + s.roster.Inactive + " former &middot; " + s.roster["Non-member"] + " not members";
     });
   }
@@ -327,7 +345,7 @@
         return "<tr><td>" + esc(PI.fmtStamp(x.created_at)) + '</td><td>' + (x.event === "schedule" ? "Daily" : "Manual") + "</td><td>" + state + ' <a href="' + esc(x.url) + '" target="_blank" rel="noopener">log</a></td></tr>';
       }).join("") + "</tbody></table>" : "";
       if (active) sawActive = true;
-      if (!active && sawActive) { sawActive = false; loadStatus(); loadReview(); loadTopics(); }
+      if (!active && sawActive) { sawActive = false; loadStatus(); loadReview(); loadChecks(); loadTopics(); }
       if (active || fast) poll = setTimeout(function () { pollRuns(false); }, 12000);
     }).catch(function () {});
   }
@@ -448,6 +466,104 @@
       .catch(function (e) { msg("staffMsg", e.message, "err"); });
   });
 
+  /* ------------------------------------------------------------ contacts */
+  function contactsSummaryHtml(s) {
+    return '<div class="small"><b>' + s.kept.toLocaleString() + "</b> contacts at <b>" + s.companies + "</b> companies &middot; " +
+      s.partnersWithContacts + " of your partners have at least one" +
+      (s.partnersWithout ? " (" + s.partnersWithout + " have none)" : "") + "</div>" +
+      '<div class="small muted">' + [
+        s.repaired ? s.repaired + " names repaired from the email address (Excel had damaged them)" : "",
+        s.duplicates ? s.duplicates + " duplicate rows skipped" : "",
+        s.noName ? s.noName + " rows with no usable name skipped" : "",
+        s.noCompany ? s.noCompany + " rows with no company skipped" : "",
+        s.sameNameTwoCompanies ? s.sameNameTwoCompanies + " names appear at two companies; those are only used when the notes show which" : ""
+      ].filter(Boolean).join(" &middot; ") + "</div>" +
+      (s.contactsAtUnlistedCompanies ? "<details><summary>" + s.contactsAtUnlistedCompanies + " contacts at companies not on the partner list</summary><ul class=\"small\">" +
+        s.unlistedCompanies.map(function (c) { return "<li>" + esc(c.name) + " (" + c.count + ")</li>"; }).join("") + "</ul></details>" : "");
+  }
+  function renderContacts(c) {
+    el("contactsNow").innerHTML = c ? "Current list: <b>" + esc(c.fileName || "uploaded file") + "</b>, " + esc(PI.fmtStamp(c.updatedAt)) + contactsSummaryHtml(c.summary)
+      : '<span class="muted">No contact list uploaded yet. The scan uses the primary and secondary contacts on the partner list only.</span>';
+  }
+  var contactsFile = null;
+  el("contactsFile").addEventListener("change", function (e) {
+    contactsFile = null; el("contactsResult").innerHTML = ""; el("contactsPreview").disabled = true;
+    var f = e.target.files[0];
+    if (!f) return;
+    var fr = new FileReader();
+    fr.onload = function () {
+      var bytes = new Uint8Array(fr.result), bin = "";
+      for (var i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      contactsFile = { fileName: f.name, data: btoa(bin) };
+      el("contactsPreview").disabled = false;
+    };
+    fr.readAsArrayBuffer(f);
+  });
+  el("contactsPreview").addEventListener("click", function () {
+    if (!contactsFile) return;
+    el("contactsResult").innerHTML = '<span class="spinner"></span>Reading…';
+    PI.post("contacts/import", Object.assign({ preview: true }, contactsFile)).then(function (r) {
+      el("contactsResult").innerHTML = contactsSummaryHtml(r.summary) +
+        '<div class="row" style="margin-top:10px"><button class="primary" id="contactsSave">Save this contact list</button></div><div class="msg" id="contactsMsg"></div>';
+      el("contactsSave").addEventListener("click", function () {
+        PI.post("contacts/import", contactsFile).then(function () {
+          el("contactsResult").innerHTML = '<div class="msg ok">Saved. Press Re-link to apply it to the data.</div>';
+          el("contactsFile").value = ""; el("contactsPreview").disabled = true; contactsFile = null;
+          return loadStatus();
+        }).catch(function (e) { msg("contactsMsg", e.message, "err"); });
+      });
+    }).catch(function (e) { el("contactsResult").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; });
+  });
+
+  /* ------------------------------------------------------------ statements to check */
+  var checkOffset = 0;
+  function loadChecks() {
+    return PI.api("attribution/review?offset=" + checkOffset).then(function (r) {
+      el("checkCount").textContent = r.total ? "(" + r.total + ")" : "";
+      if (!r.items.length) { el("checks").innerHTML = '<span class="muted small">Nothing to check.</span>'; return; }
+      var partnerOpts = roster.partners.slice().sort(function (a, b) { return a.name.localeCompare(b.name); })
+        .map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + "</option>"; }).join("");
+      el("checks").innerHTML = r.items.map(function (i, n) {
+        var co = i.company || {};
+        return '<div class="item" data-n="' + n + '"><div class="title">' + esc(i.title) + "</div>" +
+          (i.detail ? '<div class="detail">' + esc(i.detail) + "</div>" : "") +
+          '<div class="small muted">' + esc(PI.fmtDate(i.date)) + (i.speaker ? " &middot; " + esc(i.speaker) : "") +
+          (i.programs && i.programs.length ? " &middot; " + esc(i.programs.join(", ")) : "") + "</div>" +
+          PI.sourceHtml(i) +
+          '<div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap">' +
+          '<button class="tiny" data-keep="' + n + '">Keep ' + esc(co.id ? co.name : "no company") + "</button>" +
+          i.options.map(function (o) {
+            return '<button class="tiny" data-n="' + n + '" data-id="' + esc(o.id) + '" title="' + esc(o.why) + '">' + esc(o.name) + " <span class=\"muted\">(" + esc(o.why) + ")</span></button>";
+          }).join("") +
+          '<select id="chk' + n + '" aria-label="Another partner"><option value="">Another partner…</option>' + partnerOpts + "</select>" +
+          '<button class="tiny" data-pick="' + n + '">Use it</button></div></div>';
+      }).join("") +
+      (r.total > r.offset + r.items.length || r.offset ? '<div class="row" style="margin-top:10px">' +
+        (r.offset ? '<button id="chkPrev">Previous</button>' : "") + (r.total > r.offset + r.items.length ? '<button id="chkNext">Next 25</button>' : "") + "</div>" : "");
+      var items = r.items;
+      function decide(n, body) {
+        return PI.post("attribution/decide", Object.assign({ id: items[n].id }, body)).then(function () { return Promise.all([loadChecks(), loadStatus()]); })
+          .catch(function (e) { alert(e.message); });
+      }
+      Array.prototype.forEach.call(el("checks").querySelectorAll("button[data-keep]"), function (b) {
+        b.addEventListener("click", function () { decide(+b.getAttribute("data-keep"), { keep: true }); });
+      });
+      Array.prototype.forEach.call(el("checks").querySelectorAll("button[data-id]"), function (b) {
+        b.addEventListener("click", function () { decide(+b.getAttribute("data-n"), { companyId: b.getAttribute("data-id") }); });
+      });
+      Array.prototype.forEach.call(el("checks").querySelectorAll("button[data-pick]"), function (b) {
+        b.addEventListener("click", function () {
+          var n = +b.getAttribute("data-pick"), v = el("chk" + n).value;
+          if (v) decide(n, { companyId: v });
+        });
+      });
+      if (el("chkNext")) el("chkNext").addEventListener("click", function () { checkOffset += 25; loadChecks(); });
+      if (el("chkPrev")) el("chkPrev").addEventListener("click", function () { checkOffset = Math.max(0, checkOffset - 25); loadChecks(); });
+    }).catch(function (e) {
+      el("checks").innerHTML = e.message && /no data/i.test(e.message) ? '<span class="muted small">No data yet.</span>' : '<div class="msg err">' + esc(e.message) + "</div>";
+    });
+  }
+
   /* ------------------------------------------------------------ review queue */
   function loadReview() {
     return PI.api("review").then(function (r) {
@@ -503,7 +619,7 @@
   }
 
   el("rebuild").title = "Applies the current partner list to the saved results. No Box, no Claude.";
-  Promise.all([loadRoster(), loadStatus()]).then(function () { loadReview(); loadTopics(); pollRuns(false); })
+  Promise.all([loadRoster(), loadStatus()]).then(function () { loadReview(); loadChecks(); loadTopics(); pollRuns(false); })
     .catch(function (e) { el("status").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; });
 })();
 </script>

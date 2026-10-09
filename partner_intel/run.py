@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from . import config, extract, shape as shape_mod, text as text_mod
-from .build import _file_stem, build_dataset, source_folder
+from .build import _file_stem, build_dataset, source_folder, unit_context
 from . import export
 from .dates import resolve_date
 from .relay import Api
@@ -73,8 +73,9 @@ def file_company(resolver: Resolver, name: str, path: str = "") -> str:
     for text in [_file_stem(name)] + folders:
         for piece in [text] + [p.strip() for p in re.split(r"\s[-\u2013\u2014]\s|[_,;|()+]", text) if p.strip()]:
             hit = resolver.company(piece)
-            if hit.ok:
-                found.add(hit.company_id)
+            named = resolver.companies_named(piece)
+            if hit.ok or named:
+                found |= named | ({hit.company_id} if hit.ok else set())
             elif not resolver.is_staff(piece):
                 person = resolver.person(piece)
                 if person:
@@ -292,6 +293,9 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             named = file_company(resolver, f["name"], f["path"])
             if named:
                 s.units = [dataclasses.replace(u, file_company=named) for u in s.units]
+        if roster.contacts:
+            s.units = [dataclasses.replace(u, known_people=resolver.people_in_text(u.text, unit_context(resolver, u)))
+                       for u in s.units]
         if not s.units:
             entry.update(status="done", error=s.skipped_reason, units=[],
                          event={"date": "", "date_source": "", "type": s.event_type, "series": s.series,

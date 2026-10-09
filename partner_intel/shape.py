@@ -60,6 +60,9 @@ class Unit:
     # The one partner the file's name points to ("Ben Larson - Evonik.txt"), set by the scan
     # from the partner list. Notes often never say the company's name; the file name does.
     file_company: str = ""
+    # Contacts named in this text, "Ben Larson (Evonik Industries)", found in code from the
+    # uploaded contact list, so the model can tell whose statement is whose.
+    known_people: list[str] = field(default_factory=list)
 
 
 @dataclass

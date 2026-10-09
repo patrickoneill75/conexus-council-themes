@@ -26,7 +26,7 @@ FILES = (DATABASE_FILE, INSIGHTS_FILE, STATE_FILE)
 COLUMNS = ["InsightID", "Date", "DateSource", "SourceFolder", "EventType", "Series", "Meeting", "Company",
            "MemberStatus", "Industry", "Type", "Topic", "Title", "Detail", "Quote", "Urgency",
            "UrgencyReason", "Status", "Addresses", "Tags", "Confidence", "Speaker", "Scope",
-           "SourceFiles", "ReviewFlags"]
+           "SourceFiles", "SourceLinks", "ReviewFlags"]
 
 MEMBER_LABEL = {"Active": "Member", "Inactive": "Former member", "Non-member": "Not a member"}
 
@@ -35,6 +35,12 @@ def _safe(value) -> str:
     """Spreadsheets run a cell that starts with = + - @ as a formula. Notes are untrusted."""
     text = str(value if value is not None else "")
     return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+def box_link(file_id) -> str:
+    """The Box web page for a file, or "" for an id that is not a Box id."""
+    file_id = str(file_id or "")
+    return f"https://app.box.com/file/{file_id}" if file_id.isdigit() else ""
 
 
 def insights_csv(dataset: dict, roster: Roster) -> str:
@@ -53,7 +59,8 @@ def insights_csv(dataset: dict, roster: Roster) -> str:
             i["event_type"], i["series"], i.get("meeting_label", ""), name, status, (partner or {}).get("industry") or "Unknown",
             i["kind"], topics.get(i["topic"], i["topic"]), i["title"], i["detail"], i["quote"], i["urgency"],
             i["urgency_reason"], i["status"], i["solves"], "; ".join(i["tags"]), i["confidence"], i["speaker"],
-            i["scope"], "; ".join(sorted({s["name"] for s in i["sources"]})), "; ".join(i["review"]),
+            i["scope"], "; ".join(sorted({s["name"] for s in i["sources"]})),
+            " ".join(box_link(s["id"]) for s in i["sources"] if box_link(s["id"])), "; ".join(i["review"]),
         ]])
     return "﻿" + out.getvalue()  # the BOM makes Excel read accents correctly
 

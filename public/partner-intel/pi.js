@@ -59,10 +59,10 @@
                     : '<span class="co">' + PI.esc(co.name) + "</span>";
       head += PI.pill("info", co.industry || "Unknown");
       head += PI.pill(co.status === "Active" ? "good" : "info", PI.statusLabel[co.status] || co.status || "Unknown");
-      // The notes' file is named for a different partner. Often right (a supplier mentioned in
-      // the call), sometimes a misreading, so it is shown for a person to check.
-      if ((i.review || []).indexOf("company_differs_from_file") >= 0) {
-        head += '<span class="pill medium" title="The source file is named for a different partner. Check which company said this.">Check company</span>';
+      // Which company said this is in doubt (the speaker works elsewhere, the file is named for
+      // another partner, or two people share the speaker's name). Listed on the control panel.
+      if (i.checkCompany) {
+        head += '<span class="pill medium" title="Which company said this is uncertain. Staff can settle it on the control panel, under Statements to check.">Check company</span>';
       }
     }
     var urgentProblem = i.kind === "problem" && i.urgency !== "none";
@@ -72,7 +72,6 @@
     var meta = PI.esc(PI.fmtDate(i.date)) + (i.estimated ? " " + PI.pill("est", "estimated date") : "") +
       (i.eventType ? " &middot; " + PI.esc(i.eventType) : "") +
       (i.speaker ? " &middot; " + PI.esc(i.speaker) : "");
-    var srcNames = (i.sources || []).map(function (s) { return PI.esc(s.name); }).join(", ");
     return '<div class="item' + (i.kind === "problem" && (i.urgency === "high" || i.urgency === "medium") ? " u-" + i.urgency : "") + '">' +
       '<div class="head">' + head + "</div>" +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
@@ -81,8 +80,23 @@
       (i.solves ? '<div class="why"><b>Addresses:</b> ' + PI.esc(i.solves) + "</div>" : "") +
       (i.tags && i.tags.length ? '<div class="chips">' + i.tags.map(function (t) { return '<span class="chip">' + PI.esc(t) + "</span>"; }).join("") + "</div>" : "") +
       '<div class="meta">' + meta + "</div>" +
-      '<details class="src"><summary>Source</summary><blockquote>&ldquo;' + PI.esc(i.quote) + "&rdquo;</blockquote>" +
-      '<div class="meta">' + srcNames + "</div></details></div>";
+      PI.sourceHtml(i) + "</div>";
+  };
+
+  /** A link to each source file in Box, or the plain name when there is no Box id. */
+  PI.fileLinks = function (files) {
+    return (files || []).map(function (f) {
+      return f.url ? '<a href="' + PI.esc(f.url) + '" target="_blank" rel="noopener">' + PI.esc(f.name) + "</a>" : PI.esc(f.name);
+    }).join(", ");
+  };
+
+  /** The quote and the file it came from. Every quote shown anywhere names and links its file. */
+  PI.sourceHtml = function (i) {
+    var files = PI.fileLinks(i.sources);
+    return '<details class="src"><summary>Source' + (i.sources && i.sources.length ? ": " + PI.esc(i.sources[0].name) +
+      (i.sources.length > 1 ? " +" + (i.sources.length - 1) : "") : "") + "</summary>" +
+      (i.quote ? "<blockquote>&ldquo;" + PI.esc(i.quote) + "&rdquo;</blockquote>" : "") +
+      (files ? '<div class="meta">From ' + files + "</div>" : "") + "</details>";
   };
 
   PI.whoami = function (target) {

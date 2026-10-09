@@ -309,7 +309,7 @@
         '<div class="card"><div class="row" style="gap:8px"><h2 style="font-size:20px">' + esc(m.label) + "</h2>" + PI.pill("info", KIND_LABEL[m.kind] || "Meeting") + "</div>" +
         '<p class="sub">' + esc(PI.fmtDate(m.date)) + (m.estimated ? " " + PI.pill("est", "estimated date") : "") +
         (m.companyCount ? " &middot; " + m.companyCount + " compan" + (m.companyCount === 1 ? "y" : "ies") + ": " + m.companies.map(esc).join(", ") : "") + "</p>" +
-        '<p class="small muted" style="margin:6px 0 0">From ' + m.files.map(esc).join(", ") + "</p></div>" +
+        '<p class="small muted" style="margin:6px 0 0">From ' + PI.fileLinks(m.files) + "</p></div>" +
         section("Issues", r.issues) + section("Solutions", r.solutions) + section("Wins", r.wins) + section("Other", r.other);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
@@ -423,7 +423,7 @@
         (i.urgencyReason && kind === "issue" ? '<div class="why"><b>Why it is urgent:</b> ' + esc(i.urgencyReason) + "</div>" : "") +
         '<div class="meta">' + esc(PI.fmtDate(i.date)) + (i.estimated ? " " + PI.pill("est", "estimated date") : "") +
         (i.eventType ? " &middot; " + esc(i.eventType) : "") + "</div>" +
-        '<details class="src"><summary>Source</summary><blockquote>&ldquo;' + esc(i.quote) + "&rdquo;</blockquote></details></div>";
+        PI.sourceHtml(i) + "</div>";
     });
     return html + "</section>";
   }

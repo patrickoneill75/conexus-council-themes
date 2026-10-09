@@ -3,6 +3,10 @@ reads it). One record per organization:
 
   {id, name, industry, status, program, participationId, contacts: [names], aliases: [names]}
 
+contacts is the separate, larger contact list uploaded on the control panel (thousands of
+people at partner companies): {name, account, title, email}. The account is a company name
+as Salesforce writes it; the resolver matches it to a partner like any other name.
+
 status is "Active" for a current member. Anything else (Inactive, Non-member) is kept so
 notes about a partner who has since left still attach to the right company.
 """
@@ -17,6 +21,7 @@ class Roster:
     aliases: dict[str, str] = field(default_factory=dict)  # alias text -> company id
     staff: list[str] = field(default_factory=list)
     updated_at: str = ""
+    contacts: list[dict] = field(default_factory=list)  # {name, account, title, email}
 
     @classmethod
     def from_payload(cls, payload: dict | None) -> "Roster":
@@ -37,7 +42,15 @@ class Roster:
             })
         aliases = {str(k): str(v) for k, v in (payload.get("aliases") or {}).items() if k and v}
         staff = [str(s).strip() for s in (payload.get("staff") or []) if str(s).strip()]
-        return cls(partners, aliases, staff, str(payload.get("updatedAt") or ""))
+        contacts = []
+        for c in payload.get("contacts") or []:
+            if not isinstance(c, dict):
+                continue
+            name, account = str(c.get("name") or "").strip(), str(c.get("account") or "").strip()
+            if name and account:
+                contacts.append({"name": name, "account": account, "title": str(c.get("title") or "").strip(),
+                                 "email": str(c.get("email") or "").strip()})
+        return cls(partners, aliases, staff, str(payload.get("updatedAt") or ""), contacts)
 
     def by_id(self) -> dict[str, dict]:
         return {p["id"]: p for p in self.partners}
