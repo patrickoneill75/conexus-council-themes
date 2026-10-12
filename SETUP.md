@@ -1048,9 +1048,9 @@ One stacked bar shows what the notes hold: issues (issues and asks), solutions (
 
 Long meetings have detailed notes, so they produce many more rows than short ones. Rows are therefore never the measure of how much a topic matters:
 
-- **Trending topics** rank by the number of different **companies** that raised the topic, then the number of different **meetings** it came up in. High urgency counts meetings in which the topic was called urgent. A meeting is one voice however much was written down.
+- **Trending topics** rank by the number of different **companies** that raised the topic, then the number of different **meetings** it came up in. A meeting is one voice however much was written down.
 - **Summaries** are written from up to 25 rows chosen so every company and every meeting is heard before any one is heard twice, with at most three rows from any one meeting. The model is told the true number of companies and meetings and never to judge breadth by rows.
-- **A company's top issues** count each meeting once per topic.
+- **A company page's topics** are the exception: every issue, solution and win counts, weighted by how recent it is (see the company page below).
 - **Ask** scores a company on its best row from each of its meetings.
 
 The totals on the dashboard and in the Explore list are still plain counts, because they say what is in the data.
@@ -1106,11 +1106,11 @@ Pick the right company, keep the current one, or choose another partner. A decis
 
 ### Source files
 
-Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. The app calls a partner's problem an **issue** everywhere, including the Excel export's Type column (the pipeline still stores the kind as `problem`).
+Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. The app calls a partner's problem an **issue** everywhere, including the Excel export's Type column (the pipeline still stores the kind as `problem`). The app shows no urgency. The pipeline still records it, and it still orders a few lists out of sight: which notes a trending summary is written from, the issues on a meeting page, and ties in a topic's notes. The Excel export keeps its Urgency column.
 
 A company page has tabs: **Overview**, **Issues** (issues and asks), **Solutions** (solutions, offers and equipment), **Wins**, **Meetings** (each meeting the company appears in, its program, and every file behind it, linked to Box) and **Notes** (everything recorded about the company, newest first, 50 at a time). Each tab shows its count.
 
-Overview, Issues, Solutions and Wins work the same way. The Overview combines the other three: a topic's rank there counts its open issues, solutions and wins together, and an opened topic shows them in three columns, left to right. Each of these tabs has two views:
+Overview, Issues, Solutions and Wins work the same way. The Overview combines the other three: a topic's rank there counts its issues, solutions and wins together, and an opened topic shows them in three columns, left to right. Each of these tabs has two views:
 
 1. **By topic** (the default). Notes are grouped under their topic, and the topics are ranked by priority. Each note in the topic counts as one mention, weighted by how recent it was: a mention today counts 1, six months ago 0.5, a year ago about 0.33. So three mentions a year ago weigh about the same as one this month. Resolved issues are listed but add nothing. Notes with no topic go under Other, always last. Click a topic to open its notes: counted ones first, newest first.
 2. **Latest source**. The company's most recent meeting, with the files behind it linked to Box, and its notes grouped by topic the same way. There every note has the same date, so the topics rank by how many mentions each got in that meeting. A Source menu steps back through the 12 latest meetings.

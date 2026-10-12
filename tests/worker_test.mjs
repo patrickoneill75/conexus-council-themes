@@ -2902,6 +2902,18 @@ test("partner_intel: the tabs run Home, Programs, Companies, Ask, Explore", () =
   assert.deepEqual(nav, ["home", "programs", "companies", "ask", "explore"]);
 });
 
+test("partner_intel: the staff pages show no urgency and say issue, not open issue or problem", () => {
+  const dir = path.join(path.dirname(SRC), "public", "partner-intel");
+  for (const file of ["index.html", "pi.js", "pi.css", "control-panel/index.html"]) {
+    const src = fs.readFileSync(path.join(dir, file), "utf8");
+    // Only text a person reads: drop comments, then look at string literals and markup.
+    const shown = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/<!--[\s\S]*?-->/g, "");
+    assert.doesNotMatch(shown, /urgen|u-high|u-medium/i, `${file} has no urgency pill, border, filter, sort or note`);
+    assert.doesNotMatch(shown, /open (issue|problem)/i, `${file} says "issue", not "open issue"`);
+    assert.doesNotMatch(shown, /["'>][^"'<]*\bProblems?\b[^"'<]*["'<]/, `${file} shows "Issue", not "Problem"`);
+  }
+});
+
 test("partner_intel: a topic merge applies to the ranking, and a merge loop is refused", async () => {
   const { env, token } = await piEnv([
     ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "c-b" }),

@@ -97,8 +97,6 @@ th button.sorter .arrow { display:inline-block; width:1.1em; font-size:10px; mar
 .pill.est { background:#fff; color:#8a5200; border-style:dashed; border-color:rgba(251,174,64,.7); }
 
 .item { border:1px solid var(--border); border-radius:10px; padding:13px 15px; margin-top:10px; background:#fff; }
-.item.u-high { border-left:4px solid var(--coral); }
-.item.u-medium { border-left:4px solid var(--amber); }
 .item .head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
 .item .co { font-weight:650; color:var(--navy); }
 .item .title { font-weight:600; margin:2px 0; }

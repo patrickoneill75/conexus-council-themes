@@ -86,7 +86,7 @@
 
   function topicCard(t, n) {
     var meta = (t.companyCount ? t.companyCount + " compan" + (t.companyCount === 1 ? "y" : "ies") + " &middot; " : "") +
-      t.meetingCount + " meeting" + (t.meetingCount === 1 ? "" : "s") + (t.highUrgency ? " &middot; called urgent in " + t.highUrgency : "");
+      t.meetingCount + " meeting" + (t.meetingCount === 1 ? "" : "s");
     return '<div class="topic" data-topic="' + esc(t.topic) + '"><h3>' + (n + 1) + ". " + esc(t.label) + '</h3><p class="meta">' + meta + "</p>" +
       (t.companies.length ? '<div class="chips">' + t.companies.slice(0, 6).map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") +
         (t.companies.length > 6 ? '<span class="chip">+' + (t.companies.length - 6) + " more</span>" : "") + "</div>" : "") +
@@ -96,13 +96,13 @@
   function bulletsHtml(summary) {
     return '<ul class="bullets">' + summary.bullets.map(function (b) {
       return '<li><details class="bullet"><summary><span class="txt">' + esc(b.text) + '</span></summary><div class="examples">' +
-        b.examples.map(function (i) { return PI.insightCard(i, { why: false }); }).join("") + "</div></details></li>";
+        b.examples.map(function (i) { return PI.insightCard(i); }).join("") + "</div></details></li>";
     }).join("") + "</ul>";
   }
 
   function fallbackHtml(t, note) {
     return (note ? '<p class="small muted" style="margin:10px 0 0">' + esc(note) + "</p>" : "") +
-      (t.examples && t.examples.length ? '<details class="src"><summary>Examples</summary>' + t.examples.map(function (i) { return PI.insightCard(i, { why: false }); }).join("") + "</details>" : "");
+      (t.examples && t.examples.length ? '<details class="src"><summary>Examples</summary>' + t.examples.map(function (i) { return PI.insightCard(i); }).join("") + "</details>" : "");
   }
 
   /** Cards for t[from..to), then the summaries the page does not have yet. scope is the filter
@@ -467,9 +467,9 @@
   // and equipment, and the Overview is all three together. Notes lists everything, newest first.
   var COMPANY_TABS = [
     { id: "overview", label: "Overview", list: "all", noun: ["mention", "mentions"],
-      rule: "how many open issues, solutions and wins the company has in the topic" },
+      rule: "how many issues, solutions and wins the company has in the topic" },
     { id: "issues", label: "Issues", count: "problems", list: "issues", noun: ["issue", "issues"],
-      rule: "how many open issues the company raised in the topic" },
+      rule: "how many issues the company raised in the topic" },
     { id: "solutions", label: "Solutions", count: "solutions", list: "solutions", noun: ["solution", "solutions"],
       rule: "how many solutions, offers and equipment the company has in the topic" },
     { id: "wins", label: "Wins", count: "wins", list: "wins", noun: ["win", "wins"],
@@ -567,7 +567,7 @@
   function topicList(topics, tab, companyId, inMeeting) {
     return topics.map(function (t, n) {
       var meta = [];
-      if (tab.list === "all" ? t.issues : tab.list === "issues") meta.push(plural(t.issues, "open issue", "open issues"));
+      if (tab.list === "all" ? t.issues : tab.list === "issues") meta.push(plural(t.issues, "issue", "issues"));
       if (tab.list === "all" ? t.solutions : tab.list === "solutions") meta.push(plural(t.solutions, "solution", "solutions"));
       if (tab.list === "all" ? t.wins : tab.list === "wins") meta.push(plural(t.wins, "win", "wins"));
       if (t.resolved) meta.push(t.resolved + " resolved");
@@ -661,21 +661,19 @@
       '<div><label class="field" for="ei">Industry</label><select id="ei"><option value="">All industries</option></select></div>' +
       '<div><label class="field" for="es">Member status</label><select id="es"><option value="">All</option><option value="Active">Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>' +
       '<div><label class="field" for="ee">Event</label><select id="ee"><option value="">All events</option></select></div>' +
-      '<div><label class="field" for="eu">Urgency</label><select id="eu"><option value="">Any</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>' +
       '<div><label class="field" for="ed">When</label><select id="ed"><option value="">Any time</option><option value="30">Last 30 days</option><option value="60">Last 60 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select></div>' +
       '</div><div class="row small" style="margin-top:12px"><label><input type="checkbox" id="ex"> Exact dates only</label>' +
       '<label><input type="checkbox" id="in"> Include Conexus board and internal notes</label>' +
-      '<label>Sort <select id="so"><option value="date">Newest first</option><option value="urgency">Most urgent first</option></select></label>' +
       '<button class="tiny" id="reset">Reset</button></div></div><div id="results"></div>';
 
     function qs(withOffset) {
       var p = [];
       function add(k, v) { if (v) p.push(k + "=" + encodeURIComponent(v)); }
       add("q", el("eq").value.trim()); add("kind", el("ek").value); add("topic", el("et").value); add("industry", el("ei").value);
-      add("status", el("es").value); add("eventType", el("ee").value); add("urgency", el("eu").value); add("days", el("ed").value);
+      add("status", el("es").value); add("eventType", el("ee").value); add("days", el("ed").value);
       if (el("ex").checked) p.push("exact=1");
       if (el("in").checked) p.push("internal=1");
-      add("sort", el("so").value);
+      p.push("sort=date");
       if (chosenList().length) add("source", chosenList().join("|"));
       p.push("limit=25"); if (withOffset) p.push("offset=" + offset);
       return p.join("&");
@@ -708,7 +706,7 @@
     loadSources().then(function () { if (mine === seq) drawChips(); }).catch(function () {});
     var t;
     el("eq").addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { load(false); }, 250); });
-    ["ek", "et", "ei", "es", "ee", "eu", "ed", "ex", "in", "so"].forEach(function (id) { el(id).addEventListener("change", function () { load(false); }); });
+    ["ek", "et", "ei", "es", "ee", "ed", "ex", "in"].forEach(function (id) { el(id).addEventListener("change", function () { load(false); }); });
     el("reset").addEventListener("click", explore);
     load(false);
   }
