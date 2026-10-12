@@ -49,7 +49,7 @@
 
   PI.pill = function (cls, text) { return '<span class="pill ' + cls + '">' + PI.esc(text) + "</span>"; };
 
-  /** One insight as a card. opts: { company: true|false, why: true|false } */
+  /** One insight as a card. opts: { company: true|false } */
   /** Which company tab a kind belongs to: issues, solutions, wins, or other. */
   PI.categoryOf = function (kind) {
     return kind === "problem" || kind === "ask" ? "issues" : kind === "win" ? "wins"
@@ -70,18 +70,15 @@
         head += '<span class="pill medium" title="Which company said this is uncertain. Staff can settle it on the control panel, under Statements to check.">Check company</span>';
       }
     }
-    var urgentProblem = i.kind === "problem" && i.urgency !== "none";
-    if (!urgentProblem) head += PI.pill("info", PI.kindLabel[i.kind] || i.kind);
-    if (urgentProblem) head += PI.pill(i.urgency, i.urgency === "high" ? "High urgency" : i.urgency === "medium" ? "Medium urgency" : "Low urgency");
+    head += PI.pill("info", PI.kindLabel[i.kind] || i.kind);
     if (i.status === "resolved") head += PI.pill("good", "Resolved");
     var meta = PI.esc(PI.fmtDate(i.date)) + (i.estimated ? " " + PI.pill("est", "estimated date") : "") +
       (i.eventType ? " &middot; " + PI.esc(i.eventType) : "") +
       (i.speaker ? " &middot; " + PI.esc(i.speaker) : "");
-    return '<div class="item' + (i.kind === "problem" && (i.urgency === "high" || i.urgency === "medium") ? " u-" + i.urgency : "") + '">' +
+    return '<div class="item">' +
       '<div class="head">' + head + "</div>" +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
       '<div class="detail">' + PI.esc(i.detail) + "</div>" +
-      (i.urgencyReason && opts.why !== false ? '<div class="why"><b>Why it is urgent:</b> ' + PI.esc(i.urgencyReason) + "</div>" : "") +
       (i.solves ? '<div class="why"><b>Addresses:</b> ' + PI.esc(i.solves) + "</div>" : "") +
       (i.tags && i.tags.length ? '<div class="chips">' + i.tags.map(function (t) { return '<span class="chip">' + PI.esc(t) + "</span>"; }).join("") + "</div>" : "") +
       '<div class="meta">' + meta + "</div>" +
