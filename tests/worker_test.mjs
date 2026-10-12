@@ -2858,17 +2858,6 @@ test("partner_intel: the summary prompt tells the model never to judge breadth b
   assert.match(system, /one voice/);
 });
 
-test("partner_intel: a company's top issues count each meeting once, so one long meeting is not a pattern", async () => {
-  const { env, token } = await piEnv([
-    ...longMeeting("long", 12, { topic: "quality", urgency: "medium" }),                                   // 12 rows, one meeting
-    row({ topic: "talent_pipeline", urgency: "medium", meeting_id: "t1", meeting_label: "t1" }),           // two meetings, one row each
-    row({ topic: "talent_pipeline", urgency: "medium", meeting_id: "t2", meeting_label: "t2" }),
-  ]);
-  const p = await getJson("company?id=c-a", env, token);
-  assert.deepEqual(p.topIssues.map((t) => [t.topic, t.count]), [["talent_pipeline", 2], ["quality", 1]],
-    "two meetings outrank twelve rows from one");
-});
-
 test("partner_intel: Ask scores a company on its best row from each meeting, not on several rows from one", async () => {
   const mk = (company, meeting, n) => Array.from({ length: n }, (_, k) => ins({ kind: "solution", urgency: "none", company_id: company,
     meeting_id: meeting, meeting_label: meeting, title: "Camera quality inspection", detail: "Machine vision quality inspection.",
@@ -2973,9 +2962,10 @@ test("partner_intel: a company profile ranks live issues and leaves out resolved
     ins({ title: "Internal", scope: "internal" }),
   ]);
   const p = await getJson("company?id=c-a", env, token);
-  assert.deepEqual(p.topIssues.map((t) => t.lead.title), ["Open hiring gap"]);
-  assert.deepEqual(p.recentWins.map((w) => w.title), ["Won an award"]);
-  assert.deepEqual(p.topSolutions.map((t) => t.lead.title), ["Built an AI inspector"]);
+  const o = await getJson("company/topics?id=c-a&list=all", env, token);
+  assert.deepEqual(o.byTopic.map((t) => [t.topic, t.issues, t.resolved, t.solutions, t.wins]),
+    [["talent_pipeline", 1, 0, 0, 1], ["quality", 0, 1, 1, 0]], "a resolved issue is listed but not counted");
+  assert.deepEqual(o.byTopic[1].items.map((i) => i.title), ["Built an AI inspector", "Fixed quality escape"]);
   assert.equal(p.counts.insights, 4, "internal and other companies' rows are not counted");
   assert.deepEqual(p.company.contacts, ["Ann A"]);
   assert.equal((await pi("company", piGet("company?id=nope", token), env)).status, 404);
@@ -3715,8 +3705,7 @@ test("partner_intel: BUG a quote was sometimes shown without its file; every quo
   const rows = [ins({ kind: "win", urgency: "none", company_id: "c-a", meeting_id: "m-1", meeting_label: "Acme visit", meeting_kind: "company",
     sources: [{ id: "123", name: "Acme - notes.docx", path: "Raw Notes/Site Visits" }, { id: "local-x", name: "draft.txt", path: "Raw Notes/Site Visits" }] })];
   const { env, token } = await piEnv(rows);
-  const profile = await getJson("company?id=c-a", env, token);
-  const win = profile.recentWins[0];
+  const win = (await getJson("company/topics?id=c-a&list=wins", env, token)).byTopic[0].items[0];
   assert.deepEqual(win.sources.map((x) => [x.name, x.url]), [["Acme - notes.docx", "https://app.box.com/file/123"], ["draft.txt", ""]],
     "the company page's quotes carry their files; an id that is not a Box id gets no link");
   const program = await getJson("program?name=Site%20Visits", env, token);
@@ -3756,13 +3745,13 @@ test("partner_intel: a company page's See all buttons count what their lists hol
     "each button's count matches the list it opens, resolved problems included");
 });
 
-// The Problems tab ranks topics by mentions (each open problem or ask) weighted by recency. Each
-// case below fails if one half of that is dropped:
-//   talent: 3 problems in one meeting 300 days ago (3 x 0.375 = 1.13): more mentions beat one
-//     recent one, and problems count, not meetings;
-//   quality: 1 problem 2 days ago (0.99);
-//   ai: 2 problems 400 days ago (0.62) and a resolved one yesterday: old and resolved count less.
-function problemRows() {
+// The topic tabs rank topics by mentions (each row, but not a resolved issue) weighted by recency.
+// Each case below fails if one half of that is dropped:
+//   talent: 3 issues in one meeting 300 days ago (3 x 0.375 = 1.13): more mentions beat one
+//     recent one, and rows count, not meetings;
+//   quality: 1 issue 2 days ago (0.99);
+//   ai: 2 issues 400 days ago (0.62) and a resolved one yesterday: old and resolved count less.
+function issueRows() {
   const p = (over) => ins({ company_id: "c-a", kind: "problem", ...over });
   return [
     p({ title: "t1", topic: "talent_pipeline", date: isoAgo(300), meeting_id: "m-t", meeting_label: "Cohort 1" }),
@@ -3784,35 +3773,109 @@ function problemRows() {
     ins({ company_id: "c-a", kind: "win", urgency: "none", topic: "quality", date: isoAgo(0) }),
   ];
 }
+const topicsOf = (env, token, list, id = "c-a") => getJson(`company/topics?id=${id}&list=${list}`, env, token);
 
-test("partner_intel: the Problems tab groups problems by topic, ranked by mentions and recency", async () => {
-  const { env, token } = await piEnv(problemRows());
-  const r = await getJson("company/problems?id=c-a", env, token);
-  assert.deepEqual(r.byTopic.map((t) => [t.label, t.open, t.meetings, t.resolved]), [
+test("partner_intel: the Issues tab groups issues by topic, ranked by mentions and recency", async () => {
+  const { env, token } = await piEnv(issueRows());
+  const r = await topicsOf(env, token, "issues");
+  assert.deepEqual(r.byTopic.map((t) => [t.label, t.issues, t.meetings, t.resolved]), [
     ["Talent pipeline and recruiting", 3, 1, 0],
     ["Quality systems and inspection", 1, 1, 0],
     ["AI adoption and governance", 2, 2, 1],
     ["Other", 2, 1, 1],
-  ], "three old mentions beat one new one, one new beats two very old, a resolved problem adds nothing, Other is last");
+  ], "three old mentions beat one new one, one new beats two very old, a resolved issue adds nothing, Other is last");
   assert.ok(r.byTopic[0].priority > r.byTopic[1].priority && r.byTopic[1].priority > r.byTopic[2].priority);
-  assert.deepEqual(r.byTopic[2].items.map((i) => i.title), ["a1", "a2", "a3"], "open problems first, newest first, resolved at the end");
-  assert.equal(r.byTopic[2].last, isoAgo(400), "the latest date is the latest open problem's");
-  assert.deepEqual([r.total, r.open], [10, 8], "problems and asks of this company only, internal rows left out");
+  assert.deepEqual(r.byTopic[2].items.map((i) => i.title), ["a1", "a2", "a3"], "open issues first, newest first, resolved at the end");
+  assert.equal(r.byTopic[2].last, isoAgo(400), "the latest date is the latest open issue's");
+  assert.deepEqual([r.total, r.mentions], [10, 8], "issues and asks of this company only, internal rows left out");
 });
 
-test("partner_intel: the Problems tab's latest source lists that meeting's problems, most urgent first", async () => {
-  const { env, token } = await piEnv(problemRows());
-  const r = await getJson("company/problems?id=c-a", env, token);
+test("partner_intel: the latest source names its meeting and files, and lists its newest notes first", async () => {
+  const { env, token } = await piEnv(issueRows());
+  const r = await topicsOf(env, token, "issues");
   const s = r.latest[0];
-  assert.deepEqual([s.date, s.label, s.programs], [isoAgo(0), "Acme visit", ["Site Visits"]], "the newest meeting comes first");
-  assert.deepEqual(s.items.map((i) => i.title), ["o-high", "o-low", "o-done"], "most urgent first, resolved last");
+  assert.deepEqual([s.date, s.label, s.programs, s.count], [isoAgo(0), "Acme visit", ["Site Visits"], 3], "the newest meeting comes first");
+  assert.deepEqual(s.topics.map((t) => [t.label, t.items.map((i) => i.title)]), [["Other", ["o-high", "o-low", "o-done"]]],
+    "grouped by topic; inside a topic the most urgent first, resolved last");
   assert.deepEqual(s.files.map((f) => [f.name, f.url]), [["Acme visit.docx", "https://app.box.com/file/333"], ["draft.txt", ""]],
     "each file once, linked to Box when it has a Box id");
   assert.deepEqual(r.latest.map((x) => x.date), [isoAgo(0), isoAgo(1), isoAgo(2), isoAgo(300), isoAgo(400), isoAgo(401)]);
   assert.equal(r.sourceTotal, 6);
-  assert.deepEqual(r.latest[3].items.map((i) => i.title).sort(), ["t1", "t2", "t3"], "one source per meeting");
-  assert.equal((await pi("company/problems", piGet("company/problems?id=nope", token), env)).status, 404);
-  assert.equal((await pi("company/problems", piGet("company/problems?id=constructor", token), env)).status, 404);
+  assert.deepEqual(r.latest[3].topics[0].items.map((i) => i.title).sort(), ["t1", "t2", "t3"], "one source per meeting");
+});
+
+test("partner_intel: the latest source ranks its topics by how often they came up in that meeting", async () => {
+  const m = (over) => ins({ company_id: "c-a", date: isoAgo(3), meeting_id: "m-1", meeting_label: "Acme visit", ...over });
+  const { env, token } = await piEnv([
+    m({ topic: "ai_adoption" }), m({ topic: "ai_adoption", status: "resolved" }), m({ topic: "ai_adoption", status: "resolved" }),
+    m({ topic: "talent_pipeline" }), m({ topic: "talent_pipeline" }),
+    m({ topic: "quality" }), m({ topic: "quality" }), m({ topic: "quality", kind: "ask" }),
+    ins({ company_id: "c-a", topic: "ai_adoption", date: isoAgo(30), meeting_id: "m-0", meeting_label: "Older" }),
+    ins({ company_id: "c-a", topic: "ai_adoption", date: isoAgo(31), meeting_id: "m-00", meeting_label: "Older" }),
+    ins({ company_id: "c-a", topic: "ai_adoption", date: isoAgo(32), meeting_id: "m-000", meeting_label: "Older" }),
+  ]);
+  const r = await topicsOf(env, token, "issues");
+  assert.deepEqual(r.latest[0].topics.map((t) => [t.topic, t.issues, t.resolved]),
+    [["quality", 3, 0], ["talent_pipeline", 2, 0], ["ai_adoption", 1, 2]],
+    "counted in this meeting only: AI's older meetings and its resolved issues do not lift it");
+  assert.equal(r.byTopic[0].topic, "ai_adoption", "across all the notes, AI leads");
+});
+
+test("partner_intel: the Solutions and Wins tabs rank their topics the same way", async () => {
+  const { env, token } = await piEnv([
+    ins({ kind: "solution", urgency: "none", topic: "quality", date: isoAgo(200) }),
+    ins({ kind: "offer", urgency: "none", topic: "quality", date: isoAgo(200) }),
+    ins({ kind: "equipment", urgency: "none", topic: "quality", date: isoAgo(200) }),
+    ins({ kind: "solution", urgency: "none", topic: "ai_adoption", date: isoAgo(1) }),
+    ins({ kind: "win", urgency: "none", topic: "talent_pipeline", date: isoAgo(400) }),
+    ins({ kind: "win", urgency: "none", topic: "ai_adoption", date: isoAgo(1) }),
+    ins({ kind: "problem", topic: "talent_pipeline", date: isoAgo(1) }),
+    ins({ kind: "news", urgency: "none", topic: "talent_pipeline", date: isoAgo(1) }),
+  ]);
+  const sol = await topicsOf(env, token, "solutions");
+  assert.deepEqual(sol.byTopic.map((t) => [t.topic, t.solutions]), [["quality", 3], ["ai_adoption", 1]],
+    "solutions, offers and equipment count; three from 200 days ago beat one from yesterday");
+  assert.equal(sol.total, 4);
+  const wins = await topicsOf(env, token, "wins");
+  assert.deepEqual(wins.byTopic.map((t) => [t.topic, t.wins]), [["ai_adoption", 1], ["talent_pipeline", 1]], "one recent win beats one old one");
+  assert.equal(wins.total, 2, "wins only");
+});
+
+test("partner_intel: the Overview ranks topics by issues, solutions and wins together", async () => {
+  const { env, token } = await piEnv([
+    // Created wins first, so only the category order puts issues first.
+    ins({ kind: "win", urgency: "none", topic: "quality", date: isoAgo(10) }),
+    ins({ kind: "offer", urgency: "none", topic: "quality", date: isoAgo(10) }),
+    ins({ kind: "solution", urgency: "none", topic: "quality", date: isoAgo(10) }),
+    ins({ kind: "problem", topic: "quality", date: isoAgo(10) }),
+    ins({ kind: "problem", topic: "talent_pipeline", date: isoAgo(10) }),
+    ins({ kind: "ask", topic: "talent_pipeline", date: isoAgo(10) }),
+    ins({ kind: "problem", topic: "talent_pipeline", date: isoAgo(10) }),
+    ins({ kind: "problem", topic: "ai_adoption", date: isoAgo(10) }),
+    ins({ kind: "problem", topic: "ai_adoption", date: isoAgo(10), status: "resolved" }),
+    ins({ kind: "problem", topic: "ai_adoption", date: isoAgo(10), status: "resolved" }),
+    ins({ kind: "problem", topic: "ai_adoption", date: isoAgo(10), status: "resolved" }),
+    ins({ kind: "commitment", urgency: "none", topic: "ai_adoption", date: isoAgo(10) }),
+    ins({ kind: "news", urgency: "none", topic: "ai_adoption", date: isoAgo(10) }),
+  ]);
+  const o = await topicsOf(env, token, "all");
+  assert.deepEqual(o.byTopic.map((t) => [t.topic, t.issues, t.solutions, t.wins, t.resolved, t.mentions]), [
+    ["quality", 1, 2, 1, 0, 4],
+    ["talent_pipeline", 3, 0, 0, 0, 3],
+    ["ai_adoption", 1, 0, 0, 3, 1],
+  ], "one issue, two solutions and a win outrank three issues; resolved issues, news and commitments add nothing");
+  assert.deepEqual(o.byTopic[0].items.map((i) => i.kind), ["problem", "offer", "solution", "win"], "issues, then solutions, then wins");
+  assert.equal(o.total, 11, "news and commitments are not on the Overview");
+  assert.equal(o.latest[0].topics[0].topic, "quality", "the latest source is grouped and ranked the same way");
+});
+
+test("partner_intel: the topic view refuses an unknown list or company", async () => {
+  const { env, token } = await piEnv(issueRows());
+  const status = async (q) => (await pi("company/topics", piGet(`company/topics?${q}`, token), env)).status;
+  assert.equal(await status("id=c-a&list=constructor"), 400, "a list name never resolves through Object.prototype");
+  assert.equal(await status("id=c-a"), 400);
+  assert.equal(await status("id=nope&list=issues"), 404);
+  assert.equal(await status("id=constructor&list=all"), 404);
 });
 
 test("partner_intel: the companies page is alphabetical by default and sorts by any column", async () => {

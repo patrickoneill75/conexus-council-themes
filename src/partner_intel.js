@@ -1280,7 +1280,6 @@ function meetingGroups(rows, index, overrides, labels) {
 }
 
 const RECENCY_DAYS = 180;
-const URGENCY_WEIGHT = { high: 3, medium: 2, low: 1, none: 1 };
 
 function recencyFactor(date) {
   if (!date) return 0.5;
@@ -1288,40 +1287,20 @@ function recencyFactor(date) {
   return 1 / (1 + age / RECENCY_DAYS);
 }
 
-/** Group a company's rows by topic and rank the topics: live, urgent and recent ones first.
- * Each meeting counts once per topic (its strongest row), so a company's one long meeting does
- * not make every topic it touched look like a pattern. */
-function rankTopics(rows, index, labels, overrides, weigh) {
-  const groups = new Map();
-  for (const i of rows) {
-    const topic = finalTopic(overrides, i.topic);
-    if (!groups.has(topic)) groups.set(topic, new Map());
-    const meetings = groups.get(topic);
-    const m = meetingOf(i, index).id;
-    const w = weigh(i) * recencyFactor(i.date);
-    if (!meetings.has(m) || w > meetings.get(m).w) meetings.set(m, { w, row: i });
-  }
-  return [...groups.entries()].map(([topic, meetings]) => {
-    const best = [...meetings.values()].sort((a, b) => b.w - a.w)[0];
-    return { topic, score: [...meetings.values()].reduce((sum, x) => sum + x.w, 0), count: meetings.size, best: best.row };
-  }).sort((a, b) => b.score - a.score).slice(0, 5).map((g) => ({
-    topic: g.topic, label: labels.get(g.topic) || "Other", count: g.count,
-    lead: shapeInsight(g.best, index, labels, overrides),
-  }));
-}
+// What each company tab's topic view holds. Issues include asks (a company asking for help is
+// stating an issue); solutions include offers and equipment. The Overview is all three together.
+const TOPIC_LISTS = { issues: ["problem", "ask"], solutions: ["solution", "offer", "equipment"], wins: ["win"] };
+TOPIC_LISTS.all = [...TOPIC_LISTS.issues, ...TOPIC_LISTS.solutions, ...TOPIC_LISTS.wins];
+const CATEGORY_ORDER = { issues: 0, solutions: 1, wins: 2 };
 
-// What each "See all" list on a company page holds. Problems include asks (a company asking for
-// help is stating a problem), as Top issues does; solutions include offers and equipment.
-const COMPANY_LISTS = { wins: ["win"], problems: ["problem", "ask"], solutions: ["solution", "offer", "equipment"] };
+// What each company tab counts: the same kinds its topic view lists.
+const COMPANY_LISTS = { wins: TOPIC_LISTS.wins, problems: TOPIC_LISTS.issues, solutions: TOPIC_LISTS.solutions };
 
 function profileView(data, roster, overrides, labels, id, includeInternal) {
   const index = companyIndex(roster, data);
   const company = index.get(id);
   if (!company) return null;
   const rows = data.insights.filter((i) => i.company_id === id && (includeInternal || i.scope !== "internal"));
-  const wins = rows.filter((i) => i.kind === "win").sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
-  const issues = rows.filter((i) => ISSUE_KINDS.has(i.kind) && i.status !== "resolved");
-  const solutions = rows.filter((i) => SOLVER_KINDS.has(i.kind) && i.kind !== "win");
   // The meetings this company's notes came from, each with the files behind it, linked to Box.
   const meetings = new Map();
   for (const i of rows) {
@@ -1340,54 +1319,58 @@ function profileView(data, roster, overrides, labels, id, includeInternal) {
       program: company.program, contacts: company.contacts, source: company.source },
     counts: { insights: rows.length, wins: count(COMPANY_LISTS.wins), problems: count(COMPANY_LISTS.problems),
       solutions: count(COMPANY_LISTS.solutions), meetings: meetings.size },
-    recentWins: wins.map((i) => shapeInsight(i, index, labels, overrides)),
-    topIssues: rankTopics(issues, index, labels, overrides, (i) => URGENCY_WEIGHT[i.urgency] + (i.kind === "ask" ? 0.5 : 0)),
-    topSolutions: rankTopics(solutions, index, labels, overrides, (i) => (i.confidence === "high" ? 2 : 1) + (i.kind === "offer" ? 0.5 : 0)),
     meetings: [...meetings.values()].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label)).slice(0, 60)
       .map((g) => ({ ...g, programs: [...g.programs], files: [...g.files.values()] })),
     meetingTotal: meetings.size,
   };
 }
 
-/** A company's problems and asks for its Problems tab, in two views.
- * byTopic: grouped by topic, the topics ranked by priority. Each open problem or ask is one
- *   mention, weighted by how recent it was (recencyFactor: 1 today, 0.5 at six months), so three
- *   mentions a year ago weigh about the same as one this month. Resolved rows are listed but add
- *   nothing. "Other" (no topic) always goes last.
- * latest: the meetings that raised a problem, newest first, each with its problems by urgency.
- *   The page opens on the first, the most recent source. */
-function problemsView(data, index, overrides, labels, id, includeInternal) {
-  if (!index.get(id)) return null;
-  const rows = data.insights.filter((i) => i.company_id === id && ISSUE_KINDS.has(i.kind) && (includeInternal || i.scope !== "internal"));
-  const open = (i) => i.status !== "resolved";
-  const meetingKey = (i) => `${i.date}|${meetingOf(i, index).id}`;
-  const newestFirst = (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id);
-  const shape = (i) => shapeInsight(i, index, labels, overrides);
+/** A row is a mention unless it is a resolved issue: that is listed but adds nothing. */
+const isMention = (i) => !ISSUE_KINDS.has(i.kind) || i.status !== "resolved";
 
-  const topics = new Map();
+/** Group rows by topic and rank the topics by priority. Each mention adds its recency weight
+ * (recencyFactor: 1 today, 0.5 at six months), so three mentions a year ago weigh about the same
+ * as one this month. Inside one meeting every row has the same date, so there the rank is simply
+ * how many mentions the topic got. "Other" (no topic) always goes last. */
+function topicGroups(rows, index, labels, overrides) {
+  const groups = new Map();
   for (const i of rows) {
     const topic = finalTopic(overrides, i.topic);
-    if (!topics.has(topic)) topics.set(topic, { rows: [], meetings: new Set() });
-    const g = topics.get(topic);
-    g.rows.push(i);
-    if (open(i)) g.meetings.add(meetingKey(i));
+    if (!groups.has(topic)) groups.set(topic, []);
+    groups.get(topic).push(i);
   }
-  const byTopic = [...topics.entries()].map(([topic, g]) => {
-    const live = g.rows.filter(open);
+  const byDate = (a, b) => b.date.localeCompare(a.date);
+  const order = (a, b) => Number(!isMention(a)) - Number(!isMention(b)) || byDate(a, b) ||
+    CATEGORY_ORDER[CATEGORY_OF[a.kind]] - CATEGORY_ORDER[CATEGORY_OF[b.kind]] || URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] || a.id.localeCompare(b.id);
+  return [...groups.entries()].map(([topic, list]) => {
+    const live = list.filter(isMention);
+    const count = (kinds) => live.filter((i) => kinds.includes(i.kind)).length;
     return {
       topic, label: labels.get(topic) || "Other",
       priority: Math.round(live.reduce((sum, i) => sum + recencyFactor(i.date), 0) * 100) / 100,
-      meetings: g.meetings.size, open: live.length, resolved: g.rows.length - live.length,
-      last: (live.length ? live : g.rows).reduce((m, i) => (i.date > m ? i.date : m), ""),
-      items: [...g.rows].sort((a, b) => Number(!open(a)) - Number(!open(b)) || newestFirst(a, b)).map(shape),
+      mentions: live.length, meetings: new Set(live.map((i) => `${i.date}|${meetingOf(i, index).id}`)).size,
+      issues: count(TOPIC_LISTS.issues), resolved: list.length - live.length,
+      solutions: count(TOPIC_LISTS.solutions), wins: count(TOPIC_LISTS.wins),
+      last: (live.length ? live : list).reduce((m, i) => (i.date > m ? i.date : m), ""),
+      items: [...list].sort(order).map((i) => shapeInsight(i, index, labels, overrides)),
     };
   }).sort((a, b) => Number(a.topic === "other") - Number(b.topic === "other") || b.priority - a.priority ||
     b.last.localeCompare(a.last) || a.label.localeCompare(b.label));
+}
 
+/** A company's Issues, Solutions or Wins tab, or its Overview (list "all": the three together).
+ * byTopic: every row grouped by topic, ranked by priority across all the notes.
+ * latest: the 12 newest meetings with a row in the list, each grouped the same way, its topics
+ *   ranked by how often they came up in that meeting. The page opens on the first. */
+function topicsView(data, index, overrides, labels, id, list, includeInternal) {
+  if (!index.get(id)) return null;
+  const kinds = TOPIC_LISTS[list];
+  const rows = data.insights.filter((i) => i.company_id === id && kinds.includes(i.kind) && (includeInternal || i.scope !== "internal"));
   const sources = new Map();
   for (const i of rows) {
-    const key = meetingKey(i);
-    if (!sources.has(key)) sources.set(key, { key, date: i.date, label: meetingOf(i, index).label, eventType: i.event_type,
+    const m = meetingOf(i, index);
+    const key = `${i.date}|${m.id}`;
+    if (!sources.has(key)) sources.set(key, { key, date: i.date, label: m.label, eventType: i.event_type,
       estimated: false, programs: new Set(), files: new Map(), rows: [] });
     const s = sources.get(key);
     s.rows.push(i);
@@ -1397,10 +1380,10 @@ function problemsView(data, index, overrides, labels, id, includeInternal) {
   }
   const latest = [...sources.values()].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label)).slice(0, 12)
     .map((s) => ({ key: s.key, date: s.date, label: s.label, eventType: s.eventType, estimated: s.estimated,
-      programs: [...s.programs], files: [...s.files.values()],
-      items: [...s.rows].sort((a, b) => Number(!open(a)) - Number(!open(b)) || URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] ||
-        a.id.localeCompare(b.id)).map(shape) }));
-  return { total: rows.length, open: rows.filter(open).length, byTopic, latest, sourceTotal: sources.size };
+      programs: [...s.programs], files: [...s.files.values()], count: s.rows.length,
+      topics: topicGroups(s.rows, index, labels, overrides) }));
+  return { list, total: rows.length, mentions: rows.filter(isMention).length,
+    byTopic: topicGroups(rows, index, labels, overrides), latest, sourceTotal: sources.size };
 }
 
 function companiesView(data, roster, params) {
@@ -2166,7 +2149,7 @@ export async function handlePartnerIntelApi(route, request, env) {
     }
 
     // ---- everything below reads the published dataset --------------------------------
-    const needsData = ["home", "insights", "companies", "company", "company/problems", "ask", "facets", "programs", "program", "meeting", "summarize",
+    const needsData = ["home", "insights", "companies", "company", "company/topics", "ask", "facets", "programs", "program", "meeting", "summarize",
       "attribution/review", "attribution/decide"];
     if (!needsData.includes(route) && route !== "recent-questions") return json({ error: "Not found" }, 404);
     if (route === "recent-questions" && method === "GET") return json({ items: await readJson(env, ASK_RECENT, []) });
@@ -2284,9 +2267,11 @@ export async function handlePartnerIntelApi(route, request, env) {
       const view = profileView(data, roster, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
       return view ? json(view) : json({ error: "Company not found." }, 404);
     }
-    if (route === "company/problems" && method === "GET") {
+    if (route === "company/topics" && method === "GET") {
       const asked = text(params.get("id"));
-      const view = problemsView(data, index, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
+      const list = text(params.get("list"));
+      if (!hasOwn(TOPIC_LISTS, list)) return json({ error: "Choose issues, solutions, wins or all." }, 400);
+      const view = topicsView(data, index, overrides, labels, (data.remap && data.remap.get(asked)) || asked, list, params.get("internal") === "1");
       return view ? json(view) : json({ error: "Company not found." }, 404);
     }
     if (route === "ask" && method === "POST") {

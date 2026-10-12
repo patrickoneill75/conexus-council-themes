@@ -1298,6 +1298,15 @@ class ExportTests(unittest.TestCase):
         self.assertTrue(r["Title"].startswith("'="))
         self.assertTrue(r["Detail"].startswith("'+"))
 
+    def test_the_csv_calls_a_problem_an_issue_as_the_app_does(self):
+        reg, cache = registry_with(("1", "n.docx", "2026-04-24", "text",
+                                    [row(company="Zoeller", kind="problem"), row(company="Zoeller", kind="win", title="Won")], "partner"))
+        ds = build.build_dataset(reg, cache, ROSTER, "t")
+        from partner_intel import export
+        import csv as csvmod
+        rows = list(csvmod.DictReader(io.StringIO(export.insights_csv(ds, ROSTER).lstrip("\ufeff"))))
+        self.assertEqual(sorted(r["Type"] for r in rows), ["issue", "win"])
+
     def test_a_company_not_on_the_list_is_labelled_so(self):
         reg, cache = registry_with(("1", "n.docx", "2026-04-24", "text", [row(company="Hartman")], "partner"))
         ds = build.build_dataset(reg, cache, ROSTER, "t")

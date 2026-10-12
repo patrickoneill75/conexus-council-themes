@@ -43,13 +43,18 @@
     return isNaN(d) ? "" : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   };
 
-  PI.kindLabel = { problem: "Problem", solution: "Solution", win: "Win", offer: "Offer", ask: "Ask",
+  PI.kindLabel = { problem: "Issue", solution: "Solution", win: "Win", offer: "Offer", ask: "Ask",
     equipment: "Equipment", news: "News", commitment: "Commitment" };
   PI.statusLabel = { Active: "Member", Inactive: "Former member", "Non-member": "Not a member", Unknown: "Unknown" };
 
   PI.pill = function (cls, text) { return '<span class="pill ' + cls + '">' + PI.esc(text) + "</span>"; };
 
   /** One insight as a card. opts: { company: true|false, why: true|false } */
+  /** Which company tab a kind belongs to: issues, solutions, wins, or other. */
+  PI.categoryOf = function (kind) {
+    return kind === "problem" || kind === "ask" ? "issues" : kind === "win" ? "wins"
+      : kind === "solution" || kind === "offer" || kind === "equipment" ? "solutions" : "other";
+  };
   PI.insightCard = function (i, opts) {
     opts = opts || {};
     var co = i.company || {};
