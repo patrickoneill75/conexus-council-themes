@@ -340,14 +340,14 @@
     }
     el("go").addEventListener("click", run);
     q.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); });
-    // Arrived from "Find solution" on a company's problem: ask at once, leaving that company out.
+    // Arrived from "Find solution" on a company's issue: ask at once, leaving that company out.
     // Editing the question means a new search, so the exclusion is dropped.
     q.addEventListener("input", function () { if (exclude) { exclude = null; el("excl").innerHTML = ""; } });
     if (askPrefill) {
       var pre = askPrefill; askPrefill = null;
       q.value = pre.question;
       exclude = pre.exclude ? { id: pre.exclude, name: pre.name } : null;
-      el("excl").innerHTML = exclude ? '<p class="small muted" style="margin:6px 0 0">Looking for partners other than ' + esc((exclude.name || "the company with the problem").replace(/\.+$/, "")) + ".</p>" : "";
+      el("excl").innerHTML = exclude ? '<p class="small muted" style="margin:6px 0 0">Looking for partners other than ' + esc((exclude.name || "the company with the issue").replace(/\.+$/, "")) + ".</p>" : "";
       run();
     }
     function loadRecent() {
@@ -393,7 +393,7 @@
     html += "</div>";
     // Companies working through the same thing: a peer to compare notes with, not a solution.
     if (a.peers && a.peers.length) {
-      html += '<div class="card"><h3>Working through the same thing</h3><p class="desc">Partners whose notes show the same problem, ' +
+      html += '<div class="card"><h3>Working through the same thing</h3><p class="desc">Partners whose notes show the same issue, ' +
         "an ask for help with it, or a plan to tackle it. Found by matching words, not ranked by Claude.</p>" +
         a.peers.map(function (p) {
           var c = p.company;
@@ -411,7 +411,7 @@
   // Columns of the companies table: [sort key, heading]. Alphabetical by name until a heading is
   // clicked; clicking it again reverses. Kept while the page is open, so Back returns to it.
   var COMPANY_COLS = [["name", "Company"], ["industry", "Industry"], ["status", "Status"], ["insights", "Notes"],
-    ["problems", "Problems"], ["solutions", "Solutions"], ["wins", "Wins"], ["last", "Last mentioned"]];
+    ["problems", "Issues"], ["solutions", "Solutions"], ["wins", "Wins"], ["last", "Last mentioned"]];
   var companySort = { key: "name", dir: "asc" };
 
   function companies() {
@@ -462,47 +462,43 @@
   }
 
   /* ------------------------------------------------------------------ Company page */
-  // Tabs, in order. A list tab shows every row of its kinds, newest first; problems include asks
-  // (a company asking for help is stating a problem), solutions include offers and equipment.
+  // Tabs, in order. Overview, Issues, Solutions and Wins are topic views from company/topics:
+  // issues include asks (a company asking for help is stating an issue), solutions include offers
+  // and equipment, and the Overview is all three together. Notes lists everything, newest first.
   var COMPANY_TABS = [
-    { id: "overview", label: "Overview" },
-    { id: "problems", label: "Problems", count: "problems" },
-    { id: "solutions", label: "Solutions", count: "solutions", kinds: "solution|offer|equipment", sub: "Everything this company has built, solved, offers or runs." },
-    { id: "wins", label: "Wins", count: "wins", kinds: "win", sub: "Every result this company reported." },
+    { id: "overview", label: "Overview", list: "all", noun: ["mention", "mentions"],
+      rule: "how many open issues, solutions and wins the company has in the topic" },
+    { id: "issues", label: "Issues", count: "problems", list: "issues", noun: ["issue", "issues"],
+      rule: "how many open issues the company raised in the topic" },
+    { id: "solutions", label: "Solutions", count: "solutions", list: "solutions", noun: ["solution", "solutions"],
+      rule: "how many solutions, offers and equipment the company has in the topic" },
+    { id: "wins", label: "Wins", count: "wins", list: "wins", noun: ["win", "wins"],
+      rule: "how many wins the company reported in the topic" },
     { id: "meetings", label: "Meetings", count: "meetings" },
     { id: "notes", label: "Notes", count: "insights", kinds: "", sub: "Everything recorded about this company, newest first." }
   ];
+  var OLD_TABS = { problems: "issues" }; // links saved before the tabs were renamed
   function tabHref(id, tab) { return "#/company/" + encodeURIComponent(id) + (tab && tab !== "overview" ? "/" + tab : ""); }
 
-  /** The question "Find solution" puts to Ask: the problem in its own words, at most 600 characters. */
-  function problemQuestion(i) {
+  /** The question "Find solution" puts to Ask: the issue in its own words, at most 600 characters. */
+  function issueQuestion(i) {
     var q = "Who can help with this: " + (i.title || "") + (i.detail ? ". " + i.detail : "");
     return q.length > 600 ? q.slice(0, 597) + "..." : q;
   }
   function findButton(i, companyId) {
-    return '<div class="row" style="margin-top:10px"><button class="tiny find" data-find="' + esc(problemQuestion(i)) + '" data-co="' + esc(companyId || "") +
+    return '<div class="row" style="margin-top:10px"><button class="tiny find" data-find="' + esc(issueQuestion(i)) + '" data-co="' + esc(companyId || "") +
       '" data-co-name="' + esc((i.company && i.company.name) || "") + '">Find solution</button></div>';
   }
-
-  function column(title, hint, items, kind, more, companyId) {
-    var html = '<section class="card"><h3>' + esc(title) + '</h3><p class="desc">' + esc(hint) + "</p>";
-    var foot = more && more.count ? '<div class="row" style="margin-top:12px"><a class="button" href="' + esc(more.href) + '">' + esc(more.label) + " (" + more.count + ")</a></div>" : "";
-    if (!items.length) return html + '<div class="muted small">None recorded yet.</div>' + foot + "</section>";
-    items.forEach(function (it) {
-      var i = it.lead || it;
-      html += '<div class="item' + (kind === "issue" && (i.urgency === "high" || i.urgency === "medium") ? " u-" + i.urgency : "") + '">' +
-        (it.label ? '<div class="head">' + PI.pill("info", it.label) + (it.count > 1 ? PI.pill("info", it.count + " meetings") : "") + "</div>" : "") +
-        '<div class="title">' + esc(i.title) + "</div><div class=\"detail\">" + esc(i.detail) + "</div>" +
-        (i.urgencyReason && kind === "issue" ? '<div class="why"><b>Why it is urgent:</b> ' + esc(i.urgencyReason) + "</div>" : "") +
-        '<div class="meta">' + esc(PI.fmtDate(i.date)) + (i.estimated ? " " + PI.pill("est", "estimated date") : "") +
-        (i.eventType ? " &middot; " + esc(i.eventType) : "") + "</div>" +
-        PI.sourceHtml(i) + (kind === "issue" ? findButton(i, companyId) : "") + "</div>";
-    });
-    return html + foot + "</section>";
+  var isIssue = function (i) { return i.kind === "problem" || i.kind === "ask"; };
+  /** A row as a card; an issue carries its Find solution button. */
+  function rowCard(i, companyId) {
+    var card = PI.insightCard(i, { company: false });
+    return isIssue(i) ? card.replace(/<\/div>$/, findButton(i, companyId) + "</div>") : card;
   }
 
   function company(id, tab) {
     var mine = ++seq;
+    tab = OLD_TABS[tab] || tab;
     var current = COMPANY_TABS.filter(function (t) { return t.id === tab; })[0] || COMPANY_TABS[0];
     view.innerHTML = loading("Loading…");
     PI.api("company?id=" + encodeURIComponent(id)).then(function (p) {
@@ -520,12 +516,8 @@
         }).join("") + '</nav><div id="tabBody"></div>';
       view.innerHTML = html;
       var body = el("tabBody");
-      if (current.id === "overview") {
-        // Left to right: problems, solutions, wins.
-        body.innerHTML = '<div class="grid3">' +
-          column("Top issues", "Open problems and asks, ranked by urgency and how recent they are.", p.topIssues, "issue", { href: tabHref(c.id, "problems"), label: "See all problems", count: p.counts.problems }, c.id) +
-          column("Top solutions", "What this company has built, solved or offers.", p.topSolutions, "solution", { href: tabHref(c.id, "solutions"), label: "See all solutions", count: p.counts.solutions }) +
-          column("Recent wins", "The latest results this company reported.", p.recentWins, "win", { href: tabHref(c.id, "wins"), label: "See all wins", count: p.counts.wins }) + "</div>";
+      if (current.list) {
+        topicsTab(body, c, current, mine);
       } else if (current.id === "meetings") {
         body.innerHTML = '<div class="card"><h3>Meetings and source documents</h3><p class="desc">The meetings this company appears in, and the files in Box they came from.</p>' +
           (p.meetings.length ? '<table class="docs"><tbody>' + p.meetings.map(function (m) {
@@ -534,79 +526,94 @@
               "<td>" + (PI.fileLinks(m.files) || '<span class="muted">No file</span>') + "</td></tr>";
           }).join("") + "</tbody></table>" : '<div class="empty">No meetings recorded yet.</div>') +
           (p.meetingTotal > p.meetings.length ? '<p class="small muted">Showing the latest ' + p.meetings.length + " of " + p.meetingTotal + ".</p>" : "") + "</div>";
-      } else if (current.id === "problems") {
-        problemsTab(body, c, mine);
       } else {
         listTab(body, c, current, mine);
       }
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
 
-  /** A problem or ask as a card, with its Find solution button. */
-  function problemCard(i, companyId) {
-    return PI.insightCard(i, { company: false }).replace(/<\/div>$/, findButton(i, companyId) + "</div>");
-  }
-
-  // The Problems tab: by topic, ranked by priority, or the latest source's problems. The choice
-  // holds while moving between companies.
-  var problemsMode = "topic";
-  function problemsTab(body, c, mine) {
-    body.innerHTML = loading("Loading problems…");
-    PI.api("company/problems?id=" + encodeURIComponent(c.id)).then(function (r) {
+  // Overview, Issues, Solutions and Wins: by topic across all the notes, or the latest source's
+  // topics. The choice holds while moving between tabs and companies.
+  var topicsMode = "topic";
+  function topicsTab(body, c, tab, mine) {
+    body.innerHTML = loading("Loading…");
+    PI.api("company/topics?id=" + encodeURIComponent(c.id) + "&list=" + tab.list).then(function (r) {
       if (mine !== seq) return;
-      if (!r.total) { body.innerHTML = '<div class="empty">No problems recorded yet.</div>'; return; }
+      if (!r.total) { body.innerHTML = '<div class="empty">No ' + (tab.list === "all" ? "issues, solutions or wins" : tab.noun[1]) + " recorded yet.</div>"; return; }
       body.innerHTML = '<div class="row" style="margin:4px 0 12px"><div class="seg" id="pmode">' +
         [["topic", "By topic"], ["latest", "Latest source"]].map(function (m) {
-          return '<button data-mode="' + m[0] + '"' + (m[0] === problemsMode ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"') + ">" + m[1] + "</button>";
+          return '<button data-mode="' + m[0] + '">' + m[1] + "</button>";
         }).join("") + '</div></div><div id="pview"></div>';
       function draw() {
         Array.prototype.forEach.call(el("pmode").querySelectorAll("button"), function (b) {
-          var on = b.getAttribute("data-mode") === problemsMode;
+          var on = b.getAttribute("data-mode") === topicsMode;
           b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false");
         });
-        if (problemsMode === "latest") latestSource(el("pview"), r, c.id); else byTopic(el("pview"), r, c.id);
+        if (topicsMode === "latest") latestSource(el("pview"), r, tab, c.id); else byTopic(el("pview"), r, tab, c.id);
       }
       el("pmode").addEventListener("click", function (e) {
         var b = e.target.closest("button[data-mode]");
         if (!b) return;
-        problemsMode = b.getAttribute("data-mode");
+        topicsMode = b.getAttribute("data-mode");
         draw();
       });
       draw();
     }).catch(function (err) { if (mine === seq) body.innerHTML = emptyState(err); });
   }
 
-  function byTopic(box, r, companyId) {
-    var plural = function (n, one, many) { return n + " " + (n === 1 ? one : many); };
-    box.innerHTML = '<p class="sub" style="margin:0 0 4px">Topics ranked by priority: how many open problems the company raised in the topic, with recent ones counting more. ' +
-      "Open a topic to see its problems.</p>" + r.byTopic.map(function (t, n) {
-        var meta = [plural(t.open, "open problem", "open problems")];
-        if (t.meetings) meta.push("raised in " + plural(t.meetings, "meeting", "meetings"));
-        if (t.resolved) meta.push(t.resolved + " resolved");
-        if (t.last) meta.push((t.open ? "latest " : "last ") + PI.fmtDate(t.last));
-        return '<details class="ptopic"><summary><span class="rank">' + (n + 1) + '</span><span class="txt"><b>' + esc(t.label) + "</b>" +
-          (t.open ? "" : " " + PI.pill("good", "All resolved")) +
-          '<span class="meta">' + esc(meta.join(" · ")) + '</span><span class="preview">' + esc(t.items[0].title) + "</span></span></summary>" +
-          '<div class="examples">' + t.items.map(function (i) { return problemCard(i, companyId); }).join("") + "</div></details>";
-      }).join("");
+  var plural = function (n, one, many) { return n + " " + (n === 1 ? one : many); };
+
+  /** Topic headers that open to their rows. On the Overview a topic opens to three columns. */
+  function topicList(topics, tab, companyId, inMeeting) {
+    return topics.map(function (t, n) {
+      var meta = [];
+      if (tab.list === "all" ? t.issues : tab.list === "issues") meta.push(plural(t.issues, "open issue", "open issues"));
+      if (tab.list === "all" ? t.solutions : tab.list === "solutions") meta.push(plural(t.solutions, "solution", "solutions"));
+      if (tab.list === "all" ? t.wins : tab.list === "wins") meta.push(plural(t.wins, "win", "wins"));
+      if (t.resolved) meta.push(t.resolved + " resolved");
+      if (!inMeeting) {
+        if (t.meetings) meta.push("in " + plural(t.meetings, "meeting", "meetings"));
+        if (t.last) meta.push((t.mentions ? "latest " : "last ") + PI.fmtDate(t.last));
+      }
+      var inner;
+      if (tab.list === "all") {
+        inner = '<div class="grid3">' + [["Issues", "issues"], ["Solutions", "solutions"], ["Wins", "wins"]].map(function (col) {
+          var rows = t.items.filter(function (i) { return PI.categoryOf(i.kind) === col[1]; });
+          return "<div><h4>" + col[0] + "</h4>" + (rows.length ? rows.map(function (i) { return rowCard(i, companyId); }).join("")
+            : '<div class="muted small" style="margin-top:8px">None in this topic.</div>') + "</div>";
+        }).join("") + "</div>";
+      } else {
+        inner = t.items.map(function (i) { return rowCard(i, companyId); }).join("");
+      }
+      return '<details class="ptopic"><summary><span class="rank">' + (n + 1) + '</span><span class="txt"><b>' + esc(t.label) + "</b>" +
+        (t.mentions ? "" : " " + PI.pill("good", "All resolved")) +
+        '<span class="meta">' + esc(meta.join(" · ")) + '</span><span class="preview">' + esc(t.items[0].title) + "</span></span></summary>" +
+        '<div class="examples">' + inner + "</div></details>";
+    }).join("");
   }
 
-  function latestSource(box, r, companyId) {
+  function byTopic(box, r, tab, companyId) {
+    box.innerHTML = '<p class="sub" style="margin:0 0 4px">Topics ranked by priority: ' + esc(tab.rule) + ", with recent ones counting more." +
+      (tab.list === "all" || tab.list === "issues" ? " Resolved issues are listed but not counted." : "") + " Open a topic to see the notes.</p>" +
+      topicList(r.byTopic, tab, companyId, false);
+  }
+
+  function latestSource(box, r, tab, companyId) {
     var opts = r.latest.map(function (s, k) {
-      return '<option value="' + k + '">' + esc(PI.fmtDate(s.date) + " · " + (s.label || s.eventType || "Meeting") + " (" + s.items.length + ")") + "</option>";
+      return '<option value="' + k + '">' + esc(PI.fmtDate(s.date) + " · " + (s.label || s.eventType || "Meeting") + " (" + s.count + ")") + "</option>";
     }).join("");
-    box.innerHTML = '<p class="sub" style="margin:0 0 10px">The problems raised in this company\'s most recent notes, most urgent first.' +
+    box.innerHTML = '<p class="sub" style="margin:0 0 10px">This company\'s most recent notes, by topic, ranked by how often each topic came up in that meeting.' +
       (r.latest.length > 1 ? " Pick an earlier source to compare." : "") + "</p>" +
       (r.latest.length > 1 ? '<div style="max-width:520px"><label class="field" for="psrc">Source</label><select id="psrc">' + opts + "</select></div>" : "") +
       '<div id="psrcBody"></div>' +
-      (r.sourceTotal > r.latest.length ? '<p class="small muted">The latest ' + r.latest.length + " of " + r.sourceTotal + " sources are listed. The By topic view covers them all.</p>" : "");
+      (r.sourceTotal > r.latest.length ? '<p class="small muted">The latest ' + r.latest.length + " of " + r.sourceTotal + " sources are listed. By topic covers them all.</p>" : "");
     function show(k) {
       var s = r.latest[k];
       el("psrcBody").innerHTML = '<div class="card" style="margin-top:12px"><h3>' + esc(s.label || s.eventType || "Meeting") + "</h3>" +
         '<p class="meta small muted" style="margin:2px 0 0">' + esc(PI.fmtDate(s.date)) + (s.estimated ? " " + PI.pill("est", "estimated date") : "") +
         (s.programs.length ? " &middot; " + esc(s.programs.join(", ")) : "") + "</p>" +
-        (s.files.length ? '<p class="small" style="margin:6px 0 0">From ' + PI.fileLinks(s.files) + "</p>" : "") +
-        s.items.map(function (i) { return problemCard(i, companyId); }).join("") + "</div>";
+        (s.files.length ? '<p class="small" style="margin:6px 0 0">From ' + PI.fileLinks(s.files) + "</p>" : "") + "</div>" +
+        topicList(s.topics, tab, companyId, true);
     }
     var sel = el("psrc");
     if (sel) sel.addEventListener("change", function () { show(Number(sel.value)); });
@@ -622,10 +629,8 @@
         "&sort=date&limit=50&offset=" + offset).then(function (r) {
         if (mine !== seq) return;
         if (!r.total) { el("clist").innerHTML = '<div class="empty">None recorded yet.</div>'; return; }
-        el("clist").insertAdjacentHTML("beforeend", r.items.map(function (i) {
-          // Every problem and ask carries a Find solution button, on Notes as on Problems.
-          return i.kind === "problem" || i.kind === "ask" ? problemCard(i, c.id) : PI.insightCard(i, { company: false });
-        }).join(""));
+        // Every issue carries a Find solution button, on Notes as on the topic tabs.
+        el("clist").insertAdjacentHTML("beforeend", r.items.map(function (i) { return rowCard(i, c.id); }).join(""));
         offset += r.items.length;
         el("cmore").innerHTML = offset < r.total ? '<div class="row" style="margin-top:12px"><button id="cmoreBtn">Show more (' + (r.total - offset) + " left)</button></div>" : "";
         var b = el("cmoreBtn"); if (b) b.addEventListener("click", function () { b.disabled = true; page(); });
@@ -634,7 +639,7 @@
     page();
   }
 
-  // "Find solution": put the problem to Ask, leaving out the company that has it.
+  // "Find solution": put the issue to Ask, leaving out the company that has it.
   var askPrefill = null;
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("button[data-find]");

@@ -1042,7 +1042,7 @@ The date in the text comes first (the top of the document, or a line labelled "D
 
 ### The bar at the top of Home
 
-One stacked bar shows what the notes hold: issues (problems and asks), solutions (solutions, offers, equipment), wins, and other (news and commitments), with the totals beside it: insights, partners (and how many are members), meetings and programs. It is the whole dataset, not a time window, and follows the source buttons and **Members only**.
+One stacked bar shows what the notes hold: issues (issues and asks), solutions (solutions, offers, equipment), wins, and other (news and commitments), with the totals beside it: insights, partners (and how many are members), meetings and programs. It is the whole dataset, not a time window, and follows the source buttons and **Members only**.
 
 ### How topics are weighted
 
@@ -1057,7 +1057,7 @@ The totals on the dashboard and in the Explore list are still plain counts, beca
 
 ### Trending topics and programs
 
-**Home** ranks topics by how many companies raised them in the last 30, 60 or 90 days (problems and asks only). Each topic shows up to five bullet points written by Claude from the notes behind it. A chevron on each bullet opens the supporting examples with their source quotes. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. The page appears at once and the bullets fill in a few seconds later.
+**Home** ranks topics by how many companies raised them in the last 30, 60 or 90 days (issues and asks only). Each topic shows up to five bullet points written by Claude from the notes behind it. A chevron on each bullet opens the supporting examples with their source quotes. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. The page appears at once and the bullets fill in a few seconds later.
 
 **Programs** is a new tab. Each source folder (Board Meetings, PCN, Industry Exchange Workshops and so on) is a program. A program page has its own top topics, built the same way, over 90 days, a year or all time, and a **Recent data** list of its meetings, newest first. A meeting is whatever the notes make it:
 
@@ -1106,16 +1106,18 @@ Pick the right company, keep the current one, or choose another partner. A decis
 
 ### Source files
 
-Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. A company page has tabs: **Overview** (Top issues, Top solutions and Recent wins, left to right), **Problems** (problems and asks, open or resolved, in two views below), **Solutions** (solutions, offers and equipment), **Wins**, **Meetings** (each meeting the company appears in, its program, and every file behind it, linked to Box) and **Notes** (everything recorded about the company). Each tab shows its count; the list tabs are newest first, 50 at a time.
+Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. The app calls a partner's problem an **issue** everywhere, including the Excel export's Type column (the pipeline still stores the kind as `problem`).
 
-The **Problems** tab has two views:
+A company page has tabs: **Overview**, **Issues** (issues and asks), **Solutions** (solutions, offers and equipment), **Wins**, **Meetings** (each meeting the company appears in, its program, and every file behind it, linked to Box) and **Notes** (everything recorded about the company, newest first, 50 at a time). Each tab shows its count.
 
-1. **By topic** (the default). Problems are grouped under their topic, and the topics are ranked by priority. Each open problem or ask in the topic counts as one mention, weighted by how recent it was: a mention today counts 1, six months ago 0.5, a year ago about 0.33. So three mentions a year ago weigh about the same as one this month. Resolved problems are listed but add nothing. Problems with no topic go under Other, always last. Click a topic to open its problems, open ones first, newest first.
-2. **Latest source**. The problems from the company's most recent meeting, most urgent first, with the files behind it linked to Box. A Source menu steps back through the 12 latest meetings that raised a problem.
+Overview, Issues, Solutions and Wins work the same way. The Overview combines the other three: a topic's rank there counts its open issues, solutions and wins together, and an opened topic shows them in three columns, left to right. Each of these tabs has two views:
 
-The Overview's Top issues column ranks differently: it weighs urgency as well, and shows open problems only.
+1. **By topic** (the default). Notes are grouped under their topic, and the topics are ranked by priority. Each note in the topic counts as one mention, weighted by how recent it was: a mention today counts 1, six months ago 0.5, a year ago about 0.33. So three mentions a year ago weigh about the same as one this month. Resolved issues are listed but add nothing. Notes with no topic go under Other, always last. Click a topic to open its notes: counted ones first, newest first.
+2. **Latest source**. The company's most recent meeting, with the files behind it linked to Box, and its notes grouped by topic the same way. There every note has the same date, so the topics rank by how many mentions each got in that meeting. A Source menu steps back through the 12 latest meetings.
 
-**Find solution** sits under every problem and ask on a company page (Overview, Problems and Notes). It opens Ask with the problem as the question ("Who can help with this: ...") and runs it at once, leaving the company that has the problem out of the matches. Editing the question starts a normal search with no company left out. The Excel export has a **SourceLinks** column with the same links.
+Each mention counts, so a single long meeting with many notes on one topic can put that topic first.
+
+**Find solution** sits under every issue and ask on a company page (Overview, Issues and Notes). It opens Ask with the issue as the question ("Who can help with this: ...") and runs it at once, leaving the company that has the issue out of the matches. Editing the question starts a normal search with no company left out. The Excel export has a **SourceLinks** column with the same links.
 
 ### Cost
 
@@ -1124,8 +1126,8 @@ The Overview's Top issues column ranks differently: it weighs urgency as well, a
 - **Claude use** in the control panel totals this month's and last month's calls and tokens by purpose (notes by batch, notes direct, summaries, Ask), and counts answers served from saved results instead. It shows tokens, not dollars: price them against your Anthropic rate card.
 - A day with no new notes uses no Claude: unchanged files are skipped by Box checksum, and text already read is served from the stored results, keyed by the text, the prompt version and the model, so renaming or moving a file costs nothing.
 - A section too dense for one answer is read in halves and the results merged, so a large section costs a few extra calls, not a failure. **Last scan** counts those.
-- Ask makes two Claude calls per new question. First, Claude Haiku turns the question into related search terms (for "unsure what we can put into AI while doing CMMC": cybersecurity, NIST 800-171, ITAR, data security, sensitive data, AI policy, Copilot and so on), because the notes that answer a question rarely use its words; these are saved per question and shown under the answer as "Also searched for". Then code scores every note that shows a company can help (solutions, offers, wins, equipment, and problems marked resolved), weighting rare words such as "CMMC" far above common ones such as "work". A note needs a rare word or two words from the question or the terms; it does not need most of them (it used to need a third of the question's words, so a long question found nothing). About ten companies go to Claude Sonnet to rank. The ranking is saved under exactly what Claude would read (the question, the shortlist and its evidence). A daily scan that changes nothing relevant to the question reuses it; a new matching row, or a partner's name or status changing, asks again.
-- Below the matches, **Working through the same thing** lists up to five partners whose notes show the same problem, an ask for help with it, or a plan to tackle it: peers to compare notes with. They are found by the same word matching and are not ranked by Claude.
+- Ask makes two Claude calls per new question. First, Claude Haiku turns the question into related search terms (for "unsure what we can put into AI while doing CMMC": cybersecurity, NIST 800-171, ITAR, data security, sensitive data, AI policy, Copilot and so on), because the notes that answer a question rarely use its words; these are saved per question and shown under the answer as "Also searched for". Then code scores every note that shows a company can help (solutions, offers, wins, equipment, and issues marked resolved), weighting rare words such as "CMMC" far above common ones such as "work". A note needs a rare word or two words from the question or the terms; it does not need most of them (it used to need a third of the question's words, so a long question found nothing). About ten companies go to Claude Sonnet to rank. The ranking is saved under exactly what Claude would read (the question, the shortlist and its evidence). A daily scan that changes nothing relevant to the question reuses it; a new matching row, or a partner's name or status changing, asks again.
+- Below the matches, **Working through the same thing** lists up to five partners whose notes show the same issue, an ask for help with it, or a plan to tackle it: peers to compare notes with. They are found by the same word matching and are not ranked by Claude.
 - Trending summaries are reused across small changes. When a window rolls a day, or a filter adds a row or two, a saved summary is used if at least 80% of the rows it was written from are still the rows behind the topic, and every bullet still has one of its rows to show. The comparison is always with the rows the summary was written from, never with a reuse, so a summary cannot drift one day at a time. The page also waits 0.7 seconds before asking for summaries, so clicking through windows and filters does not start a paid call for every view passed through.
 - No Anthropic prompt caching is used. The instructions and schema shared by every call are about 1,700 tokens, input is the smaller part of an extraction's cost (Claude's written answer is most of it), and inside a batch a cache hit is not guaranteed. Low-volume Worker calls are minutes to days apart (see CLAUDE.md).
 - **Models.** Claude Sonnet 5.5 (`claude-sonnet-5-5`) reads the notes, at medium effort, and answers Ask. Claude Haiku 5.5 (`claude-haiku-5-5`) writes the trending summaries, at low effort: they are short, bounded, and every bullet must cite a row it was shown. List prices per million tokens, from Anthropic's model table as of 2026-10-06 (check the live pricing page before budgeting): Sonnet 5.5 $2 in / $10 out, Haiku 5.5 $0.10 / $0.50 for prompts up to 100K tokens; the batch halves both. Both models think before answering, and thinking is billed as output, so the effort level is set on every call. Neither model accepts a forced tool choice, so each prompt asks for the tool call, and an answer without it is asked once more. A section or question Claude declines is recorded as declined, not retried daily; direct Sonnet calls turn on Anthropic's server-side fallback (`fallbacks: "default"`), which the batch does not allow.
@@ -1143,7 +1145,7 @@ Box holds the notes you point it at, the member list, and the database files des
 
 ### Known limits
 
-- A solution is linked to a problem by topic, not one to one.
+- A solution is linked to an issue by topic, not one to one.
 - A transcript speaker who is only a first name is resolved only through the meeting's attendee table.
 - Industry and member status come from the partner list. Companies that appear only in the notes show as "Unknown" until added to it.
 

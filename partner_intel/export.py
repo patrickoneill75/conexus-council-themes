@@ -29,6 +29,8 @@ COLUMNS = ["InsightID", "Date", "DateSource", "SourceFolder", "EventType", "Seri
            "SourceFiles", "SourceLinks", "ReviewFlags"]
 
 MEMBER_LABEL = {"Active": "Member", "Inactive": "Former member", "Non-member": "Not a member"}
+# The app calls a "problem" row an issue; the export says the same. Other kinds read as stored.
+TYPE_LABEL = {"problem": "issue"}
 
 
 def _safe(value) -> str:
@@ -57,7 +59,7 @@ def insights_csv(dataset: dict, roster: Roster) -> str:
         writer.writerow([_safe(v) for v in [
             i["id"], i["date"], i["date_source"], ", ".join(i.get("source_folders") or [i.get("source_folder", "")]),
             i["event_type"], i["series"], i.get("meeting_label", ""), name, status, (partner or {}).get("industry") or "Unknown",
-            i["kind"], topics.get(i["topic"], i["topic"]), i["title"], i["detail"], i["quote"], i["urgency"],
+            TYPE_LABEL.get(i["kind"], i["kind"]), topics.get(i["topic"], i["topic"]), i["title"], i["detail"], i["quote"], i["urgency"],
             i["urgency_reason"], i["status"], i["solves"], "; ".join(i["tags"]), i["confidence"], i["speaker"],
             i["scope"], "; ".join(sorted({s["name"] for s in i["sources"]})),
             " ".join(box_link(s["id"]) for s in i["sources"] if box_link(s["id"])), "; ".join(i["review"]),
