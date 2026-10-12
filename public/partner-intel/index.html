@@ -466,7 +466,7 @@
   // (a company asking for help is stating a problem), solutions include offers and equipment.
   var COMPANY_TABS = [
     { id: "overview", label: "Overview" },
-    { id: "problems", label: "Problems", count: "problems", kinds: "problem|ask", sub: "Every problem and ask this company raised, open or resolved." },
+    { id: "problems", label: "Problems", count: "problems" },
     { id: "solutions", label: "Solutions", count: "solutions", kinds: "solution|offer|equipment", sub: "Everything this company has built, solved, offers or runs." },
     { id: "wins", label: "Wins", count: "wins", kinds: "win", sub: "Every result this company reported." },
     { id: "meetings", label: "Meetings", count: "meetings" },
@@ -534,10 +534,83 @@
               "<td>" + (PI.fileLinks(m.files) || '<span class="muted">No file</span>') + "</td></tr>";
           }).join("") + "</tbody></table>" : '<div class="empty">No meetings recorded yet.</div>') +
           (p.meetingTotal > p.meetings.length ? '<p class="small muted">Showing the latest ' + p.meetings.length + " of " + p.meetingTotal + ".</p>" : "") + "</div>";
+      } else if (current.id === "problems") {
+        problemsTab(body, c, mine);
       } else {
         listTab(body, c, current, mine);
       }
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
+  }
+
+  /** A problem or ask as a card, with its Find solution button. */
+  function problemCard(i, companyId) {
+    return PI.insightCard(i, { company: false }).replace(/<\/div>$/, findButton(i, companyId) + "</div>");
+  }
+
+  // The Problems tab: by topic, ranked by priority, or the latest source's problems. The choice
+  // holds while moving between companies.
+  var problemsMode = "topic";
+  function problemsTab(body, c, mine) {
+    body.innerHTML = loading("Loading problems…");
+    PI.api("company/problems?id=" + encodeURIComponent(c.id)).then(function (r) {
+      if (mine !== seq) return;
+      if (!r.total) { body.innerHTML = '<div class="empty">No problems recorded yet.</div>'; return; }
+      body.innerHTML = '<div class="row" style="margin:4px 0 12px"><div class="seg" id="pmode">' +
+        [["topic", "By topic"], ["latest", "Latest source"]].map(function (m) {
+          return '<button data-mode="' + m[0] + '"' + (m[0] === problemsMode ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"') + ">" + m[1] + "</button>";
+        }).join("") + '</div></div><div id="pview"></div>';
+      function draw() {
+        Array.prototype.forEach.call(el("pmode").querySelectorAll("button"), function (b) {
+          var on = b.getAttribute("data-mode") === problemsMode;
+          b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        if (problemsMode === "latest") latestSource(el("pview"), r, c.id); else byTopic(el("pview"), r, c.id);
+      }
+      el("pmode").addEventListener("click", function (e) {
+        var b = e.target.closest("button[data-mode]");
+        if (!b) return;
+        problemsMode = b.getAttribute("data-mode");
+        draw();
+      });
+      draw();
+    }).catch(function (err) { if (mine === seq) body.innerHTML = emptyState(err); });
+  }
+
+  function byTopic(box, r, companyId) {
+    var plural = function (n, one, many) { return n + " " + (n === 1 ? one : many); };
+    box.innerHTML = '<p class="sub" style="margin:0 0 4px">Topics ranked by priority: how many open problems the company raised in the topic, with recent ones counting more. ' +
+      "Open a topic to see its problems.</p>" + r.byTopic.map(function (t, n) {
+        var meta = [plural(t.open, "open problem", "open problems")];
+        if (t.meetings) meta.push("raised in " + plural(t.meetings, "meeting", "meetings"));
+        if (t.resolved) meta.push(t.resolved + " resolved");
+        if (t.last) meta.push((t.open ? "latest " : "last ") + PI.fmtDate(t.last));
+        return '<details class="ptopic"><summary><span class="rank">' + (n + 1) + '</span><span class="txt"><b>' + esc(t.label) + "</b>" +
+          (t.open ? "" : " " + PI.pill("good", "All resolved")) +
+          '<span class="meta">' + esc(meta.join(" · ")) + '</span><span class="preview">' + esc(t.items[0].title) + "</span></span></summary>" +
+          '<div class="examples">' + t.items.map(function (i) { return problemCard(i, companyId); }).join("") + "</div></details>";
+      }).join("");
+  }
+
+  function latestSource(box, r, companyId) {
+    var opts = r.latest.map(function (s, k) {
+      return '<option value="' + k + '">' + esc(PI.fmtDate(s.date) + " · " + (s.label || s.eventType || "Meeting") + " (" + s.items.length + ")") + "</option>";
+    }).join("");
+    box.innerHTML = '<p class="sub" style="margin:0 0 10px">The problems raised in this company\'s most recent notes, most urgent first.' +
+      (r.latest.length > 1 ? " Pick an earlier source to compare." : "") + "</p>" +
+      (r.latest.length > 1 ? '<div style="max-width:520px"><label class="field" for="psrc">Source</label><select id="psrc">' + opts + "</select></div>" : "") +
+      '<div id="psrcBody"></div>' +
+      (r.sourceTotal > r.latest.length ? '<p class="small muted">The latest ' + r.latest.length + " of " + r.sourceTotal + " sources are listed. The By topic view covers them all.</p>" : "");
+    function show(k) {
+      var s = r.latest[k];
+      el("psrcBody").innerHTML = '<div class="card" style="margin-top:12px"><h3>' + esc(s.label || s.eventType || "Meeting") + "</h3>" +
+        '<p class="meta small muted" style="margin:2px 0 0">' + esc(PI.fmtDate(s.date)) + (s.estimated ? " " + PI.pill("est", "estimated date") : "") +
+        (s.programs.length ? " &middot; " + esc(s.programs.join(", ")) : "") + "</p>" +
+        (s.files.length ? '<p class="small" style="margin:6px 0 0">From ' + PI.fileLinks(s.files) + "</p>" : "") +
+        s.items.map(function (i) { return problemCard(i, companyId); }).join("") + "</div>";
+    }
+    var sel = el("psrc");
+    if (sel) sel.addEventListener("change", function () { show(Number(sel.value)); });
+    show(0);
   }
 
   /** A company's full list for one tab, newest first, 50 at a time. */
@@ -550,9 +623,8 @@
         if (mine !== seq) return;
         if (!r.total) { el("clist").innerHTML = '<div class="empty">None recorded yet.</div>'; return; }
         el("clist").insertAdjacentHTML("beforeend", r.items.map(function (i) {
-          var card = PI.insightCard(i, { company: false });
-          // Every problem and ask carries a Find solution button, on this tab and on Notes.
-          return i.kind === "problem" || i.kind === "ask" ? card.replace(/<\/div>$/, findButton(i, c.id) + "</div>") : card;
+          // Every problem and ask carries a Find solution button, on Notes as on Problems.
+          return i.kind === "problem" || i.kind === "ask" ? problemCard(i, c.id) : PI.insightCard(i, { company: false });
         }).join(""));
         offset += r.items.length;
         el("cmore").innerHTML = offset < r.total ? '<div class="row" style="margin-top:12px"><button id="cmoreBtn">Show more (' + (r.total - offset) + " left)</button></div>" : "";

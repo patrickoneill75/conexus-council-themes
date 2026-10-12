@@ -1106,7 +1106,14 @@ Pick the right company, keep the current one, or choose another partner. A decis
 
 ### Source files
 
-Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. A company page has tabs: **Overview** (Top issues, Top solutions and Recent wins, left to right), **Problems** (problems and asks, open or resolved), **Solutions** (solutions, offers and equipment), **Wins**, **Meetings** (each meeting the company appears in, its program, and every file behind it, linked to Box) and **Notes** (everything recorded about the company). Each tab shows its count; the list tabs are newest first, 50 at a time.
+Every quote shown in the app names the file it came from and links to it in Box (`https://app.box.com/file/<id>`): insight cards, trending-topic examples, Ask evidence, company pages and meeting pages. A company page has tabs: **Overview** (Top issues, Top solutions and Recent wins, left to right), **Problems** (problems and asks, open or resolved, in two views below), **Solutions** (solutions, offers and equipment), **Wins**, **Meetings** (each meeting the company appears in, its program, and every file behind it, linked to Box) and **Notes** (everything recorded about the company). Each tab shows its count; the list tabs are newest first, 50 at a time.
+
+The **Problems** tab has two views:
+
+1. **By topic** (the default). Problems are grouped under their topic, and the topics are ranked by priority. Each open problem or ask in the topic counts as one mention, weighted by how recent it was: a mention today counts 1, six months ago 0.5, a year ago about 0.33. So three mentions a year ago weigh about the same as one this month. Resolved problems are listed but add nothing. Problems with no topic go under Other, always last. Click a topic to open its problems, open ones first, newest first.
+2. **Latest source**. The problems from the company's most recent meeting, most urgent first, with the files behind it linked to Box. A Source menu steps back through the 12 latest meetings that raised a problem.
+
+The Overview's Top issues column ranks differently: it weighs urgency as well, and shows open problems only.
 
 **Find solution** sits under every problem and ask on a company page (Overview, Problems and Notes). It opens Ask with the problem as the question ("Who can help with this: ...") and runs it at once, leaving the company that has the problem out of the matches. Editing the question starts a normal search with no company left out. The Excel export has a **SourceLinks** column with the same links.
 
