@@ -3756,6 +3756,65 @@ test("partner_intel: a company page's See all buttons count what their lists hol
     "each button's count matches the list it opens, resolved problems included");
 });
 
+// The Problems tab ranks topics by mentions (each open problem or ask) weighted by recency. Each
+// case below fails if one half of that is dropped:
+//   talent: 3 problems in one meeting 300 days ago (3 x 0.375 = 1.13): more mentions beat one
+//     recent one, and problems count, not meetings;
+//   quality: 1 problem 2 days ago (0.99);
+//   ai: 2 problems 400 days ago (0.62) and a resolved one yesterday: old and resolved count less.
+function problemRows() {
+  const p = (over) => ins({ company_id: "c-a", kind: "problem", ...over });
+  return [
+    p({ title: "t1", topic: "talent_pipeline", date: isoAgo(300), meeting_id: "m-t", meeting_label: "Cohort 1" }),
+    p({ title: "t2", topic: "talent_pipeline", date: isoAgo(300), meeting_id: "m-t", meeting_label: "Cohort 1" }),
+    p({ title: "t3", topic: "talent_pipeline", date: isoAgo(300), meeting_id: "m-t", meeting_label: "Cohort 1", kind: "ask" }),
+    p({ title: "q1", topic: "quality", date: isoAgo(2), meeting_id: "m-q", meeting_label: "Acme Corp" }),
+    p({ title: "a1", topic: "ai_adoption", date: isoAgo(400), meeting_id: "m-a1", meeting_label: "Acme Corp" }),
+    p({ title: "a2", topic: "ai_adoption", date: isoAgo(401), meeting_id: "m-a2", meeting_label: "Acme Corp" }),
+    p({ title: "a3", topic: "ai_adoption", date: isoAgo(1), meeting_id: "m-a3", meeting_label: "Acme Corp", status: "resolved" }),
+    // The newest notes: no topic, so "Other", which always goes last.
+    p({ title: "o-low", topic: "other", date: isoAgo(0), meeting_id: "m-new", meeting_label: "Acme visit", urgency: "low",
+      sources: [{ id: "333", name: "Acme visit.docx", path: "Raw Notes/Site Visits" }] }),
+    p({ title: "o-high", topic: "other", date: isoAgo(0), meeting_id: "m-new", meeting_label: "Acme visit", urgency: "high",
+      sources: [{ id: "333", name: "Acme visit.docx", path: "Raw Notes/Site Visits" }, { id: "x9", name: "draft.txt", path: "Raw Notes/Site Visits" }] }),
+    p({ title: "o-done", topic: "other", date: isoAgo(0), meeting_id: "m-new", meeting_label: "Acme visit", urgency: "high", status: "resolved",
+      sources: [{ id: "333", name: "Acme visit.docx", path: "Raw Notes/Site Visits" }] }),
+    p({ title: "internal", topic: "quality", date: isoAgo(0), meeting_id: "m-i", meeting_label: "Board", scope: "internal" }),
+    ins({ company_id: "c-b", title: "beta", topic: "quality", date: isoAgo(0) }),
+    ins({ company_id: "c-a", kind: "win", urgency: "none", topic: "quality", date: isoAgo(0) }),
+  ];
+}
+
+test("partner_intel: the Problems tab groups problems by topic, ranked by mentions and recency", async () => {
+  const { env, token } = await piEnv(problemRows());
+  const r = await getJson("company/problems?id=c-a", env, token);
+  assert.deepEqual(r.byTopic.map((t) => [t.label, t.open, t.meetings, t.resolved]), [
+    ["Talent pipeline and recruiting", 3, 1, 0],
+    ["Quality systems and inspection", 1, 1, 0],
+    ["AI adoption and governance", 2, 2, 1],
+    ["Other", 2, 1, 1],
+  ], "three old mentions beat one new one, one new beats two very old, a resolved problem adds nothing, Other is last");
+  assert.ok(r.byTopic[0].priority > r.byTopic[1].priority && r.byTopic[1].priority > r.byTopic[2].priority);
+  assert.deepEqual(r.byTopic[2].items.map((i) => i.title), ["a1", "a2", "a3"], "open problems first, newest first, resolved at the end");
+  assert.equal(r.byTopic[2].last, isoAgo(400), "the latest date is the latest open problem's");
+  assert.deepEqual([r.total, r.open], [10, 8], "problems and asks of this company only, internal rows left out");
+});
+
+test("partner_intel: the Problems tab's latest source lists that meeting's problems, most urgent first", async () => {
+  const { env, token } = await piEnv(problemRows());
+  const r = await getJson("company/problems?id=c-a", env, token);
+  const s = r.latest[0];
+  assert.deepEqual([s.date, s.label, s.programs], [isoAgo(0), "Acme visit", ["Site Visits"]], "the newest meeting comes first");
+  assert.deepEqual(s.items.map((i) => i.title), ["o-high", "o-low", "o-done"], "most urgent first, resolved last");
+  assert.deepEqual(s.files.map((f) => [f.name, f.url]), [["Acme visit.docx", "https://app.box.com/file/333"], ["draft.txt", ""]],
+    "each file once, linked to Box when it has a Box id");
+  assert.deepEqual(r.latest.map((x) => x.date), [isoAgo(0), isoAgo(1), isoAgo(2), isoAgo(300), isoAgo(400), isoAgo(401)]);
+  assert.equal(r.sourceTotal, 6);
+  assert.deepEqual(r.latest[3].items.map((i) => i.title).sort(), ["t1", "t2", "t3"], "one source per meeting");
+  assert.equal((await pi("company/problems", piGet("company/problems?id=nope", token), env)).status, 404);
+  assert.equal((await pi("company/problems", piGet("company/problems?id=constructor", token), env)).status, 404);
+});
+
 test("partner_intel: the companies page is alphabetical by default and sorts by any column", async () => {
   const rows = [
     ins({ company_id: "c-a", kind: "problem", date: isoAgo(40) }), ins({ company_id: "c-a", kind: "ask", date: isoAgo(40) }),

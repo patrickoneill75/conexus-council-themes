@@ -1349,6 +1349,60 @@ function profileView(data, roster, overrides, labels, id, includeInternal) {
   };
 }
 
+/** A company's problems and asks for its Problems tab, in two views.
+ * byTopic: grouped by topic, the topics ranked by priority. Each open problem or ask is one
+ *   mention, weighted by how recent it was (recencyFactor: 1 today, 0.5 at six months), so three
+ *   mentions a year ago weigh about the same as one this month. Resolved rows are listed but add
+ *   nothing. "Other" (no topic) always goes last.
+ * latest: the meetings that raised a problem, newest first, each with its problems by urgency.
+ *   The page opens on the first, the most recent source. */
+function problemsView(data, index, overrides, labels, id, includeInternal) {
+  if (!index.get(id)) return null;
+  const rows = data.insights.filter((i) => i.company_id === id && ISSUE_KINDS.has(i.kind) && (includeInternal || i.scope !== "internal"));
+  const open = (i) => i.status !== "resolved";
+  const meetingKey = (i) => `${i.date}|${meetingOf(i, index).id}`;
+  const newestFirst = (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id);
+  const shape = (i) => shapeInsight(i, index, labels, overrides);
+
+  const topics = new Map();
+  for (const i of rows) {
+    const topic = finalTopic(overrides, i.topic);
+    if (!topics.has(topic)) topics.set(topic, { rows: [], meetings: new Set() });
+    const g = topics.get(topic);
+    g.rows.push(i);
+    if (open(i)) g.meetings.add(meetingKey(i));
+  }
+  const byTopic = [...topics.entries()].map(([topic, g]) => {
+    const live = g.rows.filter(open);
+    return {
+      topic, label: labels.get(topic) || "Other",
+      priority: Math.round(live.reduce((sum, i) => sum + recencyFactor(i.date), 0) * 100) / 100,
+      meetings: g.meetings.size, open: live.length, resolved: g.rows.length - live.length,
+      last: (live.length ? live : g.rows).reduce((m, i) => (i.date > m ? i.date : m), ""),
+      items: [...g.rows].sort((a, b) => Number(!open(a)) - Number(!open(b)) || newestFirst(a, b)).map(shape),
+    };
+  }).sort((a, b) => Number(a.topic === "other") - Number(b.topic === "other") || b.priority - a.priority ||
+    b.last.localeCompare(a.last) || a.label.localeCompare(b.label));
+
+  const sources = new Map();
+  for (const i of rows) {
+    const key = meetingKey(i);
+    if (!sources.has(key)) sources.set(key, { key, date: i.date, label: meetingOf(i, index).label, eventType: i.event_type,
+      estimated: false, programs: new Set(), files: new Map(), rows: [] });
+    const s = sources.get(key);
+    s.rows.push(i);
+    if (i.date_source === "box_upload") s.estimated = true;
+    for (const p of sourcesOf(i)) s.programs.add(p);
+    for (const f of i.sources || []) if (!s.files.has(f.id || f.name)) s.files.set(f.id || f.name, { id: f.id, name: f.name, url: boxFileUrl(f.id) });
+  }
+  const latest = [...sources.values()].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label)).slice(0, 12)
+    .map((s) => ({ key: s.key, date: s.date, label: s.label, eventType: s.eventType, estimated: s.estimated,
+      programs: [...s.programs], files: [...s.files.values()],
+      items: [...s.rows].sort((a, b) => Number(!open(a)) - Number(!open(b)) || URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] ||
+        a.id.localeCompare(b.id)).map(shape) }));
+  return { total: rows.length, open: rows.filter(open).length, byTopic, latest, sourceTotal: sources.size };
+}
+
 function companiesView(data, roster, params) {
   const index = companyIndex(roster, data);
   const counts = new Map();
@@ -2112,7 +2166,7 @@ export async function handlePartnerIntelApi(route, request, env) {
     }
 
     // ---- everything below reads the published dataset --------------------------------
-    const needsData = ["home", "insights", "companies", "company", "ask", "facets", "programs", "program", "meeting", "summarize",
+    const needsData = ["home", "insights", "companies", "company", "company/problems", "ask", "facets", "programs", "program", "meeting", "summarize",
       "attribution/review", "attribution/decide"];
     if (!needsData.includes(route) && route !== "recent-questions") return json({ error: "Not found" }, 404);
     if (route === "recent-questions" && method === "GET") return json({ items: await readJson(env, ASK_RECENT, []) });
@@ -2228,6 +2282,11 @@ export async function handlePartnerIntelApi(route, request, env) {
     if (route === "company" && method === "GET") {
       const asked = text(params.get("id"));
       const view = profileView(data, roster, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
+      return view ? json(view) : json({ error: "Company not found." }, 404);
+    }
+    if (route === "company/problems" && method === "GET") {
+      const asked = text(params.get("id"));
+      const view = problemsView(data, index, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
       return view ? json(view) : json({ error: "Company not found." }, 404);
     }
     if (route === "ask" && method === "POST") {
