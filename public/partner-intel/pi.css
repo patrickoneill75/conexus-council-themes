@@ -184,15 +184,20 @@ tr.click:hover td { background:var(--wash); }
   .tname { font-size:20px; }
   .tbody { padding-left:0; }
 }
-ul.bullets { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
-details.bullet > summary { list-style:none; cursor:pointer; display:flex; gap:20px; align-items:flex-start;
-                           justify-content:space-between; font-size:15px; line-height:1.5; }
-details.bullet > summary::-webkit-details-marker { display:none; }
-details.bullet > summary .txt { flex:1; }
-details.bullet > summary::after { content:"Examples"; flex:0 0 auto; font-size:12.5px; font-weight:600; color:var(--accent); padding-top:2px; }
-details.bullet[open] > summary::after { content:"Hide"; }
-details.bullet > summary:hover .txt { color:var(--navy); }
-details.bullet .examples { padding:4px 0 8px 0; }
+/* Summary points sit on a light shaded block. A plus button opens a point's examples, which
+ * show on white; the button fills blue and turns to a minus while they are open. */
+.band { background:var(--wash); padding:22px 26px; }
+ul.bullets { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:14px; }
+.bpt { display:grid; grid-template-columns:22px minmax(0,1fr); gap:12px; align-items:start; }
+.bpt .txt { font-size:15px; line-height:1.55; }
+button.pm { width:22px; height:22px; margin-top:1px; padding:0; border:1px solid var(--accent); border-radius:3px; background:#fff;
+            color:var(--accent); font-size:16px; line-height:18px; font-weight:600; text-align:center; }
+button.pm:hover, button.pm[aria-expanded="true"] { background:var(--accent); color:#fff; }
+button.see { border:0; background:none; padding:0; margin-left:6px; font-size:13.5px; font-weight:600; color:var(--accent); white-space:nowrap; }
+button.see:hover { background:none; color:var(--navy); text-decoration:underline; }
+.bpt .examples { margin-top:10px; padding:0 16px; background:#fff; }
+.bpt .examples > .item:last-child { border-bottom:0; }
+@media (max-width:760px) { .band { padding:18px 16px; } }
 .pending { color:var(--text-muted); font-size:13px; margin-top:12px; }
 .pcard { display:block; border:1px solid var(--border); border-radius:4px; padding:18px 20px; background:#fff; color:inherit; }
 .pcard:hover { border-color:var(--accent); text-decoration:none; }

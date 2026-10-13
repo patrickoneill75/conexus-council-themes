@@ -120,12 +120,27 @@
     setOpen(card, opening);
   });
 
+  /** A topic's summary points on a shaded block. The plus button, or "See examples" after the
+   * text, opens the notes behind a point; both turn to their closing form while it is open. */
   function bulletsHtml(summary) {
-    return '<ul class="bullets">' + summary.bullets.map(function (b) {
-      return '<li><details class="bullet"><summary><span class="txt">' + esc(b.text) + '</span></summary><div class="examples">' +
-        b.examples.map(function (i) { return PI.insightCard(i); }).join("") + "</div></details></li>";
-    }).join("") + "</ul>";
+    return '<div class="band"><ul class="bullets">' + summary.bullets.map(function (b) {
+      return '<li class="bpt"><button type="button" class="pm" data-pt aria-expanded="false" aria-label="Show examples">+</button>' +
+        '<div><span class="txt">' + esc(b.text) + '</span><button type="button" class="see" data-pt>See examples</button>' +
+        '<div class="examples" hidden>' + b.examples.map(function (i) { return PI.insightCard(i); }).join("") + "</div></div></li>";
+    }).join("") + "</ul></div>";
   }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("button[data-pt]");
+    if (!b) return;
+    var li = b.closest(".bpt");
+    var ex = li.querySelector(".examples");
+    ex.hidden = !ex.hidden;
+    var pm = li.querySelector(".pm");
+    pm.textContent = ex.hidden ? "+" : "\u2212";
+    pm.setAttribute("aria-expanded", ex.hidden ? "false" : "true");
+    pm.setAttribute("aria-label", ex.hidden ? "Show examples" : "Hide examples");
+    li.querySelector(".see").textContent = ex.hidden ? "See examples" : "Hide examples";
+  });
 
   function fallbackHtml(t, note) {
     return (note ? '<p class="small muted" style="margin:10px 0 0">' + esc(note) + "</p>" : "") +
