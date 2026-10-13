@@ -82,15 +82,43 @@
      Used by Home and by every program. The page appears at once; the Claude-written bullets
      fill in after, because writing them takes a few seconds the first time. */
   var PAGE = 5;
+  function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
 
-  function topicCard(t, n) {
-    var meta = (t.companyCount ? t.companyCount + " compan" + (t.companyCount === 1 ? "y" : "ies") + " &middot; " : "") +
-      t.meetingCount + " meeting" + (t.meetingCount === 1 ? "" : "s");
-    return '<div class="topic" data-topic="' + esc(t.topic) + '"><div class="bignum">' + (n + 1) + '</div><div><h3>' + esc(t.label) + '</h3><p class="meta">' + meta + "</p>" +
-      (t.companies.length ? '<div class="chips">' + t.companies.slice(0, 6).map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") +
-        (t.companies.length > 6 ? '<span class="chip">+' + (t.companies.length - 6) + " more</span>" : "") + "</div>" : "") +
-      '<div data-body>' + (t.summary ? bulletsHtml(t.summary) : '<div class="pending"><span class="spinner"></span>Writing the summary…</div>') + "</div></div></div>";
+  /** "5 companies across 6 meetings: A, B, C, D and E." Up to six names, then how many more. */
+  function topicMeta(t) {
+    var names = t.companies.slice(0, 6);
+    var more = t.companyCount - names.length;
+    var who = names.length ? ": " + (more > 0 ? names.join(", ") + " and " + more + " more"
+      : names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0]) : "";
+    // One full stop at the end, even when the last name ends in one ("PRD, Inc.").
+    return ((t.companyCount ? plural(t.companyCount, "company", "companies") + " across " : "") +
+      plural(t.meetingCount, "meeting", "meetings") + who).replace(/\.$/, "") + ".";
   }
+
+  /** A numbered topic. Its heading is a button that opens the Claude-written summary; opening
+   * one topic closes the others in the list. hl is the heading level for the page. */
+  function topicCard(t, n, hl, open) {
+    hl = hl || "h3";
+    return '<section class="topic" data-topic="' + esc(t.topic) + '"><' + hl + ' class="thead-h"><button type="button" class="thead" aria-expanded="' + (open ? "true" : "false") + '">' +
+      '<span class="bignum">' + (n + 1) + '</span><span class="ttxt"><span class="tname">' + esc(t.label) + '</span><span class="tmeta">' + esc(topicMeta(t)) + "</span></span>" +
+      '<span class="tgl" aria-hidden="true">' + (open ? "Hide" : "Show") + "</span></button></" + hl + ">" +
+      '<div class="tbody" data-body' + (open ? "" : " hidden") + ">" + (t.summary ? bulletsHtml(t.summary) : '<div class="pending"><span class="spinner"></span>Writing the summary…</div>') + "</div></section>";
+  }
+  function setOpen(card, open) {
+    var btn = card.querySelector(".thead");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    btn.querySelector(".tgl").textContent = open ? "Hide" : "Show";
+    card.querySelector("[data-body]").hidden = !open;
+  }
+  // Opening a topic closes whichever topic in the same list was open.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest(".topic .thead");
+    if (!btn) return;
+    var card = btn.closest(".topic");
+    var opening = btn.getAttribute("aria-expanded") !== "true";
+    Array.prototype.forEach.call(card.parentNode.querySelectorAll(".topic"), function (c) { if (c !== card) setOpen(c, false); });
+    setOpen(card, opening);
+  });
 
   function bulletsHtml(summary) {
     return '<ul class="bullets">' + summary.bullets.map(function (b) {
@@ -106,9 +134,9 @@
 
   /** Cards for t[from..to), then the summaries the page does not have yet. scope is the filter
    * set the topics were ranked under; the server recomputes the evidence from it. */
-  function showTopics(box, trending, from, to, scope, mine) {
+  function showTopics(box, trending, from, to, scope, mine, hl) {
     var chunk = trending.slice(from, to);
-    box.insertAdjacentHTML("beforeend", chunk.map(function (t, k) { return topicCard(t, from + k); }).join(""));
+    box.insertAdjacentHTML("beforeend", chunk.map(function (t, k) { return topicCard(t, from + k, hl, from + k === 0); }).join(""));
     var need = chunk.filter(function (t) { return !t.summary; });
     if (!need.length) return;
     // Wait a moment before asking for summaries. Someone clicking through windows and filters
@@ -136,92 +164,50 @@
     });
   }
 
-  function renderTrending(box, trending, scope, mine) {
+  function renderTrending(box, trending, scope, mine, hl) {
     if (!trending.length) { box.innerHTML = '<div class="empty">No topics in this selection.</div>'; return; }
     var shown = 0;
-    box.innerHTML = '<div data-list></div><div data-more></div>';
+    box.innerHTML = '<div class="topics" data-list></div><div data-more></div>';
     var list = box.querySelector("[data-list]"), more = box.querySelector("[data-more]");
     function next() {
       var to = Math.min(trending.length, shown + PAGE);
-      showTopics(list, trending, shown, to, scope, mine);
+      showTopics(list, trending, shown, to, scope, mine, hl);
       shown = to;
-      more.innerHTML = shown < trending.length ? '<div class="row" style="margin-top:12px"><button id="moreTopics">Show ' + Math.min(PAGE, trending.length - shown) + " more topics</button></div>" : "";
+      var left = Math.min(PAGE, trending.length - shown);
+      more.innerHTML = shown < trending.length ? '<div class="row" style="margin-top:36px"><button id="moreTopics">Show ' + plural(left, "more topic", "more topics") + "</button></div>" : "";
       var btn = more.querySelector("#moreTopics");
       if (btn) btn.addEventListener("click", next);
     }
     next();
   }
 
-  /* ------------------------------------------------------------------ Dashboard bar */
-  // Issues coral, solutions sky, wins brand blue, other a neutral. This order and these three
-  // passed the palette check (adjacent pairs separate for colour-blind readers). Text on each
-  // fill is chosen for contrast: navy on coral and sky, white on blue.
-  var SEGS = [["issues", "Issues", "#F26B43", "#07214E"], ["solutions", "Solutions", "#00B0F0", "#07214E"],
-              ["wins", "Wins", "#325EAE", "#FFFFFF"], ["other", "Other", "#CBD0DA", "#16202B"]];
-
-  function dashboardHtml(d) {
-    var total = d.issues + d.solutions + d.wins + d.other;
-    if (!total) return "";
-    var pct = function (n) { var p = Math.round(n * 100 / total); return n && !p ? "<1%" : p + "%"; };
-    var tile = function (n, label, sub) { return '<span class="stat"><b>' + n.toLocaleString() + "</b><span>" + label + "</span>" + (sub ? "<small>" + sub + "</small>" : "") + "</span>"; };
-    var span = d.first && d.last ? PI.fmtDate(d.first).replace(/ \d+,/, "") + " to " + PI.fmtDate(d.last).replace(/ \d+,/, "") : "";
-    var label = SEGS.map(function (s) { return s[1] + " " + d[s[0]] + " (" + pct(d[s[0]]) + ")"; }).join(", ");
-    return '<div class="dash"><div class="tiles">' + tile(d.insights, "insights", span) +
-      tile(d.partners, "partners", d.members + " are members") + tile(d.meetings, "meetings") + tile(d.programs, "programs") + "</div>" +
-      '<div class="sbar" role="img" aria-label="' + esc("Insights by type: " + label) + '">' + SEGS.filter(function (s) { return d[s[0]]; }).map(function (s) {
-        return '<div class="seg" data-name="' + s[1] + '" data-n="' + d[s[0]] + '" style="flex:' + d[s[0]] + ' 1 0;background:' + s[2] + ";color:" + s[3] +
-          '" data-tip="' + esc(s[1] + ": " + d[s[0]].toLocaleString() + " (" + pct(d[s[0]]) + ")") + '"></div>';
-      }).join("") + "</div>" +
-      '<div class="legend">' + SEGS.map(function (s) {
-        return "<span><i style=\"background:" + s[2] + '"></i>' + s[1] + " <b>" + d[s[0]].toLocaleString() + "</b> &middot; " + pct(d[s[0]]) + "</span>";
-      }).join("") + "</div>" +
-      '<table class="sr-only"><caption>Insights by type</caption><thead><tr><th>Type</th><th>Insights</th></tr></thead><tbody>' +
-      SEGS.map(function (s) { return "<tr><td>" + s[1] + "</td><td>" + d[s[0]] + "</td></tr>"; }).join("") + "</tbody></table></div>";
-  }
-
-  /** A label goes inside a segment only when the rendered text fits with room to spare. */
-  function fitSegmentLabels(root) {
-    Array.prototype.forEach.call(root.querySelectorAll(".sbar .seg"), function (seg) {
-      var span = document.createElement("span");
-      span.textContent = seg.getAttribute("data-name") + " " + Number(seg.getAttribute("data-n")).toLocaleString();
-      seg.appendChild(span);
-      // Padding on both sides plus a little air; otherwise the label is left to the legend below.
-      if (span.offsetWidth + 24 > seg.clientWidth) seg.removeChild(span);
-    });
-  }
-
   /* ------------------------------------------------------------------ Home */
   function home() {
     var mine = ++seq;
     view.innerHTML = loading("Loading…");
-    var statusQ = state.membersOnly ? "&status=Active" : "";
-    loadSources().then(function () {
-      return PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "") + statusQ + sourceParam());
-    }).then(function (d) {
+    // Home covers every source folder. Folders are chosen on Ask and Explore, and a program's
+    // own page ranks that folder alone.
+    PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "") + (state.membersOnly ? "&status=Active" : "")).then(function (d) {
       if (mine !== seq) return;
-      var html = chipsHtml() + '<div class="row small" style="margin:-4px 0 12px"><label><input type="checkbox" id="mem"' + (state.membersOnly ? " checked" : "") + "> Members only</label></div>" +
-        dashboardHtml(d.dashboard) +
-        '<div class="row spread" style="margin-bottom:14px">' +
-        '<div class="seg" id="win">' + [30, 60, 90].map(function (n) {
-          return '<button data-d="' + n + '"' + (state.days === n ? ' class="on"' : "") + ">Last " + n + " days</button>";
+      var html = '<h1>Trending topics</h1><p class="lede">What the most partner companies have raised since ' + esc(PI.fmtDate(d.since)) + ".</p>" +
+        '<div class="row spread homebar"><div class="seg" id="win" role="group" aria-label="Time window">' + [30, 60, 90].map(function (n) {
+          return '<button data-d="' + n + '"' + (state.days === n ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"') + ">Last " + n + " days</button>";
         }).join("") + "</div>" +
-        '<div class="row small"><label><input type="checkbox" id="exact"' + (state.exact ? " checked" : "") + "> Exact dates only</label></div></div>";
+        '<div class="row small" style="gap:20px"><label><input type="checkbox" id="mem"' + (state.membersOnly ? " checked" : "") + "> Members only</label>" +
+        '<label><input type="checkbox" id="exact"' + (state.exact ? " checked" : "") + "> Exact dates only</label></div></div>";
+      var notes = [];
       if (d.counts.estimatedDates && !state.exact) {
-        html += '<p class="small muted" style="margin:-4px 0 12px">' + d.counts.estimatedDates +
-          " item" + (d.counts.estimatedDates === 1 ? "" : "s") + " in this window use the Box upload date because the notes carry no date. They are marked.</p>";
+        notes.push(plural(d.counts.estimatedDates, "note", "notes") + " in this window carry no date in the text, so they use the Box upload date.");
       }
-      html += "<h2>Trending topics</h2>" +
-        '<p class="sub">The topics raised by the most companies since ' + esc(PI.fmtDate(d.since)) + ". Open a point to see who said it." +
-        (d.uncategorized ? " " + d.uncategorized + " issue" + (d.uncategorized === 1 ? "" : "s") + " did not fit a topic and are not ranked." : "") + '</p><div id="trend"></div>';
+      if (d.uncategorized) notes.push(plural(d.uncategorized, "issue", "issues") + " did not fit a topic and are not ranked.");
+      html += '<p class="small muted homenote">' + esc(notes.join(" ")) + '</p><div id="trend"></div>';
       view.innerHTML = html;
-      fitSegmentLabels(view);
-      renderTrending(el("trend"), d.trending, { days: state.days, exact: state.exact, source: chosenList(), status: state.membersOnly ? ["Active"] : [] }, mine);
+      renderTrending(el("trend"), d.trending, { days: state.days, exact: state.exact, source: [], status: state.membersOnly ? ["Active"] : [] }, mine, "h2");
       Array.prototype.forEach.call(view.querySelectorAll("#win button"), function (b) {
         b.addEventListener("click", function () { state.days = Number(b.getAttribute("data-d")); home(); });
       });
       el("exact").addEventListener("change", function (e) { state.exact = e.target.checked; home(); });
       el("mem").addEventListener("change", function (e) { state.membersOnly = e.target.checked; home(); });
-      wireChips(view, home);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
 
@@ -561,7 +547,6 @@
     }).catch(function (err) { if (mine === seq) body.innerHTML = emptyState(err); });
   }
 
-  var plural = function (n, one, many) { return n + " " + (n === 1 ? one : many); };
 
   /** "7 issues, 5 solutions and 3 wins across 5 meetings. Last raised Oct 5, 2026." */
   function topicSentence(t, inMeeting) {

@@ -1040,10 +1040,6 @@ If no Database folder is chosen the scan still works, and **Last scan** says not
 
 The date in the text comes first (the top of the document, or a line labelled "Date"), then a date in the file name, then the Box upload date. A date after the upload date is never accepted from the text. Every date records which of the three it came from. Rows that only have the upload date show an "estimated date" tag, and **Exact dates only** hides them. A section added to a running file later takes the date it arrived, not the file's first upload date.
 
-### The bar at the top of Home
-
-One stacked bar shows what the notes hold: issues (issues and asks), solutions (solutions, offers, equipment), wins, and other (news and commitments), with the totals beside it: insights, partners (and how many are members), meetings and programs. It is the whole dataset, not a time window, and follows the source buttons and **Members only**.
-
 ### How topics are weighted
 
 Long meetings have detailed notes, so they produce many more rows than short ones. Rows are therefore never the measure of how much a topic matters:
@@ -1057,7 +1053,7 @@ The totals on the dashboard and in the Explore list are still plain counts, beca
 
 ### Trending topics and programs
 
-**Home** ranks topics by how many companies raised them in the last 30, 60 or 90 days (issues and asks only). Each topic shows up to five bullet points written by Claude from the notes behind it. A chevron on each bullet opens the supporting examples with their source quotes. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. The page appears at once and the bullets fill in a few seconds later.
+**Home** is the Trending topics page. It ranks topics by how many companies raised them in the last 30, 60 or 90 days (issues and asks only), across every source folder, and shows the top five with **Show more topics** for the next five. **Members only** and **Exact dates only** narrow it. Each topic is a numbered heading with how many companies and meetings raised it and who they are; clicking it opens up to five bullet points written by Claude from the notes behind it, and closes whichever topic was open. **Examples** on each bullet opens the supporting notes with their files and quotes. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. The page appears at once and the bullets fill in a few seconds later.
 
 **Programs** is a new tab. Each source folder (Board Meetings, PCN, Industry Exchange Workshops and so on) is a program. A program page has its own top topics, built the same way, over 90 days, a year or all time, and a **Recent data** list of its meetings, newest first. A meeting is whatever the notes make it:
 
@@ -1073,7 +1069,7 @@ Summaries cost one Claude call per batch of up to eight topics, and each is save
 
 ### Source folders
 
-The top-level sub-folders under the notes folder (ADAPT, Board Meetings, CIAIC and so on) are each a **source**. Home, Ask and Explore show a row of source buttons: switch on one or several to limit the view to them, and clear to see everything. Choosing Board Meetings shows those rows even though board notes are otherwise kept out as Conexus's own business. The CSV has a SourceFolder column.
+The top-level sub-folders under the notes folder (ADAPT, Board Meetings, CIAIC and so on) are each a **source**. Ask and Explore show a row of source buttons: switch on one or several to limit the view to them, and clear to see everything. Home always covers every folder; a program's own page ranks one folder alone. Choosing Board Meetings shows those rows even though board notes are otherwise kept out as Conexus's own business. The CSV has a SourceFolder column.
 
 ### Keeping the partner list current
 
