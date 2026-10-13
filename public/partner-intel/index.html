@@ -84,15 +84,10 @@
   var PAGE = 5;
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
 
-  /** "5 companies across 6 meetings: A, B, C, D and E." Up to six names, then how many more. */
+  /** "5 companies across 6 meetings." Counts only; the companies are named in the examples. */
   function topicMeta(t) {
-    var names = t.companies.slice(0, 6);
-    var more = t.companyCount - names.length;
-    var who = names.length ? ": " + (more > 0 ? names.join(", ") + " and " + more + " more"
-      : names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0]) : "";
-    // One full stop at the end, even when the last name ends in one ("PRD, Inc.").
-    return ((t.companyCount ? plural(t.companyCount, "company", "companies") + " across " : "") +
-      plural(t.meetingCount, "meeting", "meetings") + who).replace(/\.$/, "") + ".";
+    return (t.companyCount ? plural(t.companyCount, "company", "companies") + " across " : "") +
+      plural(t.meetingCount, "meeting", "meetings") + ".";
   }
 
   /** A numbered topic. Its heading is a button that opens the Claude-written summary; opening
