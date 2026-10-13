@@ -289,6 +289,36 @@ test("stars: skill-gap routes handle an out-of-range row index", async () => {
   assert.deepEqual((await res.json()).gapRows, []);
 });
 
+test("stars: the page reads the title, wage, warning and gap heading the API actually sends", async () => {
+  // The redesigned page shows the job's title and wage as a header and "Moving from X to Y",
+  // parsed out of the markdown strings src/stars_logic.js builds. If that wording drifts,
+  // the header goes blank without an error, so run the page's own parsers on real output.
+  const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "stars", "index.html"), "utf8");
+  const src = html.slice(html.indexOf("/* starsParse:start"), html.indexOf("/* starsParse:end"));
+  const { parseSummary, parseGapHeading } = new Function(src + "; return { parseSummary, parseGapHeading };")();
+  const env = makeEnv();
+  const post = async (route, body) =>
+    (await handleStarsApi(route, jsonReq(`/api/stars/${route}`, "POST", body), env)).json();
+
+  const emp = await post("employer/search", { targetTitle: "Machinists", lowerWageOnly: true, resultCount: 5 });
+  assert.deepEqual(parseSummary(emp.targetSummary), { title: "Machinists", wage: "$57,720", warning: "" });
+  assert.deepEqual(parseGapHeading(emp.gapHeading), { from: emp.resultTitles[0], to: "Machinists" });
+  const click = await post("employer/skill-gap", { targetTitle: "Machinists", resultTitles: emp.resultTitles, rowIndex: 2 });
+  assert.deepEqual(parseGapHeading(click.gapHeading), { from: emp.resultTitles[2], to: "Machinists" });
+
+  const wrk = await post("worker/search", { currentTitle: "Helpers--Carpenters", higherWageOnly: true, resultCount: 5 });
+  const ws = parseSummary(wrk.currentSummary);
+  assert.equal(ws.title, "Helpers--Carpenters");
+  assert.match(ws.wage, /^\$\d{1,3}(,\d{3})*$/);
+  assert.deepEqual(parseGapHeading(wrk.gapHeading), { from: "Helpers--Carpenters", to: wrk.resultTitles[0] });
+
+  const noWage = await post("employer/search", { targetTitle: "Timing Device Assemblers and Adjusters", lowerWageOnly: true, resultCount: 5 });
+  const nw = parseSummary(noWage.targetSummary);
+  assert.equal(nw.wage, "N/A");
+  assert.match(nw.warning, /lower-wage filter was ignored/, "the ignored-filter warning reaches the page");
+  assert.equal(parseGapHeading("### Skills gap"), null, "no pair, no heading");
+});
+
 test("stars: admin routes refuse an anonymous caller", async () => {
   const env = makeEnv();
   for (const [route, method] of [["status", "GET"], ["upload", "POST"], ["refresh", "POST"],
