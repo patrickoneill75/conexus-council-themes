@@ -2930,6 +2930,21 @@ test("partner_intel: the Trending topics page opens on the last 90 days", async 
   assert.match(html, /var state = \{ days: 90,/, "the page asks for 90 days when it loads");
 });
 
+test("mcm: BUG narrative points showed raw ** markers and a stray leading period", () => {
+  // The function is taken from the page itself, between its marker comments.
+  const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "mcm", "index.html"), "utf8");
+  const src = html.slice(html.indexOf("/* bulletHtml:start"), html.indexOf("/* bulletHtml:end"));
+  const esc = (v) => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const bulletHtml = new Function("esc", src + "; return bulletHtml;")(esc);
+  assert.equal(bulletHtml(". **Tariff relief drove the sharpest improvement**: balance rose 15.5 points"),
+    "<b>Tariff relief drove the sharpest improvement</b>: balance rose 15.5 points", "the stored quarter-over-quarter point");
+  assert.equal(bulletHtml(". Demand and orders flipped positive"), "Demand and orders flipped positive", "the stored year-over-year point");
+  assert.equal(bulletHtml("-0.33 balance, down"), "-0.33 balance, down", "a leading minus sign is kept");
+  assert.equal(bulletHtml("Plain point."), "Plain point.");
+  assert.equal(bulletHtml("**<img src=x>** risk"), "<b>&lt;img src=x&gt;</b> risk", "text is escaped before the bold is added");
+  assert.equal(bulletHtml("unclosed ** marker"), "unclosed  marker", "a lone marker is dropped, not shown");
+});
+
 test("partner_intel: a topic merge applies to the ranking, and a merge loop is refused", async () => {
   const { env, token } = await piEnv([
     ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "c-b" }),

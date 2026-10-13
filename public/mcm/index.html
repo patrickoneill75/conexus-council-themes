@@ -8,396 +8,246 @@
 <style>html { visibility: hidden; }</style>
 <script src="/tier-gate.js" data-app="mcm"></script>
 <style>
+  /* Conexus Indiana brand, matching Partner Intelligence: navy bar, white page, navy
+     headings, brand blue for the chosen control. Headwinds coral and tailwinds blue in the
+     bars; changes green when better and red when worse, with an arrow or sign as well. */
   :root {
     color-scheme: light;
-    --page:           #f9f9f7;
-    --surface-1:      #fcfcfb;
-    --text-primary:   #0b0b0b;
-    --text-secondary: #52514e;
-    --text-muted:     #898781;
-    --grid:           #e1e0d9;
-    --baseline:       #c3c2b7;
-    --border:         rgba(11,11,11,0.10);
-    --wash:           rgba(11,11,11,0.04);
-    --head:           #e34948;   /* diverging pole: headwind */
-    --tail:           #2a78d6;   /* diverging pole: tailwind */
-    --neutral:        #f0efec;   /* diverging midpoint */
-    --good:           #006300;
-    --bad:            #d03b3b;
+    --page:#ffffff; --surface-1:#ffffff; --text-primary:#16202b; --text-secondary:#4a5663;
+    --text-muted:#7c8794; --grid:#e1e2e9; --border:#e1e2e9; --border-strong:#c9cdd8; --wash:#f3f5f9;
+    --heading:#07214e; --navy:#07214e; --amber:#fbae40; --accent:#325eae; --nav-text:#c9d3e3;
+    --head:#f26b43; --tail:#325eae; --head-text:#b3401f; --tail-text:#325eae;
+    --good:#1e7b34; --bad:#c0392b;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --page:           #0d0d0d;
-      --surface-1:      #1a1a19;
-      --text-primary:   #ffffff;
-      --text-secondary: #c3c2b7;
-      --text-muted:     #898781;
-      --grid:           #2c2c2a;
-      --baseline:       #383835;
-      --border:         rgba(255,255,255,0.10);
-      --wash:           rgba(255,255,255,0.06);
-      --head:           #e66767;
-      --tail:           #3987e5;
-      --neutral:        #383835;
-      --good:           #0ca30c;
-      --bad:            #d03b3b;
-    }
-  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page:#0e1520; --surface-1:#0e1520; --text-primary:#e9edf3; --text-secondary:#b4becc;
+    --text-muted:#8792a2; --grid:#26324a; --border:#26324a; --border-strong:#3a4a66; --wash:#1a263b;
+    --heading:#e8eef7; --accent:#6e9bea;
+    --head:#f2896a; --tail:#6e9bea; --head-text:#f2896a; --tail-text:#8db3f0;
+    --good:#4cc27a; --bad:#f2766b;
+  } }
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --page:           #0d0d0d;
-    --surface-1:      #1a1a19;
-    --text-primary:   #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted:     #898781;
-    --grid:           #2c2c2a;
-    --baseline:       #383835;
-    --border:         rgba(255,255,255,0.10);
-    --wash:           rgba(255,255,255,0.06);
-    --head:           #e66767;
-    --tail:           #3987e5;
-    --neutral:        #383835;
-    --good:           #0ca30c;
-    --bad:            #d03b3b;
+    --page:#0e1520; --surface-1:#0e1520; --text-primary:#e9edf3; --text-secondary:#b4becc;
+    --text-muted:#8792a2; --grid:#26324a; --border:#26324a; --border-strong:#3a4a66; --wash:#1a263b;
+    --heading:#e8eef7; --accent:#6e9bea;
+    --head:#f2896a; --tail:#6e9bea; --head-text:#f2896a; --tail-text:#8db3f0;
+    --good:#4cc27a; --bad:#f2766b;
   }
-
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--page);
-    color: var(--text-primary);
-    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+  body { margin: 0; background: var(--page); color: var(--text-primary);
+         font: 14px/1.55 Aptos, "Segoe UI", Arial, sans-serif; }
+  a { color: var(--accent); }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible, select:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  header { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-  header .titles { flex: 1 1 340px; min-width: 260px; }
-  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .sub { color: var(--text-secondary); font-size: 13px; margin: 0; max-width: 68ch; }
-  .stamp { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
-  .theme-btn {
-    background: var(--surface-1); color: var(--text-secondary);
-    border: 1px solid var(--border); border-radius: 8px;
-    padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer;
-  }
-  .theme-btn:hover { background: var(--wash); }
+  /* The navy bar. */
+  .appbar { background: var(--navy); color: #fff; }
+  .appbar .in { max-width: 1080px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center;
+                gap: 16px; min-height: 56px; }
+  .appname { flex: 1 1 auto; margin: 0; font-size: 15px; font-weight: 600; color: #fff; padding: 12px 0; }
+  .theme-btn { border: 0; background: none; padding: 0; color: var(--nav-text); font-size: 13px; }
+  .theme-btn:hover { color: #fff; text-decoration: underline; }
 
-  /* One filter row, above everything it scopes. */
-  .filters {
-    display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;
-    margin: 22px 0 18px; padding: 14px 16px;
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-  }
-  .field { display: flex; flex-direction: column; gap: 5px; min-width: 150px; }
-  .field label { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
-                 color: var(--text-muted); font-weight: 600; }
-  .field select {
-    font: inherit; padding: 7px 9px; border-radius: 8px;
-    border: 1px solid var(--border); background: var(--page); color: var(--text-primary);
-  }
-  .field select:focus-visible { outline: 2px solid var(--tail); outline-offset: 1px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 32px 96px; }
+  h1 { margin: 0; font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; color: var(--heading); }
+  .lede { margin: 8px 0 0; font-size: 15px; line-height: 1.55; color: var(--text-secondary); max-width: 820px; }
+  .muted { color: var(--text-muted); }
+  .eyebrow { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
 
-  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
-  .tile {
-    background: var(--surface-1); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px 16px;
-  }
-  .tile .label { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
-                 color: var(--text-muted); font-weight: 600; }
-  /* Proportional figures on stat-tile values (never tabular at display size). */
-  .tile .value { font-size: 28px; font-weight: 650; line-height: 1.15; margin: 5px 0 2px;
-                 letter-spacing: -0.02em; }
-  .tile .meta { font-size: 12px; color: var(--text-secondary); }
-  .delta { font-weight: 600; }
+  /* All U.S. or Indiana: separate buttons, the chosen one blue. */
+  .cutswitch { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+  .cutswitch button { border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-1);
+    color: var(--heading); padding: 7px 16px; font-size: 13.5px; font-weight: 600; }
+  .cutswitch button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* The four headline figures, plain. */
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px 40px; margin-top: 32px; }
+  .tile .value { margin-top: 6px; font-size: 34px; line-height: 1.1; font-weight: 600; color: var(--heading); font-variant-numeric: tabular-nums; }
+  .tile .meta { margin-top: 6px; font-size: 13.5px; color: var(--text-secondary); }
+  .delta { font-weight: 600; font-variant-numeric: tabular-nums; }
   .delta.up { color: var(--good); }
   .delta.down { color: var(--bad); }
-  .delta.flat { color: var(--text-muted); }
+  .delta.flat { color: var(--text-muted); font-weight: 400; }
 
-  .card {
-    background: var(--surface-1); border: 1px solid var(--border);
-    border-radius: 12px; padding: 18px 20px; margin-top: 16px;
-  }
-  .card h2 { font-size: 15px; font-weight: 650; margin: 0 0 2px; }
-  .card .card-sub { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 14px; }
+  /* The written analysis: this quarter in full, the other three opening one at a time. */
+  .narrative { margin-top: 56px; }
+  .narr-head { margin: 6px 0 0; font-size: 26px; line-height: 1.25; font-weight: 600; color: var(--heading); }
+  .band { background: var(--wash); padding: 22px 26px; margin-top: 18px; }
+  .band ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  .band li { display: grid; grid-template-columns: 6px minmax(0, 1fr); gap: 14px; font-size: 15px; line-height: 1.55; }
+  .band li::before { content: ""; width: 6px; height: 6px; margin-top: 9px; background: var(--heading); }
+  .band li b { color: var(--heading); }
+  .read-more-btn { margin-top: 14px; border: 0; background: none; padding: 0; font-size: 13.5px; font-weight: 600; color: var(--accent); }
+  .read-more-btn:hover { color: var(--heading); text-decoration: underline; }
+  .section-body { margin-top: 8px; font-size: 15px; line-height: 1.6; max-width: 860px; }
+  .section-body p { margin: 12px 0 0; }
+  .outlook { display: flex; flex-direction: column; gap: 32px; margin-top: 56px; }
+  .acc { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; width: 100%;
+         padding: 0; border: 0; background: none; text-align: left; color: inherit; }
+  .acc:hover .acc-head { text-decoration: underline; }
+  .acc-head { display: block; margin-top: 6px; font-size: 20px; line-height: 1.3; font-weight: 600; color: var(--heading); }
+  .acc-tgl { font-size: 13px; font-weight: 600; color: var(--accent); padding-top: 2px; }
+  .narr-empty { margin-top: 12px; color: var(--text-muted); }
 
-  .legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
-            font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; }
-  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
-  .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  /* By topic: the filters, then one table with a balance bar in each row. */
+  .topics { margin-top: 64px; }
+  .topics h2 { margin: 0; font-size: 20px; line-height: 1.25; font-weight: 600; color: var(--heading); }
+  .topics .sub { margin: 6px 0 0; font-size: 14px; color: var(--text-secondary); }
+  .filters { display: flex; flex-wrap: wrap; gap: 14px 16px; margin-top: 20px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12.5px; color: var(--text-secondary); }
+  .field select { font: inherit; font-size: 14px; padding: 8px 30px 8px 10px; min-width: 220px; max-width: 100%;
+    border: 1px solid var(--border-strong); border-radius: 4px; background-color: var(--surface-1); color: var(--text-primary);
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%237c8794' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; background-size: 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 20px; font-size: 12.5px; color: var(--text-secondary); }
+  .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
 
-  /* --- diverging bar chart --- */
-  .plot { position: relative; --label-w: 226px; --value-w: 62px; }
-  .gridlines { position: absolute; top: 0; bottom: 20px;
-               left: var(--label-w); right: var(--value-w); pointer-events: none; }
-  .gridlines i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
-  .gridlines i.zero { background: var(--baseline); }
-  .row {
-    display: grid; grid-template-columns: var(--label-w) 1fr var(--value-w);
-    align-items: center; column-gap: 0; height: 26px; cursor: pointer;
-    border-radius: 6px;
-  }
-  .row:hover, .row.active { background: var(--wash); }
-  .row:focus-visible { outline: 2px solid var(--tail); outline-offset: -2px; }
-  .row .name {
-    padding-right: 12px; font-size: 12.5px; color: var(--text-secondary);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .row.active .name { color: var(--text-primary); font-weight: 600; }
-  .track { position: relative; height: 100%; }
-  .bar { position: absolute; top: 50%; transform: translateY(-50%); height: 14px; }
-  .bar.neg { right: 50%; background: var(--head); border-radius: 4px 0 0 4px; }
-  .bar.pos { left: 50%; background: var(--tail); border-radius: 0 4px 4px 0; }
-  .bar.zero { left: 50%; width: 2px; background: var(--baseline); border-radius: 1px; }
-  .row .val {
-    text-align: right; font-size: 12.5px; color: var(--text-secondary);
-    font-variant-numeric: tabular-nums; padding-left: 10px;
-  }
-  .axis {
-    display: grid; grid-template-columns: var(--label-w) 1fr var(--value-w);
-    height: 20px; align-items: center;
-  }
-  .axis .ticks { position: relative; height: 100%; }
-  .axis .ticks span {
-    position: absolute; top: 2px; transform: translateX(-50%);
-    font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums;
-  }
-  .axis-note { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; }
-
-  #tooltip {
-    position: fixed; z-index: 50; pointer-events: none; opacity: 0;
-    transition: opacity .1s ease; max-width: 280px;
-    background: var(--surface-1); color: var(--text-primary);
-    border: 1px solid var(--border); border-radius: 9px;
-    padding: 9px 11px; font-size: 12.5px; line-height: 1.45;
-    box-shadow: 0 6px 22px rgba(0,0,0,.16);
-  }
-  #tooltip b { font-weight: 650; }
-  #tooltip .tt-row { color: var(--text-secondary); }
-
-  /* --- table (the chart's table-view twin) --- */
-  /* .table-wrap is the positioning root for the floating evidence panel below -- it sits
-     OUTSIDE .table-scroll entirely (not inside the <table> as a row), which is what lets
-     it be exactly as wide as the card and wrap normally to the screen. A cell living
-     inside the table, even styled to look otherwise, is still read by the table's own
-     column-width math -- one specified width on a colspan cell was enough to make the
-     *other* rows' topic column balloon to over 300px while a row was open, wide enough
-     to stop wrapping and let the numeric columns scrolling underneath show through it. */
-  .table-wrap { position: relative; }
+  /* .table-wrap is the positioning root for the floating evidence panel below. It sits
+     OUTSIDE .table-scroll (not inside the <table> as a row), which lets it be exactly as
+     wide as the page and wrap normally. A cell inside the table, even styled to look
+     otherwise, is still read by the table's own column-width math -- one specified width
+     on a colspan cell made the other rows' topic column balloon while a row was open. */
+  .table-wrap { position: relative; margin-top: 12px; }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .table-hint { display: none; font-size: 11.5px; color: var(--text-muted); margin: 8px 0 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
-  th, td { text-align: right; padding: 8px 10px; white-space: nowrap; }
-  th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 200px; }
-  thead th {
-    font-size: 11px; letter-spacing: .03em; text-transform: uppercase;
-    color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border);
-  }
-  /* The topic column stays put while the numeric columns scroll under it, so it's never
-     ambiguous which row you're looking at on a narrow screen. Needs an opaque background
-     of its own -- otherwise the columns scrolling underneath show through. */
+  .table-hint { display: none; font-size: 12px; color: var(--text-muted); margin: 8px 0 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 860px; }
+  th, td { text-align: right; padding: 10px 8px; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 220px; }
+  thead th { font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary);
+    font-weight: 600; border-bottom: 1px solid var(--border-strong); }
+  /* The topic column stays put while the numbers scroll under it on a narrow screen. */
   thead th:first-child, tbody tr:not(.topic-detail-spacer) td:first-child {
-    position: sticky; left: 0; background: var(--surface-1); z-index: 1;
-  }
+    position: sticky; left: 0; background: var(--surface-1); z-index: 1; }
   thead th:first-child { z-index: 2; }
-  /* var(--wash) is a translucent tint (4-6% alpha), meant to sit over an opaque
-     background -- used by itself here it barely hides anything, so the columns
-     scrolling underneath a sticky, hovered/active first cell would show right through
-     it. Layer it over the same opaque surface color instead. */
-  tbody tr.topic-row:hover td:first-child, tbody tr.topic-row.active td:first-child {
-    background-color: var(--surface-1);
-    background-image: linear-gradient(var(--wash), var(--wash));
-  }
+  tbody tr.topic-row:hover td, tbody tr.topic-row.active td { background: var(--wash); }
   tbody td { border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
   tbody tr.topic-row { cursor: pointer; }
-  tbody tr.topic-row:hover { background: var(--wash); }
-  tbody tr.topic-row.active { background: var(--wash); }
-  /* Same accent mechanism (a real border, not a box-shadow) on both the open row and the
-     panel below it, so they land at the exact same pixel and read as one connected piece --
-     a shadow on the row and a border on the panel don't reliably line up. Reserve the
-     border space on every row (transparent by default) so activating one doesn't nudge its
-     contents sideways. */
-  tbody tr.topic-row td:first-child { border-left: 3px solid transparent; }
-  tbody tr.topic-row.active td:first-child { border-left-color: var(--tail); }
-  .topic-cell { display: inline-flex; align-items: center; gap: 9px; }
-  /* A dedicated, always-visible control -- colored and circled like a real button, not a
-     muted glyph that reads as decoration -- is what actually signals "click me" here. */
-  .expander {
-    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
-    width: 22px; height: 22px; border-radius: 999px;
-    background: var(--wash); color: var(--tail);
-    transition: transform .15s ease, background .15s ease;
-  }
-  tbody tr.topic-row:hover .expander { background: var(--tail); color: #fff; }
-  tbody tr.topic-row.active .expander { transform: rotate(90deg); }
-  .expander svg { width: 12px; height: 12px; }
-  /* A spacer row, not a real one -- it exists only to push the rows below it down by
-     however tall the floating panel (positioned over it, see .detail-float) currently is. */
+  .topic-cell { display: inline-flex; align-items: center; gap: 12px; font-weight: 600; color: var(--heading); }
+  /* The plus button: outlined, filled blue with a minus while the topic is open. */
+  .expander { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+    width: 22px; height: 22px; border: 1px solid var(--accent); border-radius: 3px; background: var(--surface-1);
+    color: var(--accent); font-size: 16px; line-height: 1; font-weight: 600; }
+  tbody tr.topic-row:hover .expander, tbody tr.topic-row.active .expander { background: var(--accent); color: #fff; }
+  .bal.neg { color: var(--head-text); font-weight: 600; }
+  .bal.pos { color: var(--tail-text); font-weight: 600; }
+  td.barcell, thead th:nth-child(3) { padding-left: 14px; text-align: left; }
+  .bar { position: relative; display: block; width: 160px; height: 12px; }
+  .bar::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--border-strong); }
+  .bar i { position: absolute; top: 0; bottom: 0; }
+  .bar i.neg { right: 50%; background: var(--head); }
+  .bar i.pos { left: 50%; background: var(--tail); }
+  /* A spacer row that pushes the rows below down by the height of the floating panel. */
   tr.topic-detail-spacer td { padding: 0; border: 0; }
-  .detail-float {
-    position: absolute; left: 0; right: 0; box-sizing: border-box;
-    padding: 18px 20px 20px; background: var(--wash); border-left: 3px solid var(--tail);
-  }
+  .detail-float { position: absolute; left: 0; right: 0; padding: 20px 0 24px 34px; background: var(--surface-1);
+    border-bottom: 1px solid var(--grid); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+  .brief h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .brief.head h3 { color: var(--head-text); }
+  .brief.tail h3 { color: var(--tail-text); }
+  .brief .count { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); }
+  .ex { margin-top: 16px; }
+  .ex .who { font-size: 14.5px; font-weight: 600; color: var(--heading); }
+  .ex .why { margin-top: 4px; font-size: 14px; line-height: 1.55; }
+  .ex blockquote { margin: 10px 0 0; border-left: 3px solid var(--amber); padding: 2px 0 2px 14px;
+    font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+  .ex .when { margin-top: 6px; font-size: 12.5px; color: var(--text-muted); }
+  .empty { padding: 20px 0; color: var(--text-muted); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .note { margin: 10px 0 0; font-size: 12.5px; color: var(--text-muted); }
+
+  footer { margin-top: 56px; max-width: 820px; font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); }
+  footer p { margin: 12px 0 0; }
+  footer b { color: var(--heading); }
+
   @media (max-width: 900px) {
-    table { min-width: 600px; }
-    th:first-child, td:first-child { min-width: 140px; }
+    table { min-width: 760px; }
+    th:first-child, td:first-child { min-width: 150px; }
     .table-hint { display: block; }
-  }
-
-  /* --- topic detail --- */
-  .takeaways { margin: 0 0 16px; padding: 12px 18px; border-left: 3px solid var(--tail);
-               background: var(--wash); border-radius: 0 9px 9px 0; }
-  .takeaways ul { margin: 6px 0 0; padding-left: 18px; }
-  .takeaways li { margin-bottom: 5px; }
-  .takeaways .th { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
-                   color: var(--text-muted); font-weight: 600; }
-  /* align-items:start so an empty "no signals" column doesn't stretch to match its neighbour */
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-  .brief { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
-  .brief.head { border-top: 3px solid var(--head); }
-  .brief.tail { border-top: 3px solid var(--tail); }
-  .brief h3 { margin: 0 0 2px; font-size: 13.5px; font-weight: 650;
-              display: flex; align-items: center; gap: 7px; }
-  .brief .count { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
-  .brief p { margin: 0 0 10px; font-size: 13px; }
-  .brief .themes { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px;
-                   color: var(--text-secondary); }
-  .brief .themes li { margin-bottom: 4px; }
-  .ex { border-top: 1px solid var(--grid); padding-top: 10px; margin-top: 10px; }
-  .ex .who { font-size: 12.5px; font-weight: 600; }
-  .ex .why { font-size: 12.5px; color: var(--text-secondary); margin: 3px 0 6px; }
-  blockquote {
-    margin: 0; padding: 7px 0 7px 11px; border-left: 2px solid var(--grid);
-    font-size: 12.5px; color: var(--text-secondary); font-style: italic;
-  }
-  a { color: var(--tail); }
-  .muted { color: var(--text-muted); }
-  .empty { padding: 26px 0; text-align: center; color: var(--text-muted); font-size: 13.5px; }
-  footer { margin-top: 26px; font-size: 12px; color: var(--text-muted); max-width: 78ch; }
-  footer p { margin: 0 0 8px; }
-
-  /* --- quarterly narrative (the lead of the page) --- */
-  .narrative { margin-top: 16px; }
-  .narrative-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-                    margin-bottom: 4px; }
-  .narrative-head h2 { margin: 0; font-size: 17px; }
-  .cutswitch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px;
-               overflow: hidden; }
-  .cutswitch button { font: inherit; font-size: 12.5px; padding: 5px 12px; border: 0;
-                      background: var(--surface-1); color: var(--text-secondary);
-                      cursor: pointer; }
-  .cutswitch button + button { border-left: 1px solid var(--border); }
-  .cutswitch button[aria-pressed="true"] { background: var(--tail); color: #fff; font-weight: 600; }
-  .sections { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 12px;
-              align-items: start; }
-  .section-card { border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
-                  background: var(--surface-1); }
-  .section-card.wide { grid-column: 1 / -1; }
-  .section-kicker { font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
-                    font-weight: 700; color: var(--tail); margin-bottom: 6px; }
-  .section-card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 650; line-height: 1.35; }
-  .section-card p { margin: 0 0 10px; font-size: 13.5px; }
-  .section-card ul { margin: 0; padding-left: 18px; }
-  .section-card li { font-size: 13px; margin-bottom: 5px; color: var(--text-secondary); }
-  .read-more-btn {
-    display: inline-flex; align-items: center; gap: 4px; margin-top: 12px;
-    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--tail);
-    background: none; border: 0; padding: 0; cursor: pointer;
-  }
-  .read-more-btn:hover { text-decoration: underline; }
-  .section-body { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
-  .section-body p:last-child { margin-bottom: 0; }
-  .narr-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13.5px;
-                border: 1px dashed var(--border); border-radius: 12px; }
-  @media(max-width: 1040px) { .sections { grid-template-columns: 1fr 1fr; } }
-  @media(max-width: 760px) { .sections { grid-template-columns: 1fr; } }
-
-  @media (max-width: 900px) {
-    .tiles { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .cols { grid-template-columns: 1fr; }
-    .plot { --label-w: 130px; --value-w: 52px; }
+    .detail-float { padding-left: 0; }
   }
+  @media (max-width: 760px) {
+    .appbar .in { padding: 0 16px; }
+    .wrap { padding: 24px 16px 64px; }
+    h1 { font-size: 26px; }
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+    .tile .value { font-size: 28px; }
+    .band { padding: 18px 16px; }
+    .field { flex: 1 1 200px; } .field select { min-width: 0; width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="titles">
-      <h1>Manufacturing Conditions Monitor</h1>
-      <p class="sub">Economic headwinds and tailwinds extracted from public-company manufacturing
-        disclosures — 10-K and 10-Q MD&amp;A and Risk Factors, plus earnings-related 8-Ks.</p>
-      <p class="stamp" id="stamp">Loading…</p>
-    </div>
+<header class="appbar">
+  <div class="in">
+    <p class="appname">Manufacturing Conditions Monitor</p>
     <button class="theme-btn" id="themeBtn" type="button">Dark mode</button>
-  </header>
+  </div>
+</header>
+<div class="wrap">
+  <h1 id="pageTitle">Manufacturing conditions</h1>
+  <p class="lede">The headwinds and tailwinds public manufacturers reported in their SEC filings:
+    10-K and 10-Q management discussion and risk factors, plus earnings 8-Ks.
+    <span id="stamp">Loading…</span></p>
 
-  <section class="card narrative" id="narrativeCard">
-    <div class="narrative-head">
-      <h2 id="narrativeTitle">Quarterly analysis</h2>
-      <span class="cutswitch" id="cutSwitch" role="group" aria-label="Narrative scope"></span>
-    </div>
-    <p class="card-sub" id="narrativeSub"></p>
-    <div id="narrativeBody"></div>
-  </section>
+  <span class="cutswitch" id="cutSwitch" role="group" aria-label="Which manufacturers"></span>
 
   <section class="tiles" id="tiles"></section>
 
-  <div class="filters" id="filters">
-    <div class="field">
-      <label for="fSic">Industry (2-digit SIC)</label>
-      <select id="fSic"></select>
-    </div>
-    <div class="field">
-      <label for="fState">Business location</label>
-      <select id="fState"></select>
-    </div>
-  </div>
-
-  <section class="card">
-    <h2>Net headwind–tailwind balance by topic</h2>
-    <p class="card-sub">Select a topic to read the evidence behind it.</p>
-    <div class="legend">
-      <span class="key"><span class="swatch" style="background:var(--head)"></span> Headwind (worsening conditions)</span>
-      <span class="key"><span class="swatch" style="background:var(--tail)"></span> Tailwind (improving conditions)</span>
-    </div>
-    <div id="chart"></div>
+  <section class="narrative" id="narrativeCard">
+    <div id="narrativeBody"></div>
   </section>
 
-  <section class="card">
-    <h2>All topics</h2>
-    <p class="card-sub">The same figures as the chart above, with quarter-over-quarter and
-      year-over-year change in percentage points. Click a row to see example headwinds and
-      tailwinds.</p>
+  <section class="topics">
+    <h2>By topic</h2>
+    <p class="sub">Signal balance runs from &minus;1 (every signal a headwind) to +1 (every signal a tailwind).
+      Open a topic for example filings.</p>
+    <div class="filters" id="filters">
+      <div class="field">
+        <label for="fSic">Industry (2-digit SIC)</label>
+        <select id="fSic"></select>
+      </div>
+      <div class="field">
+        <label for="fState">Business location</label>
+        <select id="fState"></select>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--head)"></i>Headwind (worsening)</span>
+      <span><i style="background:var(--tail)"></i>Tailwind (improving)</span>
+    </div>
     <div class="table-wrap">
       <div class="table-scroll">
         <table>
           <thead><tr>
-            <th>Topic</th><th>Balance</th><th>Companies</th><th>Signals</th>
-            <th>Headwind</th><th>Tailwind</th><th>Mixed</th><th>QoQ &Delta;</th><th>YoY &Delta;</th>
+            <th>Topic</th><th>Balance</th><th><span class="sr-only">Balance bar, </span>&minus;1 to +1</th><th>Companies</th><th>Signals</th>
+            <th>Headwind</th><th>Tailwind</th><th>Mixed</th><th>QoQ</th><th>YoY</th>
           </tr></thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>
       <div id="topicDetailFloat" class="detail-float" hidden></div>
     </div>
-    <p class="table-hint">Topic stays put — swipe left to see the rest of the columns →</p>
+    <p class="table-hint">The topic stays put. Swipe left to see the other columns.</p>
+    <p class="note" id="deltaNote"></p>
   </section>
 
   <footer>
-    <p><b>How to read this.</b> Signal balance = (tailwind signals − headwind signals) ÷ all signals,
-      ranging from −1 (all headwinds) to +1 (all tailwinds); mixed signals stay in the denominator.
-      It measures how often a condition is described as adverse or favourable across companies —
+    <p><b>How to read this.</b> Signal balance is tailwind signals minus headwind signals, divided by
+      all signals. It runs from &minus;1 (all headwinds) to +1 (all tailwinds); mixed signals count in the
+      total. It measures how often a condition is described as adverse or favorable across companies,
       not the dollar size of the effect.</p>
-    <p><b>Method.</b> Filings are retrieved from SEC EDGAR, the MD&amp;A and Risk Factors sections
-      are extracted deterministically into a paragraph-level dataset, and each paragraph is
-      classified by Claude into the topics above. Quotes are verbatim from the filings.
-      "Business location" is the filer's principal business address on file with the SEC,
-      which is its headquarters — not necessarily where its plants are.</p>
+    <p><b>Method.</b> Filings come from SEC EDGAR. The management discussion and risk factor sections
+      are split into paragraphs, and Claude classifies each one into the topics above. Quotes are
+      verbatim from the filings. Business location is the filer's principal business address on file
+      with the SEC, which is its headquarters, not necessarily where its plants are.</p>
   </footer>
 </div>
-
-<div id="tooltip" role="status" aria-live="polite"></div>
 
 <script>
 (function () {
@@ -513,6 +363,9 @@
   // renderNarrative() on every render, so it survives re-renders triggered by filters,
   // the cut switch, or expanding a topic row elsewhere on the page.
   var expandedSections = {};
+  // The one outlook section (looking ahead, quarter over quarter, year over year) that is
+  // open; opening another closes it. Kept across re-renders, like expandedSections.
+  var openOutlook = "looking_ahead";
   var SECTION_ORDER = [
     ["this_quarter", "This quarter", false],
     ["looking_ahead", "Looking ahead", false],
@@ -566,56 +419,46 @@
     });
 
     var period = D.latest_period;
-    el("narrativeTitle").textContent = "Quarterly analysis — " + prettyPeriod(period);
     var n = NARR[period + "|" + narrCut];
     if (!n) {
-      el("narrativeSub").textContent = "";
       el("narrativeBody").innerHTML =
-        '<div class="narr-empty">No written analysis for ' + esc(period) +
+        '<div class="narr-empty">No written analysis for ' + esc(prettyPeriod(period)) +
         ' yet. Run the analyze step in the control panel.</div>';
       return;
     }
-    var c = n.counts || {};
-    el("narrativeSub").textContent =
-      (n.cut_label || "") + " · " + num(c.signals || 0) + " signals from " +
-      num(c.companies || 0) + " companies · balance " +
-      ((c.signal_balance >= 0 ? "+" : "") + Number(c.signal_balance || 0).toFixed(2));
-
-    // "this_quarter" always spans full width. The other three (looking ahead, QoQ, YoY)
-    // share the row in thirds only when all three are present; otherwise each present one
-    // takes the full row instead of leaving unused blank slots.
-    var otherKeys = ["looking_ahead", "quarter_over_quarter", "year_over_year"];
-    var allOthersPresent = otherKeys.every(function (k) { return !!(n.sections || {})[k]; });
-
-    var out = "";
-    SECTION_ORDER.forEach(function (entry) {
-      var key = entry[0];
-      var s = (n.sections || {})[key];
-      if (!s) return;
-      var wide = key === "this_quarter" || !allOthersPresent;
+    var sections = n.sections || {};
+    function points(sec) {
+      return (sec.bullets && sec.bullets.length)
+        ? '<div class="band"><ul>' + sec.bullets.map(function (b) { return "<li><span>" + bulletHtml(b) + "</span></li>"; }).join("") + "</ul></div>"
+        : "";
+    }
+    // Bullets first, the part a busy reader reads, with the full prose behind "Read the full narrative".
+    function fullText(key, sec) {
+      if (!sec.body) return "";
       var expanded = !!expandedSections[key];
-      // Bullets first -- that's the part a busy exec actually reads -- with the full
-      // prose narrative tucked behind "Read full narrative" for whoever wants the detail.
-      out += '<div class="section-card' + (wide ? " wide" : "") + '">' +
-        '<div class="section-kicker">' + esc(entry[1]) + "</div>" +
-        "<h3>" + esc(s.headline || "") + "</h3>" +
-        ((s.bullets && s.bullets.length)
-          ? "<ul>" + s.bullets.map(function (b) { return "<li>" + esc(b) + "</li>"; }).join("") + "</ul>"
-          : "") +
-        (s.body
-          ? '<button type="button" class="read-more-btn" data-section="' + esc(key) +
-            '" aria-expanded="' + expanded + '">' +
-            (expanded ? "Show less ▴" : "Read full narrative ▾") + "</button>" +
-            '<div class="section-body"' + (expanded ? "" : " hidden") + ">" +
-            s.body.split(/\n{2,}/).map(function (p) {
-              return "<p>" + esc(p.trim()) + "</p>";
-            }).join("") + "</div>"
-          : "") +
-        "</div>";
-    });
-    el("narrativeBody").innerHTML = out
-      ? '<div class="sections">' + out + "</div>"
-      : '<div class="narr-empty">No sections were generated for this quarter.</div>';
+      return '<button type="button" class="read-more-btn" data-section="' + esc(key) + '" aria-expanded="' + expanded + '">' +
+        (expanded ? "Hide the full narrative" : "Read the full narrative") + "</button>" +
+        '<div class="section-body"' + (expanded ? "" : " hidden") + ">" +
+        sec.body.split(/\n{2,}/).map(function (p) { return "<p>" + esc(p.trim()) + "</p>"; }).join("") + "</div>";
+    }
+    var out = "";
+    var tq = sections.this_quarter;
+    if (tq) {
+      out += '<p class="eyebrow">This quarter</p><h2 class="narr-head">' + esc(tq.headline || "") + "</h2>" +
+        points(tq) + fullText("this_quarter", tq);
+    }
+    var others = SECTION_ORDER.filter(function (e) { return e[0] !== "this_quarter" && sections[e[0]]; });
+    if (others.length) {
+      out += '<div class="outlook">' + others.map(function (entry) {
+        var key = entry[0], sec = sections[key], open = openOutlook === key;
+        return "<section>" +
+          '<button type="button" class="acc" data-outlook="' + esc(key) + '" aria-expanded="' + open + '">' +
+          '<span><span class="eyebrow">' + esc(entry[1]) + '</span><span class="acc-head">' + esc(sec.headline || "") + "</span></span>" +
+          '<span class="acc-tgl" aria-hidden="true">' + (open ? "Hide" : "Show") + "</span></button>" +
+          (open ? points(sec) + fullText(key, sec) : "") + "</section>";
+      }).join("") + "</div>";
+    }
+    el("narrativeBody").innerHTML = out || '<div class="narr-empty">No sections were generated for this quarter.</div>';
     Array.prototype.forEach.call(el("narrativeBody").querySelectorAll(".read-more-btn"), function (btn) {
       btn.addEventListener("click", function () {
         var key = btn.dataset.section;
@@ -623,7 +466,23 @@
         renderNarrative();
       });
     });
+    Array.prototype.forEach.call(el("narrativeBody").querySelectorAll(".acc"), function (btn) {
+      btn.addEventListener("click", function () {
+        openOutlook = openOutlook === btn.dataset.outlook ? null : btn.dataset.outlook;
+        renderNarrative();
+      });
+    });
   }
+
+  /* bulletHtml:start -- a narrative point as HTML. The writer sometimes starts a point with a
+     stray ". " and marks its lead phrase with **bold**; show the lead in bold and drop the
+     stray punctuation, instead of printing ". **Tariff relief...**". Escaped first, so
+     nothing in the text becomes markup except the <b> added here. */
+  function bulletHtml(text) {
+    var t = String(text == null ? "" : text).replace(/^\s*(?:[.\u2022]\s*|[-*]\s+)+/, "");
+    return esc(t).replace(/\*\*([^*]+?)\*\*/g, "<b>$1</b>").replace(/\*\*/g, "");
+  }
+  /* bulletHtml:end */
 
   /* ---------- rendering ---------- */
   function currentIdx() {
@@ -649,7 +508,6 @@
     renderNarrative();
     renderTiles(agg, qoqAgg);
     var rows = agg.rows.slice().sort(function (a, b) { return a.balance - b.balance; });
-    renderChart(rows);
     if (activeTopic && !rows.some(function (r) { return r.name === activeTopic; })) activeTopic = null;
     renderTable(rows, qoq, yoy);
   }
@@ -660,94 +518,24 @@
     if (prior && prior.totals.total) {
       var d = (agg.balance - prior.balance) * 100;
       var cls = deltaClass(d, t.total);
-      var glyph = cls === "flat" ? "→" : (d > 0 ? "▲" : "▼");
-      var label = prettyPeriod(D.comparison_periods.qoq);
-      deltaHtml = '<span class="delta ' + cls + '">' + glyph + " " + pts(d) +
-        " pts</span> <span class=\"muted\">vs " + esc(label) + "</span>";
+      var glyph = cls === "flat" ? "" : (d > 0 ? "\u25b2 " : "\u25bc ");
+      var r = Math.abs(Math.round(d));
+      deltaHtml = '<span class="delta ' + cls + '">' + (cls === "flat" ? "No change" : glyph + r + (r === 1 ? " point" : " points")) +
+        "</span> from " + esc(prettyPeriod(D.comparison_periods.qoq));
     }
     el("tiles").innerHTML =
-      tile("Companies represented", num(agg.companies), num(agg.filings) + " filings") +
-      tile("Economic signals", num(t.total), "Classified observations") +
-      tile("Headwind / tailwind split",
-        t.total ? pct(t.head / t.total) + " / " + pct(t.tail / t.total) : "—",
+      tile("Companies", num(agg.companies), num(agg.filings) + " filings") +
+      tile("Signals", num(t.total), "Classified observations") +
+      tile("Headwinds / tailwinds",
+        t.total ? pct(t.head / t.total) + " / " + pct(t.tail / t.total) : "None",
         t.total ? pct(t.mixed / t.total) + " mixed" : "No signals") +
-      // Two lines, so the condition label and the delta never collide mid-word.
-      tile("Signal balance", t.total ? signed(agg.balance) : "—",
-        (t.total ? "<div>" + conditionLabel(agg.balance) + "</div>" : "") +
-        "<div>" + deltaHtml + "</div>");
+      tile("Signal balance", t.total ? signed(agg.balance).replace("-", "\u2212") : "None",
+        (t.total ? "<div>" + conditionLabel(agg.balance) + "</div>" : "") + "<div>" + deltaHtml + "</div>");
   }
   function tile(label, value, meta) {
-    return '<div class="tile"><div class="label">' + esc(label) + '</div>' +
+    return '<div class="tile"><p class="eyebrow">' + esc(label) + '</p>' +
       '<div class="value">' + esc(value) + '</div><div class="meta">' + meta + '</div></div>';
   }
-
-  function renderChart(rows) {
-    var host = el("chart");
-    if (!rows.length) {
-      host.innerHTML = '<div class="empty">No analyzed signals for this combination of filters.</div>';
-      return;
-    }
-    var grid = '<div class="gridlines">' +
-      [0, 25, 50, 75, 100].map(function (p) {
-        return '<i class="' + (p === 50 ? "zero" : "") + '" style="left:' + p + '%"></i>';
-      }).join("") + '</div>';
-    var bars = rows.map(function (r) {
-      var w = Math.abs(r.balance) * 50;
-      var bar = Math.abs(r.balance) < 0.005
-        ? '<span class="bar zero"></span>'
-        : '<span class="bar ' + (r.balance < 0 ? "neg" : "pos") + '" style="width:' + w.toFixed(2) + '%"></span>';
-      return '<div class="row' + (r.name === activeTopic ? " active" : "") + '" tabindex="0" role="button" ' +
-        'data-topic="' + esc(r.name) + '" aria-label="' + esc(r.name) + ', balance ' + signed(r.balance) + '">' +
-        '<span class="name">' + esc(r.name) + '</span>' +
-        '<span class="track">' + bar + '</span>' +
-        '<span class="val">' + signed(r.balance) + '</span></div>';
-    }).join("");
-    var axis = '<div class="axis"><span></span><span class="ticks">' +
-      [["-1.0", 0], ["-0.5", 25], ["0", 50], ["+0.5", 75], ["+1.0", 100]].map(function (t) {
-        return '<span style="left:' + t[1] + '%">' + t[0] + "</span>";
-      }).join("") + '</span><span></span></div>';
-    host.innerHTML = '<div class="plot">' + grid + bars + axis + '</div>' +
-      '<p class="axis-note">−1 means every signal in that topic was a headwind; +1 means every one was a tailwind.</p>';
-
-    Array.prototype.forEach.call(host.querySelectorAll(".row"), function (row) {
-      var r = rows.filter(function (x) { return x.name === row.dataset.topic; })[0];
-      row.addEventListener("mousemove", function (e) { showTip(e, r); });
-      row.addEventListener("mouseleave", hideTip);
-      row.addEventListener("click", function () { toggleTopic(r.name); });
-      row.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTopic(r.name); }
-      });
-      row.addEventListener("focus", function () { showTipAt(row, r); });
-      row.addEventListener("blur", hideTip);
-    });
-  }
-
-  function tipHtml(r) {
-    return "<b>" + esc(r.name) + "</b><br>" +
-      '<span class="tt-row">Balance ' + signed(r.balance) + " · " + num(r.companies) + " companies</span><br>" +
-      '<span class="tt-row">' + num(r.head) + " headwind · " + num(r.tail) + " tailwind · " +
-      num(r.mixed) + " mixed</span>";
-  }
-  function showTip(e, r) {
-    var tt = el("tooltip");
-    tt.innerHTML = tipHtml(r);
-    tt.style.opacity = "1";
-    var x = e.clientX + 14, y = e.clientY + 14;
-    var box = tt.getBoundingClientRect();
-    if (x + box.width > window.innerWidth - 10) x = e.clientX - box.width - 14;
-    if (y + box.height > window.innerHeight - 10) y = e.clientY - box.height - 14;
-    tt.style.left = Math.max(8, x) + "px";
-    tt.style.top = Math.max(8, y) + "px";
-  }
-  function showTipAt(node, r) {
-    var rect = node.getBoundingClientRect();
-    showTip({ clientX: rect.left + 40, clientY: rect.top }, r);
-  }
-  function hideTip() { el("tooltip").style.opacity = "0"; }
-
-  var CHEVRON_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3l6 5-6 5" ' +
-    'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" ' +
-    'stroke-linejoin="round"/></svg>';
 
   // The evidence panel for an open row is a free-floating div positioned over a blank
   // "spacer" row rather than content living inside the table itself (see the CSS comment
@@ -773,18 +561,21 @@
 
   function renderTable(rows, qoq, yoy) {
     if (!rows.length) {
-      el("tbody").innerHTML = '<tr><td colspan="9" class="muted">No signals for this selection.</td></tr>';
+      el("tbody").innerHTML = '<tr><td colspan="10" class="muted">No signals for this selection.</td></tr>';
       return;
     }
     var html = "";
     rows.forEach(function (r) {
       var open = r.name === activeTopic;
+      var w = Math.min(50, Math.abs(r.balance) * 50);
       html += '<tr class="topic-row' + (open ? " active" : "") + '" data-topic="' + esc(r.name) +
         '" tabindex="0" role="button" aria-expanded="' + open +
         '" aria-label="' + esc(r.name) + (open ? ", showing examples" : ", show examples") + '">' +
-        '<td><span class="topic-cell"><span class="expander">' + CHEVRON_SVG + '</span>' +
+        '<td><span class="topic-cell"><span class="expander" aria-hidden="true">' + (open ? "\u2212" : "+") + '</span>' +
         esc(r.name) + "</span></td>" +
-        "<td>" + signed(r.balance) + "</td>" +
+        '<td class="bal ' + (r.balance < 0 ? "neg" : "pos") + '">' + signed(r.balance).replace("-", "\u2212") + "</td>" +
+        '<td class="barcell"><span class="bar" aria-hidden="true">' +
+          (w >= 0.25 ? '<i class="' + (r.balance < 0 ? "neg" : "pos") + '" style="width:' + w.toFixed(2) + '%"></i>' : "") + "</span></td>" +
         "<td>" + num(r.companies) + "</td>" +
         "<td>" + num(r.total) + "</td>" +
         "<td>" + pct(r.headShare) + "</td>" +
@@ -793,7 +584,7 @@
         "<td>" + deltaCell(r, qoq, r.total) + "</td>" +
         "<td>" + deltaCell(r, yoy, r.total) + "</td></tr>";
       if (open) {
-        html += '<tr class="topic-detail-spacer" aria-hidden="true"><td colspan="9"></td></tr>';
+        html += '<tr class="topic-detail-spacer" aria-hidden="true"><td colspan="10"></td></tr>';
       }
     });
     el("tbody").innerHTML = html;
@@ -816,11 +607,11 @@
     }
   }
   function deltaCell(r, map, sample) {
-    if (!map || !(r.name in map)) return '<span class="muted">—</span>';
+    if (!map || !(r.name in map)) return '<span class="muted">None</span>';
     var d = (r.balance - map[r.name]) * 100;
     var title = sample < SMALL_SAMPLE ? ' title="Based on fewer than ' + SMALL_SAMPLE +
-      ' signals — treat as noise."' : "";
-    return '<span class="delta ' + deltaClass(d, sample) + '"' + title + ">" + pts(d) + "</span>";
+      ' signals, so treat it as noise."' : "";
+    return '<span class="delta ' + deltaClass(d, sample) + '"' + title + ">" + pts(d).replace("-", "\u2212") + "</span>";
   }
 
   /* ---------- topic detail (a floating panel positioned under its row) ---------- */
@@ -849,8 +640,8 @@
             .sort(function (a, b) { return (b.intensity || 0) - (a.intensity || 0); }).slice(0, 5);
         };
         host2.innerHTML = '<div class="cols">' +
-          evidenceCol("head", "▼ Headwinds", byDir("Headwind"), r.head, "headwind") +
-          evidenceCol("tail", "▲ Tailwinds", byDir("Tailwind"), r.tail, "tailwind") + "</div>";
+          evidenceCol("head", "Headwinds", byDir("Headwind"), r.head, "headwind") +
+          evidenceCol("tail", "Tailwinds", byDir("Tailwind"), r.tail, "tailwind") + "</div>";
         syncDetailFloat();
       });
   }
@@ -860,16 +651,15 @@
         '<p class="count">No ' + word + " signals were identified.</p></div>";
     }
     var html = '<div class="brief ' + cls + '"><h3>' + esc(title) + "</h3>" +
-      '<p class="count">' + num(count) + " signals · showing the " + rows.length + " strongest</p>";
+      '<p class="count">' + num(count) + " signals. The " + rows.length + " strongest are shown.</p>";
     if (!rows.length) html += '<p class="muted">No quotes available at this filter depth.</p>';
     rows.forEach(function (ex) {
       html += '<div class="ex"><div class="who">' + esc(ex.company) +
-        (ex.ticker ? " (" + esc(ex.ticker) + ")" : "") + " — " + esc(ex.form) +
-        ", period ended " + esc(ex.report_date) + "</div>" +
+        (ex.ticker ? " (" + esc(ex.ticker) + ")" : "") + "</div>" +
         '<div class="why">' + esc(ex.summary) + "</div>" +
-        (ex.quote ? "<blockquote>“" + esc(ex.quote) + "”" +
-          (ex.url ? ' <a href="' + esc(ex.url) + '" target="_blank" rel="noopener">filing</a>' : "") +
-          "</blockquote>" : "") + "</div>";
+        (ex.quote ? "<blockquote>\u201c" + esc(ex.quote) + "\u201d</blockquote>" : "") +
+        '<div class="when">' + esc(ex.form) + ", period ended " + esc(ex.report_date) +
+          (ex.url ? '. <a href="' + esc(ex.url) + '" target="_blank" rel="noopener">Open the filing</a>' : "") + "</div></div>";
     });
     return html + "</div>";
   }
@@ -886,7 +676,7 @@
   function buildFilters() {
     el("fSic").innerHTML = '<option value="ALL">All manufacturing</option>' +
       D.dims.sic2.map(function (r) {
-        return '<option value="' + esc(r[0]) + '">' + esc(r[0] + " — " + r[1]) + "</option>";
+        return '<option value="' + esc(r[0]) + '">' + esc(r[0] + ": " + r[1]) + "</option>";
       }).join("");
     el("fState").innerHTML = '<option value="ALL">All states</option>' +
       D.dims.states.map(function (r) {
@@ -901,14 +691,18 @@
   window.addEventListener("resize", syncDetailFloat);
   fetch("data.json").then(function (r) { return r.json(); }).then(function (json) {
     D = json;
+    el("pageTitle").textContent = "Manufacturing conditions, " + prettyPeriod(D.latest_period);
+    if (D.comparison_periods) {
+      el("deltaNote").textContent = "QoQ and YoY are the change in balance, in points, from " +
+        prettyPeriod(D.comparison_periods.qoq) + " and " + prettyPeriod(D.comparison_periods.yoy) + ".";
+    }
     if (!D.counts.signals && !D.counts.filings) {
       el("stamp").textContent = "No analyzed data yet for " + prettyPeriod(D.latest_period) + ".";
     } else {
       var when = new Date(D.generated_at);
-      el("stamp").textContent = "Data for " + prettyPeriod(D.latest_period) + " · " +
-        num(D.counts.signals) + " signals from " + num(D.counts.filings) + " filings · updated " +
+      el("stamp").textContent = num(D.counts.signals) + " signals from " + num(D.counts.filings) + " filings, updated " +
         (isNaN(when) ? D.generated_at : when.toLocaleDateString("en-US",
-          { year: "numeric", month: "long", day: "numeric" }));
+          { year: "numeric", month: "short", day: "numeric" })) + ".";
     }
     buildFilters();
     fetch("narratives.json").then(function (r) { return r.ok ? r.json() : {}; })
