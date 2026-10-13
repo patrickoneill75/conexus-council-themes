@@ -2914,6 +2914,13 @@ test("partner_intel: the staff pages show no urgency and say issue, not open iss
   }
 });
 
+test("partner_intel: BUG a wide table (companies, meetings, control panel) made the whole page scroll sideways on a phone", () => {
+  const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
+  const phone = [...css.matchAll(/@media \(max-width:(\d+)px\)\s*\{([^{}]*\{[^}]*\})*\s*\}/g)]
+    .filter((m) => Number(m[1]) >= 600).map((m) => m[0]).join("\n");
+  assert.match(phone, /table[^{]*\{[^}]*display:block[^}]*overflow-x:auto/, "on a phone a table scrolls inside its own area");
+});
+
 test("partner_intel: a topic merge applies to the ranking, and a merge loop is refused", async () => {
   const { env, token } = await piEnv([
     ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "c-b" }),
