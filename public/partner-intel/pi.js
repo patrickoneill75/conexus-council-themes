@@ -49,12 +49,15 @@
 
   PI.pill = function (cls, text) { return '<span class="pill ' + cls + '">' + PI.esc(text) + "</span>"; };
 
-  /** One insight as a card. opts: { company: true|false } */
   /** Which company tab a kind belongs to: issues, solutions, wins, or other. */
   PI.categoryOf = function (kind) {
     return kind === "problem" || kind === "ask" ? "issues" : kind === "win" ? "wins"
       : kind === "solution" || kind === "offer" || kind === "equipment" ? "solutions" : "other";
   };
+
+  /** One note: the company (unless opts.company is false), the title and detail, then one line
+   * with the date, the meeting type, the kind, the speaker, the files in Box and opts.action
+   * (Find solution). The quote opens beneath; its file is the link on the line above. */
   PI.insightCard = function (i, opts) {
     opts = opts || {};
     var co = i.company || {};
@@ -70,19 +73,24 @@
         head += '<span class="pill medium" title="Which company said this is uncertain. Staff can settle it on the control panel, under Statements to check.">Check company</span>';
       }
     }
-    head += PI.pill("info", PI.kindLabel[i.kind] || i.kind);
-    if (i.status === "resolved") head += PI.pill("good", "Resolved");
-    var meta = PI.esc(PI.fmtDate(i.date)) + (i.estimated ? " " + PI.pill("est", "estimated date") : "") +
-      (i.eventType ? " &middot; " + PI.esc(i.eventType) : "") +
-      (i.speaker ? " &middot; " + PI.esc(i.speaker) : "");
+    var meta = ["<span>" + PI.esc(PI.fmtDate(i.date)) + "</span>"];
+    if (i.estimated) meta.push(PI.pill("est", "estimated date"));
+    if (i.eventType) meta.push("<span>" + PI.esc(i.eventType) + "</span>");
+    meta.push("<span>" + PI.esc(PI.kindLabel[i.kind] || i.kind) + "</span>");
+    if (i.status === "resolved") meta.push(PI.pill("good", "Resolved"));
+    if (i.speaker) meta.push("<span>" + PI.esc(i.speaker) + "</span>");
+    var files = PI.fileLinks(i.sources);
+    if (files) meta.push('<span class="files" title="' + PI.esc((i.sources || []).map(function (f) { return f.name; }).join(", ")) + '">' + files + "</span>");
+    if (opts.action) meta.push('<span class="act">' + opts.action + "</span>");
     return '<div class="item">' +
-      '<div class="head">' + head + "</div>" +
+      (head ? '<div class="head">' + head + "</div>" : "") +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
       '<div class="detail">' + PI.esc(i.detail) + "</div>" +
       (i.solves ? '<div class="why"><b>Addresses:</b> ' + PI.esc(i.solves) + "</div>" : "") +
       (i.tags && i.tags.length ? '<div class="chips">' + i.tags.map(function (t) { return '<span class="chip">' + PI.esc(t) + "</span>"; }).join("") + "</div>" : "") +
-      '<div class="meta">' + meta + "</div>" +
-      PI.sourceHtml(i) + "</div>";
+      '<div class="meta">' + meta.join("") + "</div>" +
+      (i.quote ? '<details class="src"><summary>Quote</summary><blockquote>&ldquo;' + PI.esc(i.quote) + "&rdquo;</blockquote></details>" : "") +
+      "</div>";
   };
 
   /** A link to each source file in Box, or the plain name when there is no Box id. */

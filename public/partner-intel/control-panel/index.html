@@ -9,12 +9,9 @@
 <style>html { visibility:hidden; }</style>
 </head>
 <body>
-<div class="wrap">
-  <div class="topbar">
-    <div class="brand">
-      <h1>Partner Intelligence control panel</h1>
-      <p class="sub">Point the tool at the Box notes, run scans, and keep the partner list current.</p>
-    </div>
+<header class="appbar">
+  <div class="in">
+    <div class="appname" style="flex:1 1 auto">Partner Intelligence control panel</div>
     <div class="tools">
       <span id="whoami"></span>
       <a href="/partner-intel/">Open the tool</a>
@@ -22,6 +19,9 @@
       <button class="link" id="signOut">Sign out</button>
     </div>
   </div>
+</header>
+<div class="wrap">
+  <p class="sub" style="margin:0 0 24px">Point the tool at the Box notes, run scans, and keep the partner list current.</p>
 
   <div id="relink" class="banner" hidden>
     <b>The partner list changed since the data was last built.</b> Re-link applies the change to every note. It reads nothing new and uses no Claude.
