@@ -2921,6 +2921,15 @@ test("partner_intel: BUG a wide table (companies, meetings, control panel) made 
   assert.match(phone, /table[^{]*\{[^}]*display:block[^}]*overflow-x:auto/, "on a phone a table scrolls inside its own area");
 });
 
+test("partner_intel: the Trending topics page opens on the last 90 days", async () => {
+  const { env, token } = await piEnv([ins({ date: isoAgo(80) })]);
+  const home = await getJson("home", env, token);
+  assert.equal(home.days, 90, "no window asked for means 90 days");
+  assert.equal(home.trending.length, 1, "a note from 80 days ago is in the default window");
+  const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "index.html"), "utf8");
+  assert.match(html, /var state = \{ days: 90,/, "the page asks for 90 days when it loads");
+});
+
 test("partner_intel: a topic merge applies to the ranking, and a merge loop is refused", async () => {
   const { env, token } = await piEnv([
     ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "ai_adoption", company_id: "c-b" }),

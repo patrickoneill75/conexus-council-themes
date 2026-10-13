@@ -2162,7 +2162,7 @@ export async function handlePartnerIntelApi(route, request, env) {
     const labels = topicLabels(data, overrides);
 
     if (route === "home" && method === "GET") {
-      const days = Math.min(365, Math.max(1, Math.floor(Number(params.get("days"))) || 30));
+      const days = Math.min(365, Math.max(1, Math.floor(Number(params.get("days"))) || 90)); // Home opens on 90 days
       const view = new URLSearchParams({ days: String(days) });
       if (params.get("exact") === "1") view.set("exact", "1");
       for (const name of ["source", "status", "industry"]) for (const v of params.getAll(name)) view.append(name, v);
