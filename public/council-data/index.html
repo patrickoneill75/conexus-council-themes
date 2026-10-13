@@ -51,163 +51,122 @@ const CONFIG = {
 </script>
 
 <style>
+  /* Conexus Indiana brand, matching Partner Intelligence: a navy bar across the top, a white
+     page, navy headings, brand blue for numbers, links and the chosen control, amber once in
+     the bar and as the line beside each member quote. Dark mode keeps the bar navy. */
   :root {
     color-scheme: light;
-    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
-    --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
-    --accent:#2a78d6; --good:#006300; --bad:#d03b3b;
-    --bench-bg:#e6e5df; --meeting-bg:rgba(42,120,214,.14); --meeting-select-bg:#eef4fb;
-    --bench-text:#2666b6;
+    --page:#ffffff; --surface-1:#ffffff; --text-primary:#16202b; --text-secondary:#4a5663;
+    --text-muted:#7c8794; --grid:#e1e2e9; --border:#e1e2e9; --border-strong:#c9cdd8; --wash:#f3f5f9;
+    --accent:#325eae; --heading:#07214e; --navy:#07214e; --amber:#fbae40; --nav-text:#c9d3e3;
+    --good:#0b6a92; --bad:#b3401f;
   }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
-    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
-    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
-    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:#1b2430;
-    --bench-text:#3379ce;
+    --page:#0e1520; --surface-1:#152033; --text-primary:#e9edf3; --text-secondary:#b4becc;
+    --text-muted:#8792a2; --grid:#26324a; --border:#26324a; --border-strong:#3a4a66; --wash:#1a263b;
+    --accent:#6e9bea; --heading:#e8eef7; --good:#4fb3dd; --bad:#f2896a;
   } }
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
-    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
-    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
-    --bench-bg:#232321; --meeting-bg:rgba(57,135,229,.18); --meeting-select-bg:#1b2430;
-    --bench-text:#3379ce;
+    --page:#0e1520; --surface-1:#152033; --text-primary:#e9edf3; --text-secondary:#b4becc;
+    --text-muted:#8792a2; --grid:#26324a; --border:#26324a; --border-strong:#3a4a66; --wash:#1a263b;
+    --accent:#6e9bea; --heading:#e8eef7; --good:#4fb3dd; --bad:#f2896a;
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
   body { margin:0; background:var(--page); color:var(--text-primary);
-         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+         font:14px/1.55 Aptos,"Segoe UI",Arial,sans-serif;
          display:flex; flex-direction:column; }
+  button { font:inherit; cursor:pointer; }
+  button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
-  header { padding:18px 20px 0; flex:none; }
-  .head-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
-  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
-  .sub { color:var(--text-secondary); font-size:13px; }
-  .head-tools { margin-left:auto; display:flex; gap:8px; align-items:center; }
-  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
-           padding:7px 13px; background:var(--surface-1); color:var(--text-primary); font-size:12.5px; }
-  button:hover { background:var(--wash); }
-  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  /* The navy bar: the dashboard's name, its pages, and the page tools. */
+  header { flex:none; background:var(--navy); color:#fff; }
+  .head-row { max-width:1080px; margin:0 auto; padding:0 32px; display:flex; flex-wrap:wrap;
+              align-items:center; gap:0 28px; min-height:56px; }
+  h1#title { font-size:15px; font-weight:600; margin:0 8px 0 0; padding:12px 0; color:#fff; }
+  #subtitle { display:none; }
+  .cutswitch { display:flex; flex-wrap:wrap; gap:6px; flex:1 1 auto; }
+  .cutswitch button { border:0; border-radius:0; background:none; color:var(--nav-text); font-size:14px;
+                      padding:17px 10px 14px; border-bottom:3px solid transparent; }
+  .cutswitch button:hover { color:#fff; }
+  .cutswitch button[aria-pressed="true"] { color:#fff; font-weight:600; border-bottom-color:var(--amber); }
+  .head-tools { display:flex; gap:16px; align-items:center; padding:10px 0; }
+  .head-tools button { border:0; background:none; padding:0; color:var(--nav-text); font-size:13px; }
+  .head-tools button:hover { color:#fff; text-decoration:underline; }
 
-  /* Page navigation — the whole point of this wrapper. One segmented control, so the
-     pages read as a set of choices rather than a menu you have to go looking for. */
-  .cutswitch { display:inline-flex; border:1px solid var(--border); border-radius:9px;
-               overflow:hidden; background:var(--surface-1); flex-wrap:wrap; }
-  .cutswitch button { font:inherit; font-size:13.5px; font-weight:550; padding:9px 18px;
-                      border:0; border-radius:0; background:transparent; color:var(--text-secondary); }
-  .cutswitch button + button { border-left:1px solid var(--border); }
-  .cutswitch button:hover { background:var(--wash); color:var(--text-primary); }
-  .cutswitch button[aria-pressed="true"] { background:var(--accent); color:#fff; font-weight:600; }
-  .cutswitch button[aria-pressed="true"]:hover { background:var(--accent); }
-
-  main { flex:1; min-height:0; display:flex; flex-direction:column; padding:14px 20px 20px; }
-  .blurb { color:var(--text-secondary); font-size:12.5px; margin:0 0 10px; min-height:18px; }
-  .stage { flex:1; min-height:0; position:relative; background:var(--surface-1);
-           overflow:hidden; }
+  main { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .blurb { max-width:1080px; width:100%; margin:16px auto 0; padding:0 32px; color:var(--text-secondary); font-size:13.5px; }
+  .blurb:empty { display:none; }
+  .stage { flex:1; min-height:0; position:relative; background:var(--page); overflow:hidden; }
   .panel { position:absolute; inset:0; display:none; overflow-y:auto; overflow-x:hidden; }
   .panel.active { display:block; }
   /* The Power BI canvas is 1920x1455. Sizing the frame to that ratio at the stage's
-     full width — rather than squeezing it into the stage's height — is what stops
+     full width, rather than squeezing it into the stage's height, is what stops
      Power BI's own embed from cramming the report into a small box with its own
      internal scrollbars; the page scrolls instead. */
-  .panel iframe { width:100%; aspect-ratio:1920/1455; height:auto;
-                  border:0; display:block; }
+  .panel iframe { width:100%; aspect-ratio:1920/1455; height:auto; border:0; display:block; }
   .loading { position:absolute; inset:0; display:grid; place-items:center;
              color:var(--text-muted); font-size:13px; pointer-events:none; }
 
-  /* themes */
-  .pickers { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
-             padding:16px 20px; border-bottom:1px solid var(--border); flex:none; }
-  .field { display:flex; flex-direction:column; gap:5px; }
+  /* A tab's page: title, one line on what it shows, its controls, then the content. */
+  .page { max-width:1080px; margin:0 auto; padding:40px 32px 96px; }
+  .page-title { margin:0; font-size:34px; line-height:1.15; font-weight:600; letter-spacing:-0.01em; color:var(--heading); }
+  .lede { margin:8px 0 0; font-size:15px; color:var(--text-secondary); }
+
+  .pickers { display:flex; gap:14px 16px; flex-wrap:wrap; align-items:flex-end; margin-top:28px; }
+  .field { display:flex; flex-direction:column; gap:4px; }
   .field[hidden] { display:none; }
-  /* .meeting-fields wraps Year/Quarter/Region as one continuous box -- same shape as
-     .benchmark-field (so their selects line up on the same baseline under
-     align-items:flex-end) but a neutral wash instead of the blue tint, to keep the
-     meeting picker reading as its own group distinct from the benchmark field. */
-  .benchmark-field, .meeting-fields { border-radius:8px; padding:8px 12px; }
-  .benchmark-field { background:var(--meeting-bg); }
-  .meeting-fields { background:var(--wash); display:flex; gap:14px; align-items:flex-end; }
-  .field label { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
-                 color:var(--text-muted); font-weight:600; }
-  /* appearance:none + a hand-drawn chevron, rather than the browser's own select
-     chrome, is what makes background-color below the actual, faithful color shown --
-     several browsers' native select styling layers its own shading/gradient on top of
-     a plain `background`, which is exactly what made the benchmark select below look
-     more saturated than its own color value. */
-  .field select { font:inherit; font-size:13.5px; padding:7px 30px 7px 10px; min-width:140px;
-                  border:1px solid var(--border); border-radius:8px;
-                  background-color:var(--page); color:var(--text-primary);
+  .field label { font-size:12.5px; color:var(--text-secondary); }
+  /* appearance:none and a drawn chevron, so every browser shows the same plain select. */
+  .field select { font:inherit; font-size:14px; padding:8px 30px 8px 10px; min-width:140px;
+                  border:1px solid var(--border-strong); border-radius:4px;
+                  background-color:var(--surface-1); color:var(--text-primary);
                   appearance:none; -webkit-appearance:none; -moz-appearance:none;
-                  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23898781' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+                  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%237c8794' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
                   background-repeat:no-repeat; background-position:right 10px center; background-size:14px; }
-  .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  /* Same relationship as Year/Quarter/Region's plain white select sitting on the grey
-     .meeting-fields box: an off-white select on a more saturated box. Here it's an
-     off-white blue instead of plain white, so the "this one is the benchmark" cue still
-     carries down into the control itself. A solid color, not a low-alpha tint of
-     --meeting-bg -- an overlay that subtle read as barely different from the box behind
-     it. background-color only, so the chevron's own background-image above survives. */
-  .benchmark-field select { background-color:var(--meeting-select-bg); }
-  .stamp { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center; }
+  .meeting-fields { display:flex; gap:14px 16px; flex-wrap:wrap; align-items:flex-end; }
+  .stamp { margin-left:auto; font-size:13px; color:var(--text-muted); padding-bottom:9px; }
 
-  /* .doc is the scroll container and spans the full stage width, so its scrollbar sits
-     at the true right edge of the page rather than hugging the centered content. The
-     content itself is centered by .doc-inner, one level in. */
-  .doc { padding:26px 30px 60px; overflow-y:auto; flex:1; }
-  .doc-inner { width:100%; max-width:760px; margin:0 auto; }
-  .meeting { font-size:19px; font-weight:650; margin:0 0 3px; letter-spacing:-0.015em; }
-  .meeting-sub { color:var(--text-muted); font-size:12.5px; margin:0 0 26px; }
-  .doc section { margin:0 0 30px; }
-  .doc h3 { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-            color:var(--accent); margin:0 0 12px; padding-bottom:7px;
-            border-bottom:1px solid var(--border); }
-  .doc .empty { color:var(--text-muted); font-size:13px; margin:0; }
-  .theme-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
-  .theme-item { border:1px solid var(--border); border-radius:10px; padding:13px 16px;
-                background:var(--surface-1); }
-  .theme-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
-                margin-bottom:5px; }
-  .theme-summary { font-weight:600; font-size:14px; }
-  .theme-count { font-size:11.5px; color:var(--text-muted); white-space:nowrap; flex:none; }
-  .theme-tag { font-size:11px; color:var(--text-muted); margin-bottom:8px; }
-  .theme-example { margin:0; font-size:12.5px; color:var(--text-secondary); font-style:italic;
-                    border-left:2px solid var(--border); padding-left:10px; }
+  /* Council themes: the meeting, then each section's themes, numbered, most mentioned first. */
+  #doc h3.meeting { margin:44px 0 0; font-size:26px; line-height:1.2; font-weight:600; letter-spacing:-0.01em; color:var(--heading); }
+  .meeting-sub { margin:6px 0 0; font-size:13.5px; color:var(--text-muted); }
+  #doc section { margin-top:44px; }
+  #doc h3 { margin:0 0 4px; font-size:20px; font-weight:600; color:var(--heading); }
+  .sec-sub { margin:0; font-size:14px; color:var(--text-secondary); }
+  #doc .empty { color:var(--text-muted); font-size:14px; margin:12px 0 0; }
+  .theme-list { list-style:none; margin:0; padding:0; }
+  .theme-item { display:grid; grid-template-columns:72px minmax(0,1fr); gap:16px; padding:28px 0; }
+  .theme-item:first-child { padding-top:20px; }
+  .theme-item + .theme-item { border-top:1px solid var(--border); }
+  .theme-num { font-size:40px; line-height:1; font-weight:300; color:var(--accent); font-variant-numeric:tabular-nums; }
+  .theme-summary { margin:0; font-size:20px; line-height:1.3; font-weight:600; color:var(--heading); }
+  .theme-list.minor .theme-num { font-size:30px; }
+  .theme-list.minor .theme-summary { font-size:17px; }
+  .theme-meta { margin:6px 0 0; font-size:14px; color:var(--text-secondary); }
+  .theme-example { margin:14px 0 0; border-left:3px solid var(--amber); padding:2px 0 2px 16px;
+                   font-size:15px; line-height:1.55; color:var(--text-primary); }
 
-  /* quant dashboard */
-  .q-title { font-size:15px; font-weight:700; margin:26px 0 12px; letter-spacing:-0.01em; }
-  .q-title:first-child { margin-top:0; }
-  .compare-box { border:1px solid var(--border); border-radius:12px; padding:18px 20px 20px;
-                 background:var(--bench-bg); margin-bottom:8px; }
-  .compare-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px; }
-  .compare-note { font-size:12px; color:var(--text-muted); margin:0 0 14px; }
-  .metric-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
-  .metric-card { border:1px solid var(--border); border-radius:10px; padding:14px 16px;
-                 background:var(--surface-1); }
-  .metric-label { font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
-                  color:var(--text-muted); margin-bottom:8px; }
-  .metric-primary-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
-  .metric-primary { font-size:23px; font-weight:700; letter-spacing:-0.01em; }
-  .metric-delta { font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:999px;
-                  display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
-  .metric-delta.up { background:rgba(12,163,12,.14); color:var(--good); }
-  .metric-delta.down { background:rgba(208,59,59,.13); color:var(--bad); }
-  .metric-delta.flat { background:var(--wash); color:var(--text-muted); }
-  .metric-benchmark { font-size:11.5px; color:var(--text-muted); }
-  /* Same family of blue as the Benchmark period field, carried down into every card
-     that's actually showing a benchmark value -- one visual cue for "benchmark"
-     everywhere it shows up on the tab. A touch darker than --accent (its own token,
-     --bench-text) since a whole line of body text reads better a shade less bright
-     than a button or a link. */
-  .metric-benchmark.has-value, .metric-benchmark.has-value b { color:var(--bench-text); }
-  .metric-benchmark.has-value b { font-weight:600; }
-  .time-controls { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
-  .date-inputs { display:flex; gap:7px; align-items:center; }
-  .date-inputs input[type=date] { font:inherit; font-size:12.5px; padding:6px 8px; border-radius:7px;
-    border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
+  /* Survey benchmarking: plain figures, no boxes. */
+  .q-title { margin:44px 0 0; font-size:20px; font-weight:600; color:var(--heading); }
+  .compare-controls { display:flex; gap:14px 40px; flex-wrap:wrap; align-items:flex-end; margin-top:16px; }
+  .compare-note { margin:12px 0 0; font-size:13px; color:var(--text-muted); }
+  .metric-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:32px 40px; margin-top:28px; }
+  .metric-label { font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary); }
+  .metric-primary { display:block; margin-top:6px; font-size:34px; line-height:1.1; font-weight:600;
+                    color:var(--heading); font-variant-numeric:tabular-nums; }
+  .metric-primary.none { color:var(--text-muted); }
+  .metric-benchmark { display:block; margin-top:6px; font-size:13.5px; color:var(--text-secondary); }
+  .metric-delta { font-weight:600; }
+  .metric-delta.up { color:var(--good); }
+  .metric-delta.down { color:var(--bad); }
+  .time-controls { display:flex; gap:16px 32px; flex-wrap:wrap; align-items:flex-end; margin-top:16px; }
+  .date-inputs { display:flex; gap:8px; align-items:center; }
+  .date-inputs input[type=date] { font:inherit; font-size:14px; padding:7px 9px; border-radius:4px;
+    border:1px solid var(--border-strong); background:var(--surface-1); color:var(--text-primary); }
   .date-inputs span { color:var(--text-muted); }
-  .range-wrap { position:relative; height:22px; width:220px; margin-top:8px; }
+  .range-wrap { position:relative; height:22px; width:240px; margin-top:8px; }
   .range-track { position:absolute; left:0; right:0; top:9px; height:4px; border-radius:2px; background:var(--grid); }
   .range-fill { position:absolute; top:9px; height:4px; border-radius:2px; background:var(--accent); }
   .range-wrap input[type=range] { position:absolute; left:0; top:0; width:100%; height:22px; margin:0;
@@ -216,43 +175,43 @@ const CONFIG = {
   .range-wrap input[type=range]::-moz-range-track { background:transparent; height:22px; border:0; }
   .range-wrap input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none;
     width:14px; height:14px; margin-top:4px; border-radius:50%; background:var(--accent);
-    border:2px solid var(--surface-1); box-shadow:0 0 0 1px var(--border); cursor:pointer; pointer-events:auto; }
+    border:2px solid var(--surface-1); box-shadow:0 0 0 1px var(--border-strong); cursor:pointer; pointer-events:auto; }
   .range-wrap input[type=range]::-moz-range-thumb { width:14px; height:14px; border-radius:50%;
-    background:var(--accent); border:2px solid var(--surface-1); box-shadow:0 0 0 1px var(--border);
+    background:var(--accent); border:2px solid var(--surface-1); box-shadow:0 0 0 1px var(--border-strong);
     cursor:pointer; pointer-events:auto; }
-  .time-pair { display:flex; gap:18px; align-items:stretch; margin-bottom:24px; flex-wrap:wrap; }
-  .time-card { flex:0 0 190px; border:1px solid var(--border); border-radius:10px;
-               background:var(--meeting-bg); padding:16px 18px; display:flex; flex-direction:column;
-               justify-content:center; }
-  .time-chart { flex:1; min-width:280px; border:1px solid var(--border); border-radius:10px;
-                background:var(--surface-1); padding:14px 16px; }
-  .chart-title { font-size:12px; font-weight:600; margin:0 0 10px; color:var(--text-secondary); }
+  .time-pair { display:grid; grid-template-columns:180px minmax(0,1fr); gap:32px; align-items:start; margin-top:32px; }
+  .time-card .metric-primary { font-size:44px; line-height:1; font-weight:300; color:var(--accent); }
+  .time-chart { min-width:0; }
+  .chart-title { margin:0 0 10px; font-size:13.5px; font-weight:600; color:var(--text-secondary); }
   .chart-svg { width:100%; height:auto; overflow:visible; }
   .chart-tooltip { position:absolute; transform:translate(-50%,-100%) translateY(-10px);
-    background:var(--text-primary); color:var(--page); font-size:11.5px; padding:7px 10px;
-    border-radius:7px; pointer-events:none; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.2); z-index:5; }
+    background:var(--heading); color:var(--page); font-size:12px; padding:7px 10px;
+    border-radius:3px; pointer-events:none; white-space:nowrap; z-index:5; }
   .chart-tooltip-head { font-weight:700; margin-bottom:2px; }
   .chart-tooltip-row { opacity:.85; }
 
-  .notice { margin:24px 30px; padding:18px 20px; max-width:700px; border:1px solid var(--border);
-            border-left:3px solid var(--accent); border-radius:10px; background:var(--wash);
-            font-size:13.5px; }
-  .notice h3 { margin:0 0 8px; font-size:14px; border:0; padding:0;
-               text-transform:none; letter-spacing:0; color:var(--text-primary); }
+  .notice { margin:24px 0; padding:18px 20px; max-width:700px; border:1px solid var(--border);
+            border-radius:4px; background:var(--wash); font-size:14px; }
+  .notice h3 { margin:0 0 8px; font-size:15px; color:var(--heading); }
   .notice ol { margin:8px 0 0; padding-left:20px; }
-  .notice li { margin-bottom:7px; padding-left:0; }
-  .notice li::before { display:none; }
-  code { background:var(--wash); border:1px solid var(--border); border-radius:5px;
-         padding:1px 5px; font-size:12.5px; }
+  .notice li { margin-bottom:7px; }
+  code { background:var(--wash); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-size:12.5px; }
   a { color:var(--accent); }
 
-  @media (max-width:640px) {
-    header { padding:14px 12px 0; } main { padding:12px; }
-    .cutswitch { width:100%; } .cutswitch button { flex:1 1 auto; padding:9px 12px; }
-    .doc { padding:20px; } .pickers { padding:12px; }
+  @media (max-width:760px) {
+    .head-row { padding:0 16px; gap:0 16px; }
+    .cutswitch button { padding:11px 8px 8px; }
+    .page { padding:24px 16px 64px; }
+    .blurb { padding:0 16px; }
     .field { flex:1 1 130px; } .field select { width:100%; min-width:0; }
+    .stamp { margin-left:0; flex-basis:100%; }
+    .metric-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:24px; }
+    .metric-primary { font-size:28px; }
+    .time-pair { grid-template-columns:minmax(0,1fr); gap:16px; }
     .range-wrap { width:100%; }
-    .time-card { flex:1 1 100%; }
+    .theme-item { grid-template-columns:44px minmax(0,1fr); gap:12px; }
+    .theme-num { font-size:30px; }
+    .theme-list.minor .theme-num { font-size:24px; }
   }
   @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
 </style>
@@ -263,13 +222,13 @@ const CONFIG = {
   <div class="head-row">
     <h1 id="title"></h1>
     <span class="sub" id="subtitle"></span>
+    <div class="cutswitch" id="nav" role="group" aria-label="Dashboard pages"></div>
     <div class="head-tools">
       <button id="linkBtn" type="button" title="Copy a link that opens on this page">Copy link</button>
       <button id="fullBtn" type="button">Full screen</button>
       <button id="themeBtn" type="button">Dark mode</button>
     </div>
   </div>
-  <div class="cutswitch" id="nav" role="group" aria-label="Dashboard pages"></div>
 </header>
 
 <main>
@@ -433,14 +392,17 @@ const CONFIG = {
 
   function buildThemes() {
     var wrap = document.createElement("div");
-    wrap.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column";
+    wrap.className = "page";
     wrap.innerHTML =
+      '<h2 class="page-title"></h2>' +
+      '<p class="lede">What members wrote in each meeting\'s post-meeting survey, grouped into themes.</p>' +
       '<div class="pickers">' +
         '<div class="field"><label for="f-year">Year</label><select id="f-year"></select></div>' +
         '<div class="field"><label for="f-qtr">Quarter</label><select id="f-qtr"></select></div>' +
         '<div class="field"><label for="f-reg">Region</label><select id="f-reg"></select></div>' +
         '<div class="stamp" id="stamp"></div>' +
-      '</div><div class="doc" id="doc"></div>';
+      '</div><div id="doc"></div>';
+    wrap.querySelector(".page-title").textContent = CONFIG.themes.label || "Council Themes";
     loadThemes(wrap);
     return wrap;
   }
@@ -461,7 +423,7 @@ const CONFIG = {
 
   function loadThemes(wrap) {
     var doc = wrap.querySelector("#doc");
-    doc.innerHTML = '<div class="doc-inner"><p style="color:var(--text-muted)">Loading…</p></div>';
+    doc.innerHTML = '<p style="color:var(--text-muted);margin-top:32px">Loading…</p>';
     fetch(CONFIG.themes.dataUrl + "?t=" + Date.now(), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })
@@ -477,7 +439,7 @@ const CONFIG = {
 
         if (!themeDocs.length) {
           wrap.querySelector(".pickers").style.display = "none";
-          doc.innerHTML = '<div class="doc-inner"><div class="notice" style="margin:0">' +
+          doc.innerHTML = '<div><div class="notice">' +
             "<h3>Nothing published yet</h3>" +
             '<p>Open the <a href="/admin.html">control panel</a>, log in with Box, choose the ' +
             "Data Folder, upload the Council Meeting Helper and Post-Meeting Survey files, then " +
@@ -529,39 +491,53 @@ const CONFIG = {
   }
 
   var THEME_SECTIONS = [
-    { key: "current", title: "This quarter's top issues", empty: "No issues surfaced this quarter." },
-    { key: "qoq", title: "Recurring since last quarter", empty: "Nothing recurred from last quarter." },
-    { key: "yoy", title: "Recurring over the last year", empty: "Nothing recurred over the last year." }
+    { key: "current", title: "This quarter's top issues", sub: "Most mentioned first.", empty: "No issues surfaced this quarter." },
+    { key: "qoq", title: "Recurring since last quarter", sub: "Also raised at last quarter's meeting.", empty: "Nothing recurred from last quarter." },
+    { key: "yoy", title: "Recurring over the last year", sub: "Also raised at a meeting in the past year.", empty: "Nothing recurred over the last year.", minor: true }
   ];
+
+  /* The themes are written with long dashes ("Go deeper on AI — practical examples"). The
+     page shows the first as a colon and any others as commas. Members' quotes are left
+     exactly as they wrote them. */
+  function plainSummary(text) {
+    var n = 0;
+    return String(text || "").replace(/\s*\u2014\s*/g, function () { return n++ ? ", " : ": "; });
+  }
+  /* "Content / Future Topic Requests" reads "Content, future topic requests." Words in
+     capitals (AI, AV) keep them. */
+  function plainCategory(item) {
+    var words = [item.category, item.subcategory].filter(Boolean).join(", ").replace(/ & /g, " and ");
+    return words.replace(/\b([A-Za-z][a-z]+)\b/g, function (w, word, at) { return at === 0 ? word : word.toLowerCase(); });
+  }
 
   /* Builds DOM nodes and sets textContent, so nothing Claude wrote into a theme is
      ever interpreted as markup. */
   function renderMeeting(doc, hit) {
     doc.textContent = "";
-    var inner = document.createElement("div");
-    inner.className = "doc-inner";
-    doc.appendChild(inner);
-
     if (!hit) {
       var none = document.createElement("p");
-      none.style.color = "var(--text-muted)";
+      none.className = "meeting-sub";
+      none.style.marginTop = "32px";
       none.textContent = "No themes published for that meeting yet.";
-      inner.appendChild(none);
+      doc.appendChild(none);
       return;
     }
-    var h = document.createElement("p");
+    var h = document.createElement("h3");
     h.className = "meeting";
-    h.textContent = hit.year + " " + hit.quarter + " " + hit.region + " Council Meeting";
-    inner.appendChild(h);
+    h.textContent = hit.year + " " + hit.quarter + " " + hit.region + " council meeting";
+    doc.appendChild(h);
+    if (hit.sourceFile) {
+      var sub = document.createElement("p");
+      sub.className = "meeting-sub";
+      sub.textContent = "From " + hit.sourceFile + ".";
+      doc.appendChild(sub);
+    }
 
-    var sub = document.createElement("p");
-    sub.className = "meeting-sub";
-    sub.textContent = "Themes from the " + hit.quarter + " " + hit.year + " meeting" +
-      (hit.sourceFile ? " · " + hit.sourceFile : "");
-    inner.appendChild(sub);
-
+    var quoted = {}; // a quote already shown higher on the page is not repeated
     THEME_SECTIONS.forEach(function (sec) {
-      var items = hit[sec.key] || [];
+      var items = (hit[sec.key] || []).map(function (it, i) { return { it: it, i: i }; })
+        .sort(function (a, b) { return (b.it.count || 0) - (a.it.count || 0) || a.i - b.i; })
+        .map(function (x) { return x.it; });
       var section = document.createElement("section");
       var t = document.createElement("h3");
       t.textContent = sec.title;
@@ -573,45 +549,50 @@ const CONFIG = {
         p.textContent = sec.empty;
         section.appendChild(p);
       } else {
-        var list = document.createElement("ul");
-        list.className = "theme-list";
-        items.forEach(function (item) {
+        var s2 = document.createElement("p");
+        s2.className = "sec-sub";
+        s2.textContent = sec.sub;
+        section.appendChild(s2);
+        var list = document.createElement("ol");
+        list.className = "theme-list" + (sec.minor ? " minor" : "");
+        items.forEach(function (item, n) {
           var li = document.createElement("li");
           li.className = "theme-item";
+          var num = document.createElement("span");
+          num.className = "theme-num";
+          num.setAttribute("aria-hidden", "true");
+          num.textContent = n + 1;
+          li.appendChild(num);
 
-          var head = document.createElement("div");
-          head.className = "theme-head";
-          var summary = document.createElement("span");
+          var body = document.createElement("div");
+          var summary = document.createElement("h4");
           summary.className = "theme-summary";
-          summary.textContent = item.summary || "";
-          head.appendChild(summary);
-          if (item.count) {
-            var count = document.createElement("span");
-            count.className = "theme-count";
-            count.textContent = item.count + (item.count === 1 ? " mention" : " mentions");
-            head.appendChild(count);
+          summary.textContent = plainSummary(item.summary);
+          body.appendChild(summary);
+          var meta = [];
+          if (item.count) meta.push(item.count + (item.count === 1 ? " mention." : " mentions."));
+          if (item.category || item.subcategory) meta.push(plainCategory(item) + ".");
+          if (meta.length) {
+            var m = document.createElement("p");
+            m.className = "theme-meta";
+            m.textContent = meta.join(" ");
+            body.appendChild(m);
           }
-          li.appendChild(head);
-
-          if (item.category || item.subcategory) {
-            var tag = document.createElement("div");
-            tag.className = "theme-tag";
-            tag.textContent = [item.category, item.subcategory].filter(Boolean).join(" / ");
-            li.appendChild(tag);
-          }
-          if (item.example) {
+          var key = String(item.example || "").trim();
+          if (key && !quoted[key]) {
+            quoted[key] = true;
             var ex = document.createElement("blockquote");
             ex.className = "theme-example";
-            ex.textContent = item.example;
-            li.appendChild(ex);
+            ex.textContent = "\u201c" + key + "\u201d";
+            body.appendChild(ex);
           }
+          li.appendChild(body);
           list.appendChild(li);
         });
         section.appendChild(list);
       }
-      inner.appendChild(section);
+      doc.appendChild(section);
     });
-    doc.scrollTop = 0;
   }
 
   /* =================== claude dashboard (beta) =================== */
@@ -648,30 +629,31 @@ const CONFIG = {
 
   function buildQuant() {
     var wrap = document.createElement("div");
-    wrap.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column";
+    wrap.className = "page";
     wrap.innerHTML =
-      '<div class="doc"><div class="doc-inner" style="max-width:1040px">' +
+      '<h2 class="page-title"></h2>' +
+      '<p class="lede">How each council meeting\'s post-meeting survey compares with the meetings before it.</p>' +
         '<div id="q-empty"></div>' +
         '<div id="q-content" hidden>' +
-          '<h3 class="q-title">Meeting Comparison</h3>' +
+          '<h3 class="q-title">Meeting comparison</h3>' +
           '<div class="compare-box">' +
             '<div class="compare-controls">' +
-              '<div class="field benchmark-field"><label for="q-compare-mode">Benchmark period</label><select id="q-compare-mode">' +
-                '<option value="prev">Previous quarter</option>' +
-                '<option value="yoy">Same quarter last year</option>' +
-                '<option value="prevYear">Previous year</option>' +
-                '<option value="avg">All-time average</option>' +
-              '</select></div>' +
               '<div class="meeting-fields">' +
                 '<div class="field"><label for="q-meeting-year">Year</label><select id="q-meeting-year"></select></div>' +
                 '<div class="field"><label for="q-meeting-quarter">Quarter</label><select id="q-meeting-quarter"></select></div>' +
                 '<div class="field"><label for="q-meeting-region">Region</label><select id="q-meeting-region"></select></div>' +
               '</div>' +
+              '<div class="field benchmark-field"><label for="q-compare-mode">Compare with</label><select id="q-compare-mode">' +
+                '<option value="prev">Previous quarter</option>' +
+                '<option value="yoy">Same quarter last year</option>' +
+                '<option value="prevYear">Previous year</option>' +
+                '<option value="avg">All-time average</option>' +
+              '</select></div>' +
             '</div>' +
             '<p class="compare-note" id="q-compare-note"></p>' +
             '<div class="metric-grid" id="q-metric-cards"></div>' +
           '</div>' +
-          '<h3 class="q-title">Metrics over Time</h3>' +
+          '<h3 class="q-title">Metrics over time</h3>' +
           '<div class="time-controls">' +
             '<div class="field">' +
               '<label>Date range</label>' +
@@ -683,7 +665,7 @@ const CONFIG = {
                 '<input type="range" id="q-range-start"><input type="range" id="q-range-end">' +
               '</div>' +
             '</div>' +
-            '<div class="field"><label for="q-category">Content Category</label><select id="q-category"></select></div>' +
+            '<div class="field"><label for="q-category">Measure</label><select id="q-category"></select></div>' +
           '</div>' +
           '<div class="time-pair">' +
             '<div class="time-card" id="q-value-card"></div>' +
@@ -695,8 +677,8 @@ const CONFIG = {
             '<div class="time-chart"><p class="chart-title">Survey response rate by date</p>' +
               '<div id="q-rate-chart"></div></div>' +
           '</div>' +
-        '</div>' +
-      '</div></div>';
+        '</div>';
+    wrap.querySelector(".page-title").textContent = CONFIG.quant.label || "Survey Benchmarking";
     loadQuant(wrap);
     return wrap;
   }
@@ -844,40 +826,31 @@ const CONFIG = {
       label.textContent = def.label;
       card.appendChild(label);
 
-      var row = document.createElement("div");
-      row.className = "metric-primary-row";
       var v = aggregate(selected, def);
       var primary = document.createElement("span");
-      primary.className = "metric-primary";
-      primary.textContent = v == null ? "--" : def.fmt(v);
-      row.appendChild(primary);
+      primary.className = "metric-primary" + (v == null ? " none" : "");
+      primary.textContent = v == null ? "No data" : def.fmt(v);
+      card.appendChild(primary);
 
       var cv = compareMatched ? aggregate(compareMatched, def, { avgCounts: compareAvgCounts }) : null;
+      var line = document.createElement("span");
+      line.className = "metric-benchmark";
       if (v != null && cv != null) {
         var delta = v - cv;
         var threshold = def.key === "responseRate" ? 0.001 : (def.key.indexOf("cat:") === 0 ? 0.005 : 0.5);
         var dir = Math.abs(delta) < threshold ? "flat" : (delta > 0 ? "up" : "down");
         var badge = document.createElement("span");
         badge.className = "metric-delta " + dir;
-        var arrow = dir === "up" ? "▲" : (dir === "down" ? "▼" : "–");
-        var sign = delta > 0 ? "+" : (delta < 0 ? "−" : "");
-        badge.textContent = arrow + " " + (dir === "flat" ? "No change" : sign + def.fmt(Math.abs(delta)));
-        row.appendChild(badge);
-      }
-      card.appendChild(row);
-
-      var bench = document.createElement("div");
-      bench.className = "metric-benchmark" + (cv != null ? " has-value" : "");
-      if (cv != null) {
-        bench.appendChild(document.createTextNode("Benchmark: "));
-        var b = document.createElement("b");
-        b.textContent = def.fmt(cv);
-        bench.appendChild(b);
+        badge.textContent = dir === "flat" ? "No change" : (dir === "up" ? "\u25b2 " : "\u25bc ") +
+          (def.key === "responseRate" ? Math.round(Math.abs(delta) * 100) + " points" : def.fmt(Math.abs(delta)));
+        line.appendChild(badge);
+        line.appendChild(document.createTextNode(" from " + def.fmt(cv)));
+      } else if (cv != null) {
+        line.textContent = "Compared group " + def.fmt(cv);
       } else {
-        bench.textContent = "No benchmark data";
+        line.textContent = "Nothing to compare with";
       }
-      card.appendChild(bench);
-
+      card.appendChild(line);
       container.appendChild(card);
     });
   }
@@ -1188,14 +1161,14 @@ const CONFIG = {
 
       var valueSeries = timeSeries(rangeSlots, function (d) { return d.byCategory ? d.byCategory[cat] : null; });
       var valueOverall = avgOf(rangeDocs.map(function (d) { return d.byCategory ? d.byCategory[cat] : null; }));
-      renderTimeCard(byId("q-value-card"), "Avg " + (cat || "Value"), valueOverall, decFmt);
+      renderTimeCard(byId("q-value-card"), "Average " + (cat ? cat.toLowerCase() : "value"), valueOverall, decFmt);
       byId("q-value-title").textContent = "Average of " + (cat || "Value") + " by Date";
       renderTimeChart(byId("q-value-chart"), valueSeries,
         { fmt: function (v) { return v.toFixed(1); }, domain: valueDomain(valueSeries) });
 
       var rateSeries = responseRateTimeSeries(rangeSlots);
       var rateOverall = aggregate(rangeDocs, { key: "responseRate" });
-      renderTimeCard(byId("q-rate-card"), "Avg Response Rate", rateOverall, pctFmt);
+      renderTimeCard(byId("q-rate-card"), "Average response rate", rateOverall, pctFmt);
       renderTimeChart(byId("q-rate-chart"), rateSeries,
         { fmt: function (v) { return Math.round(v * 100) + "%"; }, domain: [0, 1] });
     }
