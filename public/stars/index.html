@@ -10,305 +10,314 @@
 <style>
   :root {
     color-scheme: light;
-    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
-    --text-muted:#898781; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
-    --accent:#2a78d6; --accent-wash:rgba(42,120,214,0.08); --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+    --navy:#07214E; --blue:#325EAE; --page:#ffffff; --text:#16202B; --muted:#4A5663; --faint:#7C8794;
+    --rule:#E1E2E9; --line:#C9CDD8; --soft:#F3F5F9; --amber:#FBAE40; --good:#1e7b34; --bad:#c0392b;
+    --bar-bg:#E1E2E9;
   }
   @media (prefers-color-scheme: dark) { :root {
     color-scheme: dark;
-    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
-    --text-muted:#898781; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
-    --accent:#3987e5; --accent-wash:rgba(57,135,229,0.14); --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+    --navy:#E6ECF7; --blue:#6E95D8; --page:#0F1520; --text:#E4E8EF; --muted:#A3AEBD; --faint:#8794A6;
+    --rule:#273244; --line:#3A475C; --soft:#18202D; --amber:#FBAE40; --good:#4cc27a; --bad:#f2766b;
+    --bar-bg:#273244;
   } }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--page); color:var(--text-primary);
-         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:1280px; margin:0 auto; padding:32px 20px 64px; }
-  header { margin-bottom:18px; }
-  h1 { font-size:22px; font-weight:650; margin:0 0 4px; letter-spacing:-0.01em; }
-  .sub { color:var(--text-secondary); font-size:13px; margin:0; max-width:70ch; }
-  a.link { color:var(--accent); text-decoration:none; }
-  a.link:hover { text-decoration:underline; }
-  .status-banner { padding:11px 14px; border-radius:10px; font-size:13.5px; margin-bottom:16px;
-                    background:rgba(208,59,59,.10); border:1px solid rgba(208,59,59,.3); color:var(--bad); }
   [hidden] { display:none !important; }
+  body { margin:0; background:var(--page); color:var(--text);
+         font:15px/1.5 Aptos,"Segoe UI",Arial,sans-serif; }
+  a { color:var(--blue); text-decoration:none; }
+  a:hover { text-decoration:underline; }
 
-  .tabs { display:flex; gap:22px; margin-bottom:20px; border-bottom:1px solid var(--border); }
-  .tab-btn { font:inherit; font-weight:600; font-size:13.5px; border:0; background:none;
-             padding:9px 2px; color:var(--text-secondary); cursor:pointer;
-             border-bottom:2px solid transparent; margin-bottom:-1px; }
-  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent); }
-  .tab-btn:hover { color:var(--text-primary); }
+  .appbar { background:#07214E; color:#fff; }
+  .appbar .bar { max-width:1080px; margin:0 auto; padding:0 32px; min-height:56px;
+                display:flex; flex-wrap:wrap; align-items:center; gap:0 28px; }
+  .brand { font-size:15px; font-weight:600; padding:12px 0; margin-right:8px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; flex:1 1 auto; }
+  .tab-btn { font:inherit; font-size:14px; background:none; border:0; border-bottom:3px solid transparent;
+             color:#C9D3E3; padding:17px 10px 14px; cursor:pointer; }
+  .tab-btn:hover { color:#fff; }
+  .tab-btn.active { color:#fff; font-weight:600; border-bottom-color:#FBAE40; }
+
+  main { max-width:1080px; margin:0 auto; padding:40px 32px 96px; }
+  .status-banner { margin:0 0 24px; border-left:3px solid var(--bad); padding:4px 0 4px 14px;
+                   font-size:14px; color:var(--bad); }
   .tab-panel { display:none; }
   .tab-panel.active { display:block; }
+  h1 { margin:0; font-size:34px; line-height:1.15; font-weight:600; color:var(--navy); letter-spacing:-0.01em; }
+  .lede { margin:8px 0 0; font-size:15px; line-height:1.55; color:var(--muted); max-width:760px; }
 
-  .intro-text { margin:0 0 14px; font-size:13px; color:var(--text-secondary); max-width:70ch; }
-
-  .top-row { display:flex; flex-wrap:wrap; gap:24px; margin-bottom:10px; }
-  .top-row > .col { flex:1 1 420px; min-width:320px; }
-
-  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
-          padding:18px 20px; margin-bottom:16px; }
-  .field { margin-bottom:14px; }
-  .field:last-child { margin-bottom:0; }
-  .field label { display:block; font-weight:600; font-size:12.5px; margin-bottom:4px; }
-  .field .hint { font-size:11.5px; color:var(--text-muted); margin:2px 0 6px; }
+  .form { display:grid; grid-template-columns:minmax(0,1fr) 150px auto; gap:14px 16px; align-items:end; margin-top:28px; }
+  .lab { display:block; margin:0 0 4px; font-size:12.5px; color:var(--muted); }
+  .in { font:inherit; font-size:14px; color:var(--text); background:var(--page); border:1px solid var(--line);
+        border-radius:4px; padding:9px 11px; width:100%; height:42px; }
+  .in:focus { outline:2px solid var(--blue); outline-offset:-1px; }
+  .find { border:1px solid #325EAE; border-radius:4px; background:#325EAE; color:#fff; padding:9px 18px; height:42px;
+          font:inherit; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .find:hover { background:#07214E; border-color:#07214E; }
+  .find:disabled { opacity:.6; cursor:default; }
+  .check { display:inline-flex; align-items:flex-start; gap:8px; margin-top:12px; font-size:13.5px; color:var(--muted); }
+  .check input { margin:3px 0 0; }
 
   .combobox { position:relative; }
-  .combobox input[type="text"] {
-    width:100%; font:inherit; padding:9px 10px; border-radius:8px;
-    border:1px solid var(--border); background:var(--page); color:var(--text-primary);
-  }
-  .combobox-list {
-    position:absolute; z-index:20; top:calc(100% + 4px); left:0; right:0;
-    max-height:260px; overflow-y:auto; background:var(--surface-1); border:1px solid var(--border);
-    border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.18); display:none;
-  }
+  .combobox-list { position:absolute; z-index:20; top:calc(100% + 4px); left:0; right:0; max-height:280px;
+                   overflow-y:auto; background:var(--page); border:1px solid var(--line); border-radius:4px; display:none; }
   .combobox-list.open { display:block; }
-  .combobox-option { padding:8px 10px; cursor:pointer; font-size:13px; }
-  .combobox-option:hover, .combobox-option.highlighted { background:var(--accent-wash); }
-  .combobox-empty { padding:8px 10px; color:var(--text-muted); font-size:12.5px; }
+  .combobox-option { padding:8px 11px; cursor:pointer; font-size:14px; }
+  .combobox-option:hover, .combobox-option.highlighted { background:var(--soft); color:var(--navy); }
+  .combobox-empty { padding:8px 11px; color:var(--faint); font-size:13.5px; }
 
-  .field input[type="range"] { width:100%; }
-  .slider-value { font-size:12px; color:var(--text-muted); }
-  .checkbox-field { display:flex; align-items:flex-start; gap:8px; }
-  .checkbox-field input { margin-top:3px; }
-  .checkbox-field label { font-weight:500; font-size:12.5px; }
+  .eyebrow { margin:0; font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  .job { margin-top:44px; display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:16px 40px; }
+  .job h2 { margin:6px 0 0; font-size:26px; line-height:1.2; font-weight:600; color:var(--navy); }
+  .job .wage { text-align:right; }
+  .job .wage p:last-child { margin:6px 0 0; font-size:34px; line-height:1.1; font-weight:600; color:var(--navy);
+                            font-variant-numeric:tabular-nums; }
+  .warn { margin:14px 0 0; border-left:3px solid var(--amber); padding:2px 0 2px 14px; font-size:13.5px; color:var(--muted); }
 
-  button { font:inherit; border-radius:8px; border:1px solid var(--border); cursor:pointer;
-           padding:9px 16px; background:var(--surface-1); color:var(--text-primary); }
-  button.primary { width:100%; background:var(--accent); border-color:var(--accent); color:#fff; font-weight:650; }
-  button.primary:disabled { opacity:.6; cursor:default; }
+  .cols { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:48px; align-items:start; margin-top:32px; }
+  .h2 { margin:0; font-size:20px; line-height:1.25; font-weight:600; color:var(--navy); }
+  .sub { margin:6px 0 0; font-size:14px; color:var(--muted); }
+  .sub b { color:var(--navy); }
+  .tscroll { overflow-x:auto; }
+  table.results-table { width:100%; border-collapse:collapse; margin-top:14px; }
+  .results-table th { text-align:left; font-size:11.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted);
+                      font-weight:600; padding:10px 8px; border-bottom:1px solid var(--line); }
+  .results-table td { padding:11px 8px; border-bottom:1px solid var(--rule); font-size:13.5px; vertical-align:top;
+                      font-variant-numeric:tabular-nums; }
+  .results-table .num { text-align:right; white-space:nowrap; }
+  .results-table .rk { width:30px; color:var(--blue); font-size:15px; font-weight:300; }
+  .results-table tbody tr { cursor:pointer; }
+  .results-table tbody tr:hover td { background:var(--soft); }
+  .results-table tbody tr.selected td { background:var(--soft); }
+  .results-table tbody tr.selected .occ { font-weight:600; color:var(--navy); }
+  .results-table .up { color:var(--good); font-weight:600; }
+  .results-table .down { color:var(--bad); font-weight:600; }
+  .sr { position:absolute; left:-9999px; }
+  .more { margin:14px 0 0; }
+  .more button { border:1px solid var(--line); border-radius:4px; background:var(--page); color:var(--navy);
+                 padding:7px 14px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; }
+  .more button:hover { background:var(--soft); }
+  .tnote { margin:10px 0 0; font-size:12.5px; color:var(--faint); }
+  .empty-note { color:var(--faint); font-size:14px; padding:16px 0; }
 
-  .summary-panel { background:var(--wash); border:1px solid var(--border); border-radius:10px;
-                    padding:14px 16px; margin-top:4px; font-size:13px; }
-  .summary-panel h3 { margin:0 0 6px; font-size:14.5px; }
-  .summary-panel p { margin:0 0 6px; }
-  .summary-panel p:last-child { margin-bottom:0; }
+  .gaps { margin-top:16px; }
+  .gap { padding:16px 0; border-top:1px solid var(--rule); }
+  .gap:first-child { border-top:0; padding-top:4px; }
+  .gh { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+  .gn { font-size:15px; font-weight:600; color:var(--navy); }
+  .gp { font-size:14px; font-weight:600; color:var(--navy); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .gbar { height:6px; background:var(--bar-bg); margin-top:8px; }
+  .gbar i { display:block; height:100%; background:var(--blue); }
+  .gt { margin:8px 0 0; font-size:14px; line-height:1.55; color:var(--muted); }
+  .linkbtn { background:none; border:0; padding:0; font:inherit; font-size:13.5px; font-weight:600; color:var(--blue); cursor:pointer; }
+  .linkbtn:hover { text-decoration:underline; }
+  .gap-note p { margin:20px 0 0; font-size:14px; line-height:1.55; }
+  .gap-note b { color:var(--navy); }
+  .gap-note p.caution { margin-top:16px; border-left:3px solid var(--amber); padding:2px 0 2px 14px; font-size:13.5px; color:var(--muted); }
 
-  .results-row { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; }
-  .results-row > .col { flex:1 1 420px; min-width:320px; }
-  .section-header h3 { font-size:15px; margin:0 0 4px; }
-  .section-header p { margin:0 0 10px; color:var(--text-secondary); font-size:12px; }
+  .how-wrap { margin-top:56px; }
+  .how { display:grid; grid-template-columns:22px minmax(0,1fr); gap:12px; align-items:center; width:100%; padding:0;
+         border:0; background:none; font:inherit; text-align:left; color:inherit; cursor:pointer; }
+  .how .pm { width:22px; height:22px; border:1px solid var(--blue); border-radius:3px; background:var(--page); color:var(--blue);
+             font-size:16px; line-height:20px; font-weight:600; text-align:center; }
+  .how[aria-expanded="true"] .pm { background:var(--blue); color:var(--page); }
+  .how .ht { font-size:17px; font-weight:600; color:var(--navy); }
+  .how-list { margin:14px 0 0 34px; padding:0 0 0 18px; font-size:14px; line-height:1.6; color:var(--muted); max-width:820px; }
+  .how-list li { margin-bottom:6px; }
+  .how-list b { color:var(--navy); }
 
-  table.results-table, table.gap-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-  table.results-table th, table.gap-table th {
-    text-align:left; border-bottom:1px solid var(--border); padding:8px 10px;
-    background:var(--wash); position:sticky; top:0; color:var(--text-secondary);
-    font-weight:600; font-size:11.5px;
+  @media (max-width:860px) {
+    .cols, .form { grid-template-columns:minmax(0,1fr); }
+    .find { width:100%; }
   }
-  table.results-table td, table.gap-table td { border-bottom:1px solid var(--border); padding:8px 10px; vertical-align:top; }
-  table.results-table tbody tr { cursor:pointer; }
-  table.results-table tbody tr:hover { background:var(--wash); }
-  table.results-table tbody tr.selected { background:var(--accent-wash); }
-  .table-scroll { max-height:620px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; }
-
-  .gap-note { margin-top:10px; font-size:12.5px; color:var(--text-secondary); }
-  .gap-note em { color:var(--text-muted); }
-  .empty-note { color:var(--text-muted); font-size:13px; padding:16px 4px; }
-
-  details.how-it-works { margin-top:20px; border:1px solid var(--border); border-radius:10px; padding:4px 16px; }
-  details.how-it-works summary { cursor:pointer; font-weight:600; padding:10px 0; font-size:13px; }
-  details.how-it-works ul { margin:0 0 14px; padding-left:20px; font-size:12.5px; color:var(--text-secondary); }
-  details.how-it-works li { margin-bottom:6px; }
-
-  @media (max-width:720px) { .top-row, .results-row { gap:16px; } }
+  @media (max-width:640px) {
+    .appbar .bar, main { padding-left:16px; padding-right:16px; }
+    .appbar .bar { gap:0 12px; }
+    .tab-btn { padding:12px 8px 9px; }
+    main { padding-top:28px; }
+    h1 { font-size:28px; }
+    .job .wage { text-align:left; }
+    .job .wage p:last-child { font-size:28px; }
+    .results-table td, .results-table th { padding-left:6px; padding-right:6px; }
+    .results-table td { font-size:13px; }
+    .results-table th.num { white-space:normal; }
+    .results-table .rk { width:22px; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>STARs Talent Transfer Explorer</h1>
-    <p class="sub">Skills-based pathways into better-fit jobs -- ranked by O*NET skill-profile
-      similarity plus Indiana wage data.</p>
-  </header>
+<header class="appbar">
+  <div class="bar">
+    <div class="brand">STARs Talent Transfer Explorer</div>
+    <nav class="tabs" role="tablist" aria-label="Audience">
+      <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="employer">For employers</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="worker">For workers</button>
+    </nav>
+  </div>
+</header>
 
+<main>
   <div id="statusBanner" class="status-banner" hidden></div>
 
-  <div class="tabs">
-    <button type="button" class="tab-btn active" data-tab="employer">For Employers</button>
-    <button type="button" class="tab-btn" data-tab="worker">For Workers</button>
-  </div>
-
   <!-- =========================== EMPLOYER TAB =========================== -->
-  <section class="tab-panel active" id="tab-employer">
-    <div class="top-row">
-      <div class="col">
-        <p class="intro-text">
-          Choose the occupation you need to fill. The tool ranks other occupations by how closely their
-          <strong>35 O*NET skill-importance scores</strong> match the target job, then layers in
-          <strong>Indiana wage data</strong> and a <strong>directional skill-gap analysis</strong>.
-        </p>
+  <section class="tab-panel active" id="tab-employer" role="tabpanel">
+    <h1>Find transferable talent</h1>
+    <p class="lede">Pick the job you need to fill. STARs ranks other occupations by how closely their 35 O*NET skill
+      scores match it, adds Indiana wages, and shows the skills each would need to build.</p>
 
-        <div class="card">
-          <div class="field">
-            <label for="employer-target-input">Occupation you need to fill</label>
-            <div class="hint">Type to search the occupation list.</div>
-            <div class="combobox" id="employer-combobox">
-              <input type="text" id="employer-target-input" autocomplete="off" placeholder="Search occupations…">
-              <div class="combobox-list" id="employer-combobox-list"></div>
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="employer-result-count">Number of results: <span class="slider-value" id="employer-result-count-value">20</span></label>
-            <input type="range" id="employer-result-count" min="5" max="50" step="5" value="20">
-          </div>
-
-          <div class="field checkbox-field">
-            <input type="checkbox" id="employer-lower-wage-only" checked>
-            <label for="employer-lower-wage-only">Only show occupations earning less than the target occupation</label>
-          </div>
-
-          <div class="field">
-            <button type="button" class="primary" id="employer-find-button">Find transferable occupations</button>
-          </div>
+    <div class="form">
+      <div>
+        <label class="lab" for="employer-target-input">Occupation you need to fill</label>
+        <div class="combobox" id="employer-combobox">
+          <input type="text" class="in" id="employer-target-input" autocomplete="off" placeholder="Search occupations">
+          <div class="combobox-list" id="employer-combobox-list"></div>
         </div>
-
-        <div class="summary-panel" id="employer-target-summary"></div>
       </div>
-      <div class="col"></div>
+      <div>
+        <label class="lab" for="employer-result-count">Results</label>
+        <select class="in" id="employer-result-count">
+          <option>5</option><option>10</option><option>15</option><option selected>20</option><option>25</option>
+          <option>30</option><option>35</option><option>40</option><option>45</option><option>50</option>
+        </select>
+      </div>
+      <button type="button" class="find" id="employer-find-button">Find occupations</button>
     </div>
+    <label class="check"><input type="checkbox" id="employer-lower-wage-only" checked> Only occupations that pay less than the job you need to fill</label>
 
-    <div class="results-row">
-      <div class="col">
-        <div class="section-header">
-          <h3>Transfer occupation rank</h3>
-          <p>Click any occupation row to update the skills-gap analysis.</p>
+    <div id="employer-results" hidden>
+      <section class="job">
+        <div>
+          <p class="eyebrow">Job to fill</p>
+          <h2 id="employer-target-title"></h2>
         </div>
-        <div class="table-scroll">
-          <table class="results-table">
-            <thead><tr>
-              <th style="width:46%">Transfer occupation</th>
-              <th style="width:18%">Skill similarity</th>
-              <th style="width:18%">Indiana median wage</th>
-              <th style="width:18%">Average wage increase</th>
-            </tr></thead>
-            <tbody id="employer-results-body"></tbody>
-          </table>
+        <div class="wage">
+          <p class="eyebrow">Indiana median wage</p>
+          <p id="employer-target-wage"></p>
         </div>
-      </div>
+      </section>
+      <p class="warn" id="employer-target-warning" hidden></p>
 
-      <div class="col">
-        <div class="section-header"><div id="employer-skill-gap-heading"><h3>Skills gap</h3></div></div>
-        <div class="table-scroll">
-          <table class="gap-table">
-            <thead><tr>
-              <th style="width:25%">Skill to build</th>
-              <th style="width:12%">Gap</th>
-              <th style="width:63%">Development focus</th>
-            </tr></thead>
-            <tbody id="employer-gap-body"></tbody>
-          </table>
-        </div>
-        <div class="gap-note" id="employer-gap-note"></div>
+      <div class="cols">
+        <section>
+          <h3 class="h2" id="employer-results-heading">Closest occupations</h3>
+          <p class="sub">Most similar skills first. Pick one to see the skills it would need to build.</p>
+          <div class="tscroll">
+            <table class="results-table">
+              <thead><tr>
+                <th><span class="sr">Rank</span></th><th>Occupation</th><th class="num">Skill match</th>
+                <th class="num">Indiana wage</th><th class="num">Wage gain</th>
+              </tr></thead>
+              <tbody id="employer-results-body"></tbody>
+            </table>
+          </div>
+          <p class="more" id="employer-results-more" hidden><button type="button"></button></p>
+          <p class="tnote">Wage gain is the raise someone in that occupation would get by moving into the job you need to fill.</p>
+        </section>
+
+        <section>
+          <h3 class="h2">Skills to build</h3>
+          <p class="sub" id="employer-skill-gap-heading"></p>
+          <div class="gaps" id="employer-gap-body"></div>
+          <p class="more" id="employer-gap-more" hidden><button type="button" class="linkbtn"></button></p>
+          <div class="gap-note" id="employer-gap-note"></div>
+        </section>
       </div>
     </div>
 
-    <details class="how-it-works">
-      <summary>How the employer tool works</summary>
-      <ul>
-        <li><strong>Ranking:</strong> the original STARs model, unchanged -- Euclidean distance across 35 O*NET skill-importance scores. Smaller distance = closer occupational skill profile. This is what the table is sorted by.</li>
-        <li><strong>Skill similarity:</strong> a 0-100% readout of that same Euclidean distance, scaled against the largest distance two occupations could possibly have. It moves in lockstep with the ranking, just in a more human-readable form.</li>
-        <li><strong>Average wage increase:</strong> the percentage increase from the transfer occupation's Indiana annual wage to the target occupation's Indiana annual wage.</li>
-        <li><strong>Wage matching:</strong> Indiana wage data use the BLS May 2019/2020 hybrid OEWS occupation structure -- matched by title/SOC first, then the official BLS hybrid crosswalk where needed.</li>
-        <li><strong>Wage filter:</strong> when selected, results only include occupations with a lower Indiana annual median wage than the target occupation.</li>
-        <li><strong>Skill gaps:</strong> directional -- skills more important in the target occupation than in the potential transfer occupation.</li>
-        <li><strong>Gap %:</strong> the transfer occupation's shortfall relative to the target occupation's O*NET importance score: (target − source) / target.</li>
-        <li><strong>Important:</strong> this is an occupation-level talent-pool screening tool, not an assessment of an individual applicant and not a substitute for required licenses, credentials, safety training, or employer-specific qualification.</li>
+    <section class="how-wrap">
+      <button type="button" class="how" aria-expanded="false" aria-controls="employer-how"><span class="pm" aria-hidden="true">+</span><span class="ht">How the employer tool works</span></button>
+      <ul class="how-list" id="employer-how" hidden>
+        <li><b>Ranking:</b> the original STARs model, unchanged. Occupations are ordered by Euclidean distance across 35 O*NET skill-importance scores. A smaller distance means a closer skill profile.</li>
+        <li><b>Skill match:</b> the same distance as a 0 to 100% figure, scaled against the largest distance two occupations could have. It always agrees with the ranking.</li>
+        <li><b>Wage gain:</b> the percentage increase from that occupation's Indiana annual median wage to the wage of the job you need to fill.</li>
+        <li><b>Wage matching:</b> Indiana wages use the Bureau of Labor Statistics (BLS) May 2019/2020 hybrid Occupational Employment and Wage Statistics (OEWS) structure, matched by title and Standard Occupational Classification (SOC) code first, then the official BLS hybrid crosswalk where needed.</li>
+        <li><b>Wage filter:</b> when checked, results only include occupations with a lower Indiana annual median wage than the job you need to fill.</li>
+        <li><b>Skills to build:</b> skills more important in the job you need to fill than in the other occupation.</li>
+        <li><b>Shortfall:</b> the other occupation's shortfall against the job's O*NET importance score: (target − source) / target.</li>
+        <li><b>Important:</b> this screens occupation-level talent pools. It does not assess an individual applicant and does not replace required licenses, credentials, safety training or employer-specific qualifications.</li>
       </ul>
-    </details>
+    </section>
   </section>
 
   <!-- =========================== WORKER TAB =========================== -->
-  <section class="tab-panel" id="tab-worker">
-    <div class="top-row">
-      <div class="col">
-        <p class="intro-text">
-          Choose your current occupation. The tool ranks other occupations that use similar skills, then helps you
-          identify <strong>higher-wage career pathways</strong> and the specific skills you may need to build.
-        </p>
+  <section class="tab-panel" id="tab-worker" role="tabpanel">
+    <h1>Find a higher-paying path</h1>
+    <p class="lede">Pick your current job. STARs ranks other occupations that use similar skills, adds Indiana wages,
+      and shows the skills you would need to build for each.</p>
 
-        <div class="card">
-          <div class="field">
-            <label for="worker-current-input">Your current occupation</label>
-            <div class="hint">Type to search the occupation list.</div>
-            <div class="combobox" id="worker-combobox">
-              <input type="text" id="worker-current-input" autocomplete="off" placeholder="Search occupations…">
-              <div class="combobox-list" id="worker-combobox-list"></div>
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="worker-result-count">Number of results: <span class="slider-value" id="worker-result-count-value">20</span></label>
-            <input type="range" id="worker-result-count" min="5" max="50" step="5" value="20">
-          </div>
-
-          <div class="field checkbox-field">
-            <input type="checkbox" id="worker-higher-wage-only" checked>
-            <label for="worker-higher-wage-only">Only show occupations earning more than your current occupation</label>
-          </div>
-
-          <div class="field">
-            <button type="button" class="primary" id="worker-find-button">Find higher-wage career options</button>
-          </div>
+    <div class="form">
+      <div>
+        <label class="lab" for="worker-current-input">Your current occupation</label>
+        <div class="combobox" id="worker-combobox">
+          <input type="text" class="in" id="worker-current-input" autocomplete="off" placeholder="Search occupations">
+          <div class="combobox-list" id="worker-combobox-list"></div>
         </div>
-
-        <div class="summary-panel" id="worker-current-summary"></div>
       </div>
-      <div class="col"></div>
+      <div>
+        <label class="lab" for="worker-result-count">Results</label>
+        <select class="in" id="worker-result-count">
+          <option>5</option><option>10</option><option>15</option><option selected>20</option><option>25</option>
+          <option>30</option><option>35</option><option>40</option><option>45</option><option>50</option>
+        </select>
+      </div>
+      <button type="button" class="find" id="worker-find-button">Find occupations</button>
     </div>
+    <label class="check"><input type="checkbox" id="worker-higher-wage-only" checked> Only occupations that pay more than your current job</label>
 
-    <div class="results-row">
-      <div class="col">
-        <div class="section-header">
-          <h3>Career option rank</h3>
-          <p>Click any occupation row to update the skills-to-build analysis.</p>
+    <div id="worker-results" hidden>
+      <section class="job">
+        <div>
+          <p class="eyebrow">Your current job</p>
+          <h2 id="worker-target-title"></h2>
         </div>
-        <div class="table-scroll">
-          <table class="results-table">
-            <thead><tr>
-              <th style="width:46%">Potential occupation</th>
-              <th style="width:18%">Skill similarity</th>
-              <th style="width:18%">Indiana median wage</th>
-              <th style="width:18%">Average wage increase</th>
-            </tr></thead>
-            <tbody id="worker-results-body"></tbody>
-          </table>
+        <div class="wage">
+          <p class="eyebrow">Indiana median wage</p>
+          <p id="worker-target-wage"></p>
         </div>
-      </div>
+      </section>
+      <p class="warn" id="worker-target-warning" hidden></p>
 
-      <div class="col">
-        <div class="section-header"><div id="worker-skill-gap-heading"><h3>Skills to build</h3></div></div>
-        <div class="table-scroll">
-          <table class="gap-table">
-            <thead><tr>
-              <th style="width:25%">Skill to build</th>
-              <th style="width:12%">Gap</th>
-              <th style="width:63%">Development focus</th>
-            </tr></thead>
-            <tbody id="worker-gap-body"></tbody>
-          </table>
-        </div>
-        <div class="gap-note" id="worker-gap-note"></div>
+      <div class="cols">
+        <section>
+          <h3 class="h2" id="worker-results-heading">Closest career options</h3>
+          <p class="sub">Most similar skills first. Pick one to see the skills you would need to build.</p>
+          <div class="tscroll">
+            <table class="results-table">
+              <thead><tr>
+                <th><span class="sr">Rank</span></th><th>Occupation</th><th class="num">Skill match</th>
+                <th class="num">Indiana wage</th><th class="num">Wage gain</th>
+              </tr></thead>
+              <tbody id="worker-results-body"></tbody>
+            </table>
+          </div>
+          <p class="more" id="worker-results-more" hidden><button type="button"></button></p>
+          <p class="tnote">Wage gain is the raise you would get by moving from your current job into that occupation.</p>
+        </section>
+
+        <section>
+          <h3 class="h2">Skills to build</h3>
+          <p class="sub" id="worker-skill-gap-heading"></p>
+          <div class="gaps" id="worker-gap-body"></div>
+          <p class="more" id="worker-gap-more" hidden><button type="button" class="linkbtn"></button></p>
+          <div class="gap-note" id="worker-gap-note"></div>
+        </section>
       </div>
     </div>
 
-    <details class="how-it-works">
-      <summary>How the worker tool works</summary>
-      <ul>
-        <li><strong>Start with your current occupation:</strong> the model treats your current job as evidence of skills you may already have developed through work experience.</li>
-        <li><strong>Ranking:</strong> potential next occupations are ranked using the same Euclidean distance across 35 O*NET skill-importance scores used in the employer tool.</li>
-        <li><strong>Skill similarity:</strong> a 0-100% readout of that same Euclidean distance. Higher scores mean the potential occupation has a skill profile more similar to your current occupation, and the percentage always agrees with the table's sort order.</li>
-        <li><strong>Average wage increase:</strong> the percentage increase from your current occupation's Indiana annual median wage to the potential occupation's Indiana annual median wage.</li>
-        <li><strong>Wage filter:</strong> when selected, results only include occupations with a higher Indiana annual median wage than your current occupation.</li>
-        <li><strong>Skills to build:</strong> clicking a potential occupation compares that target job with your current occupation and identifies the skills more important in the new job.</li>
-        <li><strong>Gap %:</strong> your current occupation's skill-importance shortfall relative to the potential target occupation: (target − current) / target.</li>
-        <li><strong>Important:</strong> this is an occupation-level career exploration tool. It does not assess an individual's actual proficiency, qualifications, education, licenses, or employer-specific requirements.</li>
+    <section class="how-wrap">
+      <button type="button" class="how" aria-expanded="false" aria-controls="worker-how"><span class="pm" aria-hidden="true">+</span><span class="ht">How the worker tool works</span></button>
+      <ul class="how-list" id="worker-how" hidden>
+        <li><b>Start with your current occupation:</b> the model treats your current job as evidence of skills you may already have built through work experience.</li>
+        <li><b>Ranking:</b> other occupations are ranked by the same Euclidean distance across 35 O*NET skill-importance scores that the employer tool uses.</li>
+        <li><b>Skill match:</b> the same distance as a 0 to 100% figure. A higher figure means a skill profile closer to your current job, and it always agrees with the ranking.</li>
+        <li><b>Wage gain:</b> the percentage increase from your current occupation's Indiana annual median wage to the other occupation's.</li>
+        <li><b>Wage filter:</b> when checked, results only include occupations with a higher Indiana annual median wage than your current occupation.</li>
+        <li><b>Skills to build:</b> picking an occupation compares it with your current job and lists the skills more important in the new job.</li>
+        <li><b>Shortfall:</b> your current occupation's shortfall against the new job's O*NET importance score: (target − current) / target.</li>
+        <li><b>Important:</b> this explores careers at the occupation level. It does not assess a person's actual skills, qualifications, education, licenses or employer-specific requirements.</li>
       </ul>
-    </details>
+    </section>
   </section>
-</div>
+</main>
 
 <script>
 (function () {
@@ -320,39 +329,43 @@
     statusBanner.hidden = false;
   }
 
-  // ---------------------------------------------------------------------
-  // Minimal Markdown -> HTML for the small vocabulary the API actually
-  // sends: "### heading", "**bold**", "*italic*", and markdown line breaks
-  // (a line ending in two spaces, or a blank line for a new paragraph).
-  // Occupation/skill names inside these strings are already HTML-escaped by
-  // the Worker before they're embedded, so building this HTML with
-  // innerHTML is safe -- the escaped entities render as literal characters.
-  // ---------------------------------------------------------------------
-  function inlineFormat(text) {
-    var out = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    out = out.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    return out;
+  // O*NET writes some titles as "Helpers--Carpenters". Show them as "Helpers: Carpenters";
+  // the API still gets the title exactly as O*NET spells it.
+  function displayTitle(title) {
+    return String(title == null ? "" : title).replace(/\s*--\s*/g, ": ");
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  function mdToHtml(md) {
-    if (!md) return "";
-    var lines = String(md).split("\n");
-    var html = "", para = [];
-    function flush() {
-      if (para.length) { html += "<p>" + para.join("<br>") + "</p>"; para = []; }
-    }
-    lines.forEach(function (raw) {
-      if (raw.indexOf("### ") === 0) {
-        flush();
-        html += "<h3>" + inlineFormat(raw.slice(4)) + "</h3>";
-        return;
-      }
-      var stripped = raw.replace(/ {2}$/, "");
-      if (stripped.trim() === "") { flush(); return; }
-      para.push(inlineFormat(stripped));
-    });
-    flush();
-    return html;
+  /* starsParse:start -- tests/worker_test.mjs runs these against the real API output. */
+  // The summary is markdown built by src/stars_logic.js: "**Title**", "Indiana annual
+  // median wage: **$X**", then "Showing **N** closest ..." and any wage-filter warning.
+  // Names in it are already HTML-escaped by the Worker.
+  function parseSummary(md) {
+    var text = String(md || "");
+    var title = /\*\*([^*]+)\*\*/.exec(text);
+    var wage = /median wage: \*\*([^*]+)\*\*/.exec(text);
+    var warning = /closest (?:occupations|career options)\.\s*([\s\S]*)$/.exec(text);
+    return { title: title ? title[1] : "", wage: wage ? wage[1] : "N/A", warning: warning ? warning[1].trim() : "" };
+  }
+  // gapHeading: "### Skills gap\n**From → To**".
+  function parseGapHeading(md) {
+    var m = /\*\*(.+?) → (.+?)\*\*/.exec(String(md || ""));
+    return m ? { from: m[1], to: m[2] } : null;
+  }
+  /* starsParse:end */
+
+  // ---------------------------------------------------------------------
+  // The API sends short markdown strings: "**bold**" and "*italic*". Names
+  // inside them are already HTML-escaped by the Worker, so building HTML
+  // from them with innerHTML is safe.
+  // ---------------------------------------------------------------------
+  function inlineFormat(text) {
+    var out = text.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    out = out.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    return out;
   }
 
   // ---------------------------------------------------------------------
@@ -391,7 +404,7 @@
         filtered.slice(0, 200).forEach(function (title, i) {
           var opt = document.createElement("div");
           opt.className = "combobox-option" + (i === highlighted ? " highlighted" : "");
-          opt.textContent = title;
+          opt.textContent = displayTitle(title);
           opt.addEventListener("mousedown", function (e) { e.preventDefault(); select(title); });
           listEl.appendChild(opt);
         });
@@ -401,13 +414,15 @@
 
     function select(title) {
       selectedTitle = title;
-      inputEl.value = title;
+      inputEl.value = displayTitle(title);
       listEl.classList.remove("open");
     }
 
     function filterFrom(query) {
       var q = query.trim().toLowerCase();
-      filtered = q ? titles.filter(function (t) { return t.toLowerCase().indexOf(q) !== -1; }) : titles.slice(0, 200);
+      filtered = q ? titles.filter(function (t) {
+        return t.toLowerCase().indexOf(q) !== -1 || displayTitle(t).toLowerCase().indexOf(q) !== -1;
+      }) : titles.slice(0, 200);
       highlighted = -1;
     }
 
@@ -434,6 +449,14 @@
 
     return {
       getSelected: function () { return selectedTitle; },
+      // A title typed in full without picking it from the list.
+      match: function (text) {
+        var q = text.trim().toLowerCase();
+        for (var i = 0; i < titles.length; i++) {
+          if (titles[i].toLowerCase() === q || displayTitle(titles[i]).toLowerCase() === q) return titles[i];
+        }
+        return text.trim();
+      },
       setValue: function (title) { select(title); },
     };
   }
@@ -444,56 +467,122 @@
   // into skill gaps) against mirrored API endpoints.
   // ---------------------------------------------------------------------
   function createPanel(cfg) {
-    var input = document.getElementById(cfg.prefix + "-target-input") ||
-      document.getElementById(cfg.prefix + "-current-input");
-    var listEl = document.getElementById(cfg.prefix + "-combobox-list");
-    var resultCountEl = document.getElementById(cfg.prefix + "-result-count");
-    var resultCountValueEl = document.getElementById(cfg.prefix + "-result-count-value");
-    var wageCheckboxEl = document.getElementById(cfg.prefix + "-lower-wage-only") ||
-      document.getElementById(cfg.prefix + "-higher-wage-only");
-    var findButton = document.getElementById(cfg.prefix + "-find-button");
-    var summaryEl = document.getElementById(cfg.prefix + "-target-summary") ||
-      document.getElementById(cfg.prefix + "-current-summary");
-    var resultsBody = document.getElementById(cfg.prefix + "-results-body");
-    var gapHeadingEl = document.getElementById(cfg.prefix + "-skill-gap-heading");
-    var gapBody = document.getElementById(cfg.prefix + "-gap-body");
-    var gapNoteEl = document.getElementById(cfg.prefix + "-gap-note");
+    var $ = function (suffix) { return document.getElementById(cfg.prefix + suffix); };
+    var input = $("-target-input") || $("-current-input");
+    var listEl = $("-combobox-list");
+    var resultCountEl = $("-result-count");
+    var wageCheckboxEl = $("-lower-wage-only") || $("-higher-wage-only");
+    var findButton = $("-find-button");
+    var resultsEl = $("-results");
+    var titleEl = $("-target-title");
+    var wageEl = $("-target-wage");
+    var warningEl = $("-target-warning");
+    var resultsHeadingEl = $("-results-heading");
+    var resultsBody = $("-results-body");
+    var resultsMore = $("-results-more");
+    var gapHeadingEl = $("-skill-gap-heading");
+    var gapBody = $("-gap-body");
+    var gapMore = $("-gap-more");
+    var gapNoteEl = $("-gap-note");
 
+    var ROWS_SHOWN = 10, GAPS_SHOWN = 5;
     var combobox = null, resultTitles = [], activeTitle = null, selectedRowIndex = -1, requestSeq = 0;
+    var rowsOpen = false, gapsOpen = false, gapCount = 0;
 
-    resultCountEl.addEventListener("input", function () { resultCountValueEl.textContent = resultCountEl.value; });
-
-    function renderEmptyResults(message) {
-      resultsBody.innerHTML = '<tr><td colspan="4" class="empty-note">' + message + "</td></tr>";
+    function renderSummary(md) {
+      var sum = parseSummary(md);
+      titleEl.innerHTML = displayTitle(sum.title);
+      wageEl.innerHTML = sum.wage;
+      warningEl.innerHTML = sum.warning;
+      warningEl.hidden = !sum.warning;
     }
 
+    function setMore(moreEl, total, shown, open, label) {
+      moreEl.hidden = total <= shown;
+      moreEl.firstChild.textContent = open ? "Show fewer" : "Show all " + total + label;
+    }
+
+    function applyRowLimit() {
+      Array.prototype.forEach.call(resultsBody.children, function (tr, i) {
+        tr.hidden = !rowsOpen && i >= ROWS_SHOWN && i !== selectedRowIndex;
+      });
+      setMore(resultsMore, resultTitles.length, ROWS_SHOWN, rowsOpen, "");
+    }
+
+    function applyGapLimit() {
+      Array.prototype.forEach.call(gapBody.children, function (el, i) {
+        el.hidden = !gapsOpen && i >= GAPS_SHOWN;
+      });
+      setMore(gapMore, gapCount, GAPS_SHOWN, gapsOpen, " skills");
+    }
+
+    function renderEmptyResults(message) {
+      resultsBody.innerHTML = '<tr><td colspan="5" class="empty-note">' + message + "</td></tr>";
+    }
+
+    // rows: [title, "94.6%", "$49,421", "16.8%"] from the STARs logic.
     function renderRows(rows) {
       resultsBody.innerHTML = "";
       if (!rows.length) { renderEmptyResults("No occupations met the current filter."); return; }
       rows.forEach(function (row, i) {
         var tr = document.createElement("tr");
         tr.dataset.index = String(i);
-        row.forEach(function (cell) {
-          var td = document.createElement("td");
-          td.textContent = cell;
-          tr.appendChild(td);
-        });
+        var gain = String(row[3] == null ? "" : row[3]);
+        var n = parseFloat(gain.replace(/,/g, ""));
+        var gainCls = "num" + (n > 0 ? " up" : n < 0 ? " down" : "");
+        tr.innerHTML = '<td class="rk">' + (i + 1) + "</td>" +
+          '<td class="occ">' + esc(displayTitle(row[0])) + "</td>" +
+          '<td class="num">' + esc(row[1]) + "</td>" +
+          '<td class="num">' + esc(row[2]) + "</td>" +
+          '<td class="' + gainCls + '">' + esc(n > 0 ? "+" + gain : gain) + "</td>";
         tr.addEventListener("click", function () { onRowClick(i); });
         resultsBody.appendChild(tr);
       });
     }
 
+    function renderGapHeading(md) {
+      var m = parseGapHeading(md);
+      gapHeadingEl.innerHTML = m
+        ? "Moving from <b>" + displayTitle(m.from) + "</b> to <b>" + displayTitle(m.to) + "</b>."
+        : "";
+      gapHeadingEl.hidden = !m;
+    }
+
+    // gapRows: [skill, "26%", development focus].
     function renderGapRows(rows) {
       gapBody.innerHTML = "";
+      gapCount = rows.length;
+      gapsOpen = false;
       rows.forEach(function (row) {
-        var tr = document.createElement("tr");
-        row.forEach(function (cell) {
-          var td = document.createElement("td");
-          td.textContent = cell;
-          tr.appendChild(td);
-        });
-        gapBody.appendChild(tr);
+        var n = Math.max(0, Math.min(100, parseFloat(row[1]) || 0));
+        var div = document.createElement("div");
+        div.className = "gap";
+        div.innerHTML = '<div class="gh"><span class="gn">' + esc(row[0]) + '</span><span class="gp">' +
+          esc(row[1]) + ' short</span></div><div class="gbar"><i style="width:' + n + '%"></i></div>' +
+          '<p class="gt">' + esc(row[2]) + "</p>";
+        gapBody.appendChild(div);
       });
+      applyGapLimit();
+    }
+
+    // gapNote: "**Strongest transferable skills:** ...", "**Largest skill gaps:** ..." and an
+    // italic caution paragraph. The largest gaps already head the list above, so that line
+    // is dropped; the caution gets the amber rule. Anything else renders as sent.
+    function renderGapNote(md) {
+      var text = String(md || "");
+      var parts = text.split(/\n\s*\n/);
+      var html = "";
+      parts.forEach(function (part) {
+        var lines = part.split("\n").map(function (l) { return l.replace(/ {2}$/, ""); })
+          .filter(function (l) { return l.trim() && l.indexOf("**Largest skill gaps:**") !== 0; });
+        if (!lines.length) return;
+        var joined = lines.join(" ");
+        var caution = /^\*[^*].*\*$/.test(joined.trim());
+        if (caution) joined = joined.trim().slice(1, -1);
+        joined = joined.replace("**Strongest transferable skills:**", "**Already strong in:**");
+        html += "<p" + (caution ? ' class="caution"' : "") + ">" + inlineFormat(joined) + "</p>";
+      });
+      gapNoteEl.innerHTML = html;
     }
 
     function highlightSelectedRow() {
@@ -503,7 +592,7 @@
     }
 
     function runSearch() {
-      var title = combobox.getSelected() || input.value.trim();
+      var title = combobox.getSelected() || combobox.match(input.value);
       if (!title) return;
       findButton.disabled = true;
       var mySeq = ++requestSeq;
@@ -515,12 +604,17 @@
         activeTitle = title;
         resultTitles = result.resultTitles || [];
         selectedRowIndex = resultTitles.length ? 0 : -1;
-        summaryEl.innerHTML = mdToHtml(result[cfg.summaryField]);
+        rowsOpen = false;
+        statusBanner.hidden = true;
+        renderSummary(result[cfg.summaryField]);
+        resultsHeadingEl.textContent = "The " + resultTitles.length + " " + cfg.resultsNoun;
         renderRows(result.rows || []);
-        gapHeadingEl.innerHTML = mdToHtml(result.gapHeading || "");
+        renderGapHeading(result.gapHeading);
         renderGapRows(result.gapRows || []);
-        gapNoteEl.innerHTML = mdToHtml(result.gapNote || "");
+        renderGapNote(result.gapNote);
         highlightSelectedRow();
+        applyRowLimit();
+        resultsEl.hidden = false;
       }).catch(function (err) {
         showError("Could not reach the STARs API. (" + err.message + ")");
       }).then(function () { findButton.disabled = false; }, function () { findButton.disabled = false; });
@@ -533,14 +627,16 @@
       var body = { resultTitles: resultTitles, rowIndex: rowIndex };
       body[cfg.titleField] = activeTitle;
       apiPost(cfg.clickEndpoint, body).then(function (result) {
-        gapHeadingEl.innerHTML = mdToHtml(result.gapHeading || "");
+        renderGapHeading(result.gapHeading);
         renderGapRows(result.gapRows || []);
-        gapNoteEl.innerHTML = mdToHtml(result.gapNote || "");
+        renderGapNote(result.gapNote);
       }).catch(function (err) {
-        showError("Could not update the skill-gap panel. (" + err.message + ")");
+        showError("Could not update the skills to build. (" + err.message + ")");
       });
     }
 
+    resultsMore.firstChild.addEventListener("click", function () { rowsOpen = !rowsOpen; applyRowLimit(); });
+    gapMore.firstChild.addEventListener("click", function () { gapsOpen = !gapsOpen; applyGapLimit(); });
     findButton.addEventListener("click", runSearch);
 
     return {
@@ -553,10 +649,23 @@
   // ---------------------------------------------------------------------
   Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (btn) {
     btn.addEventListener("click", function () {
-      Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(document.querySelectorAll(".tab-btn"), function (b) {
+        b.classList.remove("active");
+        b.setAttribute("aria-selected", "false");
+      });
       Array.prototype.forEach.call(document.querySelectorAll(".tab-panel"), function (p) { p.classList.remove("active"); });
       btn.classList.add("active");
+      btn.setAttribute("aria-selected", "true");
       document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".how"), function (btn) {
+    btn.addEventListener("click", function () {
+      var open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.querySelector(".pm").textContent = open ? "\u2212" : "+";
+      document.getElementById(btn.getAttribute("aria-controls")).hidden = !open;
     });
   });
 
@@ -565,11 +674,11 @@
   // ---------------------------------------------------------------------
   var employerPanel = createPanel({
     prefix: "employer", titleField: "targetTitle", wageFlagField: "lowerWageOnly",
-    summaryField: "targetSummary", searchEndpoint: "/employer/search", clickEndpoint: "/employer/skill-gap",
+    summaryField: "targetSummary", resultsNoun: "closest occupations", searchEndpoint: "/employer/search", clickEndpoint: "/employer/skill-gap",
   });
   var workerPanel = createPanel({
     prefix: "worker", titleField: "currentTitle", wageFlagField: "higherWageOnly",
-    summaryField: "currentSummary", searchEndpoint: "/worker/search", clickEndpoint: "/worker/skill-gap",
+    summaryField: "currentSummary", resultsNoun: "closest career options", searchEndpoint: "/worker/search", clickEndpoint: "/worker/skill-gap",
   });
 
   apiGet("/occupations").then(function (data) {

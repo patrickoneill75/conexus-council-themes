@@ -17,17 +17,14 @@ const APPS = [
   {
     id: "council-data",
     name: "Council Meeting Survey Dashboard",
-    description: "Council Meeting theme extraction (Claude) and quant benchmarking, " +
-      "built from each quarter's post-meeting survey export.",
+    description: "Themes and benchmarks from each quarter's post-meeting survey.",
     baseUrl: "/council-data",
     controlPanelUrl: "/council-data/control-panel",
   },
   {
     id: "mcm",
     name: "Manufacturing Conditions Monitor",
-    description: "Quarterly headwinds/tailwinds dashboard for U.S. manufacturing, " +
-      "extracted from SEC EDGAR filings (Claude) and updated on demand from its own " +
-      "control panel.",
+    description: "Quarterly headwinds and tailwinds for U.S. manufacturing, read from SEC filings.",
     baseUrl: "/mcm",
     controlPanelUrl: "/mcm/control-panel",
   },
@@ -37,18 +34,14 @@ const APPS = [
     // shown anywhere; only the user-facing name/baseUrl/controlPanelUrl changed.
     id: "pcn",
     name: "Issue Network Mapper",
-    description: "Extracts causal statements from meeting notes/transcripts into an " +
-      "accumulating, evidence-traceable map of how members believe their problems " +
-      "connect.",
+    description: "A growing map of how members believe their problems connect, built from meeting notes, with the evidence behind each link.",
     baseUrl: "/inm",
     controlPanelUrl: "/inm/control-panel",
   },
   {
     id: "consensus",
     name: "Consensus",
-    description: "Chatbot-style surveys with Claude-generated follow-up questions, " +
-      "analyzed into prioritized themes once responses are in. No single public URL -- " +
-      "each survey gets its own respondent link from the control panel.",
+    description: "Chat-style surveys with follow-up questions, analyzed into ranked themes. Each survey has its own link, set up in the control panel.",
     baseUrl: "/consensus",
     controlPanelUrl: "/consensus/control-panel",
   },
@@ -57,48 +50,35 @@ const APPS = [
     // ("STARs Talent Transfer API"), ported in as-is.
     id: "stars",
     name: "STARs Talent Transfer Explorer",
-    description: "Ranks occupations by O*NET skill-profile similarity plus Indiana wage " +
-      "data, for employers screening transferable talent pools and workers exploring " +
-      "higher-wage career pathways. No Claude call anywhere in the request path.",
+    description: "Which occupations share a job's skills, with Indiana wages, for employers looking for talent and workers looking for higher-paying paths.",
     baseUrl: "/stars",
     controlPanelUrl: "/stars/control-panel",
   },
   {
     id: "artifacts",
     name: "Artifact Catalogue",
-    description: "A curated, nicely-presented list of Claude artifact links, each with its " +
-      "own public/private toggle. Nothing is exported or converted -- a card just opens the " +
-      "real artifact on claude.ai.",
+    description: "A curated list of Claude artifact links, each shown publicly or privately.",
     baseUrl: "/artifacts",
     controlPanelUrl: "/artifacts/control-panel",
   },
   {
     id: "job-description",
     name: "Job Description Updater",
-    description: "Claude reads an uploaded job description and walks the employer through " +
-      "updating it with the Conexus Job Description Toolkit -- confirm/correct taps instead " +
-      "of open-ended questions, ~15 minutes instead of the toolkit's own 60-90 minute manual " +
-      "exercise.",
+    description: "Walks an employer through updating a job description with the Conexus Job Description Toolkit, in about 15 minutes.",
     baseUrl: "/job-description",
     controlPanelUrl: "/job-description/control-panel",
   },
   {
     id: "apprenticeship",
     name: "Apprenticeship Readiness Toolbox",
-    description: "A program of self-assessments an employer works through step by step: " +
-      "a scored readiness chat, then a workforce needs assessment that sizes their hiring " +
-      "gap and what apprentices would close. Employers sign in at /apprenticeship and get " +
-      "their own dashboard; each step also has its own direct link.",
+    description: "Step-by-step self-assessments for employers: a scored readiness chat, then a workforce needs assessment.",
     baseUrl: "/apprenticeship",
     controlPanelUrl: "/apprenticeship/control-panel",
   },
   {
     id: "partner-intel",
     name: "Partner Intelligence",
-    description: "Staff only. Reads every meeting note in a Box folder and answers who is " +
-      "stuck on what and who can help: trending topics with Claude-written summaries, a " +
-      "page per program (each source folder) with its recent meetings, a question search " +
-      "for matchmaking, and a profile per company.",
+    description: "Staff only. What partners are stuck on and who can help, from every meeting note in Box: trending topics, programs, company profiles and Ask.",
     baseUrl: "/partner-intel",
     controlPanelUrl: "/partner-intel/control-panel",
   },
