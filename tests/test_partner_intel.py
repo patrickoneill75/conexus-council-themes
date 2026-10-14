@@ -1294,7 +1294,7 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         r = rows[0]
         self.assertEqual((r["Company"], r["MemberStatus"], r["Industry"], r["SourceFolder"]),
-                         ("Zoeller Custom Molding", "Member", "Plastics Company", "CIAIC"))
+                         ("Zoeller Custom Molding", "Council Member", "Plastics Company", "CIAIC"))
         self.assertTrue(r["Title"].startswith("'="))
         self.assertTrue(r["Detail"].startswith("'+"))
 

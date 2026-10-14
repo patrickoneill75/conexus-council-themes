@@ -154,34 +154,117 @@
   document.addEventListener("animationend", function (e) {
     if (e.target.classList) e.target.classList.remove("c-open", "c-close", "grow", "shrink", "hint", "a-shrink", "a-expand");
   });
+  /* The topic line. Opening a topic draws one stroke from its number down the left of the block and
+   * along the bottom, then a dot lands on the end. Closing runs it back as one motion: off the bottom
+   * and round the corner, then up to the number while the block folds shut at the same pace, its bottom
+   * edge following the tip of the line. The highlight wipes out over the same time. */
+  var STILL = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var LINE_X = 20, LINE_TOP = 61, CORNER = 20, DRAW = 1200, UP = 380, UP_EASE = "cubic-bezier(.2,.6,.35,1)";
+  function lineShape(card) {
+    var body = card.querySelector("[data-body]"), band = body && body.querySelector(":scope > .band");
+    if (!band || body.hidden) return null;
+    var c = card.getBoundingClientRect(), b = band.getBoundingClientRect(), r = CORNER;
+    // A boxed block (white cards on light blue) keeps its box, and the line runs just beneath it.
+    var B = b.bottom - c.top + (band.classList.contains("boxed") ? 16 : 0), R = b.right - c.left;
+    return { d: "M" + LINE_X + " " + LINE_TOP + "V" + (B - r) + "A" + r + " " + r + " 0 0 0 " + (LINE_X + r) + " " + B + "H" + R,
+      x: R, y: B, up: B - r - LINE_TOP };
+  }
+  function placeLine(card) {
+    var sh = lineShape(card);
+    if (!sh) { card.classList.remove("traced"); return null; }
+    var svg = card.querySelector("svg.trace");
+    if (!svg) {
+      card.insertAdjacentHTML("beforeend", '<svg class="trace" aria-hidden="true" focusable="false"><path class="ln" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"></path><circle class="dot" r="5.5"></circle></svg>');
+      svg = card.querySelector("svg.trace");
+      if (window.ResizeObserver) new ResizeObserver(function () { if (!card.classList.contains("closing") && card.classList.contains("open")) placeLine(card); }).observe(card);
+    }
+    svg.querySelector(".ln").setAttribute("d", sh.d);
+    svg.querySelector(".dot").setAttribute("cx", sh.x);
+    svg.querySelector(".dot").setAttribute("cy", sh.y);
+    card.classList.add("traced");
+    return sh;
+  }
+  function drawLine(card, instant, resume) {
+    if (!placeLine(card)) return;
+    var svg = card.querySelector("svg.trace"), p = svg.querySelector(".ln");
+    instant = instant || STILL;
+    p.style.transition = "none";
+    if (!instant && !resume) { p.style.strokeDashoffset = "1"; void p.getBoundingClientRect(); }
+    p.style.transition = instant ? "none" : "stroke-dashoffset " + DRAW + "ms cubic-bezier(.45,.05,.25,1) 50ms";
+    p.style.strokeDashoffset = "0";
+    svg.classList.toggle("instant", !!instant);
+  }
+  function finishClose(card) {
+    var body = card.querySelector("[data-body]");
+    card.classList.remove("open", "closing", "traced");
+    card.querySelector(".tp-row").setAttribute("aria-expanded", "false");
+    body.hidden = true; body.style.cssText = "";
+    animate(card.querySelector(".circ"), "c-close");
+    animate(card.querySelector(".tline"), "shrink");
+  }
+  function retract(card) {
+    var sh = placeLine(card), svg = card.querySelector("svg.trace"), p = svg.querySelector(".ln"), body = card.querySelector("[data-body]");
+    var total = p.getTotalLength() || 1, up = Math.min(1, Math.max(0, sh.up / total));
+    // The first step keeps the line moving at the same speed whatever its length: about 3.3px a millisecond.
+    var along = Math.round(Math.min(650, Math.max(200, total * (1 - up) / 3.3)));
+    card.style.setProperty("--close", (along + UP) + "ms");
+    card.classList.add("closing");
+    p.style.transition = "stroke-dashoffset " + along + "ms cubic-bezier(.55,0,1,.7)";
+    p.style.strokeDashoffset = String(1 - up);
+    card._t = setTimeout(function () {
+      p.style.transition = "stroke-dashoffset " + UP + "ms " + UP_EASE;
+      p.style.strokeDashoffset = "1";
+      body.style.height = body.offsetHeight + "px"; body.style.overflow = "hidden"; void body.offsetHeight;
+      body.style.transition = "height " + UP + "ms " + UP_EASE + ", opacity " + Math.round(UP * .6) + "ms ease";
+      body.style.height = "0px"; body.style.opacity = "0";
+      card._t = setTimeout(function () { card._t = null; finishClose(card); }, UP);
+    }, along);
+  }
   function setTopic(card, open, quiet) {
+    var body = card.querySelector("[data-body]");
+    if (card._t) {
+      // Clicked again while closing: run the line back out from wherever it has got to.
+      clearTimeout(card._t); card._t = null;
+      card.classList.remove("closing"); body.style.cssText = "";
+      if (open) { drawLine(card, false, true); return; }
+    }
     var was = card.classList.contains("open");
+    if (!open && was && !quiet && !STILL && card.classList.contains("traced")) { retract(card); return; }
     card.classList.toggle("open", open);
     card.querySelector(".tp-row").setAttribute("aria-expanded", open ? "true" : "false");
-    card.querySelector("[data-body]").hidden = !open;
+    body.hidden = !open;
+    if (open) drawLine(card, quiet); else card.classList.remove("traced");
     if (quiet || was === open) return;
     animate(card.querySelector(".circ"), open ? "c-open" : "c-close");
     animate(card.querySelector(".tline"), open ? "grow" : "shrink");
   }
-  // Opening a topic closes whichever topic in the same list was open.
+  // A topic that arrives open (the first on a page, or one whose block fills in later) has its line
+  // drawn at once, with no animation.
+  if (window.MutationObserver) {
+    new MutationObserver(function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tp.open:not(.traced):not(.closing)"), function (c) { drawLine(c, true); });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+  // Opening a topic closes whichever topic in the same list was open. One still closing counts as
+  // closed, so a click reopens it.
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest(".tp-row");
     if (!btn) return;
     var card = btn.closest(".tp");
-    var opening = !card.classList.contains("open");
+    var opening = !card.classList.contains("open") || card.classList.contains("closing");
     Array.prototype.forEach.call(card.parentNode.querySelectorAll(":scope > .tp"), function (c) {
       c.querySelector(".tline").classList.remove("hint");
-      if (c !== card && c.classList.contains("open")) setTopic(c, false);
+      if (c !== card && c.classList.contains("open") && !c.classList.contains("closing")) setTopic(c, false);
     });
     setTopic(card, opening);
   });
 
-  /** Points on a light blue block. The plus button, or "See examples" after the text, opens the
-   * notes behind a point; the plus squeezes and pops into a minus while they are open. */
+  /** Points under a topic. The plus button opens the notes behind a point; it squeezes and
+   * pops into a minus while they are open. */
   function pointsHtml(points, label) {
     return '<ul class="bullets">' + points.map(function (b) {
       return '<li class="bpt"><button type="button" class="pm" data-pt aria-expanded="false" aria-label="Show ' + label + '"><i class="h"></i><i class="v"></i></button>' +
-        '<div><span class="txt">' + b.text + '</span><button type="button" class="see" data-pt>See ' + label + "</button>" +
+        '<div><span class="txt">' + b.text + "</span>" +
         '<div class="examples" hidden>' + b.examples + "</div></div></li>";
     }).join("") + "</ul>";
   }
@@ -202,7 +285,6 @@
     pm.setAttribute("aria-label", (ex.hidden ? "Show " : "Hide ") + label);
     pm.classList.remove("a-shrink", "a-expand"); void pm.offsetWidth;
     pm.classList.add(ex.hidden ? "a-expand" : "a-shrink");
-    li.querySelector(".see").textContent = (ex.hidden ? "See " : "Hide ") + label;
   });
 
   /* ------------------------------------------------------------------ Trending topics
@@ -372,10 +454,10 @@
     PI.api("meeting?program=" + encodeURIComponent(name) + "&id=" + encodeURIComponent(id)).then(function (r) {
       if (mine !== seq) return;
       var m = r.meeting;
-      function section(title, noun, items) {
+      function section(title, noun, items, tone) {
         if (!items.length) return "";
         var cards = items.map(function (i) { return PI.insightCard(i, { action: isIssue(i) ? findButton(i, i.company && i.company.id) : "" }); });
-        return '<section class="card"><h2>' + esc(title) + "</h2><div>" + cards.slice(0, SECTION_SHOWN).join("") +
+        return '<section class="card"><h2' + (tone ? ' class="' + tone + '"' : "") + ">" + esc(title) + "</h2><div>" + cards.slice(0, SECTION_SHOWN).join("") +
           (cards.length > SECTION_SHOWN ? '<div hidden data-rest>' + cards.slice(SECTION_SHOWN).join("") + "</div>" : "") + "</div>" +
           (cards.length > SECTION_SHOWN ? '<p style="margin:6px 0 0"><button class="more" data-show-rest>Show all ' + noun + "</button></p>" : "") + "</section>";
       }
@@ -384,7 +466,7 @@
         (m.companyCount ? " with " + esc(plural(m.companyCount, "company", "companies")) : "") + ".</p>" +
         '<p class="secsub" style="margin-top:10px;max-width:860px">' + (m.companyCount ? esc(m.companies.join(", ").replace(/\.+$/, "")) + ". " : "") +
         "From " + PI.fileLinks(m.files) + ".</p>" +
-        section("Issues", "issues", r.issues) + section("Solutions", "solutions", r.solutions) + section("Wins", "wins", r.wins) + section("Other", "other notes", r.other);
+        section("Issues", "issues", r.issues, "k-issue") + section("Solutions", "solutions", r.solutions, "k-solution") + section("Wins", "wins", r.wins, "k-win") + section("Other", "other notes", r.other);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
   // "Show all" under a section, or "View all" under a company column, shows the rest in place.
@@ -506,7 +588,7 @@
       '<div><label class="field" for="cq">Search</label><input id="cq" placeholder="Company name"></div>' +
       '<div><label class="field" for="ci">Industry</label><select id="ci"><option value="">All</option></select></div>' +
       '<div><label class="field" for="cs">Member status</label><select id="cs"><option value="">All</option>' +
-      '<option value="Active">Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>' +
+      '<option value="Active">Council Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>' +
       '<div style="align-self:end;height:46px;display:flex;align-items:center"><label class="chk"><input type="checkbox" id="cw" checked> Only companies with notes</label></div></div></div>' +
       '<div class="card" id="clist" style="padding:12px 28px 20px"></div><p class="secsub" style="margin-top:14px">Pick a column heading to sort.</p>';
     function load() {
@@ -689,10 +771,10 @@
     return '<div class="tlist">' + topics.map(function (t, n) {
       var inner;
       if (tab.list === "all") {
-        inner = '<div class="band"><div class="cols3">' + [["Issues", "issues"], ["Solutions", "solutions"], ["Wins", "wins"]].map(function (col) {
+        inner = '<div class="band boxed"><div class="cols3">' + [["Issues", "issues", "k-issue"], ["Solutions", "solutions", "k-solution"], ["Wins", "wins", "k-win"]].map(function (col) {
           var rows = t.items.filter(function (i) { return PI.categoryOf(i.kind) === col[1]; });
           var cards = rows.map(function (i) { return rowCard(i, companyId); });
-          return '<section><h4 class="colh">' + col[0] + "</h4>" +
+          return '<section><h4 class="colh ' + col[2] + '">' + col[0] + "</h4>" +
             (rows.length ? cards.slice(0, COLUMN_SHOWN).join("") +
               (rows.length > COLUMN_SHOWN ? '<div hidden data-rest>' + cards.slice(COLUMN_SHOWN).join("") + "</div>" +
                 '<p class="colmore"><button class="find" data-show-rest>View all ' + col[1] + ARROW + "</button></p>" : "")
@@ -772,7 +854,7 @@
       '<div><label class="field" for="ek">Type</label><select id="ek"><option value="">All types</option>' + KINDS.map(function (k) { return '<option value="' + k + '">' + PI.kindLabel[k] + "</option>"; }).join("") + "</select></div>" +
       '<div><label class="field" for="et">Topic</label><select id="et"><option value="">All topics</option></select></div>' +
       '<div><label class="field" for="ei">Industry</label><select id="ei"><option value="">All industries</option></select></div>' +
-      '<div><label class="field" for="es">Member status</label><select id="es"><option value="">All</option><option value="Active">Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>' +
+      '<div><label class="field" for="es">Member status</label><select id="es"><option value="">All</option><option value="Active">Council Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>' +
       '<div><label class="field" for="ee">Event</label><select id="ee"><option value="">All events</option></select></div>' +
       '<div><label class="field" for="ed">When</label><select id="ed"><option value="">Any time</option><option value="30">Last 30 days</option><option value="60">Last 60 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select></div>' +
       '</div><div class="row" style="margin-top:18px;gap:12px 26px"><label class="chk"><input type="checkbox" id="ex"> Exact dates only</label>' +
