@@ -49,6 +49,49 @@
   var BACK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 8H3M7 3.5 2.5 8 7 12.5"/></svg>';
   var GO = '<svg class="go-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h11M9 3.5 13.5 8 9 12.5"/></svg>';
   var MARK = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="47.94 -0.00 356.86 177.97" fill="currentColor"><path d="M 271.15 88.98 L 226.36 133.77 L 181.57 88.98 L 226.36 44.18 L 271.15 88.98 "/><path d="M 315.67 -0.00 C 291.20 -0.00 269.02 9.86 252.92 25.84 C 249.32 29.41 242.22 36.53 242.22 36.53 L 277.51 71.82 C 277.51 71.82 284.34 65.01 287.85 61.49 C 294.96 54.32 304.81 49.88 315.67 49.88 C 337.26 49.88 354.83 67.41 354.90 88.98 C 354.83 110.55 337.26 128.08 315.67 128.08 C 304.81 128.08 294.96 123.63 287.85 116.47 C 284.34 112.94 277.51 106.13 277.51 106.13 L 242.22 141.42 C 242.22 141.42 249.32 148.55 252.92 152.11 C 269.02 168.09 291.20 177.96 315.67 177.96 C 364.85 177.96 404.72 138.14 404.79 88.98 C 404.72 39.82 364.85 -0.00 315.67 -0.00 "/><path d="M 137.05 -0.00 C 161.52 -0.00 183.70 9.86 199.80 25.84 C 203.40 29.41 210.50 36.53 210.50 36.53 L 175.21 71.82 C 175.21 71.82 168.38 65.01 164.87 61.49 C 157.76 54.32 147.91 49.88 137.05 49.88 C 115.46 49.88 97.89 67.41 97.82 88.98 C 97.89 110.55 115.46 128.08 137.05 128.08 C 147.91 128.08 157.76 123.63 164.87 116.47 C 168.38 112.94 175.21 106.13 175.21 106.13 L 210.50 141.42 C 210.50 141.42 203.40 148.55 199.80 152.11 C 183.70 168.09 161.52 177.96 137.05 177.96 C 87.87 177.96 48.00 138.14 47.93 88.98 C 48.00 39.82 87.87 -0.00 137.05 -0.00 "/></svg>';
+
+  // The council badge: the mark over COUNCIL in a rounded rectangle, in metallic gold pressed into the page.
+  // One gradient runs across the whole badge, cut to the shapes by a mask, so the metal reads as one piece.
+  var badgeSeq = 0;
+  function councilBadge() {
+    var id = "cmb" + (++badgeSeq);
+    var paths = MARK.replace(/^<svg[^>]*>|<\/svg>$/g, "");
+    var shapes =
+      '<path fill="none" stroke="#fff" stroke-width="2.6" d="M13.3 1.3H82.7A12 12 0 0 1 94.7 13.3V48.7A12 12 0 0 1 82.7 60.7H13.3A12 12 0 0 1 1.3 48.7V13.3A12 12 0 0 1 13.3 1.3Z"/>' +
+      '<svg x="22" y="9" width="52" height="26" viewBox="47.94 0 356.86 177.97" fill="#fff">' + paths + "</svg>" +
+      '<text x="49.2" y="51" text-anchor="middle" font-family="Aptos, Segoe UI, Arial, sans-serif" font-weight="700" font-size="12.5" letter-spacing="2.4" fill="#fff">COUNCIL</text>';
+    var stops = [[0, "#a57c2f"], [.22, "#e4c06a"], [.36, "#f5df9e"], [.5, "#c8952e"], [.68, "#a3782a"], [.84, "#eccb7a"], [1, "#b48a37"]];
+    return '<svg class="cm" viewBox="0 0 96 62" role="img" aria-label="Council member"><title>Conexus Indiana council member</title><defs>' +
+      '<linearGradient id="' + id + 'g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="96" y2="62">' +
+      stops.map(function (s) { return '<stop offset="' + s[0] + '" stop-color="' + s[1] + '"/>'; }).join("") + "</linearGradient>" +
+      // Pressed in: a dark edge under the top lip, a light catch under the bottom one, and a fine horizontal grain.
+      '<filter id="' + id + 'f" x="-8%" y="-8%" width="116%" height="124%">' +
+      '<feTurbulence type="fractalNoise" baseFrequency=".05 1.5" numOctaves="2" seed="7" result="n"/>' +
+      '<feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 .95  0 0 0 0 .8  0 0 0 .4 -.14" result="grain"/>' +
+      '<feComposite in="grain" in2="SourceAlpha" operator="in" result="g"/>' +
+      '<feFlood flood-color="#3d2700" flood-opacity=".75" result="c"/><feComposite in="c" in2="SourceAlpha" operator="out" result="outside"/>' +
+      '<feOffset in="outside" dy="1.3" result="o"/><feGaussianBlur in="o" stdDeviation=".8" result="b"/><feComposite in="b" in2="SourceAlpha" operator="in" result="inner"/>' +
+      '<feFlood flood-color="#fff" result="w"/><feComposite in="w" in2="SourceAlpha" operator="in" result="wa"/>' +
+      '<feOffset in="wa" dy="1.2" result="wo"/><feComposite in="wo" in2="SourceAlpha" operator="out" result="hi"/>' +
+      '<feMerge><feMergeNode in="hi"/><feMergeNode in="SourceGraphic"/><feMergeNode in="g"/><feMergeNode in="inner"/></feMerge></filter>' +
+      '<mask id="' + id + 'm" maskUnits="userSpaceOnUse" x="-2" y="-2" width="100" height="66">' + shapes + "</mask></defs>" +
+      '<g filter="url(#' + id + 'f)"><rect x="-2" y="-2" width="100" height="66" fill="url(#' + id + 'g)" mask="url(#' + id + 'm)"/></g></svg>';
+  }
+  // The badge spans the font's ascender line to its descender line. pi.css sets that for Arial; this reads it
+  // from the font the browser actually used, since Aptos and Segoe UI sit a little differently.
+  function fitBadge(h1) {
+    var b = h1 && h1.querySelector(".cm");
+    if (!b) return;
+    try {
+      var cs = getComputedStyle(h1), px = parseFloat(cs.fontSize);
+      var ctx = document.createElement("canvas").getContext("2d");
+      ctx.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+      var m = ctx.measureText("Hg");
+      if (!px || !m.fontBoundingBoxAscent || !m.fontBoundingBoxDescent) return;
+      b.style.height = ((m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) / px).toFixed(3) + "em";
+      b.style.verticalAlign = (-m.fontBoundingBoxDescent / px).toFixed(3) + "em";
+    } catch (e) { /* keep the CSS default */ }
+  }
   function backLink(href, text) { return '<a class="back" href="' + href + '">' + BACK + esc(text) + "</a>"; }
 
   function loadSources() {
@@ -556,10 +599,14 @@
       var c = p.company;
       var facts = [c.industry, c.program].filter(Boolean);
       if (c.status && c.status !== "Active") facts.push(PI.statusLabel[c.status] || c.status);
-      // A member gets the Conexus mark beside its name, the way a verified account gets a check.
-      var badge = c.status === "Active" ? '<span class="cm" title="Conexus Indiana council member">' + MARK + "<span>Council Member</span></span>" : "";
+      // Every member is a council member and gets the badge after its name, the way a verified account gets a
+      // check. The last word and the badge never split, so the badge never starts a line on its own.
+      var name = esc(c.name), cut = name.lastIndexOf(" ");
+      var title = c.status === "Active"
+        ? (cut > 0 ? name.slice(0, cut + 1) : "") + '<span class="nw">' + name.slice(cut + 1) + councilBadge() + "</span>"
+        : name;
       var html = backLink("#/companies", "All companies") +
-        '<h1 class="coname"><span>' + esc(c.name) + "</span>" + badge + "</h1>" +
+        '<h1 class="coname">' + title + "</h1>" +
         (facts.length ? '<p class="lede">' + facts.map(esc).join(". ") + ".</p>" : "") +
         (c.source === "notes" ? '<p class="secsub">This company is in the notes but not on the partner list. Add it in the control panel to give it an industry.</p>' : "") +
         '<nav class="ctabs" aria-label="Company sections">' + COMPANY_TABS.map(function (t) {
@@ -569,6 +616,7 @@
         }).join("") + "</nav>" +
         '<section class="tabpanel' + (at === 0 ? " first" : at === COMPANY_TABS.length - 1 ? " last" : "") + '"><p class="secsub" style="margin:0">' + esc(current.note) + '</p><div id="tabBody"></div></section>';
       view.innerHTML = html;
+      fitBadge(view.querySelector("h1.coname"));
       var body = el("tabBody");
       if (current.list) {
         topicsTab(body, c, current, mine);

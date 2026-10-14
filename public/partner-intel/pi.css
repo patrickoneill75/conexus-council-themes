@@ -424,10 +424,10 @@ body.pi-app { background:var(--wash); font-size:15px; }
 
 /* ---- A company: its name with the council member badge, then browser-style tabs whose
  * chosen tab runs straight into the white panel below. */
-.pi-app h1.coname { display:flex; flex-wrap:wrap; align-items:center; gap:10px 24px; font-size:46px; }
-.pi-app .cm { display:inline-flex; flex-direction:column; align-items:center; gap:6px; color:var(--navy); letter-spacing:0; }
-.pi-app .cm svg { width:64px; height:auto; display:block; }
-.pi-app .cm span { font-size:11px; line-height:1; font-weight:700; letter-spacing:.16em; text-transform:uppercase; white-space:nowrap; }
+.pi-app h1.coname { font-size:46px; }
+.pi-app h1.coname .nw { white-space:nowrap; }
+/* Ascender line to descender line, measured for Arial bold. index.html refines it for the font in use. */
+.pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.22em; overflow:visible; }
 .pi-app .ctabs { display:flex; gap:4px; margin-top:32px; }
 .pi-app .ctabs a { position:relative; flex:1 1 0; display:flex; align-items:center; justify-content:center; gap:10px; height:56px;
   border-radius:16px 16px 0 0; font-size:16px; font-weight:600; color:var(--text-secondary); white-space:nowrap; transition:background-color .2s, color .2s; }
