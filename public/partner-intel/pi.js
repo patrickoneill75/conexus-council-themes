@@ -45,7 +45,7 @@
 
   PI.kindLabel = { problem: "Issue", solution: "Solution", win: "Win", offer: "Offer", ask: "Ask",
     equipment: "Equipment", news: "News", commitment: "Commitment" };
-  PI.statusLabel = { Active: "Member", Inactive: "Former member", "Non-member": "Not a member", Unknown: "Unknown" };
+  PI.statusLabel = { Active: "Council Member", Inactive: "Former member", "Non-member": "Not a member", Unknown: "Unknown" };
 
   PI.pill = function (cls, text) { return '<span class="pill ' + cls + '">' + PI.esc(text) + "</span>"; };
 
