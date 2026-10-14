@@ -1383,14 +1383,9 @@ function topicGroups(rows, index, labels, overrides) {
     b.last.localeCompare(a.last) || a.label.localeCompare(b.label));
 }
 
-/** A company's Issues, Solutions or Wins tab, or its Overview (list "all": the three together).
- * byTopic: every row grouped by topic, ranked by priority across all the notes.
- * latest: the 12 newest meetings with a row in the list, each grouped the same way, its topics
- *   ranked by how often they came up in that meeting. The page opens on the first. */
-function topicsView(data, index, overrides, labels, id, list, includeInternal) {
-  if (!index.get(id)) return null;
-  const kinds = TOPIC_LISTS[list];
-  const rows = data.insights.filter((i) => i.company_id === id && kinds.includes(i.kind) && (includeInternal || i.scope !== "internal"));
+/** A company's rows grouped by the meeting they came from, newest first: each meeting with its date,
+ * label, programs and files in Box, and its rows grouped by topic, ranked by how often each came up there. */
+function bySource(rows, index, labels, overrides) {
   const sources = new Map();
   for (const i of rows) {
     const m = meetingOf(i, index);
@@ -1403,12 +1398,31 @@ function topicsView(data, index, overrides, labels, id, list, includeInternal) {
     for (const p of sourcesOf(i)) s.programs.add(p);
     for (const f of i.sources || []) if (!s.files.has(f.id || f.name)) s.files.set(f.id || f.name, { id: f.id, name: f.name, url: boxFileUrl(f.id) });
   }
-  const latest = [...sources.values()].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label)).slice(0, 12)
+  return [...sources.values()].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label))
     .map((s) => ({ key: s.key, date: s.date, label: s.label, eventType: s.eventType, estimated: s.estimated,
       programs: [...s.programs], files: [...s.files.values()], count: s.rows.length,
       topics: topicGroups(s.rows, index, labels, overrides) }));
+}
+
+/** A company's Issues, Solutions or Wins tab, or its Overview (list "all": the three together).
+ * byTopic: every row grouped by topic, ranked by priority across all the notes.
+ * latest: the 12 newest meetings with a row in the list, each grouped the same way, its topics
+ *   ranked by how often they came up in that meeting. The page opens on the first. */
+function topicsView(data, index, overrides, labels, id, list, includeInternal) {
+  if (!index.get(id)) return null;
+  const kinds = TOPIC_LISTS[list];
+  const rows = data.insights.filter((i) => i.company_id === id && kinds.includes(i.kind) && (includeInternal || i.scope !== "internal"));
+  const sources = bySource(rows, index, labels, overrides);
   return { list, total: rows.length, mentions: rows.filter(isMention).length,
-    byTopic: topicGroups(rows, index, labels, overrides), latest, sourceTotal: sources.size };
+    byTopic: topicGroups(rows, index, labels, overrides), latest: sources.slice(0, 12), sourceTotal: sources.length };
+}
+
+/** A company's Meetings tab: every meeting it appears in, newest first, each holding all of its notes of
+ * every kind, grouped by topic. */
+function meetingsView(data, index, overrides, labels, id, includeInternal) {
+  if (!index.get(id)) return null;
+  const rows = data.insights.filter((i) => i.company_id === id && (includeInternal || i.scope !== "internal"));
+  return { total: rows.length, meetings: bySource(rows, index, labels, overrides) };
 }
 
 function companiesView(data, roster, params) {
@@ -2174,7 +2188,7 @@ export async function handlePartnerIntelApi(route, request, env) {
     }
 
     // ---- everything below reads the published dataset --------------------------------
-    const needsData = ["home", "insights", "companies", "company", "company/topics", "ask", "facets", "programs", "program", "meeting", "summarize",
+    const needsData = ["home", "insights", "companies", "company", "company/topics", "company/meetings", "ask", "facets", "programs", "program", "meeting", "summarize",
       "attribution/review", "attribution/decide"];
     if (!needsData.includes(route) && route !== "recent-questions") return json({ error: "Not found" }, 404);
     if (route === "recent-questions" && method === "GET") return json({ items: await readJson(env, ASK_RECENT, []) });
@@ -2300,6 +2314,11 @@ export async function handlePartnerIntelApi(route, request, env) {
       const list = text(params.get("list"));
       if (!hasOwn(TOPIC_LISTS, list)) return json({ error: "Choose issues, solutions, wins or all." }, 400);
       const view = topicsView(data, index, overrides, labels, (data.remap && data.remap.get(asked)) || asked, list, params.get("internal") === "1");
+      return view ? json(view) : json({ error: "Company not found." }, 404);
+    }
+    if (route === "company/meetings" && method === "GET") {
+      const asked = text(params.get("id"));
+      const view = meetingsView(data, index, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
       return view ? json(view) : json({ error: "Company not found." }, 404);
     }
     if (route === "ask" && method === "POST") {

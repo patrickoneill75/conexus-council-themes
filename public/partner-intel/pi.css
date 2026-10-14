@@ -272,6 +272,14 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app h1 { font-size:44px; line-height:1.05; font-weight:700; letter-spacing:-0.022em; }
 .pi-app .lede { margin:12px 0 0; font-size:20px; line-height:1.45; font-weight:600; color:var(--accent); max-width:780px; }
 .pi-app h2.subh { margin:44px 0 0; font-size:22px; line-height:1.25; font-weight:700; color:var(--navy); }
+.pi-app #pview > h2.subh { margin:22px 0 4px; }
+/* A meeting on a company's Meetings tab opens to the files it came from, then its notes, topic by topic. */
+.pi-app .mfrom { margin:0 0 6px; font-size:15px; color:var(--text-secondary); }
+.pi-app .mtopic { padding-top:18px; }
+.pi-app .mtopic + .mtopic { margin-top:6px; border-top:1px solid #edf0f5; }
+.pi-app .mtopic h4 { margin:0; font-size:23px; font-weight:700; color:var(--navy); letter-spacing:-0.01em; }
+.pi-app .mtopic > .item { border-top:1px solid #edf0f5; }
+.pi-app .mtopic h4 + .item { border-top:0; padding-top:8px; }
 .pi-app .secsub { margin:6px 0 0; font-size:15px; color:var(--text-secondary); }
 .pi-app .back { display:inline-flex; align-items:center; gap:8px; margin:0 0 16px; font-size:15px; font-weight:700; }
 .pi-app .back svg, .pi-app .arrowlink svg { width:15px; height:15px; transition:transform .2s; }
