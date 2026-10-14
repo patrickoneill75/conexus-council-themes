@@ -464,8 +464,8 @@ body.pi-app { background:var(--wash); font-size:15px; }
  * chosen tab runs straight into the white panel below. */
 .pi-app h1.coname { font-size:46px; }
 .pi-app h1.coname .nw { white-space:nowrap; }
-/* A little taller than the capitals, sitting just below the baseline, about two spaces after the name. */
-.pi-app .cm { display:inline-block; height:.82em; width:auto; aspect-ratio:96 / 62; vertical-align:-.06em; margin-left:.5em; overflow:visible; }
+/* From the font's ascender line to its descender line, about two spaces after the name. */
+.pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.5em; overflow:visible; }
 .pi-app .ctabs { display:flex; gap:4px; margin-top:32px; }
 .pi-app .ctabs a { position:relative; flex:1 1 0; display:flex; align-items:center; justify-content:center; gap:10px; height:56px;
   border-radius:16px 16px 0 0; font-size:16px; font-weight:600; color:var(--text-secondary); white-space:nowrap; transition:background-color .2s, color .2s; }
