@@ -371,10 +371,10 @@
     PI.api("meeting?program=" + encodeURIComponent(name) + "&id=" + encodeURIComponent(id)).then(function (r) {
       if (mine !== seq) return;
       var m = r.meeting;
-      function section(title, noun, items) {
+      function section(title, noun, items, tone) {
         if (!items.length) return "";
         var cards = items.map(function (i) { return PI.insightCard(i, { action: isIssue(i) ? findButton(i, i.company && i.company.id) : "" }); });
-        return '<section class="card"><h2>' + esc(title) + "</h2><div>" + cards.slice(0, SECTION_SHOWN).join("") +
+        return '<section class="card"><h2' + (tone ? ' class="' + tone + '"' : "") + ">" + esc(title) + "</h2><div>" + cards.slice(0, SECTION_SHOWN).join("") +
           (cards.length > SECTION_SHOWN ? '<div hidden data-rest>' + cards.slice(SECTION_SHOWN).join("") + "</div>" : "") + "</div>" +
           (cards.length > SECTION_SHOWN ? '<p style="margin:6px 0 0"><button class="more" data-show-rest>Show all ' + noun + "</button></p>" : "") + "</section>";
       }
@@ -383,7 +383,7 @@
         (m.companyCount ? " with " + esc(plural(m.companyCount, "company", "companies")) : "") + ".</p>" +
         '<p class="secsub" style="margin-top:10px;max-width:860px">' + (m.companyCount ? esc(m.companies.join(", ").replace(/\.+$/, "")) + ". " : "") +
         "From " + PI.fileLinks(m.files) + ".</p>" +
-        section("Issues", "issues", r.issues) + section("Solutions", "solutions", r.solutions) + section("Wins", "wins", r.wins) + section("Other", "other notes", r.other);
+        section("Issues", "issues", r.issues, "k-issue") + section("Solutions", "solutions", r.solutions, "k-solution") + section("Wins", "wins", r.wins, "k-win") + section("Other", "other notes", r.other);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
   // "Show all" under a section, or "View all" under a company column, shows the rest in place.
@@ -688,10 +688,10 @@
     return '<div class="tlist">' + topics.map(function (t, n) {
       var inner;
       if (tab.list === "all") {
-        inner = '<div class="band"><div class="cols3">' + [["Issues", "issues"], ["Solutions", "solutions"], ["Wins", "wins"]].map(function (col) {
+        inner = '<div class="band"><div class="cols3">' + [["Issues", "issues", "k-issue"], ["Solutions", "solutions", "k-solution"], ["Wins", "wins", "k-win"]].map(function (col) {
           var rows = t.items.filter(function (i) { return PI.categoryOf(i.kind) === col[1]; });
           var cards = rows.map(function (i) { return rowCard(i, companyId); });
-          return '<section><h4 class="colh">' + col[0] + "</h4>" +
+          return '<section><h4 class="colh ' + col[2] + '">' + col[0] + "</h4>" +
             (rows.length ? cards.slice(0, COLUMN_SHOWN).join("") +
               (rows.length > COLUMN_SHOWN ? '<div hidden data-rest>' + cards.slice(COLUMN_SHOWN).join("") + "</div>" +
                 '<p class="colmore"><button class="find" data-show-rest>View all ' + col[1] + ARROW + "</button></p>" : "")

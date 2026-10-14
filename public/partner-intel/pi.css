@@ -308,10 +308,12 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .item .head { font-size:13.5px; margin-bottom:4px; }
 .pi-app .item .co { font-size:14.5px; font-weight:700; }
 .pi-app .item .kindl { display:block; font-size:12.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
-/* The Issue, Solution and Win labels each have a color, on the text only. Each clears 4.5:1 on white. */
-.pi-app .item .kindl.k-issue { color:#a82b50; }
-.pi-app .item .kindl.k-solution { color:#136c50; }
-.pi-app .item .kindl.k-win { color:#937000; }
+/* Issue, Solution and Win each have a color, on the text only: the label on a note and the Issues,
+ * Solutions and Wins titles above columns and meeting sections. Each clears 4.5:1 on white. */
+.pi-app { --issue:#a82b50; --solution:#136c50; --win:#937000; }
+.pi-app .item .kindl.k-issue, .pi-app h2.k-issue, .pi-app .colh.k-issue { color:var(--issue); }
+.pi-app .item .kindl.k-solution, .pi-app h2.k-solution, .pi-app .colh.k-solution { color:var(--solution); }
+.pi-app .item .kindl.k-win, .pi-app h2.k-win, .pi-app .colh.k-win { color:var(--win); }
 .pi-app .item .title { font-size:17px; font-weight:700; margin-top:2px; }
 .pi-app .item .detail { font-size:15px; max-width:860px; }
 .pi-app .item .meta { font-size:13.5px; gap:6px 16px; }
@@ -359,7 +361,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 /* The highlight wipes in from the left with a soft overshoot, and wipes back out to the left. */
 .pi-app .hl { position:relative; z-index:0; }
 .pi-app .hl::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl);
-  transform:scaleX(0); transform-origin:0 50%; transition:transform .6s cubic-bezier(.45,0,.3,1.22); }
+  transform:scaleX(0); transform-origin:0 50%; transition:transform .55s cubic-bezier(.4,0,.2,1); }
 .pi-app .tp.open .hl::before { transform:scaleX(1); transition:transform 1.25s var(--spring-soft) .08s; }
 /* What opens under a topic: a light blue block lined up with the topic name. */
 .pi-app .tbody { padding:0; }
