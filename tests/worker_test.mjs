@@ -2960,6 +2960,23 @@ test("partner_intel: the Trending topics page opens on the last 90 days", async 
   assert.match(html, /var state = \{ days: 90,/, "the page asks for 90 days when it loads");
 });
 
+test("repo: BUG the Cloudflare Worker build failed installing Python packages it never uses", () => {
+  // Workers Builds installs Python dependencies whenever it finds a Python project file at the repo root.
+  // On Python 3.14 rapidfuzz 3.10.1 has no wheel, its source build failed, and the Worker never deployed.
+  // The Worker has no Python, so the pipelines' requirements live off the root.
+  const repo = path.dirname(SRC);
+  for (const f of ["requirements.txt", "pyproject.toml", "Pipfile", "setup.py"]) {
+    assert.ok(!fs.existsSync(path.join(repo, f)), f + " must not sit at the repo root");
+  }
+  const flows = path.join(repo, ".github", "workflows");
+  for (const f of fs.readdirSync(flows)) {
+    const yml = fs.readFileSync(path.join(flows, f), "utf8");
+    for (const m of yml.matchAll(/pip install -r (\S+)/g)) {
+      assert.ok(fs.existsSync(path.join(repo, m[1])), f + " installs " + m[1] + ", which must exist");
+    }
+  }
+});
+
 test("partner_intel: BUG a stray + left after removing a line broke every page; each inline script must parse", () => {
   // Removing the "Showing the latest meetings" line left "</table>" + : ..., a syntax error that stopped the
   // whole staff app from loading. Parse every inline script in the app, the control panel and pi.js.

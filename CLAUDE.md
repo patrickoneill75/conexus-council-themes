@@ -103,6 +103,10 @@ Decisions already made and settled. Act on these rather than re-asking.
    `"toString"` resolve to functions and slip past `if (!x)` guards.
 3. Box uploads upsert by name: look the file up first and PUT a new version if it
    exists. Always creating a new file 409s on the second run.
+4. Keep Python project files off the repo root. The pipelines' packages live in
+   `requirements/pipelines.txt`. A root `requirements.txt` (or `pyproject.toml`) makes
+   Cloudflare's Worker build install every Python package, and a failed install, such as
+   a package with no wheel for the build image's Python, stops the Worker deploying.
 
 # Tests
 
