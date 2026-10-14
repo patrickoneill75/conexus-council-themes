@@ -249,6 +249,9 @@ h4.colhead { margin:0; padding-bottom:8px; border-bottom:1px solid var(--navy); 
   --spring-soft:linear(0, 0.045, 0.153, 0.291, 0.437, 0.575, 0.697, 0.799, 0.880, 0.940, 0.983, 1.011, 1.028, 1.036, 1.038, 1.037, 1.032, 1.027, 1.021, 1.016, 1.011, 1.008, 1.004, 1.002, 1.001, 1.000, 0.999, 0.999, 0.999, 0.999, 1); }
 body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .wrap { max-width:1120px; padding:44px 32px 96px; }
+/* On a desktop the page body is set at 80%, the size it reads best at, while the top bar stays full size.
+ * 1400px scaled to 80% is 1120px, so the body still lines up with the bar. */
+@media (min-width:761px) { .pi-app .wrap { zoom:.8; max-width:1400px; padding-left:40px; padding-right:40px; } }
 
 /* Top bar: white, with the current page marked by the highlight. */
 .pi-app .appbar { background:#fff; color:var(--navy); border-bottom:1px solid var(--border); }
@@ -363,24 +366,28 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tline::after { content:""; position:absolute; left:50%; bottom:-1px; width:7px; height:7px; margin-left:-4.5px;
   border-right:2px solid var(--accent); border-bottom:2px solid var(--accent); transform:rotate(45deg); }
 .pi-app .tp:not(.open):has(.tp-row:hover) .tline { --rest:22px; }
-.pi-app .tline.hint { animation:tline-hint 1.1s ease-in-out .9s 1; }
+.pi-app .tline.hint { animation:tline-hint 1s linear 1.2s 1; }
+.pi-app .circ.cue { animation:circ-cue .9s ease-in-out 1.2s 1; }
+@keyframes circ-cue { 0%, 100% { transform:scale(var(--s)); } 22% { transform:scale(calc(var(--s) * 1.15)); } 44% { transform:scale(calc(var(--s) * .94)); }
+  64% { transform:scale(calc(var(--s) * 1.05)); } 82% { transform:scale(calc(var(--s) * .99)); } }
 .pi-app .tp.open .tline { width:3px; left:18.5px; height:calc(100% - 61px); transition:none; }
 .pi-app .tp.open .tline::after { width:9px; height:9px; margin-left:-4.5px; bottom:-4px; border:0; border-radius:999px; background:var(--accent); transform:none; }
 .pi-app .tline.grow { animation:tline-grow .7s ease-out; }
 .pi-app .tline.shrink { animation:tline-shrink .6s ease-out; }
 @keyframes tline-grow { 0% { height:14px; } 45% { height:calc((100% - 61px) * 1.05); } 70% { height:calc((100% - 61px) * .98); } 100% { height:calc(100% - 61px); } }
 @keyframes tline-shrink { 0% { height:48px; } 45% { height:calc(var(--rest) - 5px); } 72% { height:calc(var(--rest) + 3px); } 100% { height:var(--rest); } }
-@keyframes tline-hint { 0%, 100% { height:14px; } 40% { height:22px; } 70% { height:13px; } }
+/* An elastic spring down and back. */
+@keyframes tline-hint { 0% { height:var(--rest); } 22% { height:calc(var(--rest) + 12px); } 42% { height:calc(var(--rest) - 3px); }
+  60% { height:calc(var(--rest) + 5px); } 78% { height:calc(var(--rest) - 1px); } 100% { height:var(--rest); } }
 /* The highlight wipes in from the left with a soft overshoot, and wipes back out to the left. */
 .pi-app .hl { position:relative; z-index:0; }
 .pi-app .hl::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl);
   transform:scaleX(0); transform-origin:0 50%; transition:transform .55s cubic-bezier(.4,0,.2,1); }
 .pi-app .tp.open .hl::before { transform:scaleX(1); transition:transform 1.25s var(--spring-soft) .08s; }
 /* What opens under a topic: no box. The topic line is its left edge and runs along its bottom; the
- * content lines up with the topic name. A boxed block (white cards) keeps its light blue box. */
+ * content lines up with the topic name. */
 .pi-app .tbody { padding:0; }
 .pi-app .band { margin:-6px 0 30px 20px; background:none; border-radius:0; padding:16px 28px 30px 54px; }
-.pi-app .band.boxed { margin:-6px 0 46px 74px; background:var(--band); border-radius:20px; padding:24px 28px; }
 .pi-app svg.trace { position:absolute; left:0; top:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
 .pi-app svg.trace .ln { fill:none; stroke:var(--accent); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
 .pi-app svg.trace .dot { fill:var(--accent); opacity:0; transform:scale(.2); transform-box:fill-box; transform-origin:50% 50%;
@@ -451,13 +458,14 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app table.tbl tr:last-child td { border-bottom:0; }
 .pi-app table.tbl tr.click:hover td { background:var(--band); }
 .pi-app table.tbl td.cn { font-weight:700; color:var(--navy); }
+.pi-app table.tbl td.num { font-variant-numeric:tabular-nums; }
 
 /* ---- A company: its name with the council member badge, then browser-style tabs whose
  * chosen tab runs straight into the white panel below. */
 .pi-app h1.coname { font-size:46px; }
 .pi-app h1.coname .nw { white-space:nowrap; }
-/* Ascender line to descender line, measured for Arial bold. index.html refines it for the font in use. */
-.pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.22em; overflow:visible; }
+/* A little taller than the capitals, sitting just below the baseline, about two spaces after the name. */
+.pi-app .cm { display:inline-block; height:.82em; width:auto; aspect-ratio:96 / 62; vertical-align:-.06em; margin-left:.5em; overflow:visible; }
 .pi-app .ctabs { display:flex; gap:4px; margin-top:32px; }
 .pi-app .ctabs a { position:relative; flex:1 1 0; display:flex; align-items:center; justify-content:center; gap:10px; height:56px;
   border-radius:16px 16px 0 0; font-size:16px; font-weight:600; color:var(--text-secondary); white-space:nowrap; transition:background-color .2s, color .2s; }
@@ -474,9 +482,11 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tabpanel.last { border-top-right-radius:0; }
 .pi-app .tabpanel .card { padding:0; margin:0; border-radius:0; }
 .pi-app .toolbar { margin:18px 0 4px; }
-.pi-app .cols3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.pi-app .cols3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px 40px; }
 .pi-app .colh { margin:0 0 4px; font-size:16px; font-weight:700; color:var(--navy); }
-.pi-app .cols3 .item { background:#fff; border:0; border-radius:14px; padding:14px 16px; margin-top:10px; }
+/* All white: the notes in each column are split by a very faint line, as under a point. */
+.pi-app .cols3 .item { background:none; border:0; border-top:1px solid #edf0f5; border-radius:0; padding:14px 0; margin:0; }
+.pi-app .cols3 .colh + .item { border-top:0; padding-top:8px; }
 .pi-app .cols3 .item .title { font-size:15px; }
 .pi-app .cols3 .item .detail { font-size:14px; }
 .pi-app .cols3 .item .srcm, .pi-app .cols3 .item details.src { font-size:13px; }
@@ -512,7 +522,6 @@ body.pi-app { background:var(--wash); font-size:15px; }
   .pi-app .tname { font-size:22px; }
   .pi-app .tp-row { gap:0 16px; }
   .pi-app .band { margin-left:20px; padding:12px 8px 26px 36px; }
-  .pi-app .band.boxed { margin-left:56px; padding:18px 16px; }
   .pi-app .band.notes { padding:6px 8px 26px 36px; }
   .pi-app .mrow { grid-template-columns:64px minmax(0,1fr); gap:14px; }
   .pi-app .mrow .go-arrow { display:none; }

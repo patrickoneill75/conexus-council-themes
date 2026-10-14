@@ -28,7 +28,7 @@ COLUMNS = ["InsightID", "Date", "DateSource", "SourceFolder", "EventType", "Seri
            "UrgencyReason", "Status", "Addresses", "Tags", "Confidence", "Speaker", "Scope",
            "SourceFiles", "SourceLinks", "ReviewFlags"]
 
-MEMBER_LABEL = {"Active": "Council Member", "Inactive": "Former member", "Non-member": "Not a member"}
+MEMBER_LABEL = {"Active": "Council Member", "Inactive": "Not Council", "Non-member": "Not Council"}
 # The app calls a "problem" row an issue; the export says the same. Other kinds read as stored.
 TYPE_LABEL = {"problem": "issue"}
 
