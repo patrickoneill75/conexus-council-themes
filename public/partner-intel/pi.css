@@ -256,9 +256,9 @@ body.pi-app { background:var(--wash); font-size:15px; }
 /* Top bar: white, with the current page marked by the highlight. */
 .pi-app .appbar { background:#fff; color:var(--navy); border-bottom:1px solid var(--border); }
 .pi-app .appbar .in { max-width:1120px; min-height:68px; gap:8px 24px; }
-.pi-app .appname { font-size:17px; font-weight:700; color:var(--navy); margin-right:12px; }
+.pi-app .appname { font-size:20px; font-weight:700; color:var(--navy); margin-right:12px; }
 .pi-app .nav { gap:4px; }
-.pi-app .nav a { padding:8px 14px; border:0; color:var(--navy); font-size:15px; font-weight:600; }
+.pi-app .nav a { padding:8px 14px; border:0; color:var(--navy); font-size:17px; font-weight:600; }
 .pi-app .nav a:hover { color:var(--accent); text-decoration:none; }
 .pi-app .nav a span { position:relative; z-index:0; }
 .pi-app .nav a.on span::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl); }
@@ -269,7 +269,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app #whoami { display:none; }
 
 /* Titles. */
-.pi-app h1 { font-size:52px; line-height:1.05; font-weight:700; letter-spacing:-0.022em; }
+.pi-app h1 { font-size:44px; line-height:1.05; font-weight:700; letter-spacing:-0.022em; }
 .pi-app .lede { margin:12px 0 0; font-size:20px; line-height:1.45; font-weight:600; color:var(--accent); max-width:780px; }
 .pi-app h2.subh { margin:44px 0 0; font-size:22px; line-height:1.25; font-weight:700; color:var(--navy); }
 .pi-app .secsub { margin:6px 0 0; font-size:15px; color:var(--text-secondary); }
@@ -350,7 +350,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tp-row:focus-visible { outline:none; }
 .pi-app .tp-row:focus-visible .circ { outline:3px solid var(--amber); outline-offset:3px; }
 .pi-app .tp-row.wide { grid-template-columns:40px minmax(0,1fr) auto; }
-.pi-app .tname { display:block; font-size:30px; line-height:1.15; font-weight:700; color:var(--navy); letter-spacing:-0.015em; }
+.pi-app .tname { display:block; font-size:25px; line-height:1.15; font-weight:700; color:var(--navy); letter-spacing:-0.015em; }
 .pi-app .tmeta { display:block; margin-top:6px; font-size:15px; color:var(--text-secondary); }
 .pi-app .circ { --s:1; position:relative; z-index:1; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px;
   margin-top:-3px; border:3px solid var(--accent); border-radius:999px; background:#fff; color:var(--accent); font-size:15px; font-weight:700;
@@ -463,7 +463,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 
 /* ---- A company: its name with the council member badge, then browser-style tabs whose
  * chosen tab runs straight into the white panel below. */
-.pi-app h1.coname { font-size:46px; }
+.pi-app h1.coname { font-size:40px; }
 .pi-app h1.coname .nw { white-space:nowrap; }
 /* From the font's ascender line to its descender line, about two spaces after the name. */
 .pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.5em; overflow:visible; }
@@ -516,11 +516,11 @@ body.pi-app { background:var(--wash); font-size:15px; }
   .pi-app .wrap { padding:28px 16px 64px; }
   .pi-app .appbar .in { gap:4px 12px; }
   .pi-app .nav a { padding:8px 8px; }
-  .pi-app h1 { font-size:36px; }
-  .pi-app h1.coname { font-size:32px; }
+  .pi-app h1 { font-size:32px; }
+  .pi-app h1.coname { font-size:28px; }
   .pi-app .lede { font-size:17px; }
   .pi-app .card, .pi-app .tabpanel { padding:22px 18px; }
-  .pi-app .tname { font-size:22px; }
+  .pi-app .tname { font-size:20px; }
   .pi-app .tp-row { gap:0 16px; }
   .pi-app .bpt .txt { font-size:17px; }
   .pi-app .item .title { font-size:18px; }
