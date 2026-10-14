@@ -256,9 +256,9 @@ body.pi-app { background:var(--wash); font-size:15px; }
 /* Top bar: white, with the current page marked by the highlight. */
 .pi-app .appbar { background:#fff; color:var(--navy); border-bottom:1px solid var(--border); }
 .pi-app .appbar .in { max-width:1120px; min-height:68px; gap:8px 24px; }
-.pi-app .appname { font-size:17px; font-weight:700; color:var(--navy); margin-right:12px; }
+.pi-app .appname { font-size:20px; font-weight:700; color:var(--navy); margin-right:12px; }
 .pi-app .nav { gap:4px; }
-.pi-app .nav a { padding:8px 14px; border:0; color:var(--navy); font-size:15px; font-weight:600; }
+.pi-app .nav a { padding:8px 14px; border:0; color:var(--navy); font-size:17px; font-weight:600; }
 .pi-app .nav a:hover { color:var(--accent); text-decoration:none; }
 .pi-app .nav a span { position:relative; z-index:0; }
 .pi-app .nav a.on span::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl); }
@@ -269,7 +269,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app #whoami { display:none; }
 
 /* Titles. */
-.pi-app h1 { font-size:52px; line-height:1.05; font-weight:700; letter-spacing:-0.022em; }
+.pi-app h1 { font-size:44px; line-height:1.05; font-weight:700; letter-spacing:-0.022em; }
 .pi-app .lede { margin:12px 0 0; font-size:20px; line-height:1.45; font-weight:600; color:var(--accent); max-width:780px; }
 .pi-app h2.subh { margin:44px 0 0; font-size:22px; line-height:1.25; font-weight:700; color:var(--navy); }
 .pi-app .secsub { margin:6px 0 0; font-size:15px; color:var(--text-secondary); }
@@ -310,31 +310,32 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .item:first-child { border-top:0; padding-top:6px; }
 .pi-app .item .head { font-size:13.5px; margin-bottom:4px; }
 .pi-app .item .co { font-size:14.5px; font-weight:700; }
-.pi-app .item .kindl { display:block; font-size:12.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
+.pi-app .item .kindl { display:block; font-size:14px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
 /* Issue, Solution and Win each have a color, on the text only: the label on a note and the Issues,
  * Solutions and Wins titles above columns and meeting sections. Each clears 4.5:1 on white. */
 .pi-app { --issue:#a82b50; --solution:#937000; --win:#136c50; }
 .pi-app .item .kindl.k-issue, .pi-app h2.k-issue, .pi-app .colh.k-issue { color:var(--issue); }
 .pi-app .item .kindl.k-solution, .pi-app h2.k-solution, .pi-app .colh.k-solution { color:var(--solution); }
 .pi-app .item .kindl.k-win, .pi-app h2.k-win, .pi-app .colh.k-win { color:var(--win); }
-.pi-app .item .title { font-size:17px; font-weight:700; margin-top:2px; }
-.pi-app .item .detail { font-size:15px; max-width:860px; }
+.pi-app .item .title { font-size:21px; font-weight:700; margin-top:2px; }
+.pi-app .item .detail { font-size:19px; max-width:900px; }
 .pi-app .item .meta { font-size:13.5px; gap:6px 16px; }
 /* Who said it, under the title: company, industry, member status, in one quiet line. */
-.pi-app .item .by { display:flex; flex-wrap:wrap; align-items:baseline; margin-top:3px; font-size:14px; color:var(--text-secondary); }
+.pi-app .item .by { display:flex; flex-wrap:wrap; align-items:baseline; margin-top:3px; font-size:17px; color:var(--text-secondary); }
 /* The dot trails each part, so a line that wraps on a phone never starts with one. */
 .pi-app .item .by > *:not(:last-child)::after { content:"\00b7"; margin:0 8px; color:var(--text-muted); }
-.pi-app .item .by .co { font-size:14px; font-weight:400; color:var(--navy); }
+.pi-app .item .by .co { font-size:17px; font-weight:400; color:var(--navy); }
 .pi-app .item .by .pill { margin-left:8px; }
 .pi-app .item .by .pill::before { content:none; }
 .pi-app .item .detail { margin-top:8px; }
 /* Source: closed until clicked; the date, meeting type, speaker and files, then the quote. */
-.pi-app .item details.src { margin-top:10px; font-size:13.5px; }
+.pi-app .item details.src { margin-top:10px; font-size:16px; }
 .pi-app .item details.src summary { font-weight:700; }
 .pi-app .item .srcm { display:flex; flex-wrap:wrap; gap:4px 16px; margin:8px 0 0; color:var(--text-secondary); }
 .pi-app .item .srcm .files { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pi-app .item .acts { margin-top:8px; }
-.pi-app button.find { border:0; border-radius:0; background:none; padding:0; color:var(--accent); font-size:14px; font-weight:700; display:inline-flex; align-items:center; gap:6px; }
+.pi-app .item .why { font-size:16px; }
+.pi-app button.find { border:0; border-radius:0; background:none; padding:0; color:var(--accent); font-size:16px; font-weight:700; display:inline-flex; align-items:center; gap:6px; }
 .pi-app button.find:hover { background:none; color:var(--accent); }
 .pi-app button.find svg { width:14px; height:14px; transition:transform .2s; }
 .pi-app button.find:hover svg { transform:translateX(3px); }
@@ -349,7 +350,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tp-row:focus-visible { outline:none; }
 .pi-app .tp-row:focus-visible .circ { outline:3px solid var(--amber); outline-offset:3px; }
 .pi-app .tp-row.wide { grid-template-columns:40px minmax(0,1fr) auto; }
-.pi-app .tname { display:block; font-size:30px; line-height:1.15; font-weight:700; color:var(--navy); letter-spacing:-0.015em; }
+.pi-app .tname { display:block; font-size:25px; line-height:1.15; font-weight:700; color:var(--navy); letter-spacing:-0.015em; }
 .pi-app .tmeta { display:block; margin-top:6px; font-size:15px; color:var(--text-secondary); }
 .pi-app .circ { --s:1; position:relative; z-index:1; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px;
   margin-top:-3px; border:3px solid var(--accent); border-radius:999px; background:#fff; color:var(--accent); font-size:15px; font-weight:700;
@@ -400,7 +401,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tp.closing .hl::before { transform:scaleX(0); transition:transform var(--close, .6s) cubic-bezier(.4,0,.2,1); }
 .pi-app ul.bullets { gap:16px; }
 .pi-app .bpt { grid-template-columns:28px minmax(0,1fr); gap:14px; }
-.pi-app .bpt .txt { font-size:16px; }
+.pi-app .bpt .txt { font-size:20px; line-height:1.5; }
 .pi-app .bpt .examples { margin-top:4px; padding:0; }
 .pi-app .bpt .examples > .item { border-top:1px solid #edf0f5; padding:16px 0; }
 .pi-app .bpt .examples > .item:first-child { border-top:0; padding-top:10px; }
@@ -462,7 +463,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 
 /* ---- A company: its name with the council member badge, then browser-style tabs whose
  * chosen tab runs straight into the white panel below. */
-.pi-app h1.coname { font-size:46px; }
+.pi-app h1.coname { font-size:40px; }
 .pi-app h1.coname .nw { white-space:nowrap; }
 /* From the font's ascender line to its descender line, about two spaces after the name. */
 .pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.5em; overflow:visible; }
@@ -487,9 +488,9 @@ body.pi-app { background:var(--wash); font-size:15px; }
 /* All white: the notes in each column are split by a very faint line, as under a point. */
 .pi-app .cols3 .item { background:none; border:0; border-top:1px solid #edf0f5; border-radius:0; padding:14px 0; margin:0; }
 .pi-app .cols3 .colh + .item { border-top:0; padding-top:8px; }
-.pi-app .cols3 .item .title { font-size:15px; }
-.pi-app .cols3 .item .detail { font-size:14px; }
-.pi-app .cols3 .item .srcm, .pi-app .cols3 .item details.src { font-size:13px; }
+.pi-app .cols3 .item .title { font-size:18px; }
+.pi-app .cols3 .item .detail { font-size:17px; }
+.pi-app .cols3 .item .srcm, .pi-app .cols3 .item details.src { font-size:15px; }
 .pi-app .band.notes { padding:6px 28px 30px 54px; }
 .pi-app .band.notes > .item { border-top-color:#edf0f5; }
 .pi-app .colmore { margin:14px 0 0; }
@@ -515,12 +516,17 @@ body.pi-app { background:var(--wash); font-size:15px; }
   .pi-app .wrap { padding:28px 16px 64px; }
   .pi-app .appbar .in { gap:4px 12px; }
   .pi-app .nav a { padding:8px 8px; }
-  .pi-app h1 { font-size:36px; }
-  .pi-app h1.coname { font-size:32px; }
+  .pi-app h1 { font-size:32px; }
+  .pi-app h1.coname { font-size:28px; }
   .pi-app .lede { font-size:17px; }
   .pi-app .card, .pi-app .tabpanel { padding:22px 18px; }
-  .pi-app .tname { font-size:22px; }
+  .pi-app .tname { font-size:20px; }
   .pi-app .tp-row { gap:0 16px; }
+  .pi-app .bpt .txt { font-size:17px; }
+  .pi-app .item .title { font-size:18px; }
+  .pi-app .item .detail { font-size:16px; }
+  .pi-app .item .by, .pi-app .item .by .co { font-size:15px; }
+  .pi-app .item details.src { font-size:14.5px; }
   .pi-app .band { margin-left:20px; padding:12px 8px 26px 36px; }
   .pi-app .band.notes { padding:6px 8px 26px 36px; }
   .pi-app .mrow { grid-template-columns:64px minmax(0,1fr); gap:14px; }
