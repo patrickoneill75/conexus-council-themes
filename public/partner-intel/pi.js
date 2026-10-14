@@ -49,6 +49,9 @@
 
   PI.pill = function (cls, text) { return '<span class="pill ' + cls + '">' + PI.esc(text) + "</span>"; };
 
+  // Only the Issue, Solution and Win labels carry a color; every other kind keeps the plain blue label.
+  var KIND_TONE = { problem: "k-issue", solution: "k-solution", win: "k-win" };
+
   /** Which company tab a kind belongs to: issues, solutions, wins, or other. */
   PI.categoryOf = function (kind) {
     return kind === "problem" || kind === "ask" ? "issues" : kind === "win" ? "wins"
@@ -83,7 +86,7 @@
     if (opts.action) meta.push('<span class="act">' + opts.action + "</span>");
     return '<div class="item">' +
       (head ? '<div class="head">' + head + "</div>" : "") +
-      '<span class="kindl">' + PI.esc(PI.kindLabel[i.kind] || i.kind) + "</span>" +
+      '<span class="kindl' + (KIND_TONE[i.kind] ? " " + KIND_TONE[i.kind] : "") + '">' + PI.esc(PI.kindLabel[i.kind] || i.kind) + "</span>" +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
       '<div class="detail">' + PI.esc(i.detail) + "</div>" +
       (i.solves ? '<div class="why"><b>Addresses:</b> ' + PI.esc(i.solves) + "</div>" : "") +

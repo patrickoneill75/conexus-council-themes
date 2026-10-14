@@ -308,6 +308,10 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .item .head { font-size:13.5px; margin-bottom:4px; }
 .pi-app .item .co { font-size:14.5px; font-weight:700; }
 .pi-app .item .kindl { display:block; font-size:12.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
+/* The Issue, Solution and Win labels each have a color, on the text only. Each clears 4.5:1 on white. */
+.pi-app .item .kindl.k-issue { color:#a82b50; }
+.pi-app .item .kindl.k-solution { color:#136c50; }
+.pi-app .item .kindl.k-win { color:#937000; }
 .pi-app .item .title { font-size:17px; font-weight:700; margin-top:2px; }
 .pi-app .item .detail { font-size:15px; max-width:860px; }
 .pi-app .item .meta { font-size:13.5px; gap:6px 16px; }
@@ -371,8 +375,8 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app button.pm:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
 .pi-app button.pm i { position:absolute; left:50%; top:50%; background:var(--navy); border-radius:2px; transition:background-color .15s; }
 .pi-app button.pm:hover i { background:var(--accent); }
-.pi-app button.pm .h { width:16px; height:3px; margin:-1.5px 0 0 -8px; }
-.pi-app button.pm .v { width:3px; height:16px; margin:-8px 0 0 -1.5px; transition:transform .14s ease-out .1s, background-color .15s; }
+.pi-app button.pm .h { width:16px; height:2.25px; margin:-1.125px 0 0 -8px; }
+.pi-app button.pm .v { width:2.25px; height:16px; margin:-8px 0 0 -1.125px; transition:transform .14s ease-out .1s, background-color .15s; }
 .pi-app button.pm[aria-expanded="true"] .v { transform:scaleY(0); transition:transform .14s ease-in; }
 .pi-app button.pm.a-shrink { animation:pm-pop .5s ease-out; }
 .pi-app button.pm.a-expand { animation:pm-pop-b .5s ease-out; }
