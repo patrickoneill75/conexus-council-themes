@@ -366,8 +366,8 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tline::after { content:""; position:absolute; left:50%; bottom:-1px; width:7px; height:7px; margin-left:-4.5px;
   border-right:2px solid var(--accent); border-bottom:2px solid var(--accent); transform:rotate(45deg); }
 .pi-app .tp:not(.open):has(.tp-row:hover) .tline { --rest:22px; }
-.pi-app .tline.hint { animation:tline-hint 1s linear 1.2s 1; }
-.pi-app .circ.cue { animation:circ-cue .9s ease-in-out 1.2s 1; }
+.pi-app .tline.hint { animation:tline-hint 1s linear 1.2s 2; }
+.pi-app .circ.cue { animation:circ-cue .9s ease-in-out 1.2s 2; }
 @keyframes circ-cue { 0%, 100% { transform:scale(var(--s)); } 22% { transform:scale(calc(var(--s) * 1.15)); } 44% { transform:scale(calc(var(--s) * .94)); }
   64% { transform:scale(calc(var(--s) * 1.05)); } 82% { transform:scale(calc(var(--s) * .99)); } }
 .pi-app .tp.open .tline { width:3px; left:18.5px; height:calc(100% - 61px); transition:none; }
