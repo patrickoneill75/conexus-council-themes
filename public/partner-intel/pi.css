@@ -317,6 +317,20 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .item .title { font-size:17px; font-weight:700; margin-top:2px; }
 .pi-app .item .detail { font-size:15px; max-width:860px; }
 .pi-app .item .meta { font-size:13.5px; gap:6px 16px; }
+/* Who said it, under the title: company, industry, member status, in one quiet line. */
+.pi-app .item .by { display:flex; flex-wrap:wrap; align-items:baseline; margin-top:3px; font-size:14px; color:var(--text-secondary); }
+/* The dot trails each part, so a line that wraps on a phone never starts with one. */
+.pi-app .item .by > *:not(:last-child)::after { content:"\00b7"; margin:0 8px; color:var(--text-muted); }
+.pi-app .item .by .co { font-size:14px; font-weight:400; color:var(--navy); }
+.pi-app .item .by .pill { margin-left:8px; }
+.pi-app .item .by .pill::before { content:none; }
+.pi-app .item .detail { margin-top:8px; }
+/* Source: closed until clicked; the date, meeting type, speaker and files, then the quote. */
+.pi-app .item details.src { margin-top:10px; font-size:13.5px; }
+.pi-app .item details.src summary { font-weight:700; }
+.pi-app .item .srcm { display:flex; flex-wrap:wrap; gap:4px 16px; margin:8px 0 0; color:var(--text-secondary); }
+.pi-app .item .srcm .files { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pi-app .item .acts { margin-top:8px; }
 .pi-app button.find { border:0; border-radius:0; background:none; padding:0; color:var(--accent); font-size:14px; font-weight:700; display:inline-flex; align-items:center; gap:6px; }
 .pi-app button.find:hover { background:none; color:var(--accent); }
 .pi-app button.find svg { width:14px; height:14px; transition:transform .2s; }
@@ -325,8 +339,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 /* ---- Numbered topics: a circle with a short line and chevron hanging below it. Opening a topic
  * fills the circle, highlights the first word or two and runs the line down beside the summary. */
 .pi-app .tlist { margin-top:6px; }
-.pi-app .tp { --rest:14px; position:relative; border-top:1px solid var(--rule); }
-.pi-app .tp:first-child { border-top:0; }
+.pi-app .tp { --rest:14px; position:relative; }
 .pi-app .tp-row { display:grid; grid-template-columns:40px minmax(0,1fr); gap:0 34px; align-items:start; width:100%; padding:24px 0 30px;
   border:0; border-radius:0; background:none; font:inherit; text-align:left; color:inherit; cursor:pointer; }
 .pi-app .tp-row:hover { background:none; }
@@ -363,13 +376,27 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .hl::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl);
   transform:scaleX(0); transform-origin:0 50%; transition:transform .55s cubic-bezier(.4,0,.2,1); }
 .pi-app .tp.open .hl::before { transform:scaleX(1); transition:transform 1.25s var(--spring-soft) .08s; }
-/* What opens under a topic: a light blue block lined up with the topic name. */
+/* What opens under a topic: no box. The topic line is its left edge and runs along its bottom; the
+ * content lines up with the topic name. A boxed block (white cards) keeps its light blue box. */
 .pi-app .tbody { padding:0; }
-.pi-app .band { margin:-6px 0 30px 74px; background:var(--band); border-radius:20px; padding:24px 28px; }
+.pi-app .band { margin:-6px 0 30px 20px; background:none; border-radius:0; padding:16px 28px 30px 54px; }
+.pi-app .band.boxed { margin:-6px 0 46px 74px; background:var(--band); border-radius:20px; padding:24px 28px; }
+.pi-app svg.trace { position:absolute; left:0; top:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+.pi-app svg.trace .ln { fill:none; stroke:var(--accent); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+.pi-app svg.trace .dot { fill:var(--accent); opacity:0; transform:scale(.2); transform-box:fill-box; transform-origin:50% 50%;
+  transition:opacity .25s ease, transform .3s ease-in; }
+.pi-app .tp.open.traced:not(.closing) svg.trace .dot { opacity:1; transform:scale(1); transition:transform .5s cubic-bezier(.3,1.7,.5,1) 1.15s, opacity .12s 1.15s; }
+.pi-app .tp.open.traced:not(.closing) svg.trace.instant .dot { transition:none; }
+.pi-app .tp.traced .tline { opacity:0; }
+.pi-app .tline.shrink { animation:tline-regrow .5s cubic-bezier(.3,1.3,.5,1); }
+@keyframes tline-regrow { from { height:0; } to { height:var(--rest); } }
+.pi-app .tp.closing .hl::before { transform:scaleX(0); transition:transform var(--close, .6s) cubic-bezier(.4,0,.2,1); }
 .pi-app ul.bullets { gap:16px; }
 .pi-app .bpt { grid-template-columns:28px minmax(0,1fr); gap:14px; }
 .pi-app .bpt .txt { font-size:16px; }
-.pi-app .bpt .examples { margin-top:12px; padding:4px 20px; background:#fff; border-radius:14px; border-left:4px solid var(--amber); }
+.pi-app .bpt .examples { margin-top:4px; padding:0; }
+.pi-app .bpt .examples > .item { border-top:1px solid #edf0f5; padding:16px 0; }
+.pi-app .bpt .examples > .item:first-child { border-top:0; padding-top:10px; }
 .pi-app .pending { font-size:15px; }
 /* The plus button: a bold navy plus that squeezes and pops into a minus, and back. */
 .pi-app button.pm { position:relative; width:28px; height:28px; border:0; border-radius:4px; background:none; padding:0; color:var(--navy); font-size:0; }
@@ -389,7 +416,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 @keyframes pm-bar { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
 @keyframes pm-bar-b { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
 @media (prefers-reduced-motion:reduce) {
-  .pi-app .circ, .pi-app .tline, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i { animation:none !important; transition:none !important; }
+  .pi-app .circ, .pi-app .tline, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i, .pi-app svg.trace .dot { animation:none !important; transition:none !important; }
 }
 .pi-app .topicfoot { display:grid; grid-template-columns:72px minmax(0,1fr); gap:6px 16px; margin-top:28px; padding-top:16px;
   border-top:1px solid var(--line); font-size:13.5px; color:var(--text-secondary); }
@@ -452,10 +479,9 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .cols3 .item { background:#fff; border:0; border-radius:14px; padding:14px 16px; margin-top:10px; }
 .pi-app .cols3 .item .title { font-size:15px; }
 .pi-app .cols3 .item .detail { font-size:14px; }
-.pi-app .cols3 .item .meta { font-size:13px; }
-.pi-app .cols3 .item .meta .act { margin-left:0; flex-basis:100%; }
-.pi-app .band.notes { padding:10px 26px 14px; }
-.pi-app .band.notes > .item { border-top-color:#d3deef; }
+.pi-app .cols3 .item .srcm, .pi-app .cols3 .item details.src { font-size:13px; }
+.pi-app .band.notes { padding:6px 28px 30px 54px; }
+.pi-app .band.notes > .item { border-top-color:#edf0f5; }
 .pi-app .colmore { margin:14px 0 0; }
 .pi-app .allres { margin-left:10px; font-size:13px; font-weight:700; color:#0b6a92; }
 
@@ -485,7 +511,9 @@ body.pi-app { background:var(--wash); font-size:15px; }
   .pi-app .card, .pi-app .tabpanel { padding:22px 18px; }
   .pi-app .tname { font-size:22px; }
   .pi-app .tp-row { gap:0 16px; }
-  .pi-app .band { margin-left:56px; padding:18px 16px; }
+  .pi-app .band { margin-left:20px; padding:12px 8px 26px 36px; }
+  .pi-app .band.boxed { margin-left:56px; padding:18px 16px; }
+  .pi-app .band.notes { padding:6px 8px 26px 36px; }
   .pi-app .mrow { grid-template-columns:64px minmax(0,1fr); gap:14px; }
   .pi-app .mrow .go-arrow { display:none; }
 }

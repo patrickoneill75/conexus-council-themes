@@ -58,41 +58,43 @@
       : kind === "solution" || kind === "offer" || kind === "equipment" ? "solutions" : "other";
   };
 
-  /** One note: the company (unless opts.company is false), a small label for its kind, the title
-   * and detail, then one line with the date, the meeting type, the speaker, the files in Box and
-   * opts.action (Find solution). The quote opens beneath; its file is the link on the line above. */
+  /** One note, read top to bottom: what kind it is, its title, who said it (company, industry and member
+   * status, unless opts.company is false), the note itself, then Source, closed until clicked, holding the
+   * date, the meeting type, the speaker, the files in Box and the quote. opts.action (Find solution) sits
+   * under Source, where it stays in reach. */
   PI.insightCard = function (i, opts) {
     opts = opts || {};
     var co = i.company || {};
-    var head = "";
-    if (opts.company !== false) {
-      head += co.id ? '<a class="co" href="/partner-intel/#/company/' + encodeURIComponent(co.id) + '">' + PI.esc(co.name) + "</a>"
-                    : '<span class="co">' + PI.esc(co.name) + "</span>";
-      head += PI.pill("info", co.industry || "Unknown");
-      head += PI.pill(co.status === "Active" ? "good" : "info", PI.statusLabel[co.status] || co.status || "Unknown");
+    var by = [];
+    if (opts.company !== false && co.name) {
+      by.push(co.id ? '<a class="co" href="/partner-intel/#/company/' + encodeURIComponent(co.id) + '">' + PI.esc(co.name) + "</a>"
+                    : '<span class="co">' + PI.esc(co.name) + "</span>");
+      if (co.industry && co.industry !== "Unknown") by.push("<span>" + PI.esc(co.industry) + "</span>");
+      var status = PI.statusLabel[co.status] || co.status;
+      if (status && status !== "Unknown") by.push("<span>" + PI.esc(status) + "</span>");
       // Which company said this is in doubt (the speaker works elsewhere, the file is named for
       // another partner, or two people share the speaker's name). Listed on the control panel.
       if (i.checkCompany) {
-        head += '<span class="pill medium" title="Which company said this is uncertain. Staff can settle it on the control panel, under Statements to check.">Check company</span>';
+        by.push('<span class="pill medium" title="Which company said this is uncertain. Staff can settle it on the control panel, under Statements to check.">Check company</span>');
       }
     }
-    var meta = ["<span>" + PI.esc(PI.fmtDate(i.date)) + "</span>"];
-    if (i.estimated) meta.push(PI.pill("est", "estimated date"));
-    if (i.eventType) meta.push("<span>" + PI.esc(i.eventType) + "</span>");
-    if (i.status === "resolved") meta.push(PI.pill("good", "Resolved"));
-    if (i.speaker) meta.push("<span>" + PI.esc(i.speaker) + "</span>");
+    if (i.status === "resolved") by.push("<span>Resolved</span>");
+    var src = ["<span>" + PI.esc(PI.fmtDate(i.date)) + "</span>"];
+    if (i.estimated) src.push(PI.pill("est", "estimated date"));
+    if (i.eventType) src.push("<span>" + PI.esc(i.eventType) + "</span>");
+    if (i.speaker) src.push("<span>" + PI.esc(i.speaker) + "</span>");
     var files = PI.fileLinks(i.sources);
-    if (files) meta.push('<span class="files" title="' + PI.esc((i.sources || []).map(function (f) { return f.name; }).join(", ")) + '">' + files + "</span>");
-    if (opts.action) meta.push('<span class="act">' + opts.action + "</span>");
+    if (files) src.push('<span class="files" title="' + PI.esc((i.sources || []).map(function (f) { return f.name; }).join(", ")) + '">' + files + "</span>");
     return '<div class="item">' +
-      (head ? '<div class="head">' + head + "</div>" : "") +
       '<span class="kindl' + (KIND_TONE[i.kind] ? " " + KIND_TONE[i.kind] : "") + '">' + PI.esc(PI.kindLabel[i.kind] || i.kind) + "</span>" +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
+      (by.length ? '<div class="by">' + by.join("") + "</div>" : "") +
       '<div class="detail">' + PI.esc(i.detail) + "</div>" +
       (i.solves ? '<div class="why"><b>Addresses:</b> ' + PI.esc(i.solves) + "</div>" : "") +
       (i.tags && i.tags.length ? '<div class="chips">' + i.tags.map(function (t) { return '<span class="chip">' + PI.esc(t) + "</span>"; }).join("") + "</div>" : "") +
-      '<div class="meta">' + meta.join("") + "</div>" +
-      (i.quote ? '<details class="src"><summary>Quote</summary><blockquote>&ldquo;' + PI.esc(i.quote) + "&rdquo;</blockquote></details>" : "") +
+      '<details class="src"><summary>Source</summary><div class="srcm">' + src.join("") + "</div>" +
+      (i.quote ? "<blockquote>&ldquo;" + PI.esc(i.quote) + "&rdquo;</blockquote>" : "") + "</details>" +
+      (opts.action ? '<div class="acts">' + opts.action + "</div>" : "") +
       "</div>";
   };
 
