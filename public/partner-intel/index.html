@@ -176,12 +176,12 @@
     setTopic(card, opening);
   });
 
-  /** Points on a light blue block. The plus button, or "See examples" after the text, opens the
-   * notes behind a point; the plus squeezes and pops into a minus while they are open. */
+  /** Points on a light blue block. The plus button opens the notes behind a point; it squeezes and
+   * pops into a minus while they are open. */
   function pointsHtml(points, label) {
     return '<ul class="bullets">' + points.map(function (b) {
       return '<li class="bpt"><button type="button" class="pm" data-pt aria-expanded="false" aria-label="Show ' + label + '"><i class="h"></i><i class="v"></i></button>' +
-        '<div><span class="txt">' + b.text + '</span><button type="button" class="see" data-pt>See ' + label + "</button>" +
+        '<div><span class="txt">' + b.text + "</span>" +
         '<div class="examples" hidden>' + b.examples + "</div></div></li>";
     }).join("") + "</ul>";
   }
@@ -202,7 +202,6 @@
     pm.setAttribute("aria-label", (ex.hidden ? "Show " : "Hide ") + label);
     pm.classList.remove("a-shrink", "a-expand"); void pm.offsetWidth;
     pm.classList.add(ex.hidden ? "a-expand" : "a-shrink");
-    li.querySelector(".see").textContent = (ex.hidden ? "See " : "Hide ") + label;
   });
 
   /* ------------------------------------------------------------------ Trending topics

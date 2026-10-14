@@ -194,8 +194,6 @@ ul.bullets { list-style:none; margin:0; padding:0; display:flex; flex-direction:
 button.pm { width:22px; height:22px; margin-top:1px; padding:0; border:1px solid var(--accent); border-radius:3px; background:#fff;
             color:var(--accent); font-size:16px; line-height:18px; font-weight:600; text-align:center; }
 button.pm:hover, button.pm[aria-expanded="true"] { background:var(--accent); color:#fff; }
-button.see { border:0; background:none; padding:0; margin-left:6px; font-size:13.5px; font-weight:600; color:var(--accent); white-space:nowrap; }
-button.see:hover { background:none; color:var(--navy); text-decoration:underline; }
 .bpt .examples { margin-top:10px; padding:0 16px; background:#fff; }
 .bpt .examples > .item:last-child { border-bottom:0; }
 @media (max-width:760px) { .band { padding:18px 16px; } }
@@ -365,7 +363,6 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app ul.bullets { gap:16px; }
 .pi-app .bpt { grid-template-columns:28px minmax(0,1fr); gap:14px; }
 .pi-app .bpt .txt { font-size:16px; }
-.pi-app button.see { font-size:14px; font-weight:700; border:0; padding:0; margin-left:8px; border-radius:0; }
 .pi-app .bpt .examples { margin-top:12px; padding:4px 20px; background:#fff; border-radius:14px; border-left:4px solid var(--amber); }
 .pi-app .pending { font-size:15px; }
 /* The plus button: a bold navy plus that squeezes and pops into a minus, and back. */
