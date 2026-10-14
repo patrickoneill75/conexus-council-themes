@@ -55,9 +55,9 @@
       : kind === "solution" || kind === "offer" || kind === "equipment" ? "solutions" : "other";
   };
 
-  /** One note: the company (unless opts.company is false), the title and detail, then one line
-   * with the date, the meeting type, the kind, the speaker, the files in Box and opts.action
-   * (Find solution). The quote opens beneath; its file is the link on the line above. */
+  /** One note: the company (unless opts.company is false), a small label for its kind, the title
+   * and detail, then one line with the date, the meeting type, the speaker, the files in Box and
+   * opts.action (Find solution). The quote opens beneath; its file is the link on the line above. */
   PI.insightCard = function (i, opts) {
     opts = opts || {};
     var co = i.company || {};
@@ -76,7 +76,6 @@
     var meta = ["<span>" + PI.esc(PI.fmtDate(i.date)) + "</span>"];
     if (i.estimated) meta.push(PI.pill("est", "estimated date"));
     if (i.eventType) meta.push("<span>" + PI.esc(i.eventType) + "</span>");
-    meta.push("<span>" + PI.esc(PI.kindLabel[i.kind] || i.kind) + "</span>");
     if (i.status === "resolved") meta.push(PI.pill("good", "Resolved"));
     if (i.speaker) meta.push("<span>" + PI.esc(i.speaker) + "</span>");
     var files = PI.fileLinks(i.sources);
@@ -84,6 +83,7 @@
     if (opts.action) meta.push('<span class="act">' + opts.action + "</span>");
     return '<div class="item">' +
       (head ? '<div class="head">' + head + "</div>" : "") +
+      '<span class="kindl">' + PI.esc(PI.kindLabel[i.kind] || i.kind) + "</span>" +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
       '<div class="detail">' + PI.esc(i.detail) + "</div>" +
       (i.solves ? '<div class="why"><b>Addresses:</b> ' + PI.esc(i.solves) + "</div>" : "") +

@@ -114,6 +114,7 @@ th button.sorter .arrow { display:inline-block; width:1.1em; font-size:10px; mar
 .item { border:0; border-bottom:1px solid var(--border); border-radius:0; padding:18px 0; margin:0; background:none; }
 .item .head { display:flex; gap:2px 6px; align-items:baseline; flex-wrap:wrap; margin-bottom:6px; font-size:12.5px; }
 .item .co { font-weight:600; font-size:14px; color:var(--navy); }
+.item .kindl { display:block; font-size:12px; color:var(--text-secondary); }
 .item .title { font-size:15px; font-weight:600; color:var(--navy); line-height:1.35; margin:0; }
 .item .detail { margin:6px 0 0; line-height:1.55; }
 .item .why { font-size:13px; color:var(--text-secondary); margin:6px 0 0; }
@@ -238,3 +239,250 @@ h4.colhead { margin:0; padding-bottom:8px; border-bottom:1px solid var(--navy); 
 }
 /* On a phone a wide table scrolls inside its own area, not the page. */
 @media (max-width:760px) { table:not(.sr-only) { display:block; overflow-x:auto; } }
+
+/* =====================================================================================
+ * The staff app (body.pi-app). The control panel keeps the styles above.
+ * Light gray page, white rounded cards, big navy titles with a blue line under them, the
+ * yellow highlight for "current" and "open", and numbered topics that open with a circle
+ * and a line running down beside their summary.
+ * ===================================================================================== */
+.pi-app { --hl:#f9f871; --soft:#dce6f5; --band:#eaf1fb; --rule:#9db3da; --line:#c9d3e3;
+  --spring:linear(0, 0.055, 0.195, 0.383, 0.588, 0.784, 0.953, 1.084, 1.172, 1.221, 1.234, 1.219, 1.185, 1.140, 1.092, 1.047, 1.008, 0.978, 0.958, 0.948, 0.945, 0.949, 0.958, 0.968, 0.979, 0.990, 0.999, 1.006, 1.010, 1.012, 1.013, 1.012, 1.010, 1.007, 1.005, 1.002, 1);
+  --spring-soft:linear(0, 0.045, 0.153, 0.291, 0.437, 0.575, 0.697, 0.799, 0.880, 0.940, 0.983, 1.011, 1.028, 1.036, 1.038, 1.037, 1.032, 1.027, 1.021, 1.016, 1.011, 1.008, 1.004, 1.002, 1.001, 1.000, 0.999, 0.999, 0.999, 0.999, 1); }
+body.pi-app { background:var(--wash); font-size:15px; }
+.pi-app .wrap { max-width:1120px; padding:44px 32px 96px; }
+
+/* Top bar: white, with the current page marked by the highlight. */
+.pi-app .appbar { background:#fff; color:var(--navy); border-bottom:1px solid var(--border); }
+.pi-app .appbar .in { max-width:1120px; min-height:68px; gap:8px 24px; }
+.pi-app .appname { font-size:17px; font-weight:700; color:var(--navy); margin-right:12px; }
+.pi-app .nav { gap:4px; }
+.pi-app .nav a { padding:8px 14px; border:0; color:var(--navy); font-size:15px; font-weight:600; }
+.pi-app .nav a:hover { color:var(--accent); text-decoration:none; }
+.pi-app .nav a span { position:relative; z-index:0; }
+.pi-app .nav a.on span::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl); }
+.pi-app .nav a.on:hover { color:var(--navy); }
+.pi-app .appbar .tools { font-size:14px; gap:18px; }
+.pi-app .appbar .tools a, .pi-app .appbar .tools button.link { color:var(--accent); font-weight:400; }
+.pi-app .appbar .tools a:hover, .pi-app .appbar .tools button.link:hover { color:var(--navy); }
+.pi-app #whoami { display:none; }
+
+/* Titles. */
+.pi-app h1 { font-size:52px; line-height:1.05; font-weight:700; letter-spacing:-0.022em; }
+.pi-app .lede { margin:12px 0 0; font-size:20px; line-height:1.45; font-weight:600; color:var(--accent); max-width:780px; }
+.pi-app h2.subh { margin:44px 0 0; font-size:22px; line-height:1.25; font-weight:700; color:var(--navy); }
+.pi-app .secsub { margin:6px 0 0; font-size:15px; color:var(--text-secondary); }
+.pi-app .back { display:inline-flex; align-items:center; gap:8px; margin:0 0 16px; font-size:15px; font-weight:700; }
+.pi-app .back svg, .pi-app .arrowlink svg { width:15px; height:15px; transition:transform .2s; }
+.pi-app .back:hover { text-decoration:none; } .pi-app .back:hover svg { transform:translateX(-3px); }
+.pi-app .arrowlink { display:inline-flex; align-items:center; gap:6px; font-weight:700; color:var(--accent); }
+.pi-app .arrowlink:hover { text-decoration:none; } .pi-app .arrowlink:hover svg { transform:translateX(3px); }
+
+/* White rounded cards replace the thin rules. */
+.pi-app .card { background:#fff; border:0; border-radius:24px; padding:28px 36px; margin:20px 0 0; }
+.pi-app .card:first-child { padding-top:28px; }
+.pi-app .card > h2, .pi-app .card > h3 { font-size:22px; font-weight:700; }
+.pi-app .card > .desc { font-size:15px; }
+.pi-app .empty { color:var(--text-secondary); }
+.pi-app .banner { border-radius:16px; }
+
+/* Buttons and fields. */
+.pi-app button, .pi-app .btn { border-radius:999px; font-size:14px; padding:9px 20px; border:1px solid var(--line); }
+.pi-app button.primary { padding:12px 26px; font-size:15px; font-weight:700; border:0; }
+.pi-app button.more { border:2px solid var(--accent); background:#fff; color:var(--accent); font-weight:700; padding:10px 22px; }
+.pi-app button.more:hover { background:var(--accent); color:#fff; }
+.pi-app .seg { gap:8px; }
+.pi-app .seg button { border-radius:999px; border:1px solid var(--line); padding:9px 20px; }
+.pi-app .seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+.pi-app .seg.soft button.on { background:var(--soft); border-color:var(--soft); color:var(--navy); }
+.pi-app input, .pi-app select { height:46px; border:1.5px solid var(--line); border-radius:12px; padding:0 14px; font-size:15px; }
+.pi-app input[type="checkbox"] { height:17px; width:17px; accent-color:var(--accent); }
+.pi-app textarea { border:1.5px solid var(--line); border-radius:12px; padding:14px; font-size:15px; line-height:1.5; min-height:104px; }
+.pi-app input:focus, .pi-app select:focus, .pi-app textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--soft); }
+.pi-app label.field { font-size:13.5px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
+.pi-app .fields { gap:16px 18px; }
+.pi-app label.chk { display:inline-flex; align-items:center; gap:8px; font-size:14.5px; }
+.pi-app button.link { border:0; padding:0; border-radius:0; font-weight:700; }
+
+/* One note: the company, a small type label, the title, the detail, then date, meeting, files and Quote. */
+.pi-app .item { border:0; border-top:1px solid #dce3ef; padding:20px 0; }
+.pi-app .item:first-child { border-top:0; padding-top:6px; }
+.pi-app .item .head { font-size:13.5px; margin-bottom:4px; }
+.pi-app .item .co { font-size:14.5px; font-weight:700; }
+.pi-app .item .kindl { display:block; font-size:12.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
+.pi-app .item .title { font-size:17px; font-weight:700; margin-top:2px; }
+.pi-app .item .detail { font-size:15px; max-width:860px; }
+.pi-app .item .meta { font-size:13.5px; gap:6px 16px; }
+.pi-app button.find { border:0; border-radius:0; background:none; padding:0; color:var(--accent); font-size:14px; font-weight:700; display:inline-flex; align-items:center; gap:6px; }
+.pi-app button.find:hover { background:none; color:var(--accent); }
+.pi-app button.find svg { width:14px; height:14px; transition:transform .2s; }
+.pi-app button.find:hover svg { transform:translateX(3px); }
+
+/* ---- Numbered topics: a circle with a short line and chevron hanging below it. Opening a topic
+ * fills the circle, highlights the first word or two and runs the line down beside the summary. */
+.pi-app .tlist { margin-top:6px; }
+.pi-app .tp { --rest:14px; position:relative; border-top:1px solid var(--rule); }
+.pi-app .tp:first-child { border-top:0; }
+.pi-app .tp-row { display:grid; grid-template-columns:40px minmax(0,1fr); gap:0 34px; align-items:start; width:100%; padding:24px 0 30px;
+  border:0; border-radius:0; background:none; font:inherit; text-align:left; color:inherit; cursor:pointer; }
+.pi-app .tp-row:hover { background:none; }
+.pi-app .tp-row:focus-visible { outline:none; }
+.pi-app .tp-row:focus-visible .circ { outline:3px solid var(--amber); outline-offset:3px; }
+.pi-app .tp-row.wide { grid-template-columns:40px minmax(0,1fr) auto; }
+.pi-app .tname { display:block; font-size:30px; line-height:1.15; font-weight:700; color:var(--navy); letter-spacing:-0.015em; }
+.pi-app .tmeta { display:block; margin-top:6px; font-size:15px; color:var(--text-secondary); }
+.pi-app .circ { --s:1; position:relative; z-index:1; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px;
+  margin-top:-3px; border:3px solid var(--accent); border-radius:999px; background:#fff; color:var(--accent); font-size:15px; font-weight:700;
+  font-variant-numeric:tabular-nums; transform:scale(var(--s)); transition:background-color .2s, color .2s, border-color .2s, transform .65s var(--spring); }
+.pi-app .tp-row:hover .circ { --s:1.1; background:var(--band); border-color:var(--navy); color:var(--navy); }
+.pi-app .tp.open .circ { --s:1; background:var(--accent); border-color:var(--accent); color:#fff; }
+.pi-app .tp.open .tp-row:hover .circ { --s:.9; background:var(--accent); border-color:var(--accent); color:#fff; }
+.pi-app .circ.c-open { animation:circ-pop .6s ease-out; }
+.pi-app .circ.c-close { animation:circ-close .45s ease-in-out; }
+@keyframes circ-pop { 0% { transform:scale(var(--s)); } 24% { transform:scale(calc(var(--s) * .84)); } 52% { transform:scale(calc(var(--s) * 1.1)); } 74% { transform:scale(calc(var(--s) * .97)); } 100% { transform:scale(var(--s)); } }
+@keyframes circ-close { 0% { transform:scale(var(--s)); } 35% { transform:scale(calc(var(--s) * .95)); } 70% { transform:scale(calc(var(--s) * 1.02)); } 100% { transform:scale(var(--s)); } }
+.pi-app .tline { position:absolute; left:19px; top:61px; width:2.5px; height:var(--rest); background:var(--accent); border-radius:2px;
+  transition:height .65s var(--spring); pointer-events:none; }
+.pi-app .tline::after { content:""; position:absolute; left:50%; bottom:-1px; width:7px; height:7px; margin-left:-4.5px;
+  border-right:2px solid var(--accent); border-bottom:2px solid var(--accent); transform:rotate(45deg); }
+.pi-app .tp:not(.open):has(.tp-row:hover) .tline { --rest:22px; }
+.pi-app .tline.hint { animation:tline-hint 1.1s ease-in-out .9s 1; }
+.pi-app .tp.open .tline { width:3px; left:18.5px; height:calc(100% - 61px); transition:none; }
+.pi-app .tp.open .tline::after { width:9px; height:9px; margin-left:-4.5px; bottom:-4px; border:0; border-radius:999px; background:var(--accent); transform:none; }
+.pi-app .tline.grow { animation:tline-grow .7s ease-out; }
+.pi-app .tline.shrink { animation:tline-shrink .6s ease-out; }
+@keyframes tline-grow { 0% { height:14px; } 45% { height:calc((100% - 61px) * 1.05); } 70% { height:calc((100% - 61px) * .98); } 100% { height:calc(100% - 61px); } }
+@keyframes tline-shrink { 0% { height:48px; } 45% { height:calc(var(--rest) - 5px); } 72% { height:calc(var(--rest) + 3px); } 100% { height:var(--rest); } }
+@keyframes tline-hint { 0%, 100% { height:14px; } 40% { height:22px; } 70% { height:13px; } }
+/* The highlight wipes in from the left with a soft overshoot, and wipes back out to the left. */
+.pi-app .hl { position:relative; z-index:0; }
+.pi-app .hl::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl);
+  transform:scaleX(0); transform-origin:0 50%; transition:transform .6s cubic-bezier(.45,0,.3,1.22); }
+.pi-app .tp.open .hl::before { transform:scaleX(1); transition:transform 1.25s var(--spring-soft) .08s; }
+/* What opens under a topic: a light blue block lined up with the topic name. */
+.pi-app .tbody { padding:0; }
+.pi-app .band { margin:-6px 0 30px 74px; background:var(--band); border-radius:20px; padding:24px 28px; }
+.pi-app ul.bullets { gap:16px; }
+.pi-app .bpt { grid-template-columns:28px minmax(0,1fr); gap:14px; }
+.pi-app .bpt .txt { font-size:16px; }
+.pi-app button.see { font-size:14px; font-weight:700; border:0; padding:0; margin-left:8px; border-radius:0; }
+.pi-app .bpt .examples { margin-top:12px; padding:4px 20px; background:#fff; border-radius:14px; border-left:4px solid var(--amber); }
+.pi-app .pending { font-size:15px; }
+/* The plus button: a bold navy plus that squeezes and pops into a minus, and back. */
+.pi-app button.pm { position:relative; width:28px; height:28px; border:0; border-radius:4px; background:none; padding:0; color:var(--navy); font-size:0; }
+.pi-app button.pm:hover, .pi-app button.pm[aria-expanded="true"] { background:none; color:var(--navy); }
+.pi-app button.pm:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
+.pi-app button.pm i { position:absolute; left:50%; top:50%; background:var(--navy); border-radius:2px; transition:background-color .15s; }
+.pi-app button.pm:hover i { background:var(--accent); }
+.pi-app button.pm .h { width:16px; height:3px; margin:-1.5px 0 0 -8px; }
+.pi-app button.pm .v { width:3px; height:16px; margin:-8px 0 0 -1.5px; transition:transform .14s ease-out .1s, background-color .15s; }
+.pi-app button.pm[aria-expanded="true"] .v { transform:scaleY(0); transition:transform .14s ease-in; }
+.pi-app button.pm.a-shrink { animation:pm-pop .5s ease-out; }
+.pi-app button.pm.a-expand { animation:pm-pop-b .5s ease-out; }
+.pi-app button.pm.a-shrink .h { animation:pm-bar .5s ease-out; }
+.pi-app button.pm.a-expand .h { animation:pm-bar-b .5s ease-out; }
+@keyframes pm-pop { 0% { transform:scale(1); } 24% { transform:scale(.74); } 52% { transform:scale(1.08); } 72% { transform:scale(.97); } 100% { transform:scale(1); } }
+@keyframes pm-pop-b { 0% { transform:scale(1); } 24% { transform:scale(.74); } 52% { transform:scale(1.08); } 72% { transform:scale(.97); } 100% { transform:scale(1); } }
+@keyframes pm-bar { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
+@keyframes pm-bar-b { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
+@media (prefers-reduced-motion:reduce) {
+  .pi-app .circ, .pi-app .tline, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i { animation:none !important; transition:none !important; }
+}
+.pi-app .topicfoot { display:grid; grid-template-columns:72px minmax(0,1fr); gap:6px 16px; margin-top:28px; padding-top:16px;
+  border-top:1px solid var(--line); font-size:13.5px; color:var(--text-secondary); }
+.pi-app .topicfoot b { color:var(--navy); }
+.pi-app .tmore { border-top:1px solid var(--rule); padding-top:22px; }
+
+/* ---- Programs: one card per folder. A program page lists its meetings with a large date. */
+.pi-app .pgrid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:32px; }
+.pi-app .pcard { position:relative; display:flex; flex-direction:column; min-height:132px; padding:26px 28px 24px; border:0; border-radius:24px;
+  background:#fff; transition:box-shadow .2s; }
+.pi-app .pcard:hover { box-shadow:inset 0 0 0 2px var(--accent); }
+.pi-app .pcard .pn { font-size:24px; line-height:1.2; font-weight:700; color:var(--navy); letter-spacing:-0.01em; }
+.pi-app .pcard .pint { margin-top:6px; font-size:13px; font-weight:700; color:var(--accent); }
+.pi-app .pcard .pl { margin-top:auto; padding-top:22px; font-size:15px; color:var(--text-primary); }
+.pi-app .go-arrow { width:22px; height:22px; color:var(--accent); transition:transform .25s cubic-bezier(.3,1.6,.5,1); }
+.pi-app .pcard .go-arrow { position:absolute; right:26px; bottom:24px; }
+.pi-app .pcard:hover .go-arrow, .pi-app .mrow:hover .go-arrow { transform:translateX(5px); }
+.pi-app .mrow { display:grid; grid-template-columns:96px minmax(0,1fr) 30px; gap:24px; align-items:start; padding:24px 0; border:0;
+  border-top:1px solid #dce3ef; color:var(--text-primary); }
+.pi-app .mrow:first-child { border-top:0; }
+.pi-app .mrow:hover { text-decoration:none; }
+.pi-app .mrow .md b { display:block; font-size:24px; line-height:1.1; font-weight:700; color:var(--navy); }
+.pi-app .mrow .md span { display:block; margin-top:2px; font-size:14px; color:var(--text-secondary); }
+.pi-app .mrow .mt { display:block; font-size:20px; line-height:1.3; font-weight:700; color:var(--navy); }
+.pi-app .mrow .mk { display:block; margin-top:4px; font-size:13px; font-weight:700; color:var(--accent); }
+.pi-app .mrow .mtop { display:block; margin-top:8px; font-size:15px; }
+.pi-app .mrow .go-arrow { margin-top:4px; }
+
+/* ---- Companies table. */
+.pi-app table.tbl th { padding:14px 10px 12px; border-bottom:1.5px solid var(--rule); font-size:12.5px; font-weight:700; letter-spacing:.06em; }
+.pi-app table.tbl td { padding:15px 10px; border-bottom:1px solid #e6ebf3; font-size:15px; }
+.pi-app table.tbl tr:last-child td { border-bottom:0; }
+.pi-app table.tbl tr.click:hover td { background:var(--band); }
+.pi-app table.tbl td.cn { font-weight:700; color:var(--navy); }
+
+/* ---- A company: its name with the council member badge, then browser-style tabs whose
+ * chosen tab runs straight into the white panel below. */
+.pi-app h1.coname { font-size:46px; }
+.pi-app h1.coname .nw { white-space:nowrap; }
+/* Ascender line to descender line, measured for Arial bold. index.html refines it for the font in use. */
+.pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.22em; overflow:visible; }
+.pi-app .ctabs { display:flex; gap:4px; margin-top:32px; }
+.pi-app .ctabs a { position:relative; flex:1 1 0; display:flex; align-items:center; justify-content:center; gap:10px; height:56px;
+  border-radius:16px 16px 0 0; font-size:16px; font-weight:600; color:var(--text-secondary); white-space:nowrap; transition:background-color .2s, color .2s; }
+.pi-app .ctabs a svg { width:22px; height:22px; color:var(--accent); flex:none; }
+.pi-app .ctabs a:hover { background:#e4e9f2; color:var(--navy); text-decoration:none; }
+.pi-app .ctabs a.on { background:#fff; color:var(--navy); font-weight:700; z-index:1; }
+.pi-app .ctabs a.on svg { color:var(--navy); }
+.pi-app .ctabs a.on::before, .pi-app .ctabs a.on::after { content:""; position:absolute; bottom:0; width:16px; height:16px; pointer-events:none; }
+.pi-app .ctabs a.on::before { left:-16px; background:radial-gradient(circle at 0 0, transparent 15.5px, #fff 16px); }
+.pi-app .ctabs a.on::after { right:-16px; background:radial-gradient(circle at 100% 0, transparent 15.5px, #fff 16px); }
+.pi-app .ctabs a.on:first-child::before, .pi-app .ctabs a.on:last-child::after { display:none; }
+.pi-app .tabpanel { background:#fff; border-radius:24px; padding:26px 36px 24px; }
+.pi-app .tabpanel.first { border-top-left-radius:0; }
+.pi-app .tabpanel.last { border-top-right-radius:0; }
+.pi-app .tabpanel .card { padding:0; margin:0; border-radius:0; }
+.pi-app .toolbar { margin:18px 0 4px; }
+.pi-app .cols3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.pi-app .colh { margin:0 0 4px; font-size:16px; font-weight:700; color:var(--navy); }
+.pi-app .cols3 .item { background:#fff; border:0; border-radius:14px; padding:14px 16px; margin-top:10px; }
+.pi-app .cols3 .item .title { font-size:15px; }
+.pi-app .cols3 .item .detail { font-size:14px; }
+.pi-app .cols3 .item .meta { font-size:13px; }
+.pi-app .cols3 .item .meta .act { margin-left:0; flex-basis:100%; }
+.pi-app .band.notes { padding:10px 26px 14px; }
+.pi-app .band.notes > .item { border-top-color:#d3deef; }
+.pi-app .colmore { margin:14px 0 0; }
+.pi-app .allres { margin-left:10px; font-size:13px; font-weight:700; color:#0b6a92; }
+
+/* ---- Ask. */
+.pi-app .answer { margin:0; font-size:22px; line-height:1.35; font-weight:700; color:var(--navy); max-width:880px; }
+.pi-app .band > .why { margin:0; font-size:16px; line-height:1.55; color:var(--text-primary); }
+.pi-app .band .caution { margin:12px 0 0; border-left:4px solid var(--amber); padding:2px 0 2px 14px; font-size:15px; color:var(--text-primary); }
+.pi-app .band .caution b { color:var(--navy); }
+.pi-app .recent { list-style:none; margin:12px 0 0; padding:0; }
+.pi-app .recent li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 16px; padding:14px 0; border-top:1px solid #dce3ef; font-size:15.5px; }
+.pi-app .recent li:first-child { border-top:0; }
+.pi-app .recent button.link { font-weight:600; text-align:left; }
+
+@media (max-width:860px) {
+  .pi-app .pgrid, .pi-app .cols3 { grid-template-columns:minmax(0,1fr); }
+  .pi-app .ctabs { overflow-x:auto; }
+  .pi-app .fields > * { grid-column:auto !important; }
+  .pi-app .ctabs a { flex:0 0 auto; padding:0 16px; }
+}
+@media (max-width:600px) {
+  .pi-app .wrap { padding:28px 16px 64px; }
+  .pi-app .appbar .in { gap:4px 12px; }
+  .pi-app .nav a { padding:8px 8px; }
+  .pi-app h1 { font-size:36px; }
+  .pi-app h1.coname { font-size:32px; }
+  .pi-app .lede { font-size:17px; }
+  .pi-app .card, .pi-app .tabpanel { padding:22px 18px; }
+  .pi-app .tname { font-size:22px; }
+  .pi-app .tp-row { gap:0 16px; }
+  .pi-app .band { margin-left:56px; padding:18px 16px; }
+  .pi-app .mrow { grid-template-columns:64px minmax(0,1fr); gap:14px; }
+  .pi-app .mrow .go-arrow { display:none; }
+}
