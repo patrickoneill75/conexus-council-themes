@@ -123,7 +123,7 @@
   function topicRow(n, name, metaHtml, body, open, opts) {
     opts = opts || {};
     var hl = opts.hl || "h3";
-    return '<section class="tp' + (open ? " open" : "") + '"' + (opts.topic ? ' data-topic="' + esc(opts.topic) + '"' : "") + ">" +
+    return '<section class="tp' + (open ? " open" : "") + '"' + (opts.topic ? ' data-topic="' + esc(opts.topic) + '"' : "") + (opts.hidden ? " hidden" : "") + ">" +
       "<" + hl + ' class="thead-h"><button type="button" class="tp-row" aria-expanded="' + (open ? "true" : "false") + '">' +
       // Number 1 alone pulses twice, a moment after the page arrives, and its arrow springs down: a cue that these open.
       '<span class="circ' + (n === 1 && !open ? " cue" : "") + '" aria-hidden="true">' + n + "</span>" +
@@ -626,7 +626,6 @@
     solutions: '<path d="M13 26h8M14 30h6M17 4a9 9 0 0 0-5.5 16.1c1 .8 1.5 1.8 1.5 2.9h8c0-1.1.5-2.1 1.5-2.9A9 9 0 0 0 17 4z"/>',
     wins: '<path d="M8 30V5M8 5h17l-3.5 6L25 17H8"/>',
     meetings: '<rect x="5" y="7" width="24" height="22" rx="3"/><path d="M5 14h24M11 4v6M23 4v6"/>',
-    notes: '<path d="M9 4h12l6 6v20H9z"/><path d="M21 4v6h6M13 17h10M13 22h10"/>',
     contacts: '<circle cx="17" cy="11.5" r="6"/><path d="M6 30c1.4-6.2 5.8-9.5 11-9.5s9.6 3.3 11 9.5"/>'
   };
   var COMPANY_TABS = [
@@ -635,11 +634,10 @@
     { id: "issues", label: "Issues", list: "issues", noun: ["issue", "issues"], note: "What this company is stuck on, by topic." },
     { id: "solutions", label: "Solutions", list: "solutions", noun: ["solution", "solutions"], note: "What this company has solved, offers or owns, by topic." },
     { id: "wins", label: "Wins", list: "wins", noun: ["win", "wins"], note: "What has gone well for this company, by topic." },
-    { id: "meetings", label: "Meetings", note: "Every meeting this company appears in, newest first, with the files in Box they came from." },
-    { id: "notes", label: "Notes", kinds: "", note: "Everything recorded about this company, newest first." },
+    { id: "meetings", label: "Meetings", note: "Every meeting this company appears in, newest first, each opening to its notes by topic." },
     { id: "contacts", label: "Contacts", note: "Everyone on file at this company." }
   ];
-  var OLD_TABS = { problems: "issues" }; // links saved before the tabs were renamed
+  var OLD_TABS = { problems: "issues", notes: "meetings" }; // links saved before tabs were renamed or merged
   function tabHref(id, tab) { return "#/company/" + encodeURIComponent(id) + (tab && tab !== "overview" ? "/" + tab : ""); }
 
   /** The question "Find solution" puts to Ask: the issue in its own words, at most 600 characters. */
@@ -689,13 +687,7 @@
       if (current.list) {
         topicsTab(body, c, current, mine);
       } else if (current.id === "meetings") {
-        body.innerHTML = p.meetings.length ? '<table class="tbl docs" style="margin-top:14px"><thead><tr><th>Date</th><th>Meeting</th><th>Files in Box</th></tr></thead><tbody>' +
-          p.meetings.map(function (m) {
-            return "<tr><td class=\"nowrap\">" + esc(PI.fmtDate(m.date)) + (m.estimated ? " " + PI.pill("est", "estimated date") : "") + "</td>" +
-              '<td class="cn">' + esc(m.label || m.series || m.eventType) + (m.programs.length ? ' <span class="muted small" style="font-weight:400">&middot; ' + esc(m.programs.join(", ")) + "</span>" : "") + "</td>" +
-              "<td>" + (PI.fileLinks(m.files) || '<span class="muted">No file</span>') + "</td></tr>";
-          }).join("") + "</tbody></table>"
-          : '<div class="empty">No meetings recorded yet.</div>';
+        meetingsTab(body, c, mine);
       } else if (current.id === "contacts") {
         var people = c.people || [];
         var source = { upload: "Contacts upload", roster: "Member roster", both: "Roster and contacts upload" };
@@ -705,8 +697,6 @@
               (x.email ? '<a href="mailto:' + esc(x.email) + '">' + esc(x.email) + "</a>" : "") + "</td><td>" + esc(source[x.source] || "") + "</td></tr>";
           }).join("") + "</tbody></table>"
           : '<div class="empty">No contacts on file. Upload the contacts list in the <a href="/partner-intel/control-panel/">control panel</a>.</div>';
-      } else {
-        listTab(body, c, current, mine);
       }
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
@@ -749,7 +739,7 @@
 
   /** Numbered topics that open to their notes. On the Overview a topic opens to three columns,
    * each showing its first three notes and a "View all" button for the rest. */
-  function topicList(topics, tab, companyId, inMeeting) {
+  function topicList(topics, tab, companyId, inMeeting, limit) {
     return '<div class="tlist">' + topics.map(function (t, n) {
       var inner;
       if (tab.list === "all") {
@@ -766,12 +756,46 @@
         inner = '<div class="band notes">' + t.items.map(function (i) { return rowCard(i, companyId, false); }).join("") + "</div>";
       }
       return topicRow(n + 1, t.label, esc(topicSentence(t, inMeeting)), inner, false,
-        { after: t.mentions ? "" : '<span class="allres">All resolved</span>' });
-    }).join("") + "</div>";
+        { after: t.mentions ? "" : '<span class="allres">All resolved</span>', hidden: limit && n >= limit });
+    }).join("") + "</div>" + (limit ? moreRows(topics.length - limit, tab.list === "all" ? "topics" : tab.noun[1]) : "");
   }
 
+  /** "Show 4 more topics" under a list cut short; it shows the rest in place, in the same list. */
+  function moreRows(count, noun) {
+    return count > 0 ? '<p class="colmore"><button class="more" data-more-rows>Show ' + count + " more " + noun + "</button></p>" : "";
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("button[data-more-rows]");
+    if (!b) return;
+    Array.prototype.forEach.call(b.parentNode.previousElementSibling.querySelectorAll(":scope > .tp[hidden]"), function (t) { t.hidden = false; });
+    b.parentNode.remove();
+  });
+
+  var TOPICS_SHOWN = 3; // the most referenced topics a company tab opens with
   function byTopic(box, r, tab, companyId) {
-    box.innerHTML = topicList(r.byTopic, tab, companyId, false);
+    box.innerHTML = '<h2 class="subh">Most Referenced ' + (tab.list === "all" ? "Topics" : esc(tab.label)) + "</h2>" +
+      topicList(r.byTopic, tab, companyId, false, TOPICS_SHOWN);
+  }
+
+  /** Meetings: every meeting this company appears in, newest first. Each opens to the files it came from
+   * and its notes, grouped by topic. */
+  var MEETINGS_SHOWN = 10;
+  function meetingsTab(body, c, mine) {
+    body.innerHTML = '<p class="small muted" style="margin-top:14px"><span class="spinner"></span>Loading…</p>';
+    PI.api("company/meetings?id=" + encodeURIComponent(c.id)).then(function (r) {
+      if (mine !== seq) return;
+      if (!r.meetings.length) { body.innerHTML = '<div class="empty">No meetings recorded yet.</div>'; return; }
+      body.innerHTML = '<div class="tlist">' + r.meetings.map(function (m, n) {
+        // A site visit is filed under the company's own name; the page already says that, so it goes by its type.
+        var own = !m.label || m.label === c.name, title = own ? m.eventType || "Meeting" : m.label;
+        var meta = [PI.fmtDate(m.date) + (m.estimated ? " (estimated date)" : ""), own ? "" : m.eventType, m.programs.join(", ")].filter(Boolean).join(" \u00b7 ");
+        var inner = '<div class="band">' + (m.files.length ? '<p class="mfrom">From ' + PI.fileLinks(m.files) + "</p>" : "") +
+          m.topics.map(function (t) {
+            return '<section class="mtopic"><h4>' + esc(t.label) + "</h4>" + t.items.map(function (i) { return rowCard(i, c.id); }).join("") + "</section>";
+          }).join("") + "</div>";
+        return topicRow(n + 1, title, esc(meta), inner, false, { hidden: n >= MEETINGS_SHOWN });
+      }).join("") + "</div>" + moreRows(r.meetings.length - MEETINGS_SHOWN, "meetings");
+    }).catch(function (err) { if (mine === seq) body.innerHTML = emptyState(err); });
   }
 
   function latestSource(box, r, tab, companyId) {
@@ -791,25 +815,6 @@
     var sel = el("psrc");
     if (sel) sel.addEventListener("change", function () { show(Number(sel.value)); });
     show(0);
-  }
-
-  /** A company's full list for one tab, newest first, 50 at a time. */
-  function listTab(body, c, tab, mine) {
-    var offset = 0;
-    body.innerHTML = '<div id="clist" style="margin-top:14px"></div><div id="cmore"></div>';
-    function page() {
-      return PI.api("insights?company=" + encodeURIComponent(c.id) + (tab.kinds ? "&kind=" + encodeURIComponent(tab.kinds) : "") +
-        "&sort=date&limit=50&offset=" + offset).then(function (r) {
-        if (mine !== seq) return;
-        if (!r.total) { el("clist").innerHTML = '<div class="empty">None recorded yet.</div>'; return; }
-        // Every issue carries a Find solution button, on Notes as on the topic tabs.
-        el("clist").insertAdjacentHTML("beforeend", r.items.map(function (i) { return rowCard(i, c.id); }).join(""));
-        offset += r.items.length;
-        el("cmore").innerHTML = offset < r.total ? '<p style="margin:12px 0 0"><button class="more" id="cmoreBtn">Show more</button></p>' : "";
-        var b = el("cmoreBtn"); if (b) b.addEventListener("click", function () { b.disabled = true; page(); });
-      }).catch(function (err) { if (mine === seq) el("clist").innerHTML = emptyState(err); });
-    }
-    page();
   }
 
   // "Find solution": put the issue to Ask, leaving out the company that has it.

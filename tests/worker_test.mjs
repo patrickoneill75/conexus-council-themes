@@ -3914,6 +3914,29 @@ test("partner_intel: the Issues tab groups issues by topic, ranked by mentions a
   assert.deepEqual([r.total, r.mentions], [10, 8], "issues and asks of this company only, internal rows left out");
 });
 
+test("partner_intel: the Meetings tab lists every meeting newest first, each with all its notes by topic", async () => {
+  const rows = [
+    ...issueRows(),
+    ins({ company_id: "c-a", kind: "win", urgency: "none", title: "w-new", topic: "talent_pipeline", date: isoAgo(0), meeting_id: "m-new", meeting_label: "Acme visit" }),
+    ins({ company_id: "c-a", kind: "news", urgency: "none", title: "n-old", topic: "quality", date: isoAgo(300), meeting_id: "m-t", meeting_label: "Cohort 1" }),
+  ];
+  // Thirteen more meetings, so the list runs past the 12 the Latest source view keeps.
+  for (let k = 0; k < 13; k++) rows.push(ins({ company_id: "c-a", title: "x" + k, date: isoAgo(500 + k), meeting_id: "m-x" + k, meeting_label: "Old " + k }));
+  const { env, token } = await piEnv(rows);
+  const r = await getJson("company/meetings?id=c-a", env, token);
+  assert.equal(r.meetings.length, 20, "every meeting, not only the newest 12");
+  assert.ok(r.meetings.every((m, k) => !k || r.meetings[k - 1].date >= m.date), "newest first");
+  const visit = r.meetings.find((m) => m.label === "Acme visit");
+  assert.deepEqual(visit.topics.map((t) => t.label), ["Talent pipeline and recruiting", "Other"], "its notes grouped by topic, Other last");
+  assert.deepEqual(visit.topics[1].items.map((i) => i.title), ["o-high", "o-low", "o-done"], "open notes first, a resolved one last");
+  assert.deepEqual(visit.files.map((f) => f.name), ["Acme visit.docx", "draft.txt", "notes.docx"], "every file its notes came from");
+  const cohort = r.meetings.find((m) => m.label === "Cohort 1");
+  assert.ok(cohort.topics.some((t) => t.items.some((i) => i.title === "n-old")), "notes of every kind, not only issues, solutions and wins");
+  assert.ok(!r.meetings.some((m) => m.label === "Board"), "internal rows are left out");
+  assert.equal(r.total, rows.filter((i) => i.company_id === "c-a" && i.scope !== "internal").length);
+  assert.equal((await pi("company/meetings", piGet("company/meetings?id=nope", token), env)).status, 404);
+});
+
 test("partner_intel: the latest source names its meeting and files, and lists its newest notes first", async () => {
   const { env, token } = await piEnv(issueRows());
   const r = await topicsOf(env, token, "issues");
