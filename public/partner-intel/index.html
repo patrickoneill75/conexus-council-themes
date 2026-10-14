@@ -125,10 +125,10 @@
     var hl = opts.hl || "h3";
     return '<section class="tp' + (open ? " open" : "") + '"' + (opts.topic ? ' data-topic="' + esc(opts.topic) + '"' : "") + ">" +
       "<" + hl + ' class="thead-h"><button type="button" class="tp-row" aria-expanded="' + (open ? "true" : "false") + '">' +
-      // Number 1 pulses once, a moment after the page arrives, and every arrow springs down: a cue that these open.
+      // Number 1 alone pulses once, a moment after the page arrives, and its arrow springs down: a cue that these open.
       '<span class="circ' + (n === 1 && !open ? " cue" : "") + '" aria-hidden="true">' + n + "</span>" +
       '<span><span class="tname">' + hlName(name) + (opts.after || "") + '</span><span class="tmeta">' + (metaHtml || "") + "</span></span></button></" + hl + ">" +
-      '<i class="tline hint" aria-hidden="true"></i>' +
+      '<i class="tline' + (n === 1 && !open ? " hint" : "") + '" aria-hidden="true"></i>' +
       '<div class="tbody" data-body' + (open ? "" : " hidden") + ">" + body + "</div></section>";
   }
   function animate(node, cls) {
