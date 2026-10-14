@@ -375,6 +375,36 @@ async function recentRuns(env) {
 
 /* ------------------------------------------------------------------ roster */
 
+/** Each roster partner's name and aliases, as name keys, to its id: how a contact's company is matched. */
+function partnerKeyMap(roster) {
+  const keys = new Map();
+  for (const p of roster.partners) {
+    keys.set(nameKey(p.name), p.id);
+    for (const a of p.aliases || []) keys.set(nameKey(a), p.id);
+  }
+  for (const [alias, id] of Object.entries(roster.aliases || {})) keys.set(nameKey(alias), id);
+  return keys;
+}
+
+/**
+ * Everyone on file at a company: the uploaded contacts whose company matches it, and the names on
+ * the member roster, once each. source says where the person was found: "upload", "roster" or "both".
+ */
+function companyPeople(company, roster, uploaded) {
+  const keys = partnerKeyMap(roster);
+  const people = new Map();
+  for (const name of company.contacts || []) {
+    if (name) people.set(nameKey(name), { name, title: "", email: "", source: "roster" });
+  }
+  for (const c of uploaded || []) {
+    if (keys.get(nameKey(c.account)) !== company.id) continue;
+    const key = nameKey(c.name);
+    const had = people.get(key);
+    people.set(key, { name: had ? had.name : c.name, title: c.title || "", email: c.email || "", source: had ? "both" : "upload" });
+  }
+  return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function nameKey(s) {
   return text(s).normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
     .replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
@@ -515,12 +545,7 @@ export function readContacts(rows, roster) {
   }
   const get = (row, field) => (at[field] === undefined ? "" : text(row[at[field]]));
   const damaged = (v) => !v || /^\d+$/.test(v) || v === "TRUE" || v === "FALSE";
-  const partnerKeys = new Map();
-  for (const p of roster.partners) {
-    partnerKeys.set(nameKey(p.name), p.id);
-    for (const a of p.aliases || []) partnerKeys.set(nameKey(a), p.id);
-  }
-  for (const [alias, id] of Object.entries(roster.aliases || {})) partnerKeys.set(nameKey(alias), id);
+  const partnerKeys = partnerKeyMap(roster);
 
   const contacts = [], seen = new Set(), byPerson = new Map(), accounts = new Map();
   const counts = { rows: rows.length - 1, kept: 0, repaired: 0, duplicates: 0, noName: 0, noCompany: 0 };
@@ -2265,7 +2290,10 @@ export async function handlePartnerIntelApi(route, request, env) {
     if (route === "company" && method === "GET") {
       const asked = text(params.get("id"));
       const view = profileView(data, roster, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
-      return view ? json(view) : json({ error: "Company not found." }, 404);
+      if (!view) return json({ error: "Company not found." }, 404);
+      const uploaded = await readJson(env, CONTACTS_KEY, null);
+      view.company.people = companyPeople(view.company, roster, uploaded ? uploaded.contacts : []);
+      return json(view);
     }
     if (route === "company/topics" && method === "GET") {
       const asked = text(params.get("id"));

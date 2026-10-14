@@ -3717,6 +3717,26 @@ test("partner_intel: a contact list uploads as .xlsx, repairs names Excel damage
   assert.equal((await getJson("status", env, token)).contacts.summary.kept, 6);
 });
 
+test("partner_intel: a company page lists everyone on file there: the uploaded contacts and the roster names, once each", async () => {
+  const { env, token } = await piEnv([ins({ company_id: "c-a" })]);
+  const before = (await getJson("company?id=c-a", env, token)).company.people;
+  assert.deepEqual(before, [{ name: "Ann A", title: "", email: "", source: "roster" }], "with no upload, the roster name alone");
+  const data = contactsXlsx([
+    ["Ben", "Larson", "Site Director", "Acme Corp", "ben.larson@acme.com"],
+    ["Ann", "A", "President", "ACME CORP", "ann@acme.com"],      // on the roster too, company written differently
+    ["Robert", "King", "", "Acme Corp", ""],
+    ["Bob", "Other", "Buyer", "Beta Works", "bob@beta.com"],    // another partner's contact
+  ]);
+  assert.equal((await pi("contacts/import", piReq("contacts/import", "POST", { fileName: "contacts.xlsx", data }, token), env)).status, 200);
+  const people = (await getJson("company?id=c-a", env, token)).company.people;
+  assert.deepEqual(people.map((x) => [x.name, x.title, x.email, x.source]), [
+    ["Ann A", "President", "ann@acme.com", "both"],
+    ["Ben Larson", "Site Director", "ben.larson@acme.com", "upload"],
+    ["Robert King", "", "", "upload"],
+  ], "every Acme contact, the roster name merged with its upload, nobody from Beta Works");
+  assert.deepEqual((await getJson("company?id=c-c", env, token)).company.people, [], "a partner with no contacts lists nobody");
+});
+
 test("partner_intel: a contact list also uploads as CSV, and a file without a company or name column is refused", async () => {
   const { env, token } = await piEnv([]);
   const csv = (t) => Buffer.from(t).toString("base64");
