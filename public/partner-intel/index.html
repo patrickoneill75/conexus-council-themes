@@ -77,21 +77,6 @@
       '<mask id="' + id + 'm" maskUnits="userSpaceOnUse" x="-2" y="-2" width="100" height="66">' + shapes + "</mask></defs>" +
       '<g filter="url(#' + id + 'f)"><rect x="-2" y="-2" width="100" height="66" fill="url(#' + id + 'g)" mask="url(#' + id + 'm)"/></g></svg>';
   }
-  // The badge spans the font's ascender line to its descender line. pi.css sets that for Arial; this reads it
-  // from the font the browser actually used, since Aptos and Segoe UI sit a little differently.
-  function fitBadge(h1) {
-    var b = h1 && h1.querySelector(".cm");
-    if (!b) return;
-    try {
-      var cs = getComputedStyle(h1), px = parseFloat(cs.fontSize);
-      var ctx = document.createElement("canvas").getContext("2d");
-      ctx.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
-      var m = ctx.measureText("Hg");
-      if (!px || !m.fontBoundingBoxAscent || !m.fontBoundingBoxDescent) return;
-      b.style.height = ((m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) / px).toFixed(3) + "em";
-      b.style.verticalAlign = (-m.fontBoundingBoxDescent / px).toFixed(3) + "em";
-    } catch (e) { /* keep the CSS default */ }
-  }
   function backLink(href, text) { return '<a class="back" href="' + href + '">' + BACK + esc(text) + "</a>"; }
 
   function loadSources() {
@@ -140,7 +125,8 @@
     var hl = opts.hl || "h3";
     return '<section class="tp' + (open ? " open" : "") + '"' + (opts.topic ? ' data-topic="' + esc(opts.topic) + '"' : "") + ">" +
       "<" + hl + ' class="thead-h"><button type="button" class="tp-row" aria-expanded="' + (open ? "true" : "false") + '">' +
-      '<span class="circ" aria-hidden="true">' + n + "</span>" +
+      // Number 1 pulses once, a moment after the page arrives, and every arrow springs down: a cue that these open.
+      '<span class="circ' + (n === 1 && !open ? " cue" : "") + '" aria-hidden="true">' + n + "</span>" +
       '<span><span class="tname">' + hlName(name) + (opts.after || "") + '</span><span class="tmeta">' + (metaHtml || "") + "</span></span></button></" + hl + ">" +
       '<i class="tline hint" aria-hidden="true"></i>' +
       '<div class="tbody" data-body' + (open ? "" : " hidden") + ">" + body + "</div></section>";
@@ -152,7 +138,7 @@
     node.classList.add(cls);
   }
   document.addEventListener("animationend", function (e) {
-    if (e.target.classList) e.target.classList.remove("c-open", "c-close", "grow", "shrink", "hint", "a-shrink", "a-expand");
+    if (e.target.classList) e.target.classList.remove("c-open", "c-close", "grow", "shrink", "hint", "cue", "a-shrink", "a-expand");
   });
   /* The topic line. Opening a topic draws one stroke from its number down the left of the block and
    * along the bottom, then a dot lands on the end. Closing runs it back as one motion: off the bottom
@@ -164,8 +150,9 @@
     var body = card.querySelector("[data-body]"), band = body && body.querySelector(":scope > .band");
     if (!band || body.hidden) return null;
     var c = card.getBoundingClientRect(), b = band.getBoundingClientRect(), r = CORNER;
-    // A boxed block (white cards on light blue) keeps its box, and the line runs just beneath it.
-    var B = b.bottom - c.top + (band.classList.contains("boxed") ? 16 : 0), R = b.right - c.left;
+    // The page body is scaled on desktop (pi.css), and the line is drawn in the card's own unscaled units.
+    var k = c.width / (card.offsetWidth || c.width || 1) || 1;
+    var B = (b.bottom - c.top) / k, R = (b.right - c.left) / k;
     return { d: "M" + LINE_X + " " + LINE_TOP + "V" + (B - r) + "A" + r + " " + r + " 0 0 0 " + (LINE_X + r) + " " + B + "H" + R,
       x: R, y: B, up: B - r - LINE_TOP };
   }
@@ -312,7 +299,7 @@
    * set the topics were ranked under; the server recomputes the evidence from it. */
   function showTopics(box, trending, from, to, scope, mine, hl) {
     var chunk = trending.slice(from, to);
-    box.insertAdjacentHTML("beforeend", chunk.map(function (t, k) { return topicCard(t, from + k, hl, from + k === 0); }).join(""));
+    box.insertAdjacentHTML("beforeend", chunk.map(function (t, k) { return topicCard(t, from + k, hl, false); }).join(""));
     var need = chunk.filter(function (t) { return !t.summary; });
     if (!need.length) return;
     // Wait a moment before asking for summaries. Someone clicking through windows and filters
@@ -371,7 +358,7 @@
     // and a program's own page ranks that folder alone.
     PI.api("home?days=" + state.days).then(function (d) {
       if (mine !== seq) return;
-      view.innerHTML = '<h1>Trending topics</h1><p class="lede">What the most partner companies have raised since ' + esc(PI.fmtDate(d.since)) + ".</p>" +
+      view.innerHTML = '<h1>Trending topics</h1>' +
         '<div style="margin-top:28px">' + windowButtons("win", [[30, "30 days"], [60, "60 days"], [90, "90 days"]], state.days) + '</div><div id="trend"></div>';
       var foot = '<div class="topicfoot"><b>Note</b><span>Topics rank by how many partner companies raised them. A company counts once per topic.' +
         (d.uncategorized ? " " + esc(plural(d.uncategorized, "issue", "issues")) + " did not fit a topic and are not ranked." : "") + "</span>" +
@@ -396,7 +383,7 @@
     PI.api("programs").then(function (r) {
       if (mine !== seq) return;
       view.innerHTML = updateBanner(r.needsUpdate) + "<h1>Programs</h1>" +
-        '<p class="lede">Each source folder in Box is a program. Open one for its trending topics and its meetings.</p><div class="pgrid">' +
+        '<div class="pgrid">' +
         r.programs.map(function (p) {
           return '<a class="pcard" href="#/program/' + encodeURIComponent(p.name) + '"><span class="pn">' + esc(p.name) + "</span>" +
             (p.internal ? '<span class="pint">Conexus internal</span>' : "") +
@@ -425,9 +412,8 @@
         '<p class="lede">' + (p.first ? "Notes from " + esc(PI.fmtDate(p.first)) + " to " + esc(PI.fmtDate(p.last)) + "." : "No dated notes yet.") +
         (p.internal ? " Conexus internal." : "") + "</p>" +
         '<div style="margin-top:28px">' + windowButtons("pwin", [[90, "Last 90 days"], [365, "Last year"], [0, "All time"]], state.programDays) + "</div>" +
-        '<h2 class="subh">Trending topics</h2><p class="secsub">The topics raised by the most companies in this program' +
-        (state.programDays ? " in the window" : "") + '.</p><div id="trend"></div>' +
-        '<h2 class="subh">Recent data</h2><p class="secsub">Grouped by date, and by cohort, company or meeting. Open one for its issues, solutions and wins.</p>' +
+        '<h2 class="subh">Trending topics</h2><div id="trend"></div>' +
+        '<h2 class="subh">Recent data</h2>' +
         '<div class="card" style="padding:8px 36px"><div id="meetings"></div></div><div id="moreM"></div>';
       renderTrending(el("trend"), r.trending, { days: state.programDays, source: [name] }, mine, "h3");
       var shown = 0;
@@ -436,7 +422,7 @@
         el("meetings").insertAdjacentHTML("beforeend", r.meetings.slice(shown, to).map(function (m) { return meetingRow(name, m); }).join(""));
         shown = to;
         el("moreM").innerHTML = shown < r.meetings.length ? '<p style="margin:22px 0 0"><button class="more" id="moreMeet">Show more</button></p>'
-          : (r.meetingTotal > r.meetings.length ? '<p class="secsub" style="margin-top:14px">Showing the latest meetings. Older ones are on Explore.</p>' : "");
+          : "";
         var b = el("moreMeet"); if (b) b.addEventListener("click", more);
       }
       if (!r.meetings.length) el("meetings").innerHTML = '<div class="empty">No data in this program yet.</div>'; else more();
@@ -456,7 +442,7 @@
       var m = r.meeting;
       function section(title, noun, items, tone) {
         if (!items.length) return "";
-        var cards = items.map(function (i) { return PI.insightCard(i, { action: isIssue(i) ? findButton(i, i.company && i.company.id) : "" }); });
+        var cards = items.map(function (i) { return PI.insightCard(i, { kind: false, action: isIssue(i) ? findButton(i, i.company && i.company.id) : "" }); });
         return '<section class="card"><h2' + (tone ? ' class="' + tone + '"' : "") + ">" + esc(title) + "</h2><div>" + cards.slice(0, SECTION_SHOWN).join("") +
           (cards.length > SECTION_SHOWN ? '<div hidden data-rest>' + cards.slice(SECTION_SHOWN).join("") + "</div>" : "") + "</div>" +
           (cards.length > SECTION_SHOWN ? '<p style="margin:6px 0 0"><button class="more" data-show-rest>Show all ' + noun + "</button></p>" : "") + "</section>";
@@ -482,7 +468,6 @@
   function ask() {
     var mine = ++seq;
     view.innerHTML = "<h1>Ask</h1>" +
-      '<p class="lede">Describe what a partner needs. The answer lists companies whose own notes show they have solved or offer it, with the evidence.</p>' +
       '<div class="card" style="margin-top:32px"><label class="field" for="q">What does the partner need?</label>' +
       '<textarea id="q" rows="3" maxlength="600" placeholder="A partner is looking for something to help them with an AI-powered quality system. Who can we connect them with?"></textarea>' +
       '<div id="excl"></div><div class="row" style="margin-top:16px;align-items:flex-end;gap:14px 18px"><div id="askSrc" style="width:260px"></div>' +
@@ -535,7 +520,7 @@
   }
 
   function companyFacts(c) {
-    return [c.industry, PI.statusLabel[c.status] || c.status].filter(Boolean).map(esc).join(". ") + ".";
+    return [c.industry, PI.memberLabel(c.status)].filter(Boolean).map(esc).join(". ") + ".";
   }
 
   function renderAnswer(a) {
@@ -556,7 +541,7 @@
           return { text: "<b>" + esc(i.title) + "</b>", examples: PI.insightCard(i, { company: false }) };
         }), "note") + "</div>" +
         '<p style="margin:16px 0 0"><a class="arrowlink" href="#/company/' + encodeURIComponent(c.id) + '">Open ' + esc(c.name) + ARROW + "</a></p></div>";
-      return topicRow(n + 1, c.name, esc(strength + ". " + companyFacts(c)), body, n === 0);
+      return topicRow(n + 1, c.name, esc(strength + ". " + companyFacts(c)), body, false);
     }).join("") + "</div>";
     if (a.gaps) html += '<p class="secsub" style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rule)"><b style="color:var(--navy)">Not covered:</b> ' + esc(a.gaps) + "</p>";
     if (a.searchTerms && a.searchTerms.length) {
@@ -577,20 +562,19 @@
   /* ------------------------------------------------------------------ Companies */
   // Columns of the companies table: [sort key, heading]. Alphabetical by name until a heading is
   // clicked; clicking it again reverses. Kept while the page is open, so Back returns to it.
-  var COMPANY_COLS = [["name", "Company"], ["industry", "Industry"], ["status", "Status"], ["last", "Last mentioned"]];
+  var COMPANY_COLS = [["name", "Company"], ["industry", "Industry"], ["status", "Status"], ["insights", "Notes"], ["last", "Last mentioned"]];
   var companySort = { key: "name", dir: "asc" };
 
   function companies() {
     var mine = ++seq;
     view.innerHTML = "<h1>Companies</h1>" +
-      '<p class="lede">Every partner company in the notes. Open one for its issues, solutions and wins.</p>' +
       '<div class="card" style="margin-top:32px;padding:24px 28px"><div class="fields">' +
       '<div><label class="field" for="cq">Search</label><input id="cq" placeholder="Company name"></div>' +
       '<div><label class="field" for="ci">Industry</label><select id="ci"><option value="">All</option></select></div>' +
       '<div><label class="field" for="cs">Member status</label><select id="cs"><option value="">All</option>' +
-      '<option value="Active">Council Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>' +
+      '<option value="Active">Council Member</option><option value="' + PI.NOT_COUNCIL + '">Not Council</option></select></div>' +
       '<div style="align-self:end;height:46px;display:flex;align-items:center"><label class="chk"><input type="checkbox" id="cw" checked> Only companies with notes</label></div></div></div>' +
-      '<div class="card" id="clist" style="padding:12px 28px 20px"></div><p class="secsub" style="margin-top:14px">Pick a column heading to sort.</p>';
+      '<div class="card" id="clist" style="padding:12px 28px 20px"></div>';
     function load() {
       var qs = "companies?q=" + encodeURIComponent(el("cq").value) + (el("ci").value ? "&industry=" + encodeURIComponent(el("ci").value) : "") +
         (el("cs").value ? "&status=" + encodeURIComponent(el("cs").value) : "") + (el("cw").checked ? "&withInsights=1" : "") +
@@ -607,7 +591,7 @@
           }).join("") + "</tr></thead><tbody>" +
           r.items.map(function (c) {
             return '<tr class="click" data-id="' + esc(c.id) + '"><td class="cn">' + esc(c.name) + "</td><td>" + esc(c.industry) + "</td><td>" +
-              esc(PI.statusLabel[c.status] || c.status) + "</td><td>" + (c.last ? esc(PI.fmtDate(c.last)) : "") + "</td></tr>";
+              esc(PI.memberLabel(c.status)) + '</td><td class="num">' + (c.insights || 0) + "</td><td>" + (c.last ? esc(PI.fmtDate(c.last)) : "") + "</td></tr>";
           }).join("") + "</tbody></table>" : '<div class="empty">No companies match.</div>';
         Array.prototype.forEach.call(el("clist").querySelectorAll("tr.click"), function (tr) {
           tr.addEventListener("click", function () { location.hash = "#/company/" + encodeURIComponent(tr.getAttribute("data-id")); });
@@ -666,8 +650,9 @@
   }
   var isIssue = function (i) { return i.kind === "problem" || i.kind === "ask"; };
   /** A row as a note; an issue carries Find solution at the end of its date and source line. */
-  function rowCard(i, companyId) {
-    return PI.insightCard(i, { company: false, action: isIssue(i) ? findButton(i, companyId) : "" });
+  /** A note on the company page. kind is false where the column or tab already says issue, solution or win. */
+  function rowCard(i, companyId, kind) {
+    return PI.insightCard(i, { company: false, kind: kind, action: isIssue(i) ? findButton(i, companyId) : "" });
   }
 
   function company(id, tab) {
@@ -680,7 +665,7 @@
       if (mine !== seq) return;
       var c = p.company;
       var facts = [c.industry, c.program].filter(Boolean);
-      if (c.status && c.status !== "Active") facts.push(PI.statusLabel[c.status] || c.status);
+      if (c.status !== "Active") facts.push(PI.memberLabel(c.status));
       // Every member is a council member and gets the badge after its name, the way a verified account gets a
       // check. The last word and the badge never split, so the badge never starts a line on its own.
       var name = esc(c.name), cut = name.lastIndexOf(" ");
@@ -690,15 +675,13 @@
       var html = backLink("#/companies", "All companies") +
         '<h1 class="coname">' + title + "</h1>" +
         (facts.length ? '<p class="lede">' + facts.map(esc).join(". ") + ".</p>" : "") +
-        (c.source === "notes" ? '<p class="secsub">This company is in the notes but not on the partner list. Add it in the control panel to give it an industry.</p>' : "") +
         '<nav class="ctabs" aria-label="Company sections">' + COMPANY_TABS.map(function (t) {
           return '<a href="' + tabHref(c.id, t.id) + '"' + (t.id === current.id ? ' class="on" aria-current="page"' : "") + ">" +
             '<svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[t.id] + "</svg>" +
             esc(t.label) + "</a>";
         }).join("") + "</nav>" +
-        '<section class="tabpanel' + (at === 0 ? " first" : at === COMPANY_TABS.length - 1 ? " last" : "") + '"><p class="secsub" style="margin:0">' + esc(current.note) + '</p><div id="tabBody"></div></section>';
+        '<section class="tabpanel' + (at === 0 ? " first" : at === COMPANY_TABS.length - 1 ? " last" : "") + '"><div id="tabBody"></div></section>';
       view.innerHTML = html;
-      fitBadge(view.querySelector("h1.coname"));
       var body = el("tabBody");
       if (current.list) {
         topicsTab(body, c, current, mine);
@@ -708,8 +691,7 @@
             return "<tr><td class=\"nowrap\">" + esc(PI.fmtDate(m.date)) + (m.estimated ? " " + PI.pill("est", "estimated date") : "") + "</td>" +
               '<td class="cn">' + esc(m.label || m.series || m.eventType) + (m.programs.length ? ' <span class="muted small" style="font-weight:400">&middot; ' + esc(m.programs.join(", ")) + "</span>" : "") + "</td>" +
               "<td>" + (PI.fileLinks(m.files) || '<span class="muted">No file</span>') + "</td></tr>";
-          }).join("") + "</tbody></table>" +
-          (p.meetingTotal > p.meetings.length ? '<p class="secsub">Showing the latest meetings. The rest are on the Notes tab.</p>' : "")
+          }).join("") + "</tbody></table>"
           : '<div class="empty">No meetings recorded yet.</div>';
       } else if (current.id === "contacts") {
         var people = c.people || [];
@@ -718,8 +700,7 @@
           people.map(function (x) {
             return '<tr><td class="cn">' + esc(x.name) + "</td><td>" + esc(x.title) + "</td><td>" +
               (x.email ? '<a href="mailto:' + esc(x.email) + '">' + esc(x.email) + "</a>" : "") + "</td><td>" + esc(source[x.source] || "") + "</td></tr>";
-          }).join("") + "</tbody></table>" +
-          '<p class="secsub" style="margin-top:14px">Everyone at this company in the contacts list uploaded in the control panel, plus anyone named on the member roster.</p>'
+          }).join("") + "</tbody></table>"
           : '<div class="empty">No contacts on file. Upload the contacts list in the <a href="/partner-intel/control-panel/">control panel</a>.</div>';
       } else {
         listTab(body, c, current, mine);
@@ -738,14 +719,12 @@
       body.innerHTML = '<div class="row spread toolbar"><div class="seg soft" id="pmode" role="group" aria-label="View">' +
         [["topic", "By topic"], ["latest", "Latest source"]].map(function (m) {
           return '<button data-mode="' + m[0] + '">' + m[1] + "</button>";
-        }).join("") + '</div></div><div id="pview"></div><p class="secsub" id="pnote" style="margin-top:14px"></p>';
+        }).join("") + '</div></div><div id="pview"></div>';
       function draw() {
         Array.prototype.forEach.call(el("pmode").querySelectorAll("button"), function (b) {
           var on = b.getAttribute("data-mode") === topicsMode;
           b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false");
         });
-        el("pnote").textContent = topicsMode === "latest" ? "Ranked by how often each topic came up in that meeting."
-          : "Most mentioned first. Recent notes count more." + (tab.list === "all" || tab.list === "issues" ? " Resolved issues are not counted." : "");
         if (topicsMode === "latest") latestSource(el("pview"), r, tab, c.id); else byTopic(el("pview"), r, tab, c.id);
       }
       el("pmode").addEventListener("click", function (e) {
@@ -771,9 +750,9 @@
     return '<div class="tlist">' + topics.map(function (t, n) {
       var inner;
       if (tab.list === "all") {
-        inner = '<div class="band boxed"><div class="cols3">' + [["Issues", "issues", "k-issue"], ["Solutions", "solutions", "k-solution"], ["Wins", "wins", "k-win"]].map(function (col) {
+        inner = '<div class="band"><div class="cols3">' + [["Issues", "issues", "k-issue"], ["Solutions", "solutions", "k-solution"], ["Wins", "wins", "k-win"]].map(function (col) {
           var rows = t.items.filter(function (i) { return PI.categoryOf(i.kind) === col[1]; });
-          var cards = rows.map(function (i) { return rowCard(i, companyId); });
+          var cards = rows.map(function (i) { return rowCard(i, companyId, false); });
           return '<section><h4 class="colh ' + col[2] + '">' + col[0] + "</h4>" +
             (rows.length ? cards.slice(0, COLUMN_SHOWN).join("") +
               (rows.length > COLUMN_SHOWN ? '<div hidden data-rest>' + cards.slice(COLUMN_SHOWN).join("") + "</div>" +
@@ -781,7 +760,7 @@
             : '<p class="muted small" style="margin:12px 0 0">None in this topic.</p>') + "</section>";
         }).join("") + "</div></div>";
       } else {
-        inner = '<div class="band notes">' + t.items.map(function (i) { return rowCard(i, companyId); }).join("") + "</div>";
+        inner = '<div class="band notes">' + t.items.map(function (i) { return rowCard(i, companyId, false); }).join("") + "</div>";
       }
       return topicRow(n + 1, t.label, esc(topicSentence(t, inMeeting)), inner, false,
         { after: t.mentions ? "" : '<span class="allres">All resolved</span>' });
@@ -797,8 +776,7 @@
       return '<option value="' + k + '">' + esc(PI.fmtDate(s.date) + " · " + (s.label || s.eventType || "Meeting")) + "</option>";
     }).join("");
     box.innerHTML = (r.latest.length > 1 ? '<div style="max-width:520px;margin:14px 0 8px"><label class="field" for="psrc">Source</label><select id="psrc">' + opts + "</select></div>" : "") +
-      '<div id="psrcBody"></div>' +
-      (r.sourceTotal > r.latest.length ? '<p class="secsub" style="margin-top:16px">Only the latest sources are listed. By topic covers them all.</p>' : "");
+      '<div id="psrcBody"></div>';
     function show(k) {
       var s = r.latest[k];
       el("psrcBody").innerHTML = '<div style="margin:16px 0 4px"><h3>' + esc(s.label || s.eventType || "Meeting") + "</h3>" +
@@ -847,14 +825,13 @@
     var mine = ++seq;
     var offset = 0;
     view.innerHTML = "<h1>Explore</h1>" +
-      '<p class="lede">Every note from every program, newest first. Filter by type, topic, company or meeting.</p>' +
       '<div class="card" style="margin-top:32px;padding:26px 28px"><div class="fields">' +
       '<div style="grid-column:span 2"><label class="field" for="eq">Search</label><input id="eq" placeholder="Words in the note or company" style="width:100%"></div>' +
       '<div id="exSrc">' + sourceSelect("ep", "Program") + "</div>" +
       '<div><label class="field" for="ek">Type</label><select id="ek"><option value="">All types</option>' + KINDS.map(function (k) { return '<option value="' + k + '">' + PI.kindLabel[k] + "</option>"; }).join("") + "</select></div>" +
       '<div><label class="field" for="et">Topic</label><select id="et"><option value="">All topics</option></select></div>' +
       '<div><label class="field" for="ei">Industry</label><select id="ei"><option value="">All industries</option></select></div>' +
-      '<div><label class="field" for="es">Member status</label><select id="es"><option value="">All</option><option value="Active">Council Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>' +
+      '<div><label class="field" for="es">Member status</label><select id="es"><option value="">All</option><option value="Active">Council Member</option><option value="' + PI.NOT_COUNCIL + '">Not Council</option></select></div>' +
       '<div><label class="field" for="ee">Event</label><select id="ee"><option value="">All events</option></select></div>' +
       '<div><label class="field" for="ed">When</label><select id="ed"><option value="">Any time</option><option value="30">Last 30 days</option><option value="60">Last 60 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select></div>' +
       '</div><div class="row" style="margin-top:18px;gap:12px 26px"><label class="chk"><input type="checkbox" id="ex"> Exact dates only</label>' +

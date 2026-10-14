@@ -2960,6 +2960,20 @@ test("partner_intel: the Trending topics page opens on the last 90 days", async 
   assert.match(html, /var state = \{ days: 90,/, "the page asks for 90 days when it loads");
 });
 
+test("partner_intel: BUG a stray + left after removing a line broke every page; each inline script must parse", () => {
+  // Removing the "Showing the latest meetings" line left "</table>" + : ..., a syntax error that stopped the
+  // whole staff app from loading. Parse every inline script in the app, the control panel and pi.js.
+  const root = path.join(path.dirname(SRC), "public", "partner-intel");
+  const pages = ["index.html", path.join("control-panel", "index.html")];
+  for (const page of pages) {
+    const html = fs.readFileSync(path.join(root, page), "utf8");
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+    assert.ok(scripts.length, page + " has an inline script");
+    scripts.forEach((code, n) => assert.doesNotThrow(() => new Function(code), page + " script " + n + " parses"));
+  }
+  assert.doesNotThrow(() => new Function(fs.readFileSync(path.join(root, "pi.js"), "utf8")), "pi.js parses");
+});
+
 test("mcm: BUG narrative points showed raw ** markers and a stray leading period", () => {
   // The function is taken from the page itself, between its marker comments.
   const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "mcm", "index.html"), "utf8");

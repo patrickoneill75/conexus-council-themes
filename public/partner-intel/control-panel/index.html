@@ -81,7 +81,7 @@
 
   <section class="card">
     <h2>3. Partner list</h2>
-    <p class="desc">Industry, member status and contacts come from here, and it is how a company named in the notes is recognized. Update it whenever partners join or leave: upload a fresh Salesforce export, or edit one partner below. Nobody is deleted by an upload. A partner missing from a full list is marked Former member and keeps their history.</p>
+    <p class="desc">Industry, member status and contacts come from here, and it is how a company named in the notes is recognized. Update it whenever partners join or leave: upload a fresh Salesforce export, or edit one partner below. Nobody is deleted by an upload. A partner missing from a full list is marked Not Council and keeps their history.</p>
     <div id="rosterSummary" class="small" style="margin-bottom:12px"></div>
 
     <h3>Load from the member list folder in Box</h3>
@@ -111,7 +111,7 @@
     <div class="fields" style="margin-top:8px">
       <div><label class="field" for="pName">Name</label><input id="pName" style="width:100%"></div>
       <div><label class="field" for="pIndustry">Industry</label><input id="pIndustry" list="industryList" style="width:100%"><datalist id="industryList"></datalist></div>
-      <div><label class="field" for="pStatus">Status</label><select id="pStatus"><option value="Active">Council Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select></div>
+      <div><label class="field" for="pStatus">Status</label><select id="pStatus"><option value="Active">Council Member</option><option value="Inactive">Not Council</option></select></div>
     </div>
     <div class="fields" style="margin-top:12px">
       <div><label class="field" for="pContacts">Contacts (one per line)</label><textarea id="pContacts" rows="3"></textarea></div>
@@ -126,7 +126,7 @@
 
     <div class="row" style="margin-top:22px">
       <input id="rFilter" placeholder="Search partners" style="min-width:220px">
-      <select id="rStatus"><option value="">All statuses</option><option value="Active">Council Member</option><option value="Inactive">Former member</option><option value="Non-member">Not a member</option></select>
+      <select id="rStatus"><option value="">All statuses</option><option value="Active">Council Member</option><option value="not">Not Council</option></select>
     </div>
     <div style="margin-top:10px;overflow-x:auto"><table><thead><tr><th>Partner</th><th>Industry</th><th>Status</th><th>Contacts</th><th></th></tr></thead><tbody id="rosterRows"></tbody></table></div>
   </section>
@@ -364,7 +364,7 @@
   function renderRoster() {
     var q = el("rFilter").value.trim().toLowerCase(), st = el("rStatus").value;
     var rows = roster.partners.filter(function (p) {
-      return (!q || p.name.toLowerCase().indexOf(q) >= 0) && (!st || p.status === st);
+      return (!q || p.name.toLowerCase().indexOf(q) >= 0) && (!st || (st === "not" ? p.status !== "Active" : p.status === st));
     }).sort(function (a, b) { return a.name.localeCompare(b.name); });
     el("rosterRows").innerHTML = rows.length ? rows.map(function (p) {
       return "<tr><td><b>" + esc(p.name) + "</b></td><td>" + esc(p.industry || "") + "</td><td>" +
@@ -380,7 +380,7 @@
     editingId = p ? p.id : "";
     el("formTitle").textContent = p ? "Edit " + p.name : "Add a partner";
     el("pName").value = p ? p.name : ""; el("pIndustry").value = p ? p.industry : "";
-    el("pStatus").value = p ? p.status : "Active";
+    el("pStatus").value = p && p.status !== "Active" ? "Inactive" : "Active";
     el("pContacts").value = p ? p.contacts.join("\n") : ""; el("pAliases").value = p ? p.aliases.join("\n") : "";
     el("pSave").textContent = p ? "Save changes" : "Add partner";
     el("pCancel").hidden = !p; el("pDelete").hidden = !p; msg("pMsg", "");
@@ -395,7 +395,7 @@
     }).catch(function (e) { msg("pMsg", e.message, "err"); });
   });
   el("pDelete").addEventListener("click", function () {
-    if (!confirm("Delete this partner? Marking them Former member instead keeps their history attached.")) return;
+    if (!confirm("Delete this partner? Marking them Not Council instead keeps their history attached.")) return;
     PI.post("roster/partner/delete", { id: editingId }).then(function () { edit(""); return Promise.all([loadRoster(), loadStatus()]); })
       .catch(function (e) { msg("pMsg", e.message, "err"); });
   });
@@ -443,7 +443,7 @@
       "</b> returning &middot; <b>" + s.deactivated.length + "</b> no longer on the list &middot; " + s.unchanged + " unchanged</div>" +
       (s.added.length ? "<details><summary>New partners</summary>" + names(s.added) + "</details>" : "") +
       (s.reactivated.length ? "<details><summary>Returning partners</summary>" + names(s.reactivated) + "</details>" : "") +
-      (s.deactivated.length ? "<details open><summary><b>Will be marked Former member</b></summary>" + names(s.deactivated) + "</details>" : "") +
+      (s.deactivated.length ? "<details open><summary><b>Will be marked Not Council</b></summary>" + names(s.deactivated) + "</details>" : "") +
       (s.updated.length ? "<details><summary>Changed</summary>" + names(s.updated) + "</details>" : "");
   }
   el("csvPreview").addEventListener("click", function () {

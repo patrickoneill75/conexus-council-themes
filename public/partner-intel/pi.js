@@ -45,11 +45,16 @@
 
   PI.kindLabel = { problem: "Issue", solution: "Solution", win: "Win", offer: "Offer", ask: "Ask",
     equipment: "Equipment", news: "News", commitment: "Commitment" };
-  PI.statusLabel = { Active: "Council Member", Inactive: "Former member", "Non-member": "Not a member", Unknown: "Unknown" };
+  // A company is either a council member or not; former members, non-members and companies not on the
+  // roster all read "Not Council".
+  PI.statusLabel = { Active: "Council Member", Inactive: "Not Council", "Non-member": "Not Council", Unknown: "Not Council" };
+  PI.memberLabel = function (status) { return status === "Active" ? "Council Member" : "Not Council"; };
+  // The filter value for "Not Council": every status other than Active.
+  PI.NOT_COUNCIL = "Inactive|Non-member|Unknown";
 
   PI.pill = function (cls, text) { return '<span class="pill ' + cls + '">' + PI.esc(text) + "</span>"; };
 
-  // Only the Issue, Solution and Win labels carry a color; every other kind keeps the plain blue label.
+  // The three kinds that get a label on a note, each in its own color.
   var KIND_TONE = { problem: "k-issue", solution: "k-solution", win: "k-win" };
 
   /** Which company tab a kind belongs to: issues, solutions, wins, or other. */
@@ -70,8 +75,7 @@
       by.push(co.id ? '<a class="co" href="/partner-intel/#/company/' + encodeURIComponent(co.id) + '">' + PI.esc(co.name) + "</a>"
                     : '<span class="co">' + PI.esc(co.name) + "</span>");
       if (co.industry && co.industry !== "Unknown") by.push("<span>" + PI.esc(co.industry) + "</span>");
-      var status = PI.statusLabel[co.status] || co.status;
-      if (status && status !== "Unknown") by.push("<span>" + PI.esc(status) + "</span>");
+      if (co.id) by.push("<span>" + PI.esc(PI.memberLabel(co.status)) + "</span>");
       // Which company said this is in doubt (the speaker works elsewhere, the file is named for
       // another partner, or two people share the speaker's name). Listed on the control panel.
       if (i.checkCompany) {
@@ -86,12 +90,12 @@
     var files = PI.fileLinks(i.sources);
     if (files) src.push('<span class="files" title="' + PI.esc((i.sources || []).map(function (f) { return f.name; }).join(", ")) + '">' + files + "</span>");
     return '<div class="item">' +
-      '<span class="kindl' + (KIND_TONE[i.kind] ? " " + KIND_TONE[i.kind] : "") + '">' + PI.esc(PI.kindLabel[i.kind] || i.kind) + "</span>" +
+      // Only Issue, Solution and Win get a label, and not where the page already says which it is.
+      (opts.kind !== false && KIND_TONE[i.kind] ? '<span class="kindl ' + KIND_TONE[i.kind] + '">' + PI.esc(PI.kindLabel[i.kind]) + "</span>" : "") +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
       (by.length ? '<div class="by">' + by.join("") + "</div>" : "") +
       '<div class="detail">' + PI.esc(i.detail) + "</div>" +
       (i.solves ? '<div class="why"><b>Addresses:</b> ' + PI.esc(i.solves) + "</div>" : "") +
-      (i.tags && i.tags.length ? '<div class="chips">' + i.tags.map(function (t) { return '<span class="chip">' + PI.esc(t) + "</span>"; }).join("") + "</div>" : "") +
       '<details class="src"><summary>Source</summary><div class="srcm">' + src.join("") + "</div>" +
       (i.quote ? "<blockquote>&ldquo;" + PI.esc(i.quote) + "&rdquo;</blockquote>" : "") + "</details>" +
       (opts.action ? '<div class="acts">' + opts.action + "</div>" : "") +
