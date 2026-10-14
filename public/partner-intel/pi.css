@@ -366,8 +366,8 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tline::after { content:""; position:absolute; left:50%; bottom:-1px; width:7px; height:7px; margin-left:-4.5px;
   border-right:2px solid var(--accent); border-bottom:2px solid var(--accent); transform:rotate(45deg); }
 .pi-app .tp:not(.open):has(.tp-row:hover) .tline { --rest:22px; }
-.pi-app .tline.hint { animation:tline-hint 1s linear 1.2s 1; }
-.pi-app .circ.cue { animation:circ-cue .9s ease-in-out 1.2s 1; }
+.pi-app .tline.hint { animation:tline-hint 1s linear 1.2s 2; }
+.pi-app .circ.cue { animation:circ-cue .9s ease-in-out 1.2s 2; }
 @keyframes circ-cue { 0%, 100% { transform:scale(var(--s)); } 22% { transform:scale(calc(var(--s) * 1.15)); } 44% { transform:scale(calc(var(--s) * .94)); }
   64% { transform:scale(calc(var(--s) * 1.05)); } 82% { transform:scale(calc(var(--s) * .99)); } }
 .pi-app .tp.open .tline { width:3px; left:18.5px; height:calc(100% - 61px); transition:none; }
@@ -464,8 +464,8 @@ body.pi-app { background:var(--wash); font-size:15px; }
  * chosen tab runs straight into the white panel below. */
 .pi-app h1.coname { font-size:46px; }
 .pi-app h1.coname .nw { white-space:nowrap; }
-/* A little taller than the capitals, sitting just below the baseline, about two spaces after the name. */
-.pi-app .cm { display:inline-block; height:.82em; width:auto; aspect-ratio:96 / 62; vertical-align:-.06em; margin-left:.5em; overflow:visible; }
+/* From the font's ascender line to its descender line, about two spaces after the name. */
+.pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.5em; overflow:visible; }
 .pi-app .ctabs { display:flex; gap:4px; margin-top:32px; }
 .pi-app .ctabs a { position:relative; flex:1 1 0; display:flex; align-items:center; justify-content:center; gap:10px; height:56px;
   border-radius:16px 16px 0 0; font-size:16px; font-weight:600; color:var(--text-secondary); white-space:nowrap; transition:background-color .2s, color .2s; }
