@@ -310,7 +310,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .item .kindl { display:block; font-size:12.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
 /* Issue, Solution and Win each have a color, on the text only: the label on a note and the Issues,
  * Solutions and Wins titles above columns and meeting sections. Each clears 4.5:1 on white. */
-.pi-app { --issue:#a82b50; --solution:#136c50; --win:#937000; }
+.pi-app { --issue:#a82b50; --solution:#937000; --win:#136c50; }
 .pi-app .item .kindl.k-issue, .pi-app h2.k-issue, .pi-app .colh.k-issue { color:var(--issue); }
 .pi-app .item .kindl.k-solution, .pi-app h2.k-solution, .pi-app .colh.k-solution { color:var(--solution); }
 .pi-app .item .kindl.k-win, .pi-app h2.k-win, .pi-app .colh.k-win { color:var(--win); }
