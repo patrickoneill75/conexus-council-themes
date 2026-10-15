@@ -29,7 +29,7 @@
     if (tier !== "admin-only") { reveal(); return; }
     var token = null;
     try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
-    if (!token) { window.location.replace("/admin/login.html"); return; }
+    if (!token) { window.location.replace("/admin/login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash)); return; }
     reveal();
   }).catch(reveal);
 })();

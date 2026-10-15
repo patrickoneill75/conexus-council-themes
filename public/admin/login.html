@@ -103,15 +103,29 @@
     });
   }
 
+  /* After signing in, go back to the page that sent you here (?next=), or to the hub. Only a page on
+     this site is followed: resolving it against this origin and comparing origins also catches tricks a
+     simple prefix check misses, such as a tab between two slashes, which browsers drop. */
+  function nextPage() {
+    var n = "";
+    try { n = new URLSearchParams(window.location.search).get("next") || ""; } catch (e) {}
+    if (n.charAt(0) !== "/") return "/admin/index.html";
+    try {
+      var u = new URL(n, window.location.origin);
+      if (u.origin === window.location.origin && u.pathname !== "/admin/login.html") return u.pathname + u.search + u.hash;
+    } catch (e) {}
+    return "/admin/index.html";
+  }
+
   function goToPlatform(token) {
     try { sessionStorage.setItem("beta-token", token); } catch (e) {}
-    window.location.href = "/admin/index.html";
+    window.location.href = nextPage();
   }
 
   /* resume an existing session */
   try {
     if (sessionStorage.getItem("beta-token")) {
-      window.location.href = "/admin/index.html";
+      window.location.href = nextPage();
     }
   } catch (e) {}
 

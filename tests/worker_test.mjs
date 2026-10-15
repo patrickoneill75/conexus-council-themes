@@ -2960,6 +2960,39 @@ test("partner_intel: the Trending topics page opens on the last 90 days", async 
   assert.match(html, /var state = \{ days: 90,/, "the page asks for 90 days when it loads");
 });
 
+test("admin: BUG signing in from a deep link landed on the admin hub, not the page you were going to", () => {
+  // Every protected page sent you to /admin/login.html with no record of where you came from, and the login
+  // page always went on to /admin/index.html. Pages now pass ?next=, and the login page follows it, but
+  // only to a page on this site.
+  const pub = path.join(path.dirname(SRC), "public");
+  const html = fs.readFileSync(path.join(pub, "admin", "login.html"), "utf8");
+  const start = html.indexOf("  function nextPage() {");
+  assert.ok(start > 0, "the login page has nextPage()");
+  const src = html.slice(start, html.indexOf("\n  }\n", start) + 4);
+  const at = (search) => new Function("window", "URL", "URLSearchParams", src + "; return nextPage();")(
+    { location: { search, origin: "https://connector.example" } }, URL, URLSearchParams);
+  const q = (next) => "?next=" + encodeURIComponent(next);
+  assert.equal(at(q("/partner-intel/")), "/partner-intel/", "back to the page you came from");
+  assert.equal(at(q("/partner-intel/#/company/c-a/meetings")), "/partner-intel/#/company/c-a/meetings", "with its route");
+  assert.equal(at(q("/inm/index.html?map=3")), "/inm/index.html?map=3", "and its query");
+  assert.equal(at(""), "/admin/index.html", "no next: the hub, as before");
+  for (const bad of ["https://evil.example/", "//evil.example/", "/\t/evil.example/", "/\\evil.example/", "javascript:alert(1)", "/admin/login.html?next=/x"]) {
+    assert.equal(at(q(bad)), "/admin/index.html", "refused: " + JSON.stringify(bad));
+  }
+  // Every page that sends you to sign in says where you were.
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => d.isDirectory() ? walk(path.join(dir, d.name)) : [path.join(dir, d.name)]);
+  const stubs = new Set([path.join(pub, "index.html"), path.join(pub, "beta", "login.html"), path.join(pub, "admin", "login.html")]);
+  let senders = 0;
+  for (const f of walk(pub).filter((f) => /\.(html|js)$/.test(f) && !stubs.has(f))) {
+    for (const line of fs.readFileSync(f, "utf8").split("\n")) {
+      if (!/location\.(href|replace)/.test(line) || !line.includes("/admin/login.html")) continue;
+      senders++;
+      assert.ok(line.includes("/admin/login.html?next="), path.relative(pub, f) + " sends you to sign in without ?next=: " + line.trim());
+    }
+  }
+  assert.ok(senders >= 20, "the check found the login redirects (" + senders + ")");
+});
+
 test("repo: BUG the Cloudflare Worker build failed installing Python packages it never uses", () => {
   // Workers Builds installs Python dependencies whenever it finds a Python project file at the repo root.
   // On Python 3.14 rapidfuzz 3.10.1 has no wheel, its source build failed, and the Worker never deployed.
