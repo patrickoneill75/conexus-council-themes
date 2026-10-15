@@ -2670,7 +2670,7 @@ test("workforce: junk in the role form cannot become junk in the totals", async 
 });
 
 /* ================================================================== partner_intel */
-const { handlePartnerIntelApi, parseCsv, applyRosterCsv } = await mod("partner_intel.js");
+const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan } = await mod("partner_intel.js");
 const pi = (route, request, env) => handlePartnerIntelApi(route, request, env);
 const piReq = (route, method, body, token) => jsonReq(`/api/partner-intel/${route}`, method, body, token);
 const piGet = (route, token) => req(`/api/partner-intel/${route}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
@@ -3256,6 +3256,55 @@ test("partner_intel: only solutions, offers, wins and equipment can answer who c
   ]);
   const body = await (await pi("ask", piReq("ask", "POST", { question: "Who has AI quality inspection?" }, token), env)).json();
   assert.deepEqual(body.matches.map((m) => m.company.id), ["c-b"], "a company with the PROBLEM is not a solution haver");
+});
+
+test("partner_intel: the daily scan starts once a day at the time set on the control panel, in Eastern time", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const at = (iso) => new Date(iso);
+  const dispatches = [];
+  const ok = (url, init) => { dispatches.push(JSON.parse(init.body).inputs); return new Response(null, { status: 204 }); };
+  const tick = (iso, handler = ok) => withFetch(handler, () => runScheduledScan(env, at(iso)));
+  assert.deepEqual(await getJson("schedule", env, token), { time: "07:00", enabled: true, timeZone: "Eastern", next: (await getJson("schedule", env, token)).next, lastRunAt: "", lastError: "" }, "7:00 Eastern by default");
+  assert.equal((await tick("2026-10-15T11:30:00Z")).reason, "no folder", "nothing to scan before a folder is chosen");
+  await pi("settings", piReq("settings", "POST", { folderId: "12345", folderName: "Raw Notes" }, token), env);
+  // October is daylight time (UTC-4): 7:00 Eastern is 11:00 UTC.
+  assert.equal((await tick("2026-10-15T10:58:00Z")).ran, false, "6:58 Eastern: not yet");
+  assert.equal((await tick("2026-10-15T11:02:00Z")).ran, true, "7:02 Eastern: starts");
+  assert.deepEqual(dispatches, [{ mode: "scan", limit: "0", force: "false" }], "a normal scan");
+  assert.equal((await tick("2026-10-15T11:07:00Z")).ran, false, "once a day");
+  assert.equal((await tick("2026-10-16T03:30:00Z")).ran, false, "11:30pm Eastern is still the 15th");
+  assert.equal((await tick("2026-10-16T11:01:00Z")).ran, true, "the next day, again");
+  // January is standard time (UTC-5): 7:00 Eastern is 12:00 UTC.
+  assert.equal((await tick("2027-01-15T11:58:00Z")).ran, false, "in winter, 11:58 UTC is 6:58 Eastern");
+  assert.equal((await tick("2027-01-15T12:01:00Z")).ran, true, "and 12:01 UTC is 7:01");
+  const save = async (time, enabled, nowIso) => {
+    const realNow = Date.now;
+    Date.now = () => Date.parse(nowIso);
+    try {
+      // Signed in at that moment too: the clock jump would otherwise outlive the 8-hour session.
+      const t = (await (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password: "seed-password-123" }), env)).json()).token;
+      return await pi("schedule", piReq("schedule", "POST", { time, enabled }, t), env);
+    } finally { Date.now = realNow; }
+  };
+  assert.equal((await save("7am", true, "2027-01-20T15:00:00Z")).status, 400, "a time is HH:MM");
+  // Saved at 10:00 Eastern on the 20th.
+  const past = await (await save("09:00", true, "2027-01-20T15:00:00Z")).json();
+  assert.equal(past.next, "tomorrow", "a time already past today starts tomorrow");
+  assert.equal((await tick("2027-01-20T15:05:00Z")).ran, false, "rather than the moment it is saved");
+  assert.equal((await tick("2027-01-21T14:01:00Z")).ran, true, "and runs at 9:01 the next day");
+  const later = await (await save("14:00", true, "2027-01-21T15:00:00Z")).json();
+  assert.equal(later.next, "tomorrow", "already ran today, so a later time waits for tomorrow");
+  assert.equal((await tick("2027-01-21T19:01:00Z")).ran, false, "never a second scan the same day");
+  const off = await (await save("08:00", false, "2027-01-22T10:00:00Z")).json();
+  assert.equal(off.enabled, false);
+  assert.equal((await tick("2027-01-22T13:01:00Z")).reason, "off", "switched off: no scan");
+  await save("08:00", true, "2027-01-23T10:00:00Z");
+  const refuse = () => new Response("no", { status: 500 });
+  const fails = [];
+  for (const m of ["01", "06", "11", "16"]) fails.push(await tick(`2027-01-23T13:${m}:00Z`, refuse));
+  assert.deepEqual(fails.map((r) => Boolean(r.error)), [true, true, true, false], "a failed start is tried three times, then left until tomorrow");
+  assert.match((await getJson("schedule", env, token)).lastError, /GitHub refused/, "the control panel shows why");
+  assert.equal((await tick("2027-01-24T13:01:00Z")).ran, true, "the next day starts fresh");
 });
 
 test("partner_intel: run needs a folder, clamps the trial size, and sends the inputs to GitHub", async () => {

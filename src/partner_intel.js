@@ -362,6 +362,61 @@ async function dispatchRun(env, inputs) {
   }
 }
 
+/* ------------------------------------------------------------------ daily scan
+ * The daily scan runs at a time set on the control panel, in Eastern time. The Worker's cron (every five
+ * minutes, wrangler.jsonc) calls runScheduledScan(), which starts the scan the first time it runs at or
+ * after that time each Eastern day. Intl does the daylight-saving arithmetic, so 7:00 stays 7:00 Eastern
+ * all year. The GitHub workflow no longer has a schedule of its own. */
+const SCHEDULE_KEY = "pi:schedule";
+const SCHEDULE_TZ = "America/New_York";
+const DEFAULT_SCHEDULE = { time: "07:00", enabled: true };
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const SCHEDULE_TRIES = 3; // a failed start is retried on the next ticks, then left until tomorrow
+
+/** The Eastern calendar date and minutes past midnight at `now`. */
+function easternClock(now) {
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat("en-US", { timeZone: SCHEDULE_TZ, hourCycle: "h23", year: "numeric",
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(now)) parts[p.type] = p.value;
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+}
+const minutesOf = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+async function readSchedule(env) {
+  return { ...DEFAULT_SCHEDULE, ...(await readJson(env, SCHEDULE_KEY, {})) };
+}
+
+/** What the control panel shows: the time, whether it is on, and when it runs next. */
+function scheduleView(s, now = new Date(Date.now())) {
+  const et = easternClock(now);
+  const today = s.lastRun !== et.date && s.startAfter !== et.date && et.minutes < minutesOf(s.time);
+  return { time: s.time, enabled: Boolean(s.enabled), timeZone: "Eastern", next: s.enabled ? (today ? "today" : "tomorrow") : "",
+    lastRunAt: s.lastRunAt || "", lastError: s.lastError || "" };
+}
+
+export async function runScheduledScan(env, now = new Date(Date.now())) {
+  if (!env.BOX_KV || !env.GITHUB_TOKEN || !env.GITHUB_REPO) return { ran: false, reason: "not configured" };
+  const s = await readSchedule(env);
+  if (!s.enabled) return { ran: false, reason: "off" };
+  const et = easternClock(now);
+  if (s.lastRun === et.date || s.startAfter === et.date || et.minutes < minutesOf(s.time)) return { ran: false, reason: "not due" };
+  const settings = await readJson(env, SETTINGS_KEY, { folderId: "" });
+  if (!settings.folderId) return { ran: false, reason: "no folder" };
+  // Marked done before the start, so a tick that overlaps this one cannot start a second scan today.
+  const tries = (s.failDate === et.date ? s.failures || 0 : 0) + 1;
+  await env.BOX_KV.put(SCHEDULE_KEY, JSON.stringify({ ...s, lastRun: et.date, lastRunAt: now.toISOString(), lastError: "" }));
+  try {
+    await dispatchRun(env, { mode: "scan", limit: "0", force: "false" });
+    await env.BOX_KV.put(DISPATCH_KEY, JSON.stringify({ at: now.toISOString(), mode: "scan", limit: 0, scheduled: true }));
+    return { ran: true };
+  } catch (e) {
+    const error = String((e && e.message) || e).slice(0, 300);
+    await env.BOX_KV.put(SCHEDULE_KEY, JSON.stringify({ ...s, lastRun: tries < SCHEDULE_TRIES ? s.lastRun || "" : et.date,
+      lastRunAt: now.toISOString(), lastError: error, failDate: et.date, failures: tries }));
+    return { ran: false, error };
+  }
+}
+
 async function recentRuns(env) {
   const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/partner_intel_run.yml/runs?per_page=6`;
   const response = await fetch(url, { headers: githubHeaders(env) });
@@ -1960,7 +2015,23 @@ export async function handlePartnerIntelApi(route, request, env) {
         report, rosterSync, oneTimeUpdate, boxConnected: Boolean(token), githubConfigured: Boolean(env.GITHUB_TOKEN && env.GITHUB_REPO),
         claudeConfigured: Boolean(env.partner_intel_claude_api), usage: await usageView(env),
         contacts: await contactsStatus(env), toCheck: await toCheckCount(env, roster),
+        schedule: scheduleView(await readSchedule(env)),
       });
+    }
+    if (route === "schedule" && method === "GET") return json(scheduleView(await readSchedule(env), new Date(Date.now())));
+    if (route === "schedule" && method === "POST") {
+      const body = (await readBody(request)) || {};
+      const time = text(body.time);
+      if (!TIME_RE.test(time)) return json({ error: "Choose a time, such as 07:00." }, 400);
+      const s = await readSchedule(env);
+      const now = new Date(Date.now());
+      const et = easternClock(now);
+      const next = { ...s, time, enabled: body.enabled !== false, updatedAt: now.toISOString(), by: auth.email || "" };
+      // A time already past today starts tomorrow, rather than starting a scan the moment it is saved. A scan
+      // that already ran today (lastRun) still counts, so moving the time later never runs a second one.
+      next.startAfter = minutesOf(time) <= et.minutes ? et.date : "";
+      await env.BOX_KV.put(SCHEDULE_KEY, JSON.stringify(next));
+      return json(scheduleView(next, now));
     }
     if (route === "settings" && method === "POST") {
       const body = (await readBody(request)) || {};

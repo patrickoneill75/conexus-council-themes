@@ -1006,7 +1006,7 @@ A staff-only tool that reads every meeting note in one Box folder and answers fo
 4. Open `/partner-intel/control-panel/`. Under **Box folders**, choose three folders: the **Meeting notes** folder (read), the **Database** folder (written to after every scan), and the **Member list** folder (read).
 5. Put the member list in the Member list folder as a `.csv` or `.xlsx` (the Salesforce "Programs & Councils with Participation" report works as it is), then under **Partner list** click **Preview changes** and **Apply**. You can instead upload a file by hand.
 6. Click **Trial run (first 5 files)**. When it finishes, read **Last scan**, then open the tool and check a few results against their source quotes.
-7. Click **Scan now** for everything. From then on a scan runs every morning at about 6 to 7 a.m. Indiana time.
+7. Click **Scan now** for everything. From then on a scan runs once a day at the time set under **Scan** on the control panel (Eastern time, 7:00 a.m. unless changed). The Worker's five-minute cron (`triggers` in `wrangler.jsonc`) starts it through the same GitHub workflow as **Scan now**, so it needs the same GitHub token; the workflow has no schedule of its own.
 
 ### Where the database is saved
 

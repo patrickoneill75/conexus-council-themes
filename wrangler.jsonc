@@ -43,6 +43,10 @@
       "id": "74ecfad77a444a0ea32f88f6b4ba02bd"
     }
   ],
+  // Every five minutes: the Partner Intelligence daily scan starts at the time set on its control panel.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   "observability": {
     "enabled": true
   }

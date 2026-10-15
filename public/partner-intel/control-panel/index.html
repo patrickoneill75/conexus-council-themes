@@ -56,7 +56,13 @@
 
   <section class="card">
     <h2>2. Scan</h2>
-    <p class="desc">A scan also runs by itself every morning. It lists the folder, skips every file Box says has not changed, and calls Claude only for text it has never read, so a day with no new notes uses none. Every Claude result is saved and reused.</p>
+    <p class="desc">A scan also runs by itself once a day, at the time below. It lists the folder, skips every file Box says has not changed, and calls Claude only for text it has never read, so a day with no new notes uses none. Every Claude result is saved and reused.</p>
+    <div class="row" style="align-items:flex-end;gap:12px;margin-bottom:14px">
+      <div><label class="field" for="schedTime">Daily scan (Eastern time)</label><input type="time" id="schedTime" step="300" value="07:00"></div>
+      <label class="small" style="display:flex;align-items:center;gap:6px;padding-bottom:8px"><input type="checkbox" id="schedOn" checked> Run every day</label>
+      <button id="schedSave">Save time</button>
+    </div>
+    <div class="msg" id="schedMsg" style="margin:0 0 16px"></div>
     <div class="row">
       <button id="trial">Trial run (first 5 files)</button>
       <button class="primary" id="scan">Scan now</button>
@@ -180,6 +186,19 @@
   PI.whoami(el("whoami"));
   function msg(id, text, kind) { var n = el(id); n.className = "msg" + (kind ? " " + kind : ""); n.textContent = text || ""; }
 
+  /* The daily scan's time, in Eastern time. The Worker starts the scan within five minutes of it. */
+  function clock(t) {
+    var h = Number(t.slice(0, 2)), m = t.slice(3, 5);
+    return (h % 12 || 12) + ":" + m + (h < 12 ? " AM" : " PM");
+  }
+  function showSchedule(sc, fill) {
+    if (fill) { el("schedTime").value = sc.time; el("schedOn").checked = sc.enabled; }
+    var line = sc.enabled ? "Next scan " + sc.next + " at " + clock(sc.time) + " Eastern." : "The daily scan is off. Scan now still works.";
+    if (sc.lastError) line += " The last automatic start failed: " + sc.lastError;
+    else if (sc.lastRunAt) line += " Last started automatically " + PI.fmtStamp(sc.lastRunAt) + ".";
+    msg("schedMsg", line, sc.lastError ? "err" : "");
+  }
+
   var roster = { partners: [], aliases: {}, staff: [] };
   var editingId = "";
 
@@ -197,6 +216,7 @@
         '<span class="stat"><b>' + s.roster.Active + "</b><span>current members</span></span>" +
         '<span class="stat"><b>' + s.roster.total + "</b><span>partners listed</span></span>";
       el("relink").hidden = !s.relinkNeeded;
+      if (s.schedule) showSchedule(s.schedule, true);
       settings = s.settings || {};
       var upd = s.oneTimeUpdate;
       el("oneoff").hidden = !upd;
@@ -316,6 +336,16 @@
   }
   el("trial").addEventListener("click", function () { start({ mode: "scan", limit: 5 }, "Trial run"); });
   el("scan").addEventListener("click", function () { start({ mode: "scan" }, "Scan"); });
+  el("schedSave").addEventListener("click", function () {
+    var t = el("schedTime").value;
+    if (!/^\d\d:\d\d$/.test(t)) { msg("schedMsg", "Choose a time.", "err"); return; }
+    el("schedSave").disabled = true;
+    PI.post("schedule", { time: t, enabled: el("schedOn").checked }).then(function (sc) {
+      el("schedSave").disabled = false;
+      showSchedule(sc, true);
+      msg("schedMsg", "Saved. " + el("schedMsg").textContent, "ok");
+    }).catch(function (e) { el("schedSave").disabled = false; msg("schedMsg", e.message, "err"); });
+  });
   el("force").addEventListener("click", function () {
     if (confirm("Re-read every file? Text that was already read is reused, so this is cheap unless the files changed.")) start({ mode: "scan", force: true }, "Full re-read");
   });
