@@ -193,6 +193,42 @@ test("beta_auth: resetting the seed admin's password actually sticks", async () 
   assert.equal(relogin.status, 401, "the old seed password must stop working after a reset");
 });
 
+test("beta_auth: BUG admin Reset looked like it did nothing while KV still served the cleared password", async () => {
+  // KV is eventually consistent. Reset deleted the account record, but the next reads (the admin list, then
+  // "Forgot password") could still return the old record for a minute or more: Settings kept saying Active
+  // and setup said the account already had a password. Reset now hands back a signed, single-use link, and
+  // setting a password through it does not depend on that read.
+  const { env, token } = await signedInEnv();
+  const email = "poneill@conexusindiana.com", key = "beta:admin-account:" + email;
+  const before = await env.BOX_KV.get(key);
+  const res = await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email }, token), env);
+  assert.equal(res.status, 200);
+  const r = await res.json();
+  assert.equal(r.has_password, false, "the reply says the password is cleared, so Settings need not re-read it");
+  assert.match(r.link, /^\/admin\/login\.html\?reset=/);
+  const link = decodeURIComponent(r.link.split("reset=")[1]);
+  await env.BOX_KV.put(key, before); // a read served from a stale cache: the old record is still there
+  const check = async (body) => (await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", body), env)).json()).allowed;
+  assert.equal(await check({ email }), false, "without the link, a stale read still blocks setup");
+  assert.equal(await check({ email, reset: link }), true, "with the link, setup goes ahead");
+  const set = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, username: "poneill", password: "brand-new-pass", reset: link }), env);
+  assert.equal(set.status, 200, "the new password is set despite the stale record");
+  const login = async (password) => (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password }), env)).status;
+  assert.equal(await login("brand-new-pass"), 200);
+  assert.equal(await login("seed-password-123"), 401, "the old password no longer works");
+  const again = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, username: "poneill", password: "another-pass-9", reset: link }), env);
+  assert.equal(again.status, 410, "a reset link works once");
+  const used = await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", { email, reset: link }), env)).json();
+  assert.match(used.reason, /expired or was already used/, "a spent link says so");
+  const asSession = await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${link}` } }), env);
+  assert.equal(asSession.status, 401, "a reset link is never a session");
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com" }, token), env);
+  const other = await (await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "other@example.com" }, token), env)).json();
+  const wrong = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email, username: "poneill", password: "hijack-pass-1", reset: decodeURIComponent(other.link.split("reset=")[1]) }), env);
+  assert.equal(wrong.status, 410, "a link for one admin cannot set another's password");
+});
+
 test("beta_auth: setup-complete rejects a short password and an unlisted email", async () => {
   const env = makeEnv();
   const short = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",

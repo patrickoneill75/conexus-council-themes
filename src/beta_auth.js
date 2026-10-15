@@ -65,6 +65,9 @@ const ALLOWLIST_KEY = "beta:admin-emails";
 const SESSION_SECRET_KEY = "beta:session-secret";
 const APP_VISIBILITY_KEY = "beta:app-visibility";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
+// A reset link from an admin works once, for two days.
+const RESET_TTL_SECONDS = 60 * 60 * 48;
+const RESET_USED_PREFIX = "beta:reset-used:";
 const PBKDF2_ITERATIONS = 5000;
 const VISIBILITY_TIERS = ["public", "hidden", "admin-only"];
 // Mirrors the ids in public/apps.js (kept in sync by hand -- that file is a static
@@ -198,7 +201,29 @@ function bearer(request) {
 
 async function requireAuth(request, env) {
   const payload = await verifyToken(env, bearer(request));
-  if (!payload || !payload.email) return null;
+  // A reset link is signed the same way but is never a session: it carries no email and is marked.
+  if (!payload || !payload.email || payload.purpose) return null;
+  return payload;
+}
+
+/* Admin password resets. KV is eventually consistent: after Reset deleted an account record, the next
+   reads (the admin list, then "Forgot password") could still return the old record for a minute or
+   more, so Reset looked as if it had done nothing. Reset now also issues a signed, single-use link for
+   that person. Setting a password through it is checked against the signature, not against a read of
+   whether the old record is gone. The link names the account in resetFor, never email, so it can
+   never pass requireAuth as a session. */
+async function issueResetToken(env, email) {
+  const secret = await sessionSecret(env);
+  const nonce = bytesToBase64url(crypto.getRandomValues(new Uint8Array(12)));
+  const exp = Math.floor(Date.now() / 1000) + RESET_TTL_SECONDS;
+  const body = strToBase64url(JSON.stringify({ purpose: "reset", resetFor: email, nonce, exp }));
+  return `${body}.${await hmac(secret, body)}`;
+}
+
+async function verifyResetToken(env, token, email) {
+  const payload = await verifyToken(env, String(token || ""));
+  if (!payload || payload.purpose !== "reset" || normalizeEmail(payload.resetFor) !== email || !payload.nonce) return null;
+  if (await env.BOX_KV.get(RESET_USED_PREFIX + payload.nonce)) return null;
   return payload;
 }
 
@@ -328,9 +353,13 @@ export async function handleBetaApi(route, request, env) {
     if (!findAllowlistEntry(allowlist, email)) {
       return json({ allowed: false, reason: "That email isn't on the admin list." });
     }
+    if (body.reset) {
+      if (await verifyResetToken(env, body.reset, email)) return json({ allowed: true });
+      return json({ allowed: false, reason: "That reset link has expired or was already used. Ask an admin for a new one." });
+    }
     if (await getAccount(env, email)) {
       return json({ allowed: false,
-        reason: "That account already has a password. Ask another admin to reset it first." });
+        reason: "That account already has a password. Ask an admin to reset it and send you the link." });
     }
     return json({ allowed: true });
   }
@@ -351,8 +380,11 @@ export async function handleBetaApi(route, request, env) {
     const allowlist = await getAllowlist(env);
     const entry = findAllowlistEntry(allowlist, email);
     if (!entry) return json({ error: "That email isn't on the admin list." }, 403);
-    if (await getAccount(env, email)) {
-      return json({ error: "That account already has a password. Ask another admin to reset it first." }, 409);
+    // With a valid reset link the old record is replaced, whatever a possibly stale read says about it.
+    const reset = body.reset ? await verifyResetToken(env, body.reset, email) : null;
+    if (body.reset && !reset) return json({ error: "That reset link has expired or was already used. Ask an admin for a new one." }, 410);
+    if (!reset && await getAccount(env, email)) {
+      return json({ error: "That account already has a password. Ask an admin to reset it and send you the link." }, 409);
     }
     const usernameTaken = allowlist.some((a) =>
       normalizeEmail(a.email) !== email && a.username && a.username.toLowerCase() === username.toLowerCase());
@@ -366,6 +398,7 @@ export async function handleBetaApi(route, request, env) {
       email, username, password_hash: hash, password_salt: salt,
       created_at: new Date().toISOString(),
     });
+    if (reset) await env.BOX_KV.put(RESET_USED_PREFIX + reset.nonce, new Date().toISOString(), { expirationTtl: RESET_TTL_SECONDS + 3600 });
 
     const token = await issueToken(env, { email, username });
     return json({ ok: true, token, email, username });
@@ -409,8 +442,9 @@ export async function handleBetaApi(route, request, env) {
   }
 
   // ---- POST /api/beta/admins/reset ---------------------------------------------------------
-  // { email } -- clears that admin's password (deletes their account record). They stay
-  // on the allowlist, so "Set up new account" on the login page sets them a new one.
+  // { email } -- clears that admin's password (deletes their account record; they stay on
+  // the allowlist) and returns a single-use link, good for 48 hours, that lets them set a new
+  // one. Also gives a not-yet-set-up admin a link to set their first password.
   if (route === "admins/reset" && method === "POST") {
     const auth = await requireAuth(request, env);
     if (!auth) return json({ error: "Not signed in" }, 401);
@@ -422,7 +456,8 @@ export async function handleBetaApi(route, request, env) {
       return json({ error: "That email isn't on the admin list." }, 404);
     }
     await deleteAccount(env, email);
-    return json({ ok: true });
+    const reset = await issueResetToken(env, email);
+    return json({ ok: true, email, has_password: false, link: "/admin/login.html?reset=" + encodeURIComponent(reset) });
   }
 
   // ---- GET /api/beta/app-visibility --------------------------------------------------
