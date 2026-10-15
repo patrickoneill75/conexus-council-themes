@@ -3007,6 +3007,13 @@ test("repo: BUG the Cloudflare Worker build failed installing Python packages it
     for (const m of yml.matchAll(/pip install -r (\S+)/g)) {
       assert.ok(fs.existsSync(path.join(repo, m[1])), f + " installs " + m[1] + ", which must exist");
     }
+    // BUG that followed: actions/setup-python with cache: pip looks for a root requirements.txt unless told
+    // where the list is, so moving the file failed every pipeline at its setup step ("No file matched").
+    if (/cache: pip/.test(yml)) {
+      const dep = /cache-dependency-path: (\S+)/.exec(yml);
+      assert.ok(dep, f + " caches pip, so it must name cache-dependency-path");
+      assert.ok(fs.existsSync(path.join(repo, dep[1])), f + " cache-dependency-path " + dep[1] + " must exist");
+    }
   }
 });
 
