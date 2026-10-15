@@ -40,6 +40,10 @@
   .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
           border-radius:999px; border:1px solid transparent; white-space:nowrap; }
   .pill.done { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
+  .resetout { margin:0 0 14px; padding:12px 14px; border:1px solid var(--border, #d0d7e2); border-radius:6px; }
+  .resetout p { margin:0 0 8px; }
+  .resetout .linkrow { display:flex; gap:8px; }
+  .resetout input { flex:1; min-width:0; }
   .pill.pending { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
   button { font:inherit; font-size:12.5px; font-weight:600; border-radius:8px;
            border:1px solid var(--border); cursor:pointer; padding:6px 11px;
@@ -90,9 +94,10 @@
 
   <div class="card">
     <h3>Admins</h3>
-    <p class="desc"><b>Reset</b> clears that admin's password (they stay on the list) --
-      use it when someone's forgotten theirs. They set a new one via "Set up new
-      account / Forgot password" on the sign-in page.</p>
+    <p class="desc"><b>Reset</b> clears that admin's password (they stay on the list) and gives you a
+      link to send them. It works once, for 48 hours, and takes them straight to setting a new one.
+      <b>Get link</b> does the same for someone who has not set a password yet.</p>
+    <div id="resetOut" class="resetout" hidden></div>
     <table>
       <thead><tr><th>Email</th><th>Username</th><th>Status</th><th></th></tr></thead>
       <tbody id="adminRows"></tbody>
@@ -106,7 +111,7 @@
   var el = function (id) { return document.getElementById(id); };
   var token = null;
   try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
-  if (!token) { window.location.href = "/admin/login.html"; return; }
+  if (!token) { window.location.href = "/admin/login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash); return; }
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -114,7 +119,7 @@
   }
   function signOut() {
     try { sessionStorage.removeItem("beta-token"); } catch (e) {}
-    window.location.href = "/admin/login.html";
+    window.location.href = "/admin/login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
   }
   function api(path, options) {
     options = options || {};
@@ -170,26 +175,43 @@
   loadVisibility();
 
   /* ---------- Admins ---------- */
+  // Reset is shown from the server's reply, not re-read from storage: KV can serve the cleared
+  // password for a minute or more, which made Reset look as if it had done nothing.
+  var justReset = {};
+  function showResetLink(email, link) {
+    var full = window.location.origin + link;
+    el("resetOut").hidden = false;
+    el("resetOut").innerHTML = "<p><b>Password cleared for " + esc(email) + ".</b> Send them this link to set a new one. " +
+      "It works once, for 48 hours.</p><div class=\"linkrow\"><input type=\"text\" readonly id=\"resetLink\"> " +
+      "<button type=\"button\" id=\"copyReset\">Copy</button></div>";
+    el("resetLink").value = full;
+    el("copyReset").addEventListener("click", function () {
+      el("resetLink").select();
+      try { navigator.clipboard.writeText(full); } catch (e) { document.execCommand("copy"); }
+      el("copyReset").textContent = "Copied";
+    });
+  }
   function loadAdmins() {
     return api("admins").then(function (body) {
       el("adminRows").innerHTML = (body.admins || []).map(function (a) {
-        var status = a.has_password
+        var set = a.has_password && !justReset[a.email];
+        var status = set
           ? '<span class="pill done">Active</span>'
           : '<span class="pill pending">Not set up</span>';
-        var action = a.has_password
-          ? '<button type="button" class="reset-btn" data-email="' + esc(a.email) + '">Reset</button>' : "";
+        var action = '<button type="button" class="reset-btn" data-email="' + esc(a.email) + '" data-set="' + (set ? "1" : "") + '">' +
+          (set ? "Reset" : "Get link") + "</button>";
         return "<tr><td>" + esc(a.email) + "</td><td>" + esc(a.username || "—") + "</td>" +
           "<td>" + status + "</td><td>" + action + "</td></tr>";
       }).join("");
       Array.prototype.forEach.call(el("adminRows").querySelectorAll(".reset-btn"), function (btn) {
         btn.addEventListener("click", function () {
           var email = btn.dataset.email;
-          if (!window.confirm("Reset the password for " + email + "? They'll need to set a " +
-                               "new one via \"Set up new account / Forgot password\"."))
+          if (btn.dataset.set && !window.confirm("Reset the password for " + email + "? Their current password " +
+                               "stops working, and you'll get a link to send them to set a new one."))
             return;
           btn.disabled = true;
           api("admins/reset", { method: "POST", body: JSON.stringify({ email: email }) })
-            .then(loadAdmins)
+            .then(function (r) { justReset[email] = true; showResetLink(email, r.link); return loadAdmins(); })
             .catch(function (e) { window.alert(e.message); btn.disabled = false; });
         });
       });

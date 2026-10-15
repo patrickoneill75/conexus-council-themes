@@ -193,6 +193,42 @@ test("beta_auth: resetting the seed admin's password actually sticks", async () 
   assert.equal(relogin.status, 401, "the old seed password must stop working after a reset");
 });
 
+test("beta_auth: BUG admin Reset looked like it did nothing while KV still served the cleared password", async () => {
+  // KV is eventually consistent. Reset deleted the account record, but the next reads (the admin list, then
+  // "Forgot password") could still return the old record for a minute or more: Settings kept saying Active
+  // and setup said the account already had a password. Reset now hands back a signed, single-use link, and
+  // setting a password through it does not depend on that read.
+  const { env, token } = await signedInEnv();
+  const email = "poneill@conexusindiana.com", key = "beta:admin-account:" + email;
+  const before = await env.BOX_KV.get(key);
+  const res = await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email }, token), env);
+  assert.equal(res.status, 200);
+  const r = await res.json();
+  assert.equal(r.has_password, false, "the reply says the password is cleared, so Settings need not re-read it");
+  assert.match(r.link, /^\/admin\/login\.html\?reset=/);
+  const link = decodeURIComponent(r.link.split("reset=")[1]);
+  await env.BOX_KV.put(key, before); // a read served from a stale cache: the old record is still there
+  const check = async (body) => (await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", body), env)).json()).allowed;
+  assert.equal(await check({ email }), false, "without the link, a stale read still blocks setup");
+  assert.equal(await check({ email, reset: link }), true, "with the link, setup goes ahead");
+  const set = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, username: "poneill", password: "brand-new-pass", reset: link }), env);
+  assert.equal(set.status, 200, "the new password is set despite the stale record");
+  const login = async (password) => (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password }), env)).status;
+  assert.equal(await login("brand-new-pass"), 200);
+  assert.equal(await login("seed-password-123"), 401, "the old password no longer works");
+  const again = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, username: "poneill", password: "another-pass-9", reset: link }), env);
+  assert.equal(again.status, 410, "a reset link works once");
+  const used = await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", { email, reset: link }), env)).json();
+  assert.match(used.reason, /expired or was already used/, "a spent link says so");
+  const asSession = await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${link}` } }), env);
+  assert.equal(asSession.status, 401, "a reset link is never a session");
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com" }, token), env);
+  const other = await (await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "other@example.com" }, token), env)).json();
+  const wrong = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email, username: "poneill", password: "hijack-pass-1", reset: decodeURIComponent(other.link.split("reset=")[1]) }), env);
+  assert.equal(wrong.status, 410, "a link for one admin cannot set another's password");
+});
+
 test("beta_auth: setup-complete rejects a short password and an unlisted email", async () => {
   const env = makeEnv();
   const short = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
@@ -2634,7 +2670,7 @@ test("workforce: junk in the role form cannot become junk in the totals", async 
 });
 
 /* ================================================================== partner_intel */
-const { handlePartnerIntelApi, parseCsv, applyRosterCsv } = await mod("partner_intel.js");
+const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan } = await mod("partner_intel.js");
 const pi = (route, request, env) => handlePartnerIntelApi(route, request, env);
 const piReq = (route, method, body, token) => jsonReq(`/api/partner-intel/${route}`, method, body, token);
 const piGet = (route, token) => req(`/api/partner-intel/${route}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
@@ -2960,6 +2996,39 @@ test("partner_intel: the Trending topics page opens on the last 90 days", async 
   assert.match(html, /var state = \{ days: 90,/, "the page asks for 90 days when it loads");
 });
 
+test("admin: BUG signing in from a deep link landed on the admin hub, not the page you were going to", () => {
+  // Every protected page sent you to /admin/login.html with no record of where you came from, and the login
+  // page always went on to /admin/index.html. Pages now pass ?next=, and the login page follows it, but
+  // only to a page on this site.
+  const pub = path.join(path.dirname(SRC), "public");
+  const html = fs.readFileSync(path.join(pub, "admin", "login.html"), "utf8");
+  const start = html.indexOf("  function nextPage() {");
+  assert.ok(start > 0, "the login page has nextPage()");
+  const src = html.slice(start, html.indexOf("\n  }\n", start) + 4);
+  const at = (search) => new Function("window", "URL", "URLSearchParams", src + "; return nextPage();")(
+    { location: { search, origin: "https://connector.example" } }, URL, URLSearchParams);
+  const q = (next) => "?next=" + encodeURIComponent(next);
+  assert.equal(at(q("/partner-intel/")), "/partner-intel/", "back to the page you came from");
+  assert.equal(at(q("/partner-intel/#/company/c-a/meetings")), "/partner-intel/#/company/c-a/meetings", "with its route");
+  assert.equal(at(q("/inm/index.html?map=3")), "/inm/index.html?map=3", "and its query");
+  assert.equal(at(""), "/admin/index.html", "no next: the hub, as before");
+  for (const bad of ["https://evil.example/", "//evil.example/", "/\t/evil.example/", "/\\evil.example/", "javascript:alert(1)", "/admin/login.html?next=/x"]) {
+    assert.equal(at(q(bad)), "/admin/index.html", "refused: " + JSON.stringify(bad));
+  }
+  // Every page that sends you to sign in says where you were.
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => d.isDirectory() ? walk(path.join(dir, d.name)) : [path.join(dir, d.name)]);
+  const stubs = new Set([path.join(pub, "index.html"), path.join(pub, "beta", "login.html"), path.join(pub, "admin", "login.html")]);
+  let senders = 0;
+  for (const f of walk(pub).filter((f) => /\.(html|js)$/.test(f) && !stubs.has(f))) {
+    for (const line of fs.readFileSync(f, "utf8").split("\n")) {
+      if (!/location\.(href|replace)/.test(line) || !line.includes("/admin/login.html")) continue;
+      senders++;
+      assert.ok(line.includes("/admin/login.html?next="), path.relative(pub, f) + " sends you to sign in without ?next=: " + line.trim());
+    }
+  }
+  assert.ok(senders >= 20, "the check found the login redirects (" + senders + ")");
+});
+
 test("repo: BUG the Cloudflare Worker build failed installing Python packages it never uses", () => {
   // Workers Builds installs Python dependencies whenever it finds a Python project file at the repo root.
   // On Python 3.14 rapidfuzz 3.10.1 has no wheel, its source build failed, and the Worker never deployed.
@@ -2973,6 +3042,13 @@ test("repo: BUG the Cloudflare Worker build failed installing Python packages it
     const yml = fs.readFileSync(path.join(flows, f), "utf8");
     for (const m of yml.matchAll(/pip install -r (\S+)/g)) {
       assert.ok(fs.existsSync(path.join(repo, m[1])), f + " installs " + m[1] + ", which must exist");
+    }
+    // BUG that followed: actions/setup-python with cache: pip looks for a root requirements.txt unless told
+    // where the list is, so moving the file failed every pipeline at its setup step ("No file matched").
+    if (/cache: pip/.test(yml)) {
+      const dep = /cache-dependency-path: (\S+)/.exec(yml);
+      assert.ok(dep, f + " caches pip, so it must name cache-dependency-path");
+      assert.ok(fs.existsSync(path.join(repo, dep[1])), f + " cache-dependency-path " + dep[1] + " must exist");
     }
   }
 });
@@ -3180,6 +3256,55 @@ test("partner_intel: only solutions, offers, wins and equipment can answer who c
   ]);
   const body = await (await pi("ask", piReq("ask", "POST", { question: "Who has AI quality inspection?" }, token), env)).json();
   assert.deepEqual(body.matches.map((m) => m.company.id), ["c-b"], "a company with the PROBLEM is not a solution haver");
+});
+
+test("partner_intel: the daily scan starts once a day at the time set on the control panel, in Eastern time", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const at = (iso) => new Date(iso);
+  const dispatches = [];
+  const ok = (url, init) => { dispatches.push(JSON.parse(init.body).inputs); return new Response(null, { status: 204 }); };
+  const tick = (iso, handler = ok) => withFetch(handler, () => runScheduledScan(env, at(iso)));
+  assert.deepEqual(await getJson("schedule", env, token), { time: "07:00", enabled: true, timeZone: "Eastern", next: (await getJson("schedule", env, token)).next, lastRunAt: "", lastError: "" }, "7:00 Eastern by default");
+  assert.equal((await tick("2026-10-15T11:30:00Z")).reason, "no folder", "nothing to scan before a folder is chosen");
+  await pi("settings", piReq("settings", "POST", { folderId: "12345", folderName: "Raw Notes" }, token), env);
+  // October is daylight time (UTC-4): 7:00 Eastern is 11:00 UTC.
+  assert.equal((await tick("2026-10-15T10:58:00Z")).ran, false, "6:58 Eastern: not yet");
+  assert.equal((await tick("2026-10-15T11:02:00Z")).ran, true, "7:02 Eastern: starts");
+  assert.deepEqual(dispatches, [{ mode: "scan", limit: "0", force: "false" }], "a normal scan");
+  assert.equal((await tick("2026-10-15T11:07:00Z")).ran, false, "once a day");
+  assert.equal((await tick("2026-10-16T03:30:00Z")).ran, false, "11:30pm Eastern is still the 15th");
+  assert.equal((await tick("2026-10-16T11:01:00Z")).ran, true, "the next day, again");
+  // January is standard time (UTC-5): 7:00 Eastern is 12:00 UTC.
+  assert.equal((await tick("2027-01-15T11:58:00Z")).ran, false, "in winter, 11:58 UTC is 6:58 Eastern");
+  assert.equal((await tick("2027-01-15T12:01:00Z")).ran, true, "and 12:01 UTC is 7:01");
+  const save = async (time, enabled, nowIso) => {
+    const realNow = Date.now;
+    Date.now = () => Date.parse(nowIso);
+    try {
+      // Signed in at that moment too: the clock jump would otherwise outlive the 8-hour session.
+      const t = (await (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password: "seed-password-123" }), env)).json()).token;
+      return await pi("schedule", piReq("schedule", "POST", { time, enabled }, t), env);
+    } finally { Date.now = realNow; }
+  };
+  assert.equal((await save("7am", true, "2027-01-20T15:00:00Z")).status, 400, "a time is HH:MM");
+  // Saved at 10:00 Eastern on the 20th.
+  const past = await (await save("09:00", true, "2027-01-20T15:00:00Z")).json();
+  assert.equal(past.next, "tomorrow", "a time already past today starts tomorrow");
+  assert.equal((await tick("2027-01-20T15:05:00Z")).ran, false, "rather than the moment it is saved");
+  assert.equal((await tick("2027-01-21T14:01:00Z")).ran, true, "and runs at 9:01 the next day");
+  const later = await (await save("14:00", true, "2027-01-21T15:00:00Z")).json();
+  assert.equal(later.next, "tomorrow", "already ran today, so a later time waits for tomorrow");
+  assert.equal((await tick("2027-01-21T19:01:00Z")).ran, false, "never a second scan the same day");
+  const off = await (await save("08:00", false, "2027-01-22T10:00:00Z")).json();
+  assert.equal(off.enabled, false);
+  assert.equal((await tick("2027-01-22T13:01:00Z")).reason, "off", "switched off: no scan");
+  await save("08:00", true, "2027-01-23T10:00:00Z");
+  const refuse = () => new Response("no", { status: 500 });
+  const fails = [];
+  for (const m of ["01", "06", "11", "16"]) fails.push(await tick(`2027-01-23T13:${m}:00Z`, refuse));
+  assert.deepEqual(fails.map((r) => Boolean(r.error)), [true, true, true, false], "a failed start is tried three times, then left until tomorrow");
+  assert.match((await getJson("schedule", env, token)).lastError, /GitHub refused/, "the control panel shows why");
+  assert.equal((await tick("2027-01-24T13:01:00Z")).ran, true, "the next day starts fresh");
 });
 
 test("partner_intel: run needs a folder, clamps the trial size, and sends the inputs to GitHub", async () => {

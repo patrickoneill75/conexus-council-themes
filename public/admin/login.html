@@ -103,15 +103,39 @@
     });
   }
 
-  function goToPlatform(token) {
-    try { sessionStorage.setItem("beta-token", token); } catch (e) {}
-    window.location.href = "/admin/index.html";
+  /* After signing in, go back to the page that sent you here (?next=), or to the hub. Only a page on
+     this site is followed: resolving it against this origin and comparing origins also catches tricks a
+     simple prefix check misses, such as a tab between two slashes, which browsers drop. */
+  function nextPage() {
+    var n = "";
+    try { n = new URLSearchParams(window.location.search).get("next") || ""; } catch (e) {}
+    if (n.charAt(0) !== "/") return "/admin/index.html";
+    try {
+      var u = new URL(n, window.location.origin);
+      if (u.origin === window.location.origin && u.pathname !== "/admin/login.html") return u.pathname + u.search + u.hash;
+    } catch (e) {}
+    return "/admin/index.html";
   }
 
-  /* resume an existing session */
+  function goToPlatform(token) {
+    try { sessionStorage.setItem("beta-token", token); } catch (e) {}
+    window.location.href = nextPage();
+  }
+
+  /* A reset link from an admin: ?reset=<signed link>. It names the account it is for. */
+  var resetLink = "", resetFor = "";
   try {
-    if (sessionStorage.getItem("beta-token")) {
-      window.location.href = "/admin/index.html";
+    resetLink = new URLSearchParams(window.location.search).get("reset") || "";
+    if (resetLink) {
+      var part = resetLink.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+      resetFor = JSON.parse(decodeURIComponent(escape(atob(part + "===".slice((part.length + 3) % 4))))).resetFor || "";
+    }
+  } catch (e) { resetLink = ""; resetFor = ""; }
+
+  /* resume an existing session (not when following a reset link, which is for setting a password) */
+  try {
+    if (!resetLink && sessionStorage.getItem("beta-token")) {
+      window.location.href = nextPage();
     }
   } catch (e) {}
 
@@ -164,7 +188,7 @@
     el("setupCheckMsg").textContent = "Checking…";
     fetch("/api/beta/setup-check", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: email }),
+      body: JSON.stringify({ email: email, reset: resetLink }),
     }).then(function (r) { return r.json(); }).then(function (data) {
       el("setupCheckBtn").disabled = false;
       if (!data.allowed) {
@@ -196,7 +220,7 @@
     el("setupCompleteBtn").disabled = true;
     el("setupCompleteMsg").className = "msg muted";
     el("setupCompleteMsg").textContent = "Saving…";
-    api("setup-complete", { email: email, username: username, password: password })
+    api("setup-complete", { email: email, username: username, password: password, reset: resetLink })
       .then(function (data) { goToPlatform(data.token); })
       .catch(function (e) {
         el("setupCompleteBtn").disabled = false;
@@ -204,6 +228,13 @@
         el("setupCompleteMsg").textContent = e.message;
       });
   });
+  // Opened from a reset link: go straight to setting a new password for that account.
+  if (resetLink && resetFor) {
+    showSetup();
+    el("setupEmail").value = resetFor;
+    el("setupEmail").readOnly = true;
+    el("setupCheckBtn").click();
+  }
 })();
 </script>
 </body>

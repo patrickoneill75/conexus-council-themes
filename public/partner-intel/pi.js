@@ -5,7 +5,7 @@
   var token = null;
   try { token = sessionStorage.getItem("beta-token"); } catch (e) {}
   // Staff only, always. Not driven by the app-visibility setting: this holds members' candid words.
-  if (!token) { window.location.replace("/admin/login.html"); return; }
+  if (!token) { window.location.replace("/admin/login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash)); return; }
   window.PI = PI; // pages check for it, so none of them runs without a session
   PI.token = token;
 
@@ -15,7 +15,7 @@
   };
   PI.signOut = function () {
     try { sessionStorage.removeItem("beta-token"); } catch (e) {}
-    window.location.href = "/admin/login.html";
+    window.location.href = "/admin/login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
   };
 
   PI.api = function (path, options) {
