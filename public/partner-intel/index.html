@@ -196,19 +196,33 @@
     var sh = placeLine(card), svg = card.querySelector("svg.trace"), p = svg.querySelector(".ln"), body = card.querySelector("[data-body]");
     var total = p.getTotalLength() || 1, up = Math.min(1, Math.max(0, sh.up / total));
     // The first step keeps the line moving at the same speed whatever its length: about 3.3px a millisecond.
-    var along = Math.round(Math.min(650, Math.max(200, total * (1 - up) / 3.3)));
-    card.style.setProperty("--close", (along + UP) + "ms");
+    // When the block's bottom edge is below the screen that step would run where no one can see it, a pause
+    // before the fold, so the line is pulled off the bottom at once and the fold starts straight away.
+    var band = body.querySelector(":scope > .band");
+    var unseen = band && band.getBoundingClientRect().bottom > window.innerHeight;
+    var along = unseen ? 0 : Math.round(Math.min(650, Math.max(200, total * (1 - up) / 3.3)));
+    // A tall block (points opened to their notes) folds over longer than a short one, so it does not snap shut.
+    var fold = Math.round(Math.min(760, Math.max(UP, body.offsetHeight * .55)));
+    card.style.setProperty("--close", (along + fold) + "ms");
     card.classList.add("closing");
-    p.style.transition = "stroke-dashoffset " + along + "ms cubic-bezier(.55,0,1,.7)";
-    p.style.strokeDashoffset = String(1 - up);
-    card._t = setTimeout(function () {
-      p.style.transition = "stroke-dashoffset " + UP + "ms " + UP_EASE;
+    function shut() {
+      p.style.transition = "stroke-dashoffset " + fold + "ms " + UP_EASE;
       p.style.strokeDashoffset = "1";
       body.style.height = body.offsetHeight + "px"; body.style.overflow = "hidden"; void body.offsetHeight;
-      body.style.transition = "height " + UP + "ms " + UP_EASE + ", opacity " + Math.round(UP * .6) + "ms ease";
+      body.style.transition = "height " + fold + "ms " + UP_EASE + ", opacity " + Math.round(fold * .6) + "ms ease";
       body.style.height = "0px"; body.style.opacity = "0";
-      card._t = setTimeout(function () { card._t = null; finishClose(card); }, UP);
-    }, along);
+      card._t = setTimeout(function () { card._t = null; finishClose(card); }, fold);
+    }
+    if (!along) {
+      p.style.transition = "none";
+      p.style.strokeDashoffset = String(1 - up);
+      void p.getBoundingClientRect();
+      shut();
+      return;
+    }
+    p.style.transition = "stroke-dashoffset " + along + "ms cubic-bezier(.55,0,1,.7)";
+    p.style.strokeDashoffset = String(1 - up);
+    card._t = setTimeout(shut, along);
   }
   function setTopic(card, open, quiet) {
     var body = card.querySelector("[data-body]");
