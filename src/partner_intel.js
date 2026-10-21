@@ -1243,7 +1243,7 @@ async function nearSummary(env, topic, evidence, key) {
 /* ------------------------------------------------------------------ usage meter */
 
 const usageKey = (d = new Date()) => `pi:usage:${d.toISOString().slice(0, 7)}`;
-const USAGE_KINDS = ["extraction", "extractionBatch", "summaries", "ask"];
+const USAGE_KINDS = ["extraction", "extractionBatch", "summaries", "ask", "assistant"];
 
 /**
  * Add one call's tokens (and any counted savings) to this month's totals, so the control
@@ -1574,30 +1574,16 @@ const canHelp = (i) => SOLVER_KINDS.has(i.kind) || (ISSUE_KINDS.has(i.kind) && i
 const facingIt = (i) => (ISSUE_KINDS.has(i.kind) && i.status !== "resolved") || i.kind === "commitment";
 
 /**
- * Narrow the data to a short list of companies BEFORE any model is involved. A model asked
- * to choose from a catalog pads its answer; one handed ten scored candidates and their
- * evidence makes a decision.
- *
- * Words are weighted by how rare they are across the notes, so "CMMC" counts for far more than
- * "work". A row needs a rare word, or two words, from the question; it does not need most of
- * them. (It used to need a third or more of the question's words, so the more a person wrote,
- * the less could match: "CMMC work limits what can be put into AI ..." is nine words, and a
- * note about securing AI use matched one.) A word no note uses cannot match anything and does
- * not count against a row. opts.terms are related search terms (from expandQuestion), weighted
- * below the question's own words. opts.rows picks the rows searched: who can help (default), or
- * who is facing the same thing.
+ * Score rows against a question by TF-IDF: a word counts for more the fewer notes use it. A row
+ * needs a rare word, or two words, from the question. terms are related search terms, weighted
+ * below the question's own words. Returns the matching rows with their scores, or null when the
+ * question has no usable words.
  */
-export function shortlist(question, data, index, overrides, labels, limit = 10, sources = null, exclude = "", opts = {}) {
+function scoreRows(question, terms, docs, overrides, labels, skip = null) {
   const weights = new Map();
-  for (const t of tokenize(question)) weights.set(t, 1);
-  for (const term of opts.terms || []) for (const t of tokenize(term)) if (!weights.has(t)) weights.set(t, 0.7);
-  const empty = { companies: [], docs: 0 };
-  if (!weights.size) return empty;
-  const pick = opts.rows || canHelp;
-  const docs = data.insights.filter((i) => i.scope !== "internal" && pick(i) && i.company_id
-    && i.company_id !== exclude && (!sources || !sources.size || sourcesOf(i).some((x) => sources.has(x))));
-  if (!docs.length) return empty;
-
+  for (const t of tokenize(question)) if (!skip || !skip.has(t)) weights.set(t, 1);
+  for (const term of terms) for (const t of tokenize(term)) if (!weights.has(t) && (!skip || !skip.has(t))) weights.set(t, 0.7);
+  if (!weights.size) return null;
   const indexed = docs.map((i) => ({ i, terms: weightedTerms(i, labels.get(finalTopic(overrides, i.topic)) || "") }));
   const df = new Map();
   for (const d of indexed) for (const t of d.terms.keys()) df.set(t, (df.get(t) || 0) + 1);
@@ -1621,6 +1607,31 @@ export function shortlist(question, data, index, overrides, labels, limit = 10, 
     const coverage = matchedWeight / possible;
     scored.push({ i: d.i, coverage, score: sum * (0.5 + 0.5 * coverage) * (1 + 0.15 * recencyFactor(d.i.date)) });
   }
+  return scored;
+}
+
+/**
+ * Narrow the data to a short list of companies BEFORE any model is involved. A model asked
+ * to choose from a catalog pads its answer; one handed ten scored candidates and their
+ * evidence makes a decision.
+ *
+ * Words are weighted by how rare they are across the notes, so "CMMC" counts for far more than
+ * "work". A row needs a rare word, or two words, from the question; it does not need most of
+ * them. (It used to need a third or more of the question's words, so the more a person wrote,
+ * the less could match: "CMMC work limits what can be put into AI ..." is nine words, and a
+ * note about securing AI use matched one.) A word no note uses cannot match anything and does
+ * not count against a row. opts.terms are related search terms (from expandQuestion), weighted
+ * below the question's own words. opts.rows picks the rows searched: who can help (default), or
+ * who is facing the same thing.
+ */
+export function shortlist(question, data, index, overrides, labels, limit = 10, sources = null, exclude = "", opts = {}) {
+  const empty = { companies: [], docs: 0 };
+  const pick = opts.rows || canHelp;
+  const docs = data.insights.filter((i) => i.scope !== "internal" && pick(i) && i.company_id
+    && i.company_id !== exclude && (!sources || !sources.size || sourcesOf(i).some((x) => sources.has(x))));
+  if (!docs.length) return empty;
+  const scored = scoreRows(question, opts.terms || [], docs, overrides, labels);
+  if (!scored) return empty;
   const byCompany = new Map();
   for (const sc of scored) {
     if (!byCompany.has(sc.i.company_id)) byCompany.set(sc.i.company_id, []);
@@ -1681,17 +1692,17 @@ const EXPAND_SYSTEM =
  * "cybersecurity" and "sensitive data" in the note). One small call per new question, saved, so
  * the same question costs nothing again. Any failure means no extra terms, never a failed search.
  */
-async function expandQuestion(env, question) {
+async function expandQuestion(env, question, how = { system: EXPAND_SYSTEM, version: EXPAND_PROMPT_VERSION, usage: "ask" }) {
   if (!env.partner_intel_claude_api) return [];
-  const key = `pi:expand:${await sha(`${EXPAND_PROMPT_VERSION}|${EXPAND_MODEL}|${nameKey(question)}`)}`;
+  const key = `pi:expand:${await sha(`${how.version}|${EXPAND_MODEL}|${nameKey(question)}`)}`;
   const saved = await readJson(env, key, null);
   if (saved && Array.isArray(saved.terms)) return saved.terms;
   try {
-    const { input, usage } = await callClaudeTool(env, EXPAND_SYSTEM, `<request>\n${question}\n</request>`, EXPAND_TOOL, 2000,
+    const { input, usage } = await callClaudeTool(env, how.system, `<request>\n${question}\n</request>`, EXPAND_TOOL, 2000,
       { model: EXPAND_MODEL, effort: "low", fallback: false });
-    await addUsage(env, "ask", usage);
+    await addUsage(env, how.usage, usage);
     const terms = [...new Set((Array.isArray(input.terms) ? input.terms : []).map((t) => text(t).slice(0, 40)).filter(Boolean))].slice(0, 20);
-    await env.BOX_KV.put(key, JSON.stringify({ terms, model: EXPAND_MODEL, promptVersion: EXPAND_PROMPT_VERSION, createdAt: new Date().toISOString() }));
+    await env.BOX_KV.put(key, JSON.stringify({ terms, model: EXPAND_MODEL, promptVersion: how.version, createdAt: new Date().toISOString() }));
     return terms;
   } catch {
     return [];
