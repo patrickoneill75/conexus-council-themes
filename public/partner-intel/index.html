@@ -42,7 +42,7 @@
   el("signOut").addEventListener("click", PI.signOut);
   PI.whoami(el("whoami"));
 
-  var state = { days: 90, programDays: 0, sourceList: null };
+  var state = { days: 90, exact: false, programDays: 0, sourceList: null };
   var chosen = ""; // the program (source folder) chosen on Ask; "" is all of them
 
   var ARROW = '<svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h11M9 3.5 13.5 8 9 12.5"/></svg>';
@@ -373,14 +373,22 @@
     view.innerHTML = loading("Loading…");
     // Home covers every source folder and every company. Folders are chosen on Ask,
     // and a program's own page ranks that folder alone.
-    PI.api("home?days=" + state.days).then(function (d) {
+    PI.api("home?days=" + state.days + (state.exact ? "&exact=1" : "")).then(function (d) {
       if (mine !== seq) return;
       view.innerHTML = '<h1>Trending topics</h1>' +
         '<div style="margin-top:28px">' + windowButtons("win", [[30, "30 days"], [60, "60 days"], [90, "90 days"]], state.days) + '</div><div id="trend"></div>';
       var foot = '<div class="topicfoot"><b>Note</b><span>Topics rank by how many partner companies raised them. A company counts once per topic.' +
         (d.uncategorized ? " " + esc(plural(d.uncategorized, "issue", "issues")) + " did not fit a topic and are not ranked." : "") + "</span>" +
-        "<b>Source</b><span>Meeting notes in Box, " + esc(PI.fmtDate(d.since)) + " to today.</span></div>";
-      renderTrending(el("trend"), d.trending, { days: state.days, exact: false, source: [], status: [] }, mine, "h2", foot);
+        "<b>Source</b><span>Meeting notes in Box, " + esc(PI.fmtDate(d.since)) + " to today.</span>" +
+        // A note with no date in its text or file name is dated by when its file reached Box, or by a month
+        // in its name. Say how many there are, so an old file uploaded this week is not taken for news.
+        (state.exact ? '<b>Dates</b><span>Notes with estimated dates are left out. <button class="link" data-exact="0">Include them</button></span>'
+          : (d.counts && d.counts.estimatedDates ? '<b>Dates</b><span>' + esc(plural(d.counts.estimatedDates, "note has an estimated date", "notes have estimated dates")) +
+            " (when the file reached Box, or a month in its name). <button class=\"link\" data-exact=\"1\">Leave them out</button></span>" : "")) + "</div>";
+      renderTrending(el("trend"), d.trending, { days: state.days, exact: state.exact, source: [], status: [] }, mine, "h2", foot);
+      Array.prototype.forEach.call(view.querySelectorAll("[data-exact]"), function (b) {
+        b.addEventListener("click", function () { state.exact = b.getAttribute("data-exact") === "1"; home(); });
+      });
       Array.prototype.forEach.call(view.querySelectorAll("#win button"), function (b) {
         b.addEventListener("click", function () { state.days = Number(b.getAttribute("data-d")); home(); });
       });
@@ -467,8 +475,10 @@
       view.innerHTML = backLink("#/program/" + encodeURIComponent(name), name) + "<h1>" + esc(m.label) + "</h1>" +
         '<p class="lede">' + esc(PI.fmtDate(m.date)) + (m.estimated ? " (estimated date)" : "") + ". " + esc(KIND_LABEL[m.kind] || "Meeting") +
         (m.companyCount ? " with " + esc(plural(m.companyCount, "company", "companies")) : "") + ".</p>" +
-        '<p class="secsub" style="margin-top:10px;max-width:860px">' + (m.companyCount ? esc(m.companies.join(", ").replace(/\.+$/, "")) + ". " : "") +
-        "From " + PI.fileLinks(m.files) + ".</p>" +
+        // The lists are capped; say how many more there are, so the names add up to the count above.
+        '<p class="secsub" style="margin-top:10px;max-width:860px">' + (m.companyCount ? esc(m.companies.join(", ").replace(/\.+$/, "")) +
+          (m.companyCount > m.companies.length ? ", and " + (m.companyCount - m.companies.length) + " more" : "") + ". " : "") +
+        "From " + PI.fileLinks(m.files) + (m.fileCount > m.files.length ? " and " + plural(m.fileCount - m.files.length, "other file", "other files") : "") + ".</p>" +
         section("Issues", "issues", r.issues, "k-issue") + section("Solutions", "solutions", r.solutions, "k-solution") + section("Wins", "wins", r.wins, "k-win") + section("Other", "other notes", r.other);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
@@ -594,12 +604,16 @@
         '<div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>');
       el("asxRecent").innerHTML = "";
       scrollToTurn(out.lastElementChild);
+      // The conversation on screen when the question was asked. If the person opens another one (or New)
+      // before the answer comes, the answer goes to its own conversation in the history, not onto the screen.
+      var askedIn = askView.conv ? askView.conv.id : "";
       PI.post("assistant", { question: question, mode: mode || "auto", sources: chosenList(), exclude: exclude ? exclude.id : "",
         conversationId: askView.conv && !fresh ? askView.conv.id : "", fresh: Boolean(fresh) }).then(function (r) {
         waiting = false;
         if (mine !== seq) return;
         // A Find solution exclusion goes with the question it came with, and so does its banner.
         if (exclude) { exclude = null; if (!el("asxBack").querySelector("[data-resume]")) el("asxBack").innerHTML = ""; }
+        if ((askView.conv ? askView.conv.id : "") !== askedIn) { AU.remember(r.conversation); drawRail(); return; }
         if (!askView.conv || askView.conv.id !== r.conversation.id) askView.conv = { id: r.conversation.id, title: r.conversation.title, turns: [] };
         askView.conv.turns.push(r.turn);
         askView.sel = r.turn.id;
@@ -609,6 +623,7 @@
       }).catch(function (err) {
         waiting = false;
         if (mine !== seq) return;
+        if ((askView.conv ? askView.conv.id : "") !== askedIn) { if (!q.value) { q.value = question; autosize(); } return; }
         var pending = out.querySelector(".turn.pending .thinking");
         if (pending) pending.outerHTML = '<div class="msg err">' + esc(err.message || "Something went wrong.") + "</div>";
         if (!q.value) { q.value = question; autosize(); } // nothing typed is lost
@@ -713,7 +728,7 @@
     var html = "";
     if (t.ranking === "keyword") html += '<div class="banner">Ranked by keyword match only. Claude is not set up for this tool yet, so the order and wording are not reviewed.</div>';
     if (t.answer) html += '<p class="answer">' + esc(t.answer) + "</p>";
-    html += '<p class="secsub" style="margin:8px 0 0">Looked at ' + ((t.considered && t.considered.insights) || 0) + " solutions, offers and wins.</p>";
+    html += '<p class="secsub" style="margin:8px 0 0">Looked at ' + (parseInt(t.considered && t.considered.insights, 10) || 0) + " solutions, offers and wins.</p>";
     if (!t.matches.length) html += '<div class="empty">No partner in the notes clearly does this.' +
       (t.peers && t.peers.length ? " Partners working through the same thing are listed below." : "") + "</div>";
     html += '<div class="tlist" style="margin-top:18px;border-top:1px solid var(--rule)">' + t.matches.map(function (m, n) {

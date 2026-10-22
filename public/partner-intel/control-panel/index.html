@@ -117,7 +117,7 @@
     <div class="fields" style="margin-top:8px">
       <div><label class="field" for="pName">Name</label><input id="pName" style="width:100%"></div>
       <div><label class="field" for="pIndustry">Industry</label><input id="pIndustry" list="industryList" style="width:100%"><datalist id="industryList"></datalist></div>
-      <div><label class="field" for="pStatus">Status</label><select id="pStatus"><option value="Active">Council Member</option><option value="Inactive">Not Council</option></select></div>
+      <div><label class="field" for="pStatus">Status</label><select id="pStatus"><option value="Active">Council Member</option><option value="Inactive">Not Council (former member)</option><option value="Non-member">Not Council (never a member)</option></select></div>
     </div>
     <div class="fields" style="margin-top:12px">
       <div><label class="field" for="pContacts">Contacts (one per line)</label><textarea id="pContacts" rows="3"></textarea></div>
@@ -203,6 +203,9 @@
   var editingId = "";
 
   /* ------------------------------------------------------------ status + report */
+  // Every number shown comes through here. The scan report is written by the pipeline, not the
+  // Worker, so a field that should be a count is made a number before it goes into the page.
+  function num(v) { v = Number(v); return isFinite(v) ? v.toLocaleString() : "0"; }
   function loadStatus() {
     return PI.api("status").then(function (s) {
       var d = s.dataset;
@@ -210,11 +213,11 @@
       el("status").innerHTML = '<div class="row" style="gap:6px;margin-bottom:12px">' +
         ok(s.boxConnected, "Box connected", "Box not connected") + ok(s.githubConfigured, "Scans can start", "GitHub token missing") +
         ok(s.claudeConfigured, "Claude key set (Ask)", "Claude key not set (Ask uses keywords)") + "</div>" +
-        (d ? '<span class="stat"><b>' + d.insightCount + "</b><span>insights</span></span>" +
+        (d ? '<span class="stat"><b>' + num(d.insightCount) + "</b><span>insights</span></span>" +
           '<span class="stat"><b>' + esc(PI.fmtStamp(d.generated_at)) + "</b><span>data last built</span></span>"
            : '<span class="muted">No data yet. Choose the folder and run a trial scan.</span>') +
-        '<span class="stat"><b>' + s.roster.Active + "</b><span>current members</span></span>" +
-        '<span class="stat"><b>' + s.roster.total + "</b><span>partners listed</span></span>";
+        '<span class="stat"><b>' + num(s.roster.Active) + "</b><span>current members</span></span>" +
+        '<span class="stat"><b>' + num(s.roster.total) + "</b><span>partners listed</span></span>";
       el("relink").hidden = !s.relinkNeeded;
       if (s.schedule) showSchedule(s.schedule, true);
       settings = s.settings || {};
@@ -231,7 +234,7 @@
       renderReport(s.report);
       renderUsage(s.usage);
       renderContacts(s.contacts);
-      el("rosterSummary").innerHTML = s.roster.Active + " members &middot; " + s.roster.Inactive + " former &middot; " + s.roster["Non-member"] + " not members";
+      el("rosterSummary").innerHTML = num(s.roster.Active) + " members &middot; " + num(s.roster.Inactive) + " former &middot; " + num(s.roster["Non-member"]) + " not members";
     });
   }
 
@@ -240,7 +243,7 @@
                     ["assistant", "Ask: answers (Ask box and Ask page)"]];
   function renderUsage(u) {
     if (!u) return;
-    var fmt = function (n) { return (n || 0).toLocaleString(); };
+    var fmt = num;
     var table = function (m) {
       var rows = USAGE_ROWS.filter(function (k) { return m[k[0]]; });
       if (!rows.length) return "<p class=\"muted\">Nothing used.</p>";
@@ -257,26 +260,26 @@
   function renderReport(r) {
     if (!r) return;
     var list = function (title, items) {
-      return items && items.length ? '<details style="margin-top:8px"><summary><b>' + esc(title) + " (" + items.length + ")</b></summary><ul class=\"small\">" +
-        items.map(function (x) { return "<li>" + esc(typeof x === "string" ? x : (x.file + ": " + x.error)) + "</li>"; }).join("") + "</ul></details>" : "";
+      return Array.isArray(items) && items.length ? '<details style="margin-top:8px"><summary><b>' + esc(title) + " (" + items.length + ")</b></summary><ul class=\"small\">" +
+        items.map(function (x) { return "<li>" + esc(typeof x === "string" ? x : ((x && x.file) + ": " + (x && x.error))) + "</li>"; }).join("") + "</ul></details>" : "";
     };
-    var ign = r.ignored ? Object.keys(r.ignored).map(function (k) { return k + " " + r.ignored[k]; }).join(", ") : "";
+    var ign = r.ignored && typeof r.ignored === "object" ? Object.keys(r.ignored).map(function (k) { return k + " " + num(r.ignored[k]); }).join(", ") : "";
     el("report").className = "small";
     el("report").innerHTML = r.error ? '<div class="msg err">' + esc(r.error) + "</div>" :
-      "<div>" + esc(PI.fmtStamp(r.started_at)) + " &middot; " + esc(r.mode) + (r.trial_limit ? " &middot; trial of " + r.trial_limit + " files" : "") + "</div>" +
+      "<div>" + esc(PI.fmtStamp(r.started_at)) + " &middot; " + esc(r.mode) + (r.trial_limit ? " &middot; trial of " + num(r.trial_limit) + " files" : "") + "</div>" +
       '<div style="margin:8px 0">' + [
         ["files_seen", "files seen"], ["files_to_read", "files read"], ["files_unchanged", "unchanged"], ["units_to_read", "sections to read"],
         ["claude_calls", "Claude calls"], ["units_cached", "reused from saved results"], ["insights", "insights"], ["rows_rejected", "rows dropped (quote not in notes)"],
         ["sections_split", "sections read in pieces"], ["not_on_roster", "names to review"]].map(function (k) {
-        return '<span class="stat"><b>' + (r[k[0]] || 0) + "</b><span>" + k[1] + "</span></span>";
+        return '<span class="stat"><b>' + num(r[k[0]]) + "</b><span>" + k[1] + "</span></span>";
       }).join("") + "</div>" +
-      (r.box_saved && r.box_saved.length ? "<div>Saved to Box: " + r.box_saved.map(esc).join(", ") + "</div>" : "") +
+      (Array.isArray(r.box_saved) && r.box_saved.length ? "<div>Saved to Box: " + r.box_saved.map(esc).join(", ") + "</div>" : "") +
       (r.box_note ? '<div class="msg err">' + esc(r.box_note) + "</div>" : "") +
       (r.restored_from_box ? "<div>The saved state was restored from the Box database folder.</div>" : "") +
       (r.roster_sync && (r.roster_sync.skipped || r.roster_sync.error || r.roster_sync.saved) ? "<div>Member list: " + esc(r.roster_sync.error || r.roster_sync.skipped || ("applied " + (r.roster_sync.file || {}).name)) + (r.roster_sync.warning ? " " + esc(r.roster_sync.warning) : "") + "</div>" : "") +
-      (r.tokens_in ? "<div>Tokens used: " + r.tokens_in.toLocaleString() + " in, " + (r.tokens_out || 0).toLocaleString() + " out" +
-        (r.claude_calls_batch ? " (" + r.claude_calls_batch + " of " + r.claude_calls + " calls through the half-price batch)" : "") + ".</div>" : "") +
-      (r.units_from_archive ? "<div>" + r.units_from_archive + " section" + (r.units_from_archive === 1 ? "" : "s") + " came back from the Box results archive at no cost.</div>" : "") +
+      (r.tokens_in ? "<div>Tokens used: " + num(r.tokens_in) + " in, " + num(r.tokens_out) + " out" +
+        (r.claude_calls_batch ? " (" + num(r.claude_calls_batch) + " of " + num(r.claude_calls) + " calls through the half-price batch)" : "") + ".</div>" : "") +
+      (r.units_from_archive ? "<div>" + num(r.units_from_archive) + " section" + (Number(r.units_from_archive) === 1 ? "" : "s") + " came back from the Box results archive at no cost.</div>" : "") +
       (r.batch_note ? "<div>" + esc(r.batch_note) + "</div>" : "") +
       (ign ? "<div>Ignored (not notes): " + esc(ign) + "</div>" : "") +
       list("Errors", r.errors) + list("Could not save to Box", r.box_errors) + list("Need converting to .docx", r.needs_conversion) + list("Unreadable", r.unreadable) +
@@ -375,7 +378,7 @@
       var active = r.runs.some(function (x) { return x.status !== "completed"; });
       el("runs").innerHTML = r.runs.length ? "<table><thead><tr><th>Started</th><th>Trigger</th><th>State</th></tr></thead><tbody>" + r.runs.map(function (x) {
         var state = x.status === "completed" ? (x.conclusion === "success" ? PI.pill("good", "Finished") : PI.pill("high", x.conclusion || "Failed")) : PI.pill("medium", x.status === "queued" ? "Queued" : "Running");
-        return "<tr><td>" + esc(PI.fmtStamp(x.created_at)) + '</td><td>' + (x.event === "schedule" ? "Daily" : "Manual") + "</td><td>" + state + ' <a href="' + esc(x.url) + '" target="_blank" rel="noopener">log</a></td></tr>';
+        return "<tr><td>" + esc(PI.fmtStamp(x.created_at)) + '</td><td>' + (x.event === "schedule" ? "Daily" : "Manual") + "</td><td>" + state + (/^https:\/\//.test(x.url || "") ? ' <a href="' + esc(x.url) + '" target="_blank" rel="noopener">log</a>' : "") + "</td></tr>";
       }).join("") + "</tbody></table>" : "";
       if (active) sawActive = true;
       if (!active && sawActive) { sawActive = false; loadStatus(); loadReview(); loadChecks(); loadTopics(); }
@@ -413,7 +416,8 @@
     editingId = p ? p.id : "";
     el("formTitle").textContent = p ? "Edit " + p.name : "Add a partner";
     el("pName").value = p ? p.name : ""; el("pIndustry").value = p ? p.industry : "";
-    el("pStatus").value = p && p.status !== "Active" ? "Inactive" : "Active";
+    // Each of the three statuses is kept as it is: saving a non-member must not make it a former member.
+    el("pStatus").value = p && ["Active", "Inactive", "Non-member"].indexOf(p.status) >= 0 ? p.status : "Active";
     el("pContacts").value = p ? p.contacts.join("\n") : ""; el("pAliases").value = p ? p.aliases.join("\n") : "";
     el("pSave").textContent = p ? "Save changes" : "Add partner";
     el("pCancel").hidden = !p; el("pDelete").hidden = !p; msg("pMsg", "");
@@ -473,7 +477,7 @@
   function names(list) { return list.length ? "<ul class=\"small\" style=\"margin:4px 0\">" + list.slice(0, 40).map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + (list.length > 40 ? "<li>and " + (list.length - 40) + " more</li>" : "") + "</ul>" : ""; }
   function summaryHtml(s) {
     return '<div class="small"><b>' + s.added.length + "</b> new &middot; <b>" + s.updated.length + "</b> changed &middot; <b>" + s.reactivated.length +
-      "</b> returning &middot; <b>" + s.deactivated.length + "</b> no longer on the list &middot; " + s.unchanged + " unchanged</div>" +
+      "</b> returning &middot; <b>" + s.deactivated.length + "</b> no longer on the list &middot; " + num(s.unchanged) + " unchanged</div>" +
       (s.added.length ? "<details><summary>New partners</summary>" + names(s.added) + "</details>" : "") +
       (s.reactivated.length ? "<details><summary>Returning partners</summary>" + names(s.reactivated) + "</details>" : "") +
       (s.deactivated.length ? "<details open><summary><b>Will be marked Not Council</b></summary>" + names(s.deactivated) + "</details>" : "") +
@@ -501,18 +505,18 @@
 
   /* ------------------------------------------------------------ contacts */
   function contactsSummaryHtml(s) {
-    return '<div class="small"><b>' + s.kept.toLocaleString() + "</b> contacts at <b>" + s.companies + "</b> companies &middot; " +
-      s.partnersWithContacts + " of your partners have at least one" +
-      (s.partnersWithout ? " (" + s.partnersWithout + " have none)" : "") + "</div>" +
+    return '<div class="small"><b>' + num(s.kept) + "</b> contacts at <b>" + num(s.companies) + "</b> companies &middot; " +
+      num(s.partnersWithContacts) + " of your partners have at least one" +
+      (s.partnersWithout ? " (" + num(s.partnersWithout) + " have none)" : "") + "</div>" +
       '<div class="small muted">' + [
-        s.repaired ? s.repaired + " names repaired from the email address (Excel had damaged them)" : "",
-        s.duplicates ? s.duplicates + " duplicate rows skipped" : "",
-        s.noName ? s.noName + " rows with no usable name skipped" : "",
-        s.noCompany ? s.noCompany + " rows with no company skipped" : "",
-        s.sameNameTwoCompanies ? s.sameNameTwoCompanies + " names appear at two companies; those are only used when the notes show which" : ""
+        s.repaired ? num(s.repaired) + " names repaired from the email address (Excel had damaged them)" : "",
+        s.duplicates ? num(s.duplicates) + " duplicate rows skipped" : "",
+        s.noName ? num(s.noName) + " rows with no usable name skipped" : "",
+        s.noCompany ? num(s.noCompany) + " rows with no company skipped" : "",
+        s.sameNameTwoCompanies ? num(s.sameNameTwoCompanies) + " names appear at two companies; those are only used when the notes show which" : ""
       ].filter(Boolean).join(" &middot; ") + "</div>" +
-      (s.contactsAtUnlistedCompanies ? "<details><summary>" + s.contactsAtUnlistedCompanies + " contacts at companies not on the partner list</summary><ul class=\"small\">" +
-        s.unlistedCompanies.map(function (c) { return "<li>" + esc(c.name) + " (" + c.count + ")</li>"; }).join("") + "</ul></details>" : "");
+      (s.contactsAtUnlistedCompanies ? "<details><summary>" + num(s.contactsAtUnlistedCompanies) + " contacts at companies not on the partner list</summary><ul class=\"small\">" +
+        (s.unlistedCompanies || []).map(function (c) { return "<li>" + esc(c.name) + " (" + num(c.count) + ")</li>"; }).join("") + "</ul></details>" : "");
   }
   function renderContacts(c) {
     el("contactsNow").innerHTML = c ? "Current list: <b>" + esc(c.fileName || "uploaded file") + "</b>, " + esc(PI.fmtStamp(c.updatedAt)) + contactsSummaryHtml(c.summary)
@@ -554,6 +558,8 @@
   function loadChecks() {
     return PI.api("attribution/review?offset=" + checkOffset).then(function (r) {
       el("checkCount").textContent = r.total ? "(" + r.total + ")" : "";
+      // Deciding the last statement on a later page leaves that page empty: go back a page.
+      if (!r.items.length && r.total > 0 && checkOffset > 0) { checkOffset = Math.max(0, Math.floor((r.total - 1) / 25) * 25); return loadChecks(); }
       if (!r.items.length) { el("checks").innerHTML = '<span class="muted small">Nothing to check.</span>'; return; }
       var partnerOpts = roster.partners.slice().sort(function (a, b) { return a.name.localeCompare(b.name); })
         .map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + "</option>"; }).join("");
@@ -607,7 +613,7 @@
       el("review").innerHTML = "<table><thead><tr><th>Name in the notes</th><th>Times</th><th>Match to a partner</th><th></th></tr></thead><tbody>" +
         r.items.map(function (u, n) {
           var sug = (u.candidates || []).map(function (c) { return '<button class="tiny" data-map="' + n + '" data-id="' + esc(c.id) + '">Same as ' + esc(c.name) + "</button>"; }).join(" ");
-          return "<tr><td><b>" + esc(u.raw) + "</b>" + (u.pending ? "<div>" + PI.pill("est", "applies on Re-link") + "</div>" : "") + "</td><td>" + u.count + "</td><td>" + sug +
+          return "<tr><td><b>" + esc(u.raw) + "</b>" + (u.pending ? "<div>" + PI.pill("est", "applies on Re-link") + "</div>" : "") + "</td><td>" + num(u.count) + "</td><td>" + sug +
             '<div class="row" style="margin-top:6px"><select id="sel' + n + '"><option value="">Choose a partner…</option>' + opts + '</select><button class="tiny" data-pick="' + n + '">Match</button></div></td>' +
             '<td><button class="tiny" data-add="' + n + '">Add as non-member</button></td></tr>';
         }).join("") + "</tbody></table>";

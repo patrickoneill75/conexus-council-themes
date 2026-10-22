@@ -34,7 +34,10 @@
   /** The New button, which starts a new conversation. */
   A.newButton = function () { return '<button type="button" class="ax-new" data-new>' + ICON.plus + "New</button>"; };
 
+  // Numbers from a stored answer are made numbers before they go into HTML.
+  function num(n) { n = parseInt(n, 10); return isFinite(n) && n >= 0 ? n : 0; }
   function cite(n, tid) {
+    n = num(n);
     return '<button type="button" class="cite" data-ref="' + n + '" data-turn="' + esc(tid) + '" aria-label="Source ' + n + '">' + n + "</button>";
   }
   A.cites = function (refs, tid) { return (refs || []).map(function (n) { return " " + cite(n, tid); }).join(""); };
@@ -102,7 +105,7 @@
     if (!list.length) return "";
     return '<details class="srcs"><summary>' + ICON.down + list.length + (list.length === 1 ? " source" : " sources") + "</summary>" +
       list.map(function (s) {
-        return '<details class="srow" data-ref="' + s.ref + '"><summary><span class="sref">' + s.ref + "</span>" + kindHtml(s.kind) +
+        return '<details class="srow" data-ref="' + num(s.ref) + '"><summary><span class="sref">' + num(s.ref) + "</span>" + kindHtml(s.kind) +
           '<span class="stitle">' + esc(s.title) + '</span><span class="sby">' + esc((s.company && s.company.name) || "") +
           (s.checkCompany ? " (company uncertain)" : "") + (s.date ? " · " + esc(PI.fmtDate(s.date)) + (s.estimated ? " (estimated)" : "") : "") + "</span></summary>" +
           '<div class="sbody">' + esc(s.detail) + sourceFoot(s) + "</div></details>";
@@ -132,8 +135,9 @@
     // question someone else asked is not shown.
     if (turn.memory) {
       var m = turn.memory, when = esc(PI.fmtDate(String(m.from || "").slice(0, 10)));
-      html += '<p class="memo">' + (m.mode === "updated" ? "A saved answer from " + when + ", updated with " + m.newNotes + " new note" +
-        (m.newNotes === 1 ? "" : "s") + "." : "A saved answer from " + when + ". No notes have been added since.") + "</p>";
+      var added = num(m.newNotes);
+      html += '<p class="memo">' + (m.mode === "updated" ? "A saved answer from " + when + ", updated with " + added + " new note" +
+        (added === 1 ? "" : "s") + "." : "A saved answer from " + when + ". No notes have been added since.") + "</p>";
     }
     html += A.sourcesInline(turn);
     if (opts.last) {
@@ -249,8 +253,11 @@
       return '<div class="turn" data-tid="' + esc(t.id) + '"><div class="qb">' + esc(t.q) + "</div>" +
         A.answerHtml(t, { last: i === turns.length - 1 && !box.busy, matchLink: true }) + "</div>";
     }).join("");
-    if (box.busy) {
+    // The question being answered shows only in the conversation it was asked in.
+    if (box.busy && (box.conv ? box.conv.id : "") === box.busyIn) {
       html += '<div class="turn pending"><div class="qb">' + esc(box.busy) + '</div><div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>';
+    } else if (box.busy) {
+      html += '<p class="memo">Still answering your question in another conversation.</p>';
     }
     if (box.error) {
       html += '<div class="turn"><div class="qb">' + esc(box.error.q) + '</div><div class="msg err">' + esc(box.error.message) + "</div></div>";
@@ -316,10 +323,18 @@
     render();
     scrollToLast();
     var convId = box.conv ? box.conv.id : "";
+    box.busyIn = convId;
     // A conversation keeps the company it started on: a follow-up, or Answer fresh, asked from another
     // company's page is still about the first company.
     var company = box.conv ? box.conv.companyId || "" : companyHere();
     PI.post("assistant", { question: text, conversationId: fresh ? "" : convId, mode: "answer", companyId: company, fresh: Boolean(fresh) }).then(function (r) {
+      // Another conversation was opened while this one was being answered: the answer is in the
+      // history under its own conversation, and the screen stays where the person went.
+      if ((box.conv ? box.conv.id : "") !== convId) {
+        A.remember(r.conversation); box.busy = null; render();
+        if (box.rail) railEl.innerHTML = A.railHtml(box.conv && box.conv.id);
+        return;
+      }
       if (!box.conv || box.conv.id !== r.conversation.id) box.conv = { id: r.conversation.id, title: r.conversation.title, turns: [], companyId: r.conversation.companyId || "" };
       box.conv.turns.push(r.turn);
       box.sel = r.turn.id;

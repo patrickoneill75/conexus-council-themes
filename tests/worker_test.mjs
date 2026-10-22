@@ -2671,7 +2671,7 @@ test("workforce: junk in the role form cannot become junk in the totals", async 
 
 /* ================================================================== partner_intel */
 const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan, runSummariesAhead, questionWindow, looksLikeMatch,
-  AHEAD_PROGRAMS, SUMMARY_BOX_FILE } = await mod("partner_intel.js");
+  AHEAD_PROGRAMS, SUMMARY_BOX_FILE, councilText, historyFileName } = await mod("partner_intel.js");
 const pi = (route, request, env) => handlePartnerIntelApi(route, request, env);
 const piReq = (route, method, body, token) => jsonReq(`/api/partner-intel/${route}`, method, body, token);
 const piGet = (route, token) => req(`/api/partner-intel/${route}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
@@ -3596,8 +3596,10 @@ test("partner_intel: source folders filter every view, and naming Board Meetings
     ins({ title: "both", source_folders: ["ADAPT", "CIAIC"], sources: [{ id: "f5", name: "x.docx", path: "Raw Notes/ADAPT" }] }),
   ]);
   const titles = async (q) => (await getJson(`insights?${q}`, env, token)).items.map((i) => i.title).sort();
-  assert.deepEqual(await titles("source=CIAIC"), ["both", "ciaic issue"], "derived from the path, and a merged row matches any of its sources");
-  assert.deepEqual(await titles("source=ADAPT%7CCIAIC"), ["adapt issue", "both", "ciaic issue"], "several sources at once");
+  // The CIAIC folder is shown as Council; a link still naming CIAIC finds the same rows.
+  assert.deepEqual(await titles("source=Council"), ["Council issue", "both"], "derived from the path, and a merged row matches any of its sources");
+  assert.deepEqual(await titles("source=CIAIC"), ["Council issue", "both"], "an old link naming CIAIC");
+  assert.deepEqual(await titles("source=ADAPT%7CCouncil"), ["Council issue", "adapt issue", "both"], "several sources at once");
   assert.deepEqual(await titles("source=(root)"), ["loose file"]);
   assert.deepEqual(await titles("source=Board%20Meetings"), ["board issue"], "an explicit source choice includes the internal rows");
   assert.equal((await titles("")).includes("board issue"), false, "and without it they stay out");
@@ -3605,7 +3607,7 @@ test("partner_intel: source folders filter every view, and naming Board Meetings
   assert.equal(home.counts.issues, 2, "Home follows the source choice too; the row from two sources counts under each");
   assert.equal((await getJson("home?days=30&source=CIAIC", env, token)).counts.issues, 2);
   const facets = await getJson("facets", env, token);
-  assert.deepEqual(facets.sources, [{ value: "(root)", count: 1 }, { value: "ADAPT", count: 2 }, { value: "Board Meetings", count: 1 }, { value: "CIAIC", count: 2 }]);
+  assert.deepEqual(facets.sources, [{ value: "(root)", count: 1 }, { value: "ADAPT", count: 2 }, { value: "Board Meetings", count: 1 }, { value: "Council", count: 2 }]);
   assert.equal((await pi("facets", piGet("facets"), env)).status, 401);
 });
 
@@ -4567,7 +4569,7 @@ test("partner_intel: each person's Ask history is theirs alone, kept in Box unde
   assert.equal(r1.saved.box, true);
   assert.deepEqual(created.find((c) => c.name === "Ask history"), { name: "Ask history", parent: { id: "22" } }, "the Ask history folder is made inside the Database folder");
   assert.equal(savedAnswers.length, 1, "the answer is also saved to Box as a saved answer, in its own file");
-  assert.equal(uploads[0].name, "ask-history-poneill@conexusindiana.com.json");
+  assert.match(uploads[0].name, /^ask-history-poneill@conexusindiana\.com-[0-9a-f]{8}\.json$/);
   await withFetch(box, () => pi("assistant", askBox(token, { question: "And quality?", mode: "answer", conversationId: r1.conversation.id }), env));
   assert.equal(created.filter((c) => c.name === "Ask history").length, 1, "the folder is found the second time, not made again");
   assert.match(uploads[1].url, /files\/900\/content$/, "the history file is updated as a new version, not uploaded again (Box would 409)");
@@ -4860,7 +4862,7 @@ test("partner_intel: with a Cache folder chosen, summaries and the scan's caches
 /* ---------------------------------------------------- trending summaries written ahead, kept in Box */
 
 test("partner_intel: new data queues Home and the main programs, and the cron writes their summaries once, then saves them to Box", async () => {
-  assert.deepEqual(AHEAD_PROGRAMS, ["Field Demos", "CIAIC", "PCN", "ITA", "Board Meetings"]);
+  assert.deepEqual(AHEAD_PROGRAMS, ["Field Demos", "Council", "PCN", "ITA", "Board Meetings"]);
   const rows = [
     ...trendingRows(),
     ins({ topic: "quality", company_id: "c-c", title: "CIAIC scrap", sources: [{ id: "f9", name: "c.docx", path: "Notes/CIAIC/c.docx" }], date: isoAgo(200) }),
@@ -5119,6 +5121,214 @@ test("partner_intel: BUG the member file's program column, a 'Former Member' sta
   assert.deepEqual(acme.contacts, ["Ann A", "Al B"]);
   assert.equal(acme.program, "CIAIC; PCN", "the 'Programs & Councils' column is read");
   assert.equal(beta.status, "Inactive", "a former member is not shown as a Council Member");
+});
+
+/* ------------------------------------------------------------- the Council, compact headlines, security, pages */
+
+/** A named function's source from a page or script, braces matched, so a test can run it on its own. */
+function sourceOf(file, name) {
+  const src = fs.readFileSync(file, "utf8");
+  const start = src.search(new RegExp(`function ${name}\\s*\\(`));
+  assert.ok(start >= 0, `function ${name} not found in ${path.basename(file)}`);
+  let depth = 0, i = src.indexOf("{", start);
+  for (; i < src.length; i++) { if (src[i] === "{") depth++; else if (src[i] === "}" && --depth === 0) break; }
+  return src.slice(start, i + 1);
+}
+const PUB_PI = path.join(path.dirname(SRC), "public", "partner-intel");
+const escHtml = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const EVIL = "<img src=x onerror=alert(1)>";
+
+test("partner_intel: BUG the program the notes call CIAIC was shown as CIAIC; staff see Council, and quotes and file names stay as written", async () => {
+  const rows = [ins({ id: "cc1", title: "CIAIC members short on technicians", detail: "At the CIAIC, members said hiring is slow.",
+    quote: "the CIAIC group agreed", meeting_id: "m-cc", meeting_label: "Q2 2025 CIAIC Notes", event_type: "CIAIC Council Meeting",
+    series: "CIAIC Council Meeting", sources: [{ id: "77", name: "Q2 2025 CIAIC Notes.docx", path: "Notes/CIAIC/Q2 2025 CIAIC Notes.docx" }] })];
+  const { env, token } = await piEnv(rows);
+  assert.deepEqual((await getJson("programs", env, token)).programs.map((p) => p.name), ["Council"]);
+  const item = (await getJson("insights?days=30", env, token)).items[0];
+  assert.equal(item.title, "Council members short on technicians");
+  assert.equal(item.detail, "At the Council, members said hiring is slow.");
+  assert.equal(item.eventType, "Council Meeting");
+  assert.equal(item.quote, "the CIAIC group agreed", "a quote keeps the words of the notes");
+  assert.equal(item.sources[0].name, "Q2 2025 CIAIC Notes.docx", "a Box file keeps its name, so it can be found in Box");
+  const program = await getJson("program?name=Council", env, token);
+  assert.equal(program.meetings[0].label, "Q2 2025 Council Notes");
+  assert.equal((await getJson("program?name=CIAIC", env, token)).program.name, "Council", "an old link naming CIAIC still opens it");
+  assert.equal(councilText("an CIAIC meeting with the Conexus Indiana Advanced Industries Council"), "a Council meeting with the Conexus Council");
+  assert.equal(councilText("Southern CIAIC"), "Southern Council");
+});
+
+test("partner_intel: BUG Ask could call the Council 'CIAIC', and a question about 'council members' was taken to be about the Council program", async () => {
+  const rows = [ins({ id: "ca1", title: "Hiring at the council meeting", sources: [{ id: "1", name: "c.docx", path: "Notes/CIAIC/c.docx" }] }),
+    ins({ id: "ca2", title: "PCN point", sources: [{ id: "2", name: "p.docx", path: "Notes/PCN/p.docx" }] })];
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const r = await withFetch(assistantClaude("The CIAIC raised hiring [n1].", ["What did CIAIC say about wages?"], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "What has CIAIC raised?", mode: "answer" }), env)).json());
+  const sent = bodies.find((b) => b.tools[0].name === "write_answer");
+  assert.match(sent.system, /never CIAIC/);
+  assert.ok(sent.messages[0].content.includes('<program name="Council">'), "CIAIC in the question is the Council program");
+  assert.ok(!sent.messages[0].content.includes("CIAIC"), `nothing Claude reads calls it CIAIC: ${(sent.messages[0].content.match(/.{0,80}CIAIC.{0,40}/g) || []).join(" | ")}`);
+  assert.equal(r.turn.answer, "The Council raised hiring [1].", "and an answer that says CIAIC anyway is shown saying Council");
+  assert.deepEqual(r.turn.followUps, ["What did Council say about wages?"]);
+  const members = [];
+  await withFetch(assistantClaude("A [n1].", [], members), () =>
+    pi("assistant", askBox(token, { question: "Which council members raised hiring?", mode: "answer" }), env));
+  assert.ok(!members.find((b) => b.tools[0].name === "write_answer").messages[0].content.includes('<program name="Council">'),
+    "council members means membership, not the Council's meetings");
+});
+
+test("partner_intel: BUG a trending summary could call the Council 'CIAIC'", async () => {
+  const { env, token } = await piEnv([ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "quality", company_id: "c-b" })], { partner_intel_claude_api: "k" });
+  let system = "";
+  const out = await withFetch((url, init) => { system = JSON.parse(init.body).system;
+    return summaryOut(topicsIn(init).payload, (t) => ({ topic_id: t.topic_id, bullets: [{ text: "The CIAIC raised scrap.", evidence_ids: [t.evidence[0].id] }] })); },
+  async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  assert.match(system, /never CIAIC/);
+  assert.equal(out.summaries.quality.bullets[0].text, "The Council raised scrap.");
+});
+
+test("partner_intel: COST Ask headlines sit under their program and topic instead of repeating both on every line, and still cite the right note", async () => {
+  const rows = Array.from({ length: 220 }, (_, k) => ins({ id: `hl${k}`, company_id: k % 2 ? "c-a" : "c-b", topic: k % 3 ? "quality" : "talent_pipeline",
+    title: `Point ${k}`, date: isoAgo(k % 80), meeting_id: `hm${k}`, meeting_label: `M${k}`,
+    sources: [{ id: `s${k}`, name: "x.docx", path: k % 2 ? "Notes/PCN/x.docx" : "Notes/CIAIC/x.docx" }] }));
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const bodies = [];
+  await withFetch(assistantClaude("A [n1].", [], bodies), () => pi("assistant", askBox(token, { question: "What came up?", mode: "answer" }), env));
+  const prompt = bodies.find((b) => b.tools[0].name === "write_answer").messages[0].content;
+  const block = prompt.slice(prompt.indexOf("<all_notes>"), prompt.indexOf("</all_notes>"));
+  const lines = block.split("\n").filter((l) => l.startsWith("[n"));
+  assert.ok(lines.length > 0);
+  assert.ok(lines.every((l) => /^\[n\d+\] \d{4}-\d{2}-\d{2} · (Acme Corp|Beta Works) · Issue · Point \d+$/.test(l)), lines.slice(0, 3).join("\n"));
+  assert.equal(block.split("\n").filter((l) => l === "Program: PCN").length, 1, "each program heading is written once");
+  assert.ok(block.split("\n").filter((l) => l.startsWith("Topic: ")).length <= 4, "and each topic once under it");
+  // The reference a headline carries cites that note.
+  const line = lines[lines.length - 1];
+  const ref = line.slice(1, line.indexOf("]"));
+  const id = `hl${line.match(/Point (\d+)$/)[1]}`;
+  const r = await withFetch(assistantClaude(`About point five [${ref}].`), async () =>
+    (await pi("assistant", askBox(token, { question: "What came up?", mode: "answer", fresh: true }), env)).json());
+  assert.equal(r.turn.sources[0].id, id);
+});
+
+test("partner_intel: BUG numbers in the scan report and usage went into the control panel as HTML, so a crafted report could run script", () => {
+  const file = path.join(PUB_PI, "control-panel", "index.html");
+  const out = {};
+  const el = (id) => (out[id] = out[id] || {});
+  const PI = { fmtStamp: (s) => String(s), esc: escHtml };
+  const report = new Function("el", "PI", "esc", `${sourceOf(file, "num")}\n${sourceOf(file, "renderReport")}\nreturn renderReport;`)(el, PI, escHtml);
+  report({ started_at: "t", mode: "scan", trial_limit: EVIL, files_seen: EVIL, insights: EVIL, tokens_in: EVIL, tokens_out: EVIL,
+    claude_calls_batch: EVIL, claude_calls: EVIL, units_from_archive: EVIL, ignored: { docx: EVIL }, errors: [{ file: EVIL, error: EVIL }] });
+  assert.ok(!out.report.innerHTML.includes("<img"), out.report.innerHTML);
+  const usage = new Function("el", "PI", "esc", "USAGE_ROWS", `${sourceOf(file, "num")}\n${sourceOf(file, "renderUsage")}\nreturn renderUsage;`)(
+    el, PI, escHtml, [["summaries", "Trending topic summaries"]]);
+  usage({ thisMonth: { month: "2026-10", summaries: { calls: EVIL, input: EVIL, output: EVIL, reused: EVIL } }, lastMonth: { month: "2026-09" } });
+  assert.ok(!out.usage.innerHTML.includes("<img"), out.usage.innerHTML);
+});
+
+test("partner_intel: BUG an Ask history file read back from Box went onto the page unchecked", async () => {
+  const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await republish(env, assistantRows(), "vh");
+  await setFolder(env, token, "data", "22", "Database");
+  const me = "poneill@conexusindiana.com";
+  const body = { owner: me, conversations: [{ id: "c1", title: "Mine", turns: [
+    { id: "t1", q: "Q", kind: "answer", answer: "A [1]", memory: { from: "2026-10-01T00:00:00Z", newNotes: EVIL, mode: "reused" },
+      considered: { insights: EVIL, notes: 3 }, sources: [{ ref: EVIL, id: "s1", kind: "problem", title: "T", detail: "D", date: EVIL,
+        company: { id: "c-a", name: "Acme" }, files: [{ name: "f.docx", url: "javascript:alert(1)" }] }] },
+    { id: "t2", q: "Who?", kind: "matches", answer: "s", matches: [{ strength: EVIL, why: "w", company: { id: "c-a", name: "Acme" }, refs: [EVIL, 1] }], sources: [] }] }] };
+  const box = (files) => (url) => {
+    const u = new URL(url);
+    const folders = { 22: [{ type: "folder", id: "50", name: "Ask history" }], 50: Object.keys(files).map((name, k) => ({ type: "file", id: String(900 + k), name })) };
+    const items = u.pathname.match(/\/folders\/(\d+)\/items$/);
+    if (items) return okJson({ total_count: (folders[items[1]] || []).length, entries: folders[items[1]] || [] });
+    const content = u.pathname.match(/\/files\/(\d+)\/content$/);
+    if (content) return new Response(JSON.stringify(Object.values(files)[Number(content[1]) - 900]));
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const conv = (await withFetch(box({ [historyFileName(me)]: body }), () => getJson("assistant/conversation?id=c1", env, token))).conversation;
+  const [t1, t2] = conv.turns;
+  assert.equal(t1.memory.newNotes, 0);
+  assert.equal(t1.considered.insights, undefined);
+  assert.equal(t1.considered.notes, 3);
+  assert.equal(t1.sources[0].ref, 0);
+  assert.equal(t1.sources[0].date, "");
+  assert.equal(t1.sources[0].files[0].url, "", "a link goes only to a Box file");
+  assert.equal(t2.matches[0].strength, "low");
+  assert.deepEqual(t2.matches[0].refs, [1]);
+  // Shown in the page, a stored number cannot become HTML either.
+  const cite = new Function("esc", `${sourceOf(path.join(PUB_PI, "askbox.js"), "num")}\n${sourceOf(path.join(PUB_PI, "askbox.js"), "cite")}\nreturn cite;`)(escHtml);
+  assert.ok(!cite(`"><img src=x onerror=alert(1)>`, "t").includes("<img"));
+});
+
+test("partner_intel: BUG two addresses that differ only in a symbol shared one Ask history file in Box, and either could read the other's", async () => {
+  assert.notEqual(historyFileName("a+b@x.test"), historyFileName("a_b@x.test"));
+  const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await republish(env, assistantRows(), "vl");
+  await setFolder(env, token, "data", "22", "Database");
+  // A file under the old shared name, written for someone else.
+  const theirs = JSON.stringify({ owner: "someone@else.test", conversations: [{ id: "c9", title: "Theirs", turns: [] }] });
+  const box = (url) => {
+    const u = new URL(url);
+    if (/\/folders\/22\/items$/.test(u.pathname)) return okJson({ total_count: 1, entries: [{ type: "folder", id: "50", name: "Ask history" }] });
+    if (/\/folders\/50\/items$/.test(u.pathname)) return okJson({ total_count: 1, entries: [{ type: "file", id: "901", name: "ask-history-poneill@conexusindiana.com.json" }] });
+    if (u.pathname === "/2.0/files/901/content") return new Response(theirs);
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  assert.deepEqual((await withFetch(box, () => getJson("assistant/history", env, token))).conversations, []);
+});
+
+test("partner_intel: BUG the usage meter left out a paid attempt that came back without the tool call, or was declined", async () => {
+  const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
+  let n = 0;
+  await withFetch((url, init) => {
+    if (JSON.parse(init.body).tools[0].name === "search_terms") return termsOut(["x"]);
+    return ++n === 1 ? okJson({ content: [{ type: "text", text: "Here is my answer." }], stop_reason: "end_turn", usage: { input_tokens: 1000, output_tokens: 50 } })
+      : answerOut("A [n1].");
+  }, () => pi("assistant", askBox(token, { question: "What about hiring?", mode: "answer" }), env));
+  const month = () => JSON.parse(env.BOX_KV.store.get(`pi:usage:${new Date().toISOString().slice(0, 7)}`)).assistant;
+  assert.equal(month().calls, 3, "search terms, the attempt with no tool call, and the answer");
+  assert.equal(month().input, 5 + 1000 + 900);
+  await withFetch((url, init) => (JSON.parse(init.body).tools[0].name === "search_terms" ? termsOut(["y"])
+    : okJson({ content: [], stop_reason: "refusal", usage: { input_tokens: 700, output_tokens: 1 } })),
+  () => pi("assistant", askBox(token, { question: "What about quality?", mode: "answer" }), env));
+  assert.equal(month().input, 5 + 1000 + 900 + 5 + 700, "a declined request is paid for too");
+});
+
+test("partner_intel: BUG a follow-up after a partner search could not see which partners it found", async () => {
+  const { env, token } = await piEnv(SOLVERS(), { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const first = await withFetch(assistantClaude("unused", [], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "Who can help with quality inspection?", mode: "match" }), env)).json());
+  await withFetch(assistantClaude("The first one [n1].", [], bodies), () =>
+    pi("assistant", askBox(token, { question: "What else has the first one said?", mode: "answer", conversationId: first.conversation.id }), env));
+  const prompt = bodies.filter((b) => b.tools[0].name === "write_answer").pop().messages[0].content;
+  assert.match(prompt.slice(prompt.indexOf("<earlier_conversation>")), /Partners found: 1\. Acme Corp \(high match\): Did it\./);
+});
+
+test("partner_intel: BUG a meeting page said nine companies but listed eight, and left out files without saying so", async () => {
+  const partners = Array.from({ length: 9 }, (_, k) => ({ id: `c-m${k}`, name: `Maker ${k}`, industry: "Metals", status: "Active", program: "",
+    participationId: `PM${k}`, contacts: [], aliases: [] }));
+  const rows = partners.map((p, k) => ins({ company_id: p.id, meeting_id: "m-big", meeting_label: "Big meeting", meeting_kind: "meeting", date: "2026-10-01",
+    sources: [{ id: String(500 + k), name: `file${k}.docx`, path: "Notes/PCN" }] }));
+  const { env, token } = await piEnv(rows);
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners, aliases: {}, staff: [], updatedAt: "r1" }));
+  const m = (await getJson("program?name=PCN", env, token)).meetings[0];
+  assert.deepEqual([m.companyCount, m.companies.length, m.fileCount, m.files.length], [9, 8, 9, 5]);
+  assert.match(fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8"), /m\.companyCount > m\.companies\.length \? ", and "/);
+});
+
+test("partner_intel: BUG pages: an answer landed in whatever conversation was open, a non-member was saved as a former member, an emptied last page showed nothing, Home hid how many dates are estimates", () => {
+  const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  const page = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  const panel = fs.readFileSync(path.join(PUB_PI, "control-panel", "index.html"), "utf8");
+  assert.match(box, /box\.busyIn = convId/);
+  assert.match(box, /if \(\(box\.conv \? box\.conv\.id : ""\) !== convId\)/, "the Ask box leaves the screen alone when another conversation is open");
+  assert.match(page, /if \(\(askView\.conv \? askView\.conv\.id : ""\) !== askedIn\)/, "and so does the Ask page");
+  assert.match(panel, /<option value="Non-member">/);
+  assert.match(panel, /\["Active", "Inactive", "Non-member"\]\.indexOf\(p\.status\) >= 0 \? p\.status/);
+  assert.match(panel, /!r\.items\.length && r\.total > 0 && checkOffset > 0/);
+  assert.match(page, /data-exact=\\?"1/);
 });
 
 let failed = 0;
