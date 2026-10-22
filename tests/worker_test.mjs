@@ -3022,7 +3022,8 @@ test("admin: BUG signing in from a deep link landed on the admin hub, not the pa
   // page always went on to /admin/index.html. Pages now pass ?next=, and the login page follows it, but
   // only to a page on this site.
   const pub = path.join(path.dirname(SRC), "public");
-  const html = fs.readFileSync(path.join(pub, "admin", "login.html"), "utf8");
+  // Sign-in is the home page; /admin/login.html forwards there with its query.
+  const html = fs.readFileSync(path.join(pub, "index.html"), "utf8");
   const start = html.indexOf("  function nextPage() {");
   assert.ok(start > 0, "the login page has nextPage()");
   const src = html.slice(start, html.indexOf("\n  }\n", start) + 4);
@@ -3033,7 +3034,7 @@ test("admin: BUG signing in from a deep link landed on the admin hub, not the pa
   assert.equal(at(q("/partner-intel/#/company/c-a/meetings")), "/partner-intel/#/company/c-a/meetings", "with its route");
   assert.equal(at(q("/inm/index.html?map=3")), "/inm/index.html?map=3", "and its query");
   assert.equal(at(""), "/admin/index.html", "no next: the hub, as before");
-  for (const bad of ["https://evil.example/", "//evil.example/", "/\t/evil.example/", "/\\evil.example/", "javascript:alert(1)", "/admin/login.html?next=/x"]) {
+  for (const bad of ["https://evil.example/", "//evil.example/", "/\t/evil.example/", "/\\evil.example/", "javascript:alert(1)", "/admin/login.html?next=/x", "/", "/?next=/x"]) {
     assert.equal(at(q(bad)), "/admin/index.html", "refused: " + JSON.stringify(bad));
   }
   // Every page that sends you to sign in says where you were.
@@ -5881,6 +5882,16 @@ test("partner_intel: the link bar stays at the top while a page scrolls, with a 
   assert.match(css, /\.appbar\.raised \{ box-shadow:/);
   assert.match(js, /classList\.toggle\("raised"/);
   assert.match(js, /addEventListener\("scroll", raiseBar/);
+});
+
+test("site: the home page is the sign-in page, and the old sign-in address forwards to it with its query", () => {
+  const pub = path.join(path.dirname(SRC), "public");
+  const home = fs.readFileSync(path.join(pub, "index.html"), "utf8");
+  assert.match(home, /id="loginBtn"/);
+  assert.match(home, /id="setupCard"/, "set up and forgot password are there too");
+  assert.match(home, /--navy:#07214E/, "themed like the admin pages");
+  assert.ok(!home.includes("apps.js"), "no public list of apps");
+  assert.match(fs.readFileSync(path.join(pub, "admin", "login.html"), "utf8"), /location\.replace\("\/" \+ location\.search \+ location\.hash\)/);
 });
 
 let failed = 0;

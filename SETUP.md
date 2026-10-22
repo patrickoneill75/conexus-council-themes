@@ -18,7 +18,7 @@ gated by the shared admin accounts, never a password of its own.
 
 | Piece | Where it lives | What it does |
 | --- | --- | --- |
-| `public/index.html` | Worker static assets | The **public grid** -- Connector's own front door. Reads `public/apps.js` and each app's current visibility tier and shows a tile only for the ones set to "Public". No login, no control-panel links. |
+| `public/index.html` | Worker static assets | Connector's front door: the **sign-in page** (also set up a new account and forgot password), themed like the admin pages. Nothing on the site is public, so there is no public list of apps; a signed-in person goes on to the admin hub. `public/admin/login.html` forwards here with its `?next=` or `?reset=`. |
 | `public/apps.js` | Worker static assets | The one shared registry of every mini app (id, name, description, base URL, control panel URL) -- read by both the public grid and the admin hub. Add a new mini app here once. |
 | `public/admin/` | Worker static assets | The admin hub: sign-in (`login.html`), the grid of the apps each person can use, with control panels for the ones they admin (`index.html`), and Settings (`settings.html`, overall admins only) -- people, their app access, and each app's visibility tier. See **8 · The admin hub** below. |
 | `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. Staff accounts (sign-in, set-up, password reset, sign out everywhere), roles and per-app access (`canUseApp` / `canAdminApp`, which every mini app checks), the login rate limit, and the per-app visibility tiers every mini app's own page reads via `public/tier-gate.js`. |
@@ -213,10 +213,9 @@ which is the problem this wrapper exists to avoid.
 
 ## 8 · The admin hub
 
-**Connector** is the name of the whole platform: one public grid at the site root
-(`public/index.html`, no login) listing whichever mini apps are currently set to
-"Public", and one admin hub at `/admin/` (sign-in, the apps each person can use, and
-Settings) that every mini app's control panel and staff page signs into via the same
+**Connector** is the name of the whole platform: a sign-in page at the site root
+(`public/index.html`; nothing on the site is public), and one admin hub at `/admin/`
+(the apps each person can use, and Settings) that every mini app's control panel and staff page signs into via the same
 accounts. There is no per-app password anywhere — Council Themes/Quant's control panel
 signs in exactly the same way Issue Network Mapper/Consensus/MCM's always have.
 
@@ -312,7 +311,7 @@ project doesn't otherwise need.
 
 ### App visibility
 
-Also on **Settings**, per app: **Public** (listed on the public grid at the site root),
+Also on **Settings**, per app: **Public** (the page opens for anyone with its link; the site root no longer lists apps, so set an app to Staff with access to keep it private),
 **Hidden** (not listed there, but the page still works for anyone with the direct
 link), or **Staff with access** (not listed, and the page opens only for a signed-in
 admin or a user given that app; anyone else is sent to sign-in or sees "You don't have
