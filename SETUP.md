@@ -256,7 +256,7 @@ lock.
    once, the first time anyone hits `/admin`; after that the account is stored the same
    way every other admin's is, and the secret is never read again.
 2. Open the site's home page (the sign-in page) and sign in with that email and password.
-   Add your first and last name under **Settings** → **People** → **Change access**.
+   Add your first and last name under **Settings** → **People**: click your entry to open it.
 
 ### Adding a person and giving them apps
 
@@ -265,9 +265,11 @@ lock.
 2. Enter their first name, last name and email, choose **User** or **Admin**, and click **Add**.
    Everyone signs in with their email; there are no usernames. They're now
    allowed to set up their own account, but nothing is created for them yet.
-3. For a user, **Change access** opens a tick list of every app. Tick **Use** for each
-   app they should open, and **Admin** for each app whose control panel they should run.
-   Click **Save**.
+3. **People** lists each person by name (by email until a name is entered) with **Admin** or
+   **User** beside it. Click a name to open their popup: their email and password state, their
+   first and last name, role, and a tick list of every app. Tick **Use** for each app they
+   should open, and **Admin** for each app whose control panel they should run. Click **Save**.
+   A newly added user's popup opens by itself, so they can be given apps straight away.
 
 They go to the site's home page → **Set up new account / Forgot password** → enter their
 email → if it's on the list and doesn't have a password yet, they're prompted to pick a
@@ -275,7 +277,7 @@ password right there. The same button handles "I forgot my password": once
 an admin clears it for you (**Settings** → **Reset password**), your account is back in
 that same "allowed, no password yet" state, and you use the same button to set a new one.
 
-Each person in **People** also has:
+Each person's popup also has:
 
 1. **Reset password**: clears their password, signs them out everywhere, and gives you a
    single-use link (48 hours) to send them.
@@ -1358,7 +1360,7 @@ Box holds the notes you point it at, the member list, and the database files des
 | `/admin/login.html` says "That email isn't on the Connector list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
 | "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an admin to **Reset password** for it under Settings → People, then try again. |
 | Sign-in says "Too many wrong passwords" | Five wrong passwords for that account (or about twenty from that network) in 15 minutes. Wait 15 minutes, or have an admin **Reset password** and use the link, which signs you in. See step 8. |
-| A page says "You don't have access to this app" or "...to this app's settings" | You're signed in but not given that app (or not its admin). An admin ticks it under Settings → People → **Change access**; it applies on your next click. |
+| A page says "You don't have access to this app" or "...to this app's settings" | You're signed in but not given that app (or not its admin). An admin opens the person under Settings → People and ticks it; it applies on your next click. |
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
 | **Set Cloudflare secrets** reports success but a key/secret still shows as missing on the live site, for every secret at once, not just one | `wrangler.jsonc`'s `"name"` doesn't match the Worker's actual name in the Cloudflare dashboard (Workers & Pages → the one "Workers Builds" deploys to). `wrangler secret put` creates a Worker under whatever name it's given if none exists yet, so a mismatch here silently sends every secret to a separate, never-deployed Worker instead of erroring — this happened once already (see `wrangler.jsonc`'s comment on `"name"`). Fix the name in `wrangler.jsonc` to match the dashboard, commit, then re-run **Set Cloudflare secrets**. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |

@@ -73,13 +73,22 @@
   .resetout input { flex:1; min-width:0; font:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--btn-border);
                     border-radius:4px; background:var(--page); color:var(--text); }
   .people { margin-top:20px; border-top:1px solid var(--rule); }
-  .person { padding:16px 0; border-bottom:1px solid var(--rule); }
-  .person .top { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
-  .person .email { font-weight:600; color:var(--navy); overflow-wrap:anywhere; }
-  .person .uname { color:var(--muted); font-size:13.5px; }
-  .person .access { margin:4px 0 0; font-size:13.5px; color:var(--muted); }
-  .person .acts { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:8px; }
-  .editor { margin-top:12px; padding:16px; background:var(--soft); border:1px solid var(--rule); border-radius:4px; }
+  /* The list is a name and a role each; everything else is in the person's popup. */
+  .prow { display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--rule); }
+  .prow button.pname { font-size:15px; font-weight:600; text-align:left; overflow-wrap:anywhere; }
+  .prow .you { color:var(--muted); font-size:13.5px; }
+  .modal { position:fixed; inset:0; z-index:100; background:rgba(7,33,78,.35); display:flex; align-items:flex-start;
+           justify-content:center; padding:48px 16px; overflow-y:auto; }
+  .modal .panel { position:relative; width:100%; max-width:640px; background:var(--page); border:1px solid var(--rule);
+                  border-radius:8px; padding:24px 28px; box-shadow:0 12px 32px rgba(7,33,78,.18); }
+  .modal h2 { margin:0 40px 2px 0; font-size:21px; font-weight:600; color:var(--navy); overflow-wrap:anywhere; }
+  .modal .meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; color:var(--muted); font-size:13.5px; margin-bottom:16px; }
+  .modal .close { position:absolute; top:14px; right:14px; width:36px; height:36px; border:0; background:none; font-size:24px;
+                  line-height:1; color:var(--muted); padding:0; }
+  .modal .close:hover { background:var(--soft); color:var(--navy); }
+  .modal .acts { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:20px; padding-top:16px; border-top:1px solid var(--rule); }
+  html.modal-open { overflow:hidden; }
+  .editor { margin-top:4px; }
   .editor table { width:100%; border-collapse:collapse; margin-top:12px; font-size:14px; }
   .editor th, .editor td { padding:6px 8px; text-align:left; border-bottom:1px solid var(--rule); }
   .editor th { font-size:12px; font-weight:600; color:var(--muted); }
@@ -96,6 +105,8 @@
     .card { padding:20px 16px; }
     .addrow { grid-template-columns:minmax(0,1fr) auto; }
     .addrow > div:nth-child(-n+3) { grid-column:1 / -1; }
+    .modal { padding:16px 8px; }
+    .modal .panel { padding:20px 16px; }
   }
 </style>
 </head>
@@ -132,6 +143,7 @@
     <div id="resetOut" class="resetout" hidden></div>
     <div class="people" id="people"><p class="msg">Loading…</p></div>
     <p class="msg" id="peopleMsg"></p>
+    <div class="modal" id="personModal" hidden></div>
   </section>
 
   <section class="card">
@@ -190,15 +202,16 @@
 
   /* ---------- People ---------- */
   var people = [];
-  var editing = "";      // the email whose access editor is open
+  var openEmail = "";    // the person whose popup is open
   // Reset is shown from the server's reply, not re-read from storage: KV can serve the cleared
   // password for a minute or more, which made Reset look as if it had done nothing.
   var justReset = {};
 
   function showResetLink(email, link) {
     var full = window.location.origin + link;
-    el("resetOut").hidden = false;
-    el("resetOut").innerHTML = "<p><b>Password cleared for " + esc(email) + ".</b> Send them this link to set a new one. " +
+    var out = el("mReset") || el("resetOut");
+    out.hidden = false;
+    out.innerHTML = "<p><b>Password cleared for " + esc(email) + ".</b> Send them this link to set a new one. " +
       "It works once, for 48 hours.</p><div class=\"linkrow\"><input type=\"text\" readonly id=\"resetLink\"> " +
       "<button type=\"button\" id=\"copyReset\">Copy</button></div>";
     el("resetLink").value = full;
@@ -240,26 +253,54 @@
       '<button type="button" data-act="cancel">Cancel</button><span class="msg" id="editMsg"></span></div></div>';
   }
 
+  function nameOf(p) { return p.name || p.email; }
+
+  /* One person's popup: their name, email and password state, what they can reach (editable), and
+     reset, sign out everywhere and remove. */
+  function modalHtml(p) {
+    var set = p.has_password && !justReset[p.email];
+    return '<div class="panel person" data-email="' + esc(p.email) + '" role="dialog" aria-modal="true" aria-labelledby="mTitle">' +
+      '<button type="button" class="close" data-act="cancel" aria-label="Close">&times;</button>' +
+      '<h2 id="mTitle">' + esc(nameOf(p)) + (p.email === myEmail ? ' <span class="you">(you)</span>' : "") + "</h2>" +
+      '<div class="meta"><span>' + esc(p.email) + "</span>" +
+        '<span class="pill' + (p.role === "admin" ? " admin" : "") + '">' + (p.role === "admin" ? "Admin" : "User") + "</span>" +
+        (set ? '<span class="pill">Password set</span>' : '<span class="pill pending">No password yet</span>') + "</div>" +
+      '<p class="note" style="margin:0 0 14px;color:var(--muted);font-size:13.5px">' + esc(accessLine(p)) + "</p>" +
+      editorHtml(p) +
+      '<div class="acts">' +
+        '<button type="button" class="link" data-act="reset" data-set="' + (set ? "1" : "") + '">' + (set ? "Reset password" : "Get set-up link") + "</button>" +
+        (set ? '<button type="button" class="link" data-act="signout">Sign out everywhere</button>' : "") +
+        '<button type="button" class="link danger" data-act="remove">Remove</button>' +
+      "</div>" +
+      '<div id="mReset" class="resetout" hidden></div>' +
+      "</div>";
+  }
+
+  function openModal(email) {
+    var p = people.filter(function (x) { return x.email === email; })[0];
+    if (!p) return;
+    openEmail = email;
+    el("personModal").innerHTML = modalHtml(p);
+    el("personModal").hidden = false;
+    document.documentElement.classList.add("modal-open");
+    var first = el("firstSel");
+    if (first) first.focus();
+  }
+  function closeModal() {
+    openEmail = "";
+    el("personModal").hidden = true;
+    el("personModal").innerHTML = "";
+    document.documentElement.classList.remove("modal-open");
+  }
+
   function render() {
     if (!people.length) { el("people").innerHTML = '<p class="msg">Nobody is on the list yet.</p>'; return; }
+    // A name and a role each. Someone added before names were asked for shows by email until one is entered.
     el("people").innerHTML = people.map(function (p) {
-      var set = p.has_password && !justReset[p.email];
-      var you = p.email === myEmail ? " (you)" : "";
-      return '<div class="person" data-email="' + esc(p.email) + '">' +
-        // Name first, email beside it. Someone added before names were asked for shows by email until
-        // a name is entered under Change access.
-        '<div class="top"><span class="email">' + esc(p.name || p.email) + esc(you) + "</span>" +
-          '<span class="uname">' + esc(p.name ? p.email : "No name yet") + "</span>" +
-          '<span class="pill' + (p.role === "admin" ? " admin" : "") + '">' + (p.role === "admin" ? "Admin" : "User") + "</span>" +
-          (set ? '<span class="pill">Password set</span>' : '<span class="pill pending">No password yet</span>') + "</div>" +
-        '<p class="access">' + esc(accessLine(p)) + "</p>" +
-        '<div class="acts">' +
-          '<button type="button" class="link" data-act="edit">Change access</button>' +
-          '<button type="button" class="link" data-act="reset" data-set="' + (set ? "1" : "") + '">' + (set ? "Reset password" : "Get set-up link") + "</button>" +
-          (set ? '<button type="button" class="link" data-act="signout">Sign out everywhere</button>' : "") +
-          '<button type="button" class="link danger" data-act="remove">Remove</button>' +
-        "</div>" +
-        (editing === p.email ? editorHtml(p) : "") +
+      return '<div class="prow person" data-email="' + esc(p.email) + '">' +
+        '<button type="button" class="link pname" data-act="open">' + esc(nameOf(p)) + "</button>" +
+        (p.email === myEmail ? '<span class="you">(you)</span>' : "") +
+        '<span class="pill' + (p.role === "admin" ? " admin" : "") + '">' + (p.role === "admin" ? "Admin" : "User") + "</span>" +
         "</div>";
     }).join("");
   }
@@ -278,7 +319,7 @@
     return people.filter(function (p) { return p.email === email; })[0] || null;
   }
 
-  el("people").addEventListener("change", function (e) {
+  function onChange(e) {
     var t = e.target;
     if (t.id === "roleSel") el("adminNote").hidden = t.value !== "admin";
     // Admin of an app includes using it, so ticking Admin ticks Use and holds it.
@@ -287,9 +328,10 @@
       if (t.checked) use.checked = true;
       use.disabled = t.checked;
     }
-  });
+  }
+  el("personModal").addEventListener("change", onChange);
 
-  el("people").addEventListener("click", function (e) {
+  function onClick(e) {
     var btn = e.target.closest("button[data-act]");
     if (!btn) return;
     var p = personOf(btn);
@@ -297,8 +339,8 @@
     var act = btn.getAttribute("data-act");
     say("peopleMsg", "");
 
-    if (act === "edit") { editing = editing === p.email ? "" : p.email; render(); return; }
-    if (act === "cancel") { editing = ""; render(); return; }
+    if (act === "open") { openModal(p.email); return; }
+    if (act === "cancel") { closeModal(); return; }
 
     if (act === "save") {
       var box = btn.closest(".editor");
@@ -312,7 +354,7 @@
       post("admins/update", { email: p.email, firstName: first, lastName: last, role: role, apps: apps, appAdmin: appAdmin }).then(function () {
         // Demoting yourself ends your access to this page.
         if (p.email === myEmail && role !== "admin") { window.location.href = "/admin/index.html"; return; }
-        editing = "";
+        closeModal();
         say("peopleMsg", "Saved " + (first + " " + last) + ".", "ok");
         return loadPeople();
       }).catch(function (err) { btn.disabled = false; say("editMsg", err.message, "err"); });
@@ -320,42 +362,48 @@
     }
 
     if (act === "reset") {
-      if (btn.getAttribute("data-set") && !window.confirm("Reset the password for " + p.email + "? Their current password " +
+      if (btn.getAttribute("data-set") && !window.confirm("Reset the password for " + nameOf(p) + "? Their current password " +
                                                        "stops working, they are signed out everywhere, and you'll get a link to send them to set a new one."))
         return;
       btn.disabled = true;
       post("admins/reset", { email: p.email })
         .then(function (r) {
           if (p.email === myEmail) { signOut(); return; }
-          justReset[p.email] = true; showResetLink(p.email, r.link); return loadPeople();
+          justReset[p.email] = true; btn.disabled = false; showResetLink(p.email, r.link); return loadPeople();
         })
-        .catch(function (err) { btn.disabled = false; say("peopleMsg", err.message, "err"); });
+        .catch(function (err) { btn.disabled = false; say("editMsg", err.message, "err"); });
       return;
     }
 
     if (act === "signout") {
-      if (!window.confirm("Sign " + p.email + " out of Connector on every device?")) return;
+      if (!window.confirm("Sign " + nameOf(p) + " out of Connector on every device?")) return;
       btn.disabled = true;
       post("sign-out-everywhere", { email: p.email })
         .then(function () {
           if (p.email === myEmail) { signOut(); return; }
-          btn.disabled = false; say("peopleMsg", p.email + " is signed out everywhere.", "ok");
+          btn.disabled = false; say("editMsg", nameOf(p) + " is signed out everywhere.", "ok");
         })
-        .catch(function (err) { btn.disabled = false; say("peopleMsg", err.message, "err"); });
+        .catch(function (err) { btn.disabled = false; say("editMsg", err.message, "err"); });
       return;
     }
 
     if (act === "remove") {
-      if (!window.confirm("Remove " + p.email + "? They lose access to Connector at once.")) return;
+      if (!window.confirm("Remove " + nameOf(p) + "? They lose access to Connector at once.")) return;
       btn.disabled = true;
       post("admins/remove", { email: p.email })
         .then(function () {
           if (p.email === myEmail) { signOut(); return; }
-          say("peopleMsg", "Removed " + p.email + ".", "ok"); return loadPeople();
+          closeModal(); say("peopleMsg", "Removed " + nameOf(p) + ".", "ok"); return loadPeople();
         })
-        .catch(function (err) { btn.disabled = false; say("peopleMsg", err.message, "err"); });
+        .catch(function (err) { btn.disabled = false; say("editMsg", err.message, "err"); });
     }
+  }
+  el("people").addEventListener("click", onClick);
+  el("personModal").addEventListener("click", function (e) {
+    if (e.target === el("personModal")) { closeModal(); return; } // a click outside the popup closes it
+    onClick(e);
   });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && openEmail) closeModal(); });
 
   el("addBtn").addEventListener("click", function () {
     var email = el("newEmail").value.trim();
@@ -367,9 +415,9 @@
       .then(function (r) {
         el("addBtn").disabled = false;
         el("newEmail").value = ""; el("newFirst").value = ""; el("newLast").value = "";
-        say("addMsg", r.already_present ? email + " is already on the list." : "Added. Use Change access to give them apps.", "ok");
-        if (!r.already_present && r.person && r.person.role === "user") editing = r.person.email;
-        return loadPeople();
+        say("addMsg", r.already_present ? email + " is already on the list." : "Added " + first + " " + last + ".", "ok");
+        // A new user has no apps yet: their popup opens so they can be given some.
+        return loadPeople().then(function () { if (!r.already_present && r.person && r.person.role === "user") openModal(r.person.email); });
       })
       .catch(function (e) { el("addBtn").disabled = false; say("addMsg", e.message, "err"); });
   });
