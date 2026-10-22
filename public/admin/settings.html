@@ -4,106 +4,143 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Settings — Connector</title>
+<script src="/access.js" data-need="overall"></script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
 <script src="/apps.js"></script>
 <style>
   :root {
     color-scheme: light;
-    --page:#f9f9f7; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
-    --text-muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,0.10); --wash:rgba(11,11,11,0.04);
-    --accent:#2a78d6; --good:#0ca30c; --bad:#d03b3b;
+    --navy:#07214E; --blue:#325EAE; --page:#ffffff; --text:#16202B; --muted:#4A5663;
+    --rule:#E1E2E9; --btn-border:#C9CDD8; --soft:#F3F5F9; --bar-text:#C9D3E3;
+    --good:#1E7B45; --bad:#B3361A; --amber:#FBAE40; --coral:#F26B43;
   }
   @media (prefers-color-scheme: dark) { :root {
     color-scheme: dark;
-    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
-    --text-muted:#898781; --grid:#2c2c2a; --border:rgba(255,255,255,0.10); --wash:rgba(255,255,255,0.06);
-    --accent:#3987e5; --good:#0ca30c; --bad:#d03b3b;
+    --navy:#E6ECF7; --blue:#6E95D8; --page:#0F1520; --text:#E4E8EF; --muted:#A3AEBD;
+    --rule:#273244; --btn-border:#3A475C; --soft:#18202D; --bar-text:#C9D3E3;
+    --good:#5CC48A; --bad:#F08A6C;
   } }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--page); color:var(--text-primary);
-         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:760px; margin:0 auto; padding:32px 20px 64px; }
-  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
-           flex-wrap:wrap; margin-bottom:22px; }
-  h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:-0.01em; }
-  a.link { color:var(--accent); font-size:13px; text-decoration:none; }
-  a.link:hover { text-decoration:underline; }
-  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
-          padding:20px; margin-bottom:16px; }
-  .card h3 { margin:0 0 4px; font-size:14px; }
-  .card > p.desc { margin:0 0 14px; font-size:12.5px; color:var(--text-secondary); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:8px 10px; }
-  th { font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:var(--text-muted);
-       font-weight:600; border-bottom:1px solid var(--border); }
-  td { border-bottom:1px solid var(--grid); }
-  .pill { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px;
-          border-radius:999px; border:1px solid transparent; white-space:nowrap; }
-  .pill.done { background:rgba(12,163,12,.12); color:var(--good); border-color:rgba(12,163,12,.3); }
-  .resetout { margin:0 0 14px; padding:12px 14px; border:1px solid var(--border, #d0d7e2); border-radius:6px; }
-  .resetout p { margin:0 0 8px; }
-  .resetout .linkrow { display:flex; gap:8px; }
-  .resetout input { flex:1; min-width:0; }
-  .pill.pending { background:rgba(250,178,25,.16); color:#93370d; border-color:rgba(250,178,25,.45); }
-  button { font:inherit; font-size:12.5px; font-weight:600; border-radius:8px;
-           border:1px solid var(--border); cursor:pointer; padding:6px 11px;
-           background:var(--page); color:var(--text-primary); }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--soft); color:var(--text);
+         font:15px/1.5 Aptos,"Segoe UI",Arial,sans-serif; }
+  a { color:var(--blue); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .appbar { background:#07214E; color:#fff; }
+  .appbar .in { max-width:960px; margin:0 auto; padding:0 32px; min-height:56px;
+                display:flex; flex-wrap:wrap; align-items:center; gap:0 28px; }
+  .brand { font-size:15px; font-weight:600; flex:1 1 auto; padding:12px 0; }
+  .who { display:flex; flex-wrap:wrap; align-items:center; gap:16px; font-size:13px;
+         color:var(--bar-text); padding:8px 0; }
+  .who a, .who button { color:var(--bar-text); background:none; border:0; padding:0;
+                        font:inherit; cursor:pointer; }
+  .who a:hover, .who button:hover { color:#fff; text-decoration:underline; }
+  main { max-width:960px; margin:0 auto; padding:40px 32px 96px; }
+  h1 { margin:0 0 24px; font-size:34px; line-height:1.15; font-weight:600; color:var(--navy);
+       letter-spacing:-0.01em; }
+  .card { background:var(--page); border:1px solid var(--rule); border-radius:8px;
+          padding:24px 28px; margin-bottom:20px; }
+  .card h2 { margin:0 0 4px; font-size:19px; font-weight:600; color:var(--navy); }
+  .card > p.desc { margin:0 0 18px; font-size:14px; color:var(--muted); max-width:680px; }
+  label.field { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:0 0 4px; }
+  input[type=email], select { font:inherit; font-size:14px; padding:8px 10px; border-radius:4px;
+                             border:1px solid var(--btn-border); background:var(--page); color:var(--text); }
+  input[type=email] { width:100%; }
+  button { font:inherit; font-size:13.5px; font-weight:600; border-radius:4px; cursor:pointer;
+           padding:7px 14px; border:1px solid var(--btn-border); background:var(--page); color:var(--navy); }
+  button:hover { background:var(--soft); }
   button:disabled { opacity:.5; cursor:not-allowed; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  input[type=email] { flex:1 1 240px; font:inherit; padding:9px 11px; border-radius:8px;
-                       border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
-  select { font:inherit; font-size:12.5px; padding:6px 8px; border-radius:8px;
-           border:1px solid var(--border); background:var(--page); color:var(--text-primary); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .msg { font-size:12.5px; margin:10px 0 0; }
+  button.primary { background:#325EAE; border-color:#325EAE; color:#fff; }
+  button.primary:hover { background:#07214E; border-color:#07214E; }
+  button.link { border:0; background:none; padding:0; color:var(--blue); font-size:13.5px; }
+  button.link:hover { text-decoration:underline; background:none; }
+  button.danger { color:var(--bad); }
+  .addrow { display:grid; grid-template-columns:minmax(0,1fr) 140px auto; gap:12px; align-items:end; }
+  .msg { font-size:13.5px; margin:10px 0 0; min-height:0; }
+  .msg:empty { display:none; }
   .msg.err { color:var(--bad); }
   .msg.ok { color:var(--good); }
+  .pill { display:inline-block; font-size:12px; font-weight:600; padding:1px 9px; border-radius:999px;
+          border:1px solid var(--rule); color:var(--muted); white-space:nowrap; }
+  .pill.admin { background:#07214E; border-color:#07214E; color:#fff; }
+  .pill.pending { border-color:var(--amber); color:#7A4A00; background:rgba(251,174,64,.14); }
+  @media (prefers-color-scheme: dark) { .pill.pending { color:#FBD08A; } .pill.admin { background:#325EAE; border-color:#325EAE; } }
+  .resetout { margin:16px 0 0; padding:14px 16px; border:1px solid var(--rule); border-left:3px solid var(--amber);
+              border-radius:4px; background:var(--soft); font-size:14px; }
+  .resetout p { margin:0 0 8px; }
+  .resetout .linkrow { display:flex; gap:8px; }
+  .resetout input { flex:1; min-width:0; font:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--btn-border);
+                    border-radius:4px; background:var(--page); color:var(--text); }
+  .people { margin-top:20px; border-top:1px solid var(--rule); }
+  .person { padding:16px 0; border-bottom:1px solid var(--rule); }
+  .person .top { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+  .person .email { font-weight:600; color:var(--navy); overflow-wrap:anywhere; }
+  .person .uname { color:var(--muted); font-size:13.5px; }
+  .person .access { margin:4px 0 0; font-size:13.5px; color:var(--muted); }
+  .person .acts { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:8px; }
+  .editor { margin-top:12px; padding:16px; background:var(--soft); border:1px solid var(--rule); border-radius:4px; }
+  .editor table { width:100%; border-collapse:collapse; margin-top:12px; font-size:14px; }
+  .editor th, .editor td { padding:6px 8px; text-align:left; border-bottom:1px solid var(--rule); }
+  .editor th { font-size:12px; font-weight:600; color:var(--muted); }
+  .editor th.c, .editor td.c { text-align:center; width:72px; }
+  .editor .note { font-size:13px; color:var(--muted); margin:8px 0 0; }
+  .editor .row { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; align-items:center; }
+  .vis { width:100%; border-collapse:collapse; font-size:14px; }
+  .vis td { padding:8px 0; border-bottom:1px solid var(--rule); }
+  .vis td:last-child { text-align:right; }
+  @media (max-width:760px) {
+    .appbar .in, main { padding-left:16px; padding-right:16px; }
+    main { padding-top:28px; }
+    h1 { font-size:28px; }
+    .card { padding:20px 16px; }
+    .addrow { grid-template-columns:minmax(0,1fr) auto; }
+    .addrow > div:first-child { grid-column:1 / -1; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Settings</h1>
-    <a class="link" href="/admin/index.html">&larr; Back to Connector</a>
-  </header>
-
-  <div class="card">
-    <h3>App visibility</h3>
-    <p class="desc"><b>Public</b> apps are listed on the public grid at the site root.
-      <b>Hidden</b> apps aren't listed there, but their page still works for anyone
-      with the direct link. <b>Admin-only</b> apps aren't listed either, and their
-      page itself redirects to sign-in unless you're already signed in as an admin --
-      same as this Settings page.</p>
-    <table>
-      <thead><tr><th>App</th><th>Visibility</th></tr></thead>
-      <tbody id="visibilityRows"><tr><td colspan="2" class="msg">Loading…</td></tr></tbody>
-    </table>
-    <p class="msg" id="visibilityMsg"></p>
+<header class="appbar">
+  <div class="in">
+    <div class="brand">Connector</div>
+    <div class="who">
+      <span id="whoami"></span>
+      <a href="/admin/index.html">Tools</a>
+      <button type="button" id="signOutBtn">Sign out</button>
+    </div>
   </div>
+</header>
 
-  <div class="card">
-    <h3>Add an admin</h3>
-    <p class="desc">Adds an email to the admin list. They set their own username and
-      password the first time they use "Set up new account" on the sign-in page.</p>
-    <div class="row">
-      <input type="email" id="newEmail" placeholder="name@example.com">
+<main>
+  <h1>Settings</h1>
+
+  <section class="card">
+    <h2>People</h2>
+    <p class="desc"><b>Admins</b> reach every app, every control panel and this page. <b>Users</b> reach only
+      the apps ticked for them. Ticking <b>Admin</b> on an app also gives that app's control panel. A new
+      person sets their own username and password the first time they use "Set up new account" on the
+      sign-in page. Changes apply at once, without anyone signing out.</p>
+    <div class="addrow">
+      <div><label class="field" for="newEmail">Email</label><input type="email" id="newEmail" placeholder="name@example.com"></div>
+      <div><label class="field" for="newRole">Role</label>
+        <select id="newRole"><option value="user" selected>User</option><option value="admin">Admin</option></select></div>
       <button class="primary" type="button" id="addBtn">Add</button>
     </div>
     <p class="msg" id="addMsg"></p>
-  </div>
-
-  <div class="card">
-    <h3>Admins</h3>
-    <p class="desc"><b>Reset</b> clears that admin's password (they stay on the list) and gives you a
-      link to send them. It works once, for 48 hours, and takes them straight to setting a new one.
-      <b>Get link</b> does the same for someone who has not set a password yet.</p>
     <div id="resetOut" class="resetout" hidden></div>
-    <table>
-      <thead><tr><th>Email</th><th>Username</th><th>Status</th><th></th></tr></thead>
-      <tbody id="adminRows"></tbody>
-    </table>
-  </div>
-</div>
+    <div class="people" id="people"><p class="msg">Loading…</p></div>
+    <p class="msg" id="peopleMsg"></p>
+  </section>
+
+  <section class="card">
+    <h2>App visibility</h2>
+    <p class="desc"><b>Public</b> apps are listed on the public grid at the site root. <b>Hidden</b> apps aren't
+      listed there, but their page still works for anyone with the direct link. <b>Staff with access</b> apps
+      aren't listed either, and their page opens only for signed-in people given that app above (and admins).
+      Partner Intelligence and Issue Network Mapper are always staff only.</p>
+    <table class="vis"><tbody id="visibilityRows"><tr><td class="msg">Loading…</td></tr></tbody></table>
+    <p class="msg" id="visibilityMsg"></p>
+  </section>
+</main>
 
 <script>
 (function () {
@@ -121,6 +158,8 @@
     try { sessionStorage.removeItem("beta-token"); } catch (e) {}
     window.location.href = "/admin/login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
   }
+  el("signOutBtn").addEventListener("click", signOut);
+  function say(id, text, kind) { el(id).className = "msg" + (kind ? " " + kind : ""); el(id).textContent = text || ""; }
   function api(path, options) {
     options = options || {};
     options.headers = Object.assign({ "content-type": "application/json", authorization: "Bearer " + token },
@@ -133,51 +172,26 @@
       });
     });
   }
+  function post(path, body) { return api(path, { method: "POST", body: JSON.stringify(body || {}) }); }
 
-  /* ---------- App visibility ---------- */
-  var TIERS = [
-    ["public", "Public"],
-    ["hidden", "Hidden"],
-    ["admin-only", "Admin-only"],
-  ];
+  var myEmail = "";
+  api("me").then(function (me) {
+    myEmail = me.email;
+    el("whoami").textContent = "Signed in as " + (me.username || me.email);
+    if (people.length) render();
+  }).catch(function () {});
 
-  function loadVisibility() {
-    return fetch("/api/beta/app-visibility").then(function (r) { return r.json(); }).then(function (body) {
-      var visibility = body.visibility || {};
-      el("visibilityRows").innerHTML = APPS.map(function (app) {
-        var current = visibility[app.id] || "admin-only";
-        var options = TIERS.map(function (t) {
-          return '<option value="' + t[0] + '"' + (t[0] === current ? " selected" : "") + '>' + t[1] + "</option>";
-        }).join("");
-        return "<tr><td>" + esc(app.name) + "</td><td>" +
-          '<select data-id="' + esc(app.id) + '">' + options + "</select></td></tr>";
-      }).join("");
-      Array.prototype.forEach.call(el("visibilityRows").querySelectorAll("select"), function (sel) {
-        sel.addEventListener("change", function () {
-          sel.disabled = true;
-          api("app-visibility", { method: "POST", body: JSON.stringify({ id: sel.dataset.id, tier: sel.value }) })
-            .then(function () {
-              sel.disabled = false;
-              el("visibilityMsg").className = "msg ok";
-              el("visibilityMsg").textContent = "Saved.";
-            })
-            .catch(function (e) {
-              sel.disabled = false;
-              el("visibilityMsg").className = "msg err";
-              el("visibilityMsg").textContent = e.message;
-            });
-        });
-      });
-    }).catch(function (e) {
-      el("visibilityRows").innerHTML = '<tr><td colspan="2" class="msg err">' + esc(e.message) + "</td></tr>";
-    });
-  }
-  loadVisibility();
+  var appName = {};
+  APPS.forEach(function (app) { appName[app.id] = app.name; });
+  function names(ids) { return ids.map(function (id) { return appName[id] || id; }).join(", "); }
 
-  /* ---------- Admins ---------- */
+  /* ---------- People ---------- */
+  var people = [];
+  var editing = "";      // the email whose access editor is open
   // Reset is shown from the server's reply, not re-read from storage: KV can serve the cleared
   // password for a minute or more, which made Reset look as if it had done nothing.
   var justReset = {};
+
   function showResetLink(email, link) {
     var full = window.location.origin + link;
     el("resetOut").hidden = false;
@@ -191,57 +205,197 @@
       el("copyReset").textContent = "Copied";
     });
   }
-  function loadAdmins() {
-    return api("admins").then(function (body) {
-      el("adminRows").innerHTML = (body.admins || []).map(function (a) {
-        var set = a.has_password && !justReset[a.email];
-        var status = set
-          ? '<span class="pill done">Active</span>'
-          : '<span class="pill pending">Not set up</span>';
-        var action = '<button type="button" class="reset-btn" data-email="' + esc(a.email) + '" data-set="' + (set ? "1" : "") + '">' +
-          (set ? "Reset" : "Get link") + "</button>";
-        return "<tr><td>" + esc(a.email) + "</td><td>" + esc(a.username || "—") + "</td>" +
-          "<td>" + status + "</td><td>" + action + "</td></tr>";
-      }).join("");
-      Array.prototype.forEach.call(el("adminRows").querySelectorAll(".reset-btn"), function (btn) {
-        btn.addEventListener("click", function () {
-          var email = btn.dataset.email;
-          if (btn.dataset.set && !window.confirm("Reset the password for " + email + "? Their current password " +
-                               "stops working, and you'll get a link to send them to set a new one."))
-            return;
-          btn.disabled = true;
-          api("admins/reset", { method: "POST", body: JSON.stringify({ email: email }) })
-            .then(function (r) { justReset[email] = true; showResetLink(email, r.link); return loadAdmins(); })
-            .catch(function (e) { window.alert(e.message); btn.disabled = false; });
-        });
-      });
-    });
+
+  function accessLine(p) {
+    if (p.role === "admin") return "Every app and control panel, and Settings.";
+    var uses = p.apps.filter(function (id) { return p.appAdmin.indexOf(id) < 0; });
+    var parts = [];
+    if (p.appAdmin.length) parts.push("Admin of " + names(p.appAdmin));
+    if (uses.length) parts.push("Uses " + names(uses));
+    return parts.length ? parts.join(". ") + "." : "No apps yet.";
   }
-  loadAdmins();
+
+  function editorHtml(p) {
+    var rows = APPS.map(function (app) {
+      var use = p.apps.indexOf(app.id) >= 0 || p.appAdmin.indexOf(app.id) >= 0;
+      var adm = p.appAdmin.indexOf(app.id) >= 0;
+      return "<tr><td>" + esc(app.name) + "</td>" +
+        '<td class="c"><input type="checkbox" class="use" data-app="' + esc(app.id) + '" aria-label="Use ' + esc(app.name) + '"' +
+          (use ? " checked" : "") + (adm ? " disabled" : "") + "></td>" +
+        '<td class="c"><input type="checkbox" class="adm" data-app="' + esc(app.id) + '" aria-label="Admin of ' + esc(app.name) + '"' +
+          (adm ? " checked" : "") + "></td></tr>";
+    }).join("");
+    return '<div class="editor">' +
+      '<label class="field" for="roleSel">Role</label>' +
+      '<select id="roleSel"><option value="user"' + (p.role === "user" ? " selected" : "") + '>User</option>' +
+      '<option value="admin"' + (p.role === "admin" ? " selected" : "") + ">Admin</option></select>" +
+      '<p class="note" id="adminNote"' + (p.role === "admin" ? "" : " hidden") + ">An admin reaches every app. The ticks below are kept in case they become a user again.</p>" +
+      '<table><thead><tr><th>App</th><th class="c">Use</th><th class="c">Admin</th></tr></thead><tbody>' + rows + "</tbody></table>" +
+      '<div class="row"><button type="button" class="primary" data-act="save">Save</button>' +
+      '<button type="button" data-act="cancel">Cancel</button><span class="msg" id="editMsg"></span></div></div>';
+  }
+
+  function render() {
+    if (!people.length) { el("people").innerHTML = '<p class="msg">Nobody is on the list yet.</p>'; return; }
+    el("people").innerHTML = people.map(function (p) {
+      var set = p.has_password && !justReset[p.email];
+      var you = p.email === myEmail ? " (you)" : "";
+      return '<div class="person" data-email="' + esc(p.email) + '">' +
+        '<div class="top"><span class="email">' + esc(p.email) + esc(you) + "</span>" +
+          (p.username ? '<span class="uname">' + esc(p.username) + "</span>" : "") +
+          '<span class="pill' + (p.role === "admin" ? " admin" : "") + '">' + (p.role === "admin" ? "Admin" : "User") + "</span>" +
+          (set ? '<span class="pill">Password set</span>' : '<span class="pill pending">No password yet</span>') + "</div>" +
+        '<p class="access">' + esc(accessLine(p)) + "</p>" +
+        '<div class="acts">' +
+          '<button type="button" class="link" data-act="edit">Change access</button>' +
+          '<button type="button" class="link" data-act="reset" data-set="' + (set ? "1" : "") + '">' + (set ? "Reset password" : "Get set-up link") + "</button>" +
+          (set ? '<button type="button" class="link" data-act="signout">Sign out everywhere</button>' : "") +
+          '<button type="button" class="link danger" data-act="remove">Remove</button>' +
+        "</div>" +
+        (editing === p.email ? editorHtml(p) : "") +
+        "</div>";
+    }).join("");
+  }
+
+  function loadPeople() {
+    return api("admins").then(function (body) {
+      people = body.people || [];
+      render();
+    }).catch(function (e) { say("peopleMsg", e.message, "err"); });
+  }
+  loadPeople();
+
+  function personOf(node) {
+    var box = node.closest(".person");
+    var email = box && box.getAttribute("data-email");
+    return people.filter(function (p) { return p.email === email; })[0] || null;
+  }
+
+  el("people").addEventListener("change", function (e) {
+    var t = e.target;
+    if (t.id === "roleSel") el("adminNote").hidden = t.value !== "admin";
+    // Admin of an app includes using it, so ticking Admin ticks Use and holds it.
+    if (t.classList.contains("adm")) {
+      var use = t.closest("tr").querySelector(".use");
+      if (t.checked) use.checked = true;
+      use.disabled = t.checked;
+    }
+  });
+
+  el("people").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var p = personOf(btn);
+    if (!p) return;
+    var act = btn.getAttribute("data-act");
+    say("peopleMsg", "");
+
+    if (act === "edit") { editing = editing === p.email ? "" : p.email; render(); return; }
+    if (act === "cancel") { editing = ""; render(); return; }
+
+    if (act === "save") {
+      var box = btn.closest(".editor");
+      var apps = [], appAdmin = [];
+      Array.prototype.forEach.call(box.querySelectorAll("input.use"), function (c) { if (c.checked) apps.push(c.getAttribute("data-app")); });
+      Array.prototype.forEach.call(box.querySelectorAll("input.adm"), function (c) { if (c.checked) appAdmin.push(c.getAttribute("data-app")); });
+      var role = el("roleSel").value;
+      btn.disabled = true;
+      post("admins/update", { email: p.email, role: role, apps: apps, appAdmin: appAdmin }).then(function () {
+        // Demoting yourself ends your access to this page.
+        if (p.email === myEmail && role !== "admin") { window.location.href = "/admin/index.html"; return; }
+        editing = "";
+        say("peopleMsg", "Saved " + p.email + ".", "ok");
+        return loadPeople();
+      }).catch(function (err) { btn.disabled = false; say("editMsg", err.message, "err"); });
+      return;
+    }
+
+    if (act === "reset") {
+      if (btn.getAttribute("data-set") && !window.confirm("Reset the password for " + p.email + "? Their current password " +
+                                                       "stops working, they are signed out everywhere, and you'll get a link to send them to set a new one."))
+        return;
+      btn.disabled = true;
+      post("admins/reset", { email: p.email })
+        .then(function (r) {
+          if (p.email === myEmail) { signOut(); return; }
+          justReset[p.email] = true; showResetLink(p.email, r.link); return loadPeople();
+        })
+        .catch(function (err) { btn.disabled = false; say("peopleMsg", err.message, "err"); });
+      return;
+    }
+
+    if (act === "signout") {
+      if (!window.confirm("Sign " + p.email + " out of Connector on every device?")) return;
+      btn.disabled = true;
+      post("sign-out-everywhere", { email: p.email })
+        .then(function () {
+          if (p.email === myEmail) { signOut(); return; }
+          btn.disabled = false; say("peopleMsg", p.email + " is signed out everywhere.", "ok");
+        })
+        .catch(function (err) { btn.disabled = false; say("peopleMsg", err.message, "err"); });
+      return;
+    }
+
+    if (act === "remove") {
+      if (!window.confirm("Remove " + p.email + "? They lose access to Connector at once.")) return;
+      btn.disabled = true;
+      post("admins/remove", { email: p.email })
+        .then(function () {
+          if (p.email === myEmail) { signOut(); return; }
+          say("peopleMsg", "Removed " + p.email + ".", "ok"); return loadPeople();
+        })
+        .catch(function (err) { btn.disabled = false; say("peopleMsg", err.message, "err"); });
+    }
+  });
 
   el("addBtn").addEventListener("click", function () {
     var email = el("newEmail").value.trim();
-    if (!email) {
-      el("addMsg").className = "msg err";
-      el("addMsg").textContent = "Enter an email address.";
-      return;
-    }
+    if (!email) { say("addMsg", "Enter an email address.", "err"); return; }
     el("addBtn").disabled = true;
-    api("admins", { method: "POST", body: JSON.stringify({ email: email }) })
-      .then(function () {
+    post("admins", { email: email, role: el("newRole").value })
+      .then(function (r) {
         el("addBtn").disabled = false;
         el("newEmail").value = "";
-        el("addMsg").className = "msg ok";
-        el("addMsg").textContent = "Added.";
-        loadAdmins();
+        say("addMsg", r.already_present ? email + " is already on the list." : "Added. Use Change access to give them apps.", "ok");
+        if (!r.already_present && r.person && r.person.role === "user") editing = r.person.email;
+        return loadPeople();
       })
-      .catch(function (e) {
-        el("addBtn").disabled = false;
-        el("addMsg").className = "msg err";
-        el("addMsg").textContent = e.message;
-      });
+      .catch(function (e) { el("addBtn").disabled = false; say("addMsg", e.message, "err"); });
   });
   el("newEmail").addEventListener("keydown", function (e) { if (e.key === "Enter") el("addBtn").click(); });
+
+  /* ---------- App visibility ---------- */
+  // The stored tier stays "admin-only"; it reads "Staff with access" here.
+  var TIERS = [
+    ["public", "Public"],
+    ["hidden", "Hidden"],
+    ["admin-only", "Staff with access"],
+  ];
+
+  function loadVisibility() {
+    return fetch("/api/beta/app-visibility").then(function (r) { return r.json(); }).then(function (body) {
+      var visibility = body.visibility || {};
+      el("visibilityRows").innerHTML = APPS.map(function (app) {
+        var current = visibility[app.id] || "admin-only";
+        var options = TIERS.map(function (t) {
+          return '<option value="' + t[0] + '"' + (t[0] === current ? " selected" : "") + '>' + t[1] + "</option>";
+        }).join("");
+        return "<tr><td>" + esc(app.name) + "</td><td>" +
+          '<select data-id="' + esc(app.id) + '" aria-label="Visibility of ' + esc(app.name) + '">' + options + "</select></td></tr>";
+      }).join("");
+      Array.prototype.forEach.call(el("visibilityRows").querySelectorAll("select"), function (sel) {
+        sel.addEventListener("change", function () {
+          sel.disabled = true;
+          post("app-visibility", { id: sel.dataset.id, tier: sel.value })
+            .then(function () { sel.disabled = false; say("visibilityMsg", "Saved.", "ok"); })
+            .catch(function (e) { sel.disabled = false; say("visibilityMsg", e.message, "err"); });
+        });
+      });
+    }).catch(function (e) {
+      el("visibilityRows").innerHTML = '<tr><td class="msg err">' + esc(e.message) + "</td></tr>";
+    });
+  }
+  loadVisibility();
 })();
 </script>
 </body>

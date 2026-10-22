@@ -60,7 +60,7 @@
  *   apprenticeship_claude_api  (secret)  this tool's own Anthropic API key.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canAdminApp, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 import {
   handleAccountApi, requireRespondent, publicAccount, listAccounts, adminSetPassword,
   deleteAccount, openRunKey, doneRunKey, ACCOUNT_KEY_PREFIXES,
@@ -1770,6 +1770,8 @@ export async function handleApprenticeshipApi(route, request, env) {
 
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
+  // Every route below is this app's control panel: its own admins, or an overall admin.
+  if (!canAdminApp(auth, "apprenticeship")) return json({ error: NO_SETTINGS_ACCESS }, 403);
 
   // ---- projects ----
   if (route === "projects" && method === "GET") {

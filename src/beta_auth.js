@@ -1,26 +1,56 @@
 /**
- * Connector's own admin-account system, mounted under /api/beta/* (the route prefix
+ * Connector's own staff-account system, mounted under /api/beta/* (the route prefix
  * predates the "Connector"/"/admin" rebrand and was kept as-is to avoid churn -- it's
  * an internal name, never shown to a user).
  *
- * A multi-user account system (each admin has their own email/username/password) that
- * every mini app's control panel signs into via requireBetaAuth -- including Council
- * Themes/Quant's own (see src/council_data.js), which used to have its own separate
- * CONTROL_PASSWORD. There is no per-app password anywhere in this repo any more.
+ * A multi-user account system (each person has their own email/username/password) that
+ * every mini app's control panel and staff pages sign into via requireBetaAuth --
+ * including Council Themes/Quant's own (see src/council_data.js), which used to have its
+ * own separate CONTROL_PASSWORD. There is no per-app password anywhere in this repo any
+ * more.
+ *
+ * WHO CAN DO WHAT
+ *   Every person on the list is either an overall "admin" or a "user".
+ *   - An overall admin reaches everything: every app, every control panel, Settings. Only
+ *     overall admins manage people (add, remove, set role, assign apps), change app
+ *     visibility, connect Box, and open /admin/settings.html.
+ *   - A user reaches only the apps they are given, one by one, by app id ("apps"). Use
+ *     access opens that app's staff pages: its base page when its visibility tier is
+ *     "admin-only", and Partner Intelligence, which is always staff-only.
+ *   - A user can also be made admin of particular apps ("appAdmin"), e.g. Brooke is a user
+ *     who admins "council-data". App admin implies use access, and adds that app's control
+ *     panel and the API routes behind it. Plain users never reach a control panel.
+ *   Each mini app checks its own routes with canUseApp / canAdminApp on the identity
+ *   requireBetaAuth returns. Permissions are read fresh from storage on every request,
+ *   never baked into the token, so a change applies without anyone signing out.
  *
  * Storage: reuses the BOX_KV namespace (no new namespace to create in the Cloudflare
  * dashboard) under a "beta:" key prefix, so it never collides with the Box connection
  * state already living there.
- *   beta:admin-emails         -> JSON [{ email, username }, ...] -- who is ALLOWED to
- *                                 have an account. Adding an admin means appending here.
+ *   beta:admin-emails         -> JSON [{ email, username, role, apps, appAdmin }, ...] --
+ *                                 who is ALLOWED to have an account (the key name predates
+ *                                 roles: it holds users as well as admins). An entry
+ *                                 written before roles existed has no role and counts as
+ *                                 an overall admin, so nobody lost access when roles
+ *                                 shipped. A newly added person is a user with no apps.
  *   beta:admin-account:<email> -> JSON { email, username, password_hash, password_salt,
- *                                 created_at } -- only exists once that person has
- *                                 actually set a password. Its absence is exactly what
- *                                 "hasn't set up yet" / "just got reset" means.
+ *                                 session_version, created_at } -- only exists once that
+ *                                 person has actually set a password. Its absence is
+ *                                 exactly what "hasn't set up yet" / "just got reset" means.
  *   beta:session-secret        -> a random signing key, generated once on first use and
  *                                 reused after that.
+ *   beta:login-fail:account:<email or identifier>, beta:login-fail:ip:<address>
+ *                              -> the login rate limit's counters (see LOGIN_WINDOW_SECONDS).
  *   beta:app-visibility        -> see the module docstring further down, near
  *                                 APP_VISIBILITY_KEY.
+ *
+ * Sessions: an HMAC-signed token { email, username, sv, exp } that lasts 8 hours. "sv" is
+ * the account's session_version at sign-in. Every authenticated request re-reads the list
+ * and the account record and refuses the token when the person is off the list, the
+ * record is gone (a password reset deletes it), or the version moved on ("Sign out
+ * everywhere" writes a new one). The version is random rather than a counter, because a
+ * reset deletes the record a counter would live in: a fresh record starting again at 1
+ * would revive every token issued before the reset.
  *
  * Passwords are hashed with PBKDF2-SHA256 (a random 16-byte salt per account) via the
  * Workers runtime's own Web Crypto -- no external dependency. The iteration count
@@ -34,28 +64,31 @@
  * "<!DOCTYPE" JSON-parse error, not as anything this code ever returns). 5,000
  * iterations measures at ~3ms, leaving headroom even for the one request that ever
  * does two PBKDF2 calls at once (ensureSeedAdmin() hashing the seed password, then the
- * login handler verifying it, the first time anyone ever hits /api/beta/*).
+ * login handler verifying it, the first time anyone ever hits /api/beta/*). The low count
+ * is why login is rate limited: five wrong passwords for one account in 15 minutes locks
+ * that account's sign-in for 15 minutes, and about twenty from one address locks that
+ * address. KV is eventually consistent, so the limit is best effort (see loginLimits).
  *
  * Setup and "forgot password" are deliberately the same endpoint (setup-complete): an
- * email can set a password whenever it's on the allowlist AND has no password on file,
- * which is true both for a brand-new admin and for an existing one another admin just
- * reset. Resetting an existing password is the one action that requires already being
- * signed in (POST /api/beta/admins/reset) -- self-service only ever *sets* a password
- * that isn't there, never *clears* one that is.
+ * email can set a password whenever it's on the list AND has no password on file,
+ * which is true both for a brand-new person and for an existing one an admin just
+ * reset. Resetting an existing password is an overall admin's action
+ * (POST /api/beta/admins/reset) -- self-service only ever *sets* a password that isn't
+ * there, never *clears* one that is.
  *
  * Also holds the per-app visibility setting every mini app checks (see public/apps.js
  * for the app registry itself, which is static and unrelated to this):
  *   beta:app-visibility -> JSON { [appId]: "public" | "hidden" | "admin-only" }.
  *   GET is deliberately unauthenticated -- the public grid (public/index.html) has no
- *   session and needs to read it to decide which tiles to show. POST requires
- *   requireBetaAuth, same as everything else admin-side.
+ *   session and needs to read it to decide which tiles to show. POST requires an
+ *   overall admin. Settings shows the stored "admin-only" tier as "Staff with access".
  *
  * Security note: setup-complete does not verify the requester actually owns that email
- * inbox (no email-sending service is wired up) -- anyone who knows an allowlisted
- * address can claim it, as long as it doesn't already have a password. That is a
- * deliberate, low-stakes tradeoff (see SETUP.md) rather than an oversight; wiring up a
- * real "magic link" flow later would need an email-sending secret (e.g. Resend) and a
- * few more routes here, not a different storage model.
+ * inbox (no email-sending service is wired up) -- anyone who knows a listed address can
+ * claim it, as long as it doesn't already have a password. That is a deliberate,
+ * low-stakes tradeoff (see SETUP.md) rather than an oversight; wiring up a real
+ * "magic link" flow later would need an email-sending secret (e.g. Resend) and a few
+ * more routes here, not a different storage model.
  */
 
 const encoder = new TextEncoder();
@@ -70,13 +103,34 @@ const RESET_TTL_SECONDS = 60 * 60 * 48;
 const RESET_USED_PREFIX = "beta:reset-used:";
 const PBKDF2_ITERATIONS = 5000;
 const VISIBILITY_TIERS = ["public", "hidden", "admin-only"];
+const ROLES = ["admin", "user"];
 // Mirrors the ids in public/apps.js (kept in sync by hand -- that file is a static
 // asset, not part of this Worker's module graph, so it can't be imported here).
 // Apps with real, already-public content default to "public"; anything else defaults
 // to "admin-only" until an admin explicitly opens it up from Settings.
 const KNOWN_APP_IDS = ["council-data", "mcm", "pcn", "consensus", "stars", "artifacts", "job-description",
                        "apprenticeship", "partner-intel"];
+// App ids arrive in request bodies: a Set, so "constructor" or "__proto__" is just an unknown name.
+const KNOWN_APPS = new Set(KNOWN_APP_IDS);
 const DEFAULT_PUBLIC_APPS = ["council-data", "mcm", "stars"];
+
+/* Login rate limit. Five wrong passwords for one account within 15 minutes lock that account's
+   sign-in for 15 minutes; twenty from one client address lock that address, so one person cannot
+   spray a guess or two at every account. Best effort: KV is eventually consistent, so attempts that
+   land on different Cloudflare locations within a few seconds can each read an older count. It holds
+   guessing to a handful of tries per window rather than exactly five. */
+const LOGIN_WINDOW_SECONDS = 15 * 60;
+const LOGIN_LOCK_SECONDS = 15 * 60;
+const LOGIN_MAX_FAILURES_PER_ACCOUNT = 5;
+const LOGIN_MAX_FAILURES_PER_IP = 20;
+const LOGIN_FAIL_PREFIX = "beta:login-fail:";
+const LOGIN_LOCKED_MESSAGE = "Too many wrong passwords. Wait 15 minutes, then try again.";
+
+export const NO_APP_ACCESS = "You don't have access to this app. Ask an admin.";
+export const NO_SETTINGS_ACCESS = "You don't have access to this app's settings. Ask an admin.";
+const ADMINS_ONLY = "Only an admin can do that.";
+const LAST_ADMIN = "Connector needs at least one admin. Make someone else an admin first.";
+const NOT_LISTED = "That email isn't on the Connector list. Ask an admin to add you.";
 
 const SEED_ADMIN_EMAIL = "poneill@conexusindiana.com";
 const SEED_ADMIN_USERNAME = "poneill";
@@ -183,6 +237,16 @@ async function issueToken(env, payload) {
   return `${body}.${await hmac(secret, body)}`;
 }
 
+/* A session for this account record, carrying its current session version. */
+function issueSession(env, account) {
+  return issueToken(env, { email: account.email, username: account.username, sv: account.session_version || "" });
+}
+
+/* A new random session version. Writing one to an account record ends every session issued before it. */
+function newSessionVersion() {
+  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(12)));
+}
+
 async function verifyToken(env, token) {
   if (!token || token.indexOf(".") < 0) return null;
   const [body, signature] = token.split(".", 2);
@@ -199,11 +263,20 @@ function bearer(request) {
   return header.startsWith("Bearer ") ? header.slice(7) : "";
 }
 
+/* The signed-in person, with their role and apps read fresh from storage, or null. A valid signature
+   is not enough: the person must still be on the list, still have an account record (a password reset
+   deletes it), and the token's session version must match the record's (Sign out everywhere changes
+   it). KV is eventually consistent, so a revocation can take up to about a minute to reach every
+   Cloudflare location. */
 async function requireAuth(request, env) {
   const payload = await verifyToken(env, bearer(request));
   // A reset link is signed the same way but is never a session: it carries no email and is marked.
   if (!payload || !payload.email || payload.purpose) return null;
-  return payload;
+  const [allowlist, account] = await Promise.all([getAllowlist(env), getAccount(env, payload.email)]);
+  const entry = findAllowlistEntry(allowlist, payload.email);
+  if (!entry || !account) return null;
+  if (!timingSafeEqual(String(account.session_version || ""), String(payload.sv || ""))) return null;
+  return identity(entry, account);
 }
 
 /* Admin password resets. KV is eventually consistent: after Reset deleted an account record, the next
@@ -227,25 +300,77 @@ async function verifyResetToken(env, token, email) {
   return payload;
 }
 
-/* Exported so other mini apps built on this platform (e.g. src/consensus.js) can gate
-   their own admin routes with the same accounts, without each mini app inventing its
-   own login system. Returns { email, username } or null -- never throws. */
+/* Exported so every mini app on this platform (e.g. src/consensus.js) gates its own routes with
+   the same accounts, without each mini app inventing its own login system. Returns
+   { email, username, role, apps, appAdmin } or null -- never throws. Being signed in is not
+   being allowed: pair it with canUseApp or canAdminApp for the app's own id. */
 export async function requireBetaAuth(request, env) {
   return requireAuth(request, env);
+}
+
+/* ---------- roles and app access ---------- */
+
+/* An entry written before roles existed has no role. Everyone was an admin of everything then, and
+   stays one, so nobody lost access when roles shipped. Any other value than "admin" is a user. */
+function roleOf(entry) {
+  if (entry.role === undefined || entry.role === null || entry.role === "") return "admin";
+  return entry.role === "admin" ? "admin" : "user";
+}
+
+/* App ids from storage, kept only when they name a known app, without repeats. */
+function appList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((v) => String(v)).filter((v) => KNOWN_APPS.has(v)))];
+}
+
+/* What a signed-in person may reach. "apps" already includes every app they admin. */
+function identity(entry, account) {
+  const role = roleOf(entry);
+  const appAdmin = role === "admin" ? [...KNOWN_APP_IDS] : appList(entry.appAdmin);
+  const apps = role === "admin" ? [...KNOWN_APP_IDS] : appList([...appList(entry.apps), ...appAdmin]);
+  return { email: account.email, username: account.username || entry.username || null, role, apps, appAdmin };
+}
+
+/* The pure checks every mini app applies to requireBetaAuth's result. An overall admin passes both for
+   any app id, including one added to public/apps.js before KNOWN_APP_IDS above. */
+export function canUseApp(auth, appId) {
+  return Boolean(auth) && (auth.role === "admin" || (Array.isArray(auth.apps) && auth.apps.includes(appId)));
+}
+export function canAdminApp(auth, appId) {
+  return Boolean(auth) && (auth.role === "admin" || (Array.isArray(auth.appAdmin) && auth.appAdmin.includes(appId)));
+}
+export function isOverallAdmin(auth) {
+  return Boolean(auth) && auth.role === "admin";
 }
 
 /* ---------- storage ---------- */
 
 async function getAllowlist(env) {
   const raw = await env.BOX_KV.get(ALLOWLIST_KEY);
-  return raw ? JSON.parse(raw) : [];
+  const list = raw ? JSON.parse(raw) : [];
+  return Array.isArray(list) ? list.filter((a) => a && a.email) : [];
 }
+/* Every entry is written back with an explicit role, so a pre-roles entry's "admin" is recorded the
+   first time the list is saved. */
 async function saveAllowlist(env, list) {
-  await env.BOX_KV.put(ALLOWLIST_KEY, JSON.stringify(list));
+  await env.BOX_KV.put(ALLOWLIST_KEY, JSON.stringify(list.map((a) => ({
+    email: normalizeEmail(a.email), username: a.username || null, role: roleOf(a),
+    apps: appList(a.apps), appAdmin: appList(a.appAdmin),
+  }))));
 }
 function findAllowlistEntry(list, email) {
   const target = normalizeEmail(email);
   return list.find((a) => normalizeEmail(a.email) === target) || null;
+}
+function adminCount(list) {
+  return list.filter((a) => roleOf(a) === "admin").length;
+}
+/* One person as Settings shows them: what was assigned, not the effective lists. */
+function personView(entry) {
+  return {
+    email: normalizeEmail(entry.email), username: entry.username || null, role: roleOf(entry),
+    apps: appList(entry.apps), appAdmin: appList(entry.appAdmin),
+  };
 }
 
 async function getAppVisibility(env) {
@@ -268,6 +393,44 @@ async function saveAccount(env, email, record) {
 }
 async function deleteAccount(env, email) {
   await env.BOX_KV.delete(accountKey(email));
+}
+
+/* ---------- login rate limit ---------- */
+
+/* The counters one sign-in attempt is held against: the account (keyed on its email, whichever of
+   email or username was typed, so switching between them buys nothing; an unknown identifier is
+   counted under itself, so a lockout says nothing about whether an account exists), and the client
+   address Cloudflare reports. With no address header (local tests), only the account is counted. */
+function loginLimits(request, accountId) {
+  const limits = [{ key: `${LOGIN_FAIL_PREFIX}account:${accountId}`, max: LOGIN_MAX_FAILURES_PER_ACCOUNT }];
+  const ip = (request.headers.get("cf-connecting-ip") || "").trim().slice(0, 64);
+  if (ip) limits.push({ key: `${LOGIN_FAIL_PREFIX}ip:${ip}`, max: LOGIN_MAX_FAILURES_PER_IP });
+  return limits;
+}
+
+async function readFailures(env, key) {
+  try { return JSON.parse(await env.BOX_KV.get(key)) || null; } catch (e) { return null; }
+}
+
+async function loginLocked(env, limits) {
+  const now = Date.now();
+  const records = await Promise.all(limits.map((l) => readFailures(env, l.key)));
+  return records.some((r) => r && Number(r.lockedUntil) > now);
+}
+
+/* One more wrong password against every counter. A window starts at the first failure and lasts
+   LOGIN_WINDOW_SECONDS; reaching the counter's max inside it locks it for LOGIN_LOCK_SECONDS. */
+async function recordLoginFailure(env, limits) {
+  const now = Date.now();
+  await Promise.all(limits.map(async ({ key, max }) => {
+    let r = await readFailures(env, key);
+    if (!r || !(now - Number(r.first) <= LOGIN_WINDOW_SECONDS * 1000)) r = { count: 0, first: now };
+    r.count = (Number(r.count) || 0) + 1;
+    if (r.count >= max) r.lockedUntil = now + LOGIN_LOCK_SECONDS * 1000;
+    const until = Math.max(r.first + LOGIN_WINDOW_SECONDS * 1000, Number(r.lockedUntil) || 0);
+    // KV's shortest expiry is 60 seconds.
+    await env.BOX_KV.put(key, JSON.stringify(r), { expirationTtl: Math.max(60, Math.ceil((until - now) / 1000) + 60) });
+  }));
 }
 
 /* One admin, bootstrapped from a repository secret rather than the self-service UI --
@@ -294,16 +457,21 @@ async function ensureSeedAdmin(env) {
 
   const allowlist = await getAllowlist(env);
   if (!findAllowlistEntry(allowlist, SEED_ADMIN_EMAIL)) {
-    allowlist.push({ email: SEED_ADMIN_EMAIL, username: SEED_ADMIN_USERNAME });
+    allowlist.push({ email: SEED_ADMIN_EMAIL, username: SEED_ADMIN_USERNAME, role: "admin" });
     await saveAllowlist(env, allowlist);
   }
 
   const { hash, salt } = await hashPassword(env.poneill_password);
   await saveAccount(env, SEED_ADMIN_EMAIL, {
     email: SEED_ADMIN_EMAIL, username: SEED_ADMIN_USERNAME,
-    password_hash: hash, password_salt: salt, created_at: new Date().toISOString(),
+    password_hash: hash, password_salt: salt, session_version: newSessionVersion(),
+    created_at: new Date().toISOString(),
   });
   await env.BOX_KV.put(SEED_ADMIN_DONE_KEY, new Date().toISOString());
+}
+
+async function readJsonBody(request) {
+  try { return (await request.json()) || {}; } catch (e) { return null; }
 }
 
 /* ---------- routes ---------- */
@@ -320,8 +488,8 @@ export async function handleBetaApi(route, request, env) {
   if (route === "login" && method === "POST") {
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    const identifier = normalizeEmail(body.identifier);
-    const password = String(body.password || "");
+    const identifier = normalizeEmail(body && body.identifier).slice(0, 200);
+    const password = String((body && body.password) || "");
     // Flat delay regardless of which way this fails, same reasoning as admin.html's own
     // login: a wrong guess always costs the same, so timing can't narrow down why.
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -333,11 +501,18 @@ export async function handleBetaApi(route, request, env) {
     const entry = allowlist.find((a) =>
       normalizeEmail(a.email) === identifier
       || (a.username && a.username.toLowerCase() === identifier));
+    const limits = loginLimits(request, entry ? normalizeEmail(entry.email) : identifier);
+    // Checked before the password, so a locked account stays locked even for the right one.
+    if (await loginLocked(env, limits)) return json({ error: LOGIN_LOCKED_MESSAGE }, 429);
     const account = entry ? await getAccount(env, entry.email) : null;
     if (!account || !(await verifyPassword(password, account.password_hash, account.password_salt))) {
+      await recordLoginFailure(env, limits);
       return json({ error: "Incorrect email/username or password." }, 401);
     }
-    const token = await issueToken(env, { email: account.email, username: account.username });
+    // Success clears the account's counter. The address counter stays, so one valid account does
+    // not reset the limit for guesses at everyone else's.
+    await env.BOX_KV.delete(limits[0].key);
+    const token = await issueSession(env, account);
     return json({ ok: true, token, email: account.email, username: account.username });
   }
 
@@ -351,7 +526,7 @@ export async function handleBetaApi(route, request, env) {
     if (!email) return json({ allowed: false, reason: "Enter an email address." });
     const allowlist = await getAllowlist(env);
     if (!findAllowlistEntry(allowlist, email)) {
-      return json({ allowed: false, reason: "That email isn't on the admin list." });
+      return json({ allowed: false, reason: NOT_LISTED });
     }
     if (body.reset) {
       if (await verifyResetToken(env, body.reset, email)) return json({ allowed: true });
@@ -365,7 +540,7 @@ export async function handleBetaApi(route, request, env) {
   }
 
   // ---- POST /api/beta/setup-complete ---------------------------------------------------
-  // { email, username, password } -- the same endpoint for a brand-new admin and for an
+  // { email, username, password } -- the same endpoint for a brand-new person and for an
   // existing one whose password an admin just reset (see module docstring).
   if (route === "setup-complete" && method === "POST") {
     let body = {};
@@ -379,7 +554,7 @@ export async function handleBetaApi(route, request, env) {
 
     const allowlist = await getAllowlist(env);
     const entry = findAllowlistEntry(allowlist, email);
-    if (!entry) return json({ error: "That email isn't on the admin list." }, 403);
+    if (!entry) return json({ error: NOT_LISTED }, 403);
     // With a valid reset link the old record is replaced, whatever a possibly stale read says about it.
     const reset = body.reset ? await verifyResetToken(env, body.reset, email) : null;
     if (body.reset && !reset) return json({ error: "That reset link has expired or was already used. Ask an admin for a new one." }, 410);
@@ -394,70 +569,18 @@ export async function handleBetaApi(route, request, env) {
     await saveAllowlist(env, allowlist);
 
     const { hash, salt } = await hashPassword(password);
-    await saveAccount(env, email, {
+    // A new session version, so no token issued before a reset works again.
+    const account = {
       email, username, password_hash: hash, password_salt: salt,
-      created_at: new Date().toISOString(),
-    });
+      session_version: newSessionVersion(), created_at: new Date().toISOString(),
+    };
+    await saveAccount(env, email, account);
     if (reset) await env.BOX_KV.put(RESET_USED_PREFIX + reset.nonce, new Date().toISOString(), { expirationTtl: RESET_TTL_SECONDS + 3600 });
+    // A new password ends any lockout earned by guessing at the old one.
+    await env.BOX_KV.delete(`${LOGIN_FAIL_PREFIX}account:${email}`);
 
-    const token = await issueToken(env, { email, username });
+    const token = await issueSession(env, account);
     return json({ ok: true, token, email, username });
-  }
-
-  // ---- GET /api/beta/me -----------------------------------------------------------------
-  if (route === "me" && method === "GET") {
-    const auth = await requireAuth(request, env);
-    if (!auth) return json({ error: "Not signed in" }, 401);
-    return json({ email: auth.email, username: auth.username });
-  }
-
-  // ---- GET /api/beta/admins --------------------------------------------------------------
-  if (route === "admins" && method === "GET") {
-    const auth = await requireAuth(request, env);
-    if (!auth) return json({ error: "Not signed in" }, 401);
-    const allowlist = await getAllowlist(env);
-    const admins = await Promise.all(allowlist.map(async (a) => ({
-      email: a.email,
-      username: a.username || null,
-      has_password: Boolean(await getAccount(env, a.email)),
-    })));
-    return json({ admins });
-  }
-
-  // ---- POST /api/beta/admins -------------------------------------------------------------
-  // { email } -- adds to the allowlist. That's it; the new admin picks their own
-  // username and password the first time they use "Set up new account".
-  if (route === "admins" && method === "POST") {
-    const auth = await requireAuth(request, env);
-    if (!auth) return json({ error: "Not signed in" }, 401);
-    let body = {};
-    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    const email = normalizeEmail(body.email);
-    if (!email || email.indexOf("@") < 0) return json({ error: "Enter a valid email address." }, 400);
-    const allowlist = await getAllowlist(env);
-    if (findAllowlistEntry(allowlist, email)) return json({ ok: true, already_present: true });
-    allowlist.push({ email, username: null });
-    await saveAllowlist(env, allowlist);
-    return json({ ok: true });
-  }
-
-  // ---- POST /api/beta/admins/reset ---------------------------------------------------------
-  // { email } -- clears that admin's password (deletes their account record; they stay on
-  // the allowlist) and returns a single-use link, good for 48 hours, that lets them set a new
-  // one. Also gives a not-yet-set-up admin a link to set their first password.
-  if (route === "admins/reset" && method === "POST") {
-    const auth = await requireAuth(request, env);
-    if (!auth) return json({ error: "Not signed in" }, 401);
-    let body = {};
-    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    const email = normalizeEmail(body.email);
-    const allowlist = await getAllowlist(env);
-    if (!findAllowlistEntry(allowlist, email)) {
-      return json({ error: "That email isn't on the admin list." }, 404);
-    }
-    await deleteAccount(env, email);
-    const reset = await issueResetToken(env, email);
-    return json({ ok: true, email, has_password: false, link: "/admin/login.html?reset=" + encodeURIComponent(reset) });
   }
 
   // ---- GET /api/beta/app-visibility --------------------------------------------------
@@ -473,11 +596,42 @@ export async function handleBetaApi(route, request, env) {
     return json({ visibility });
   }
 
-  // ---- POST /api/beta/app-visibility -------------------------------------------------
-  // { id, tier } -- tier is one of "public" | "hidden" | "admin-only".
-  if (route === "app-visibility" && method === "POST") {
-    const auth = await requireAuth(request, env);
+  // Everything below needs a session.
+  const auth = await requireAuth(request, env);
+
+  // ---- GET /api/beta/me -----------------------------------------------------------------
+  // Role and the apps this person can use and admin, so pages decide what to show. "apps"
+  // includes every app they admin; an overall admin's lists name every known app.
+  if (route === "me" && method === "GET") {
     if (!auth) return json({ error: "Not signed in" }, 401);
+    return json({ email: auth.email, username: auth.username, role: auth.role, apps: auth.apps, appAdmin: auth.appAdmin });
+  }
+
+  // ---- POST /api/beta/sign-out-everywhere ---------------------------------------------
+  // { email? } -- ends every session that person has, this one included when it is their own.
+  // Anyone signed in may do it to themselves; only an overall admin to someone else.
+  if (route === "sign-out-everywhere" && method === "POST") {
+    if (!auth) return json({ error: "Not signed in" }, 401);
+    const body = await readJsonBody(request);
+    if (!body) return json({ error: "Bad request" }, 400);
+    const email = body.email ? normalizeEmail(body.email) : normalizeEmail(auth.email);
+    const self = email === normalizeEmail(auth.email);
+    if (!self && !isOverallAdmin(auth)) return json({ error: ADMINS_ONLY }, 403);
+    if (!findAllowlistEntry(await getAllowlist(env), email)) return json({ error: "That email isn't on the list." }, 404);
+    const account = await getAccount(env, email);
+    // No account record means no password, so there is no session to end.
+    if (account) {
+      account.session_version = newSessionVersion();
+      await saveAccount(env, email, account);
+    }
+    return json({ ok: true, email, self });
+  }
+
+  // ---- POST /api/beta/app-visibility -------------------------------------------------
+  // { id, tier } -- tier is one of "public" | "hidden" | "admin-only". Overall admins only.
+  if (route === "app-visibility" && method === "POST") {
+    if (!auth) return json({ error: "Not signed in" }, 401);
+    if (!isOverallAdmin(auth)) return json({ error: ADMINS_ONLY }, 403);
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     const id = String(body.id || "").trim();
@@ -490,6 +644,86 @@ export async function handleBetaApi(route, request, env) {
     map[id] = tier;
     await saveAppVisibility(env, map);
     return json({ ok: true, visibility: map });
+  }
+
+  // ---- People: /api/beta/admins* ----------------------------------------------------------
+  // The route name predates roles; it manages everyone on the list. Overall admins only.
+  if (route === "admins" || route.startsWith("admins/")) {
+    if (!auth) return json({ error: "Not signed in" }, 401);
+    if (!isOverallAdmin(auth)) return json({ error: ADMINS_ONLY }, 403);
+
+    // ---- GET admins -> { people: [{ email, username, role, apps, appAdmin, has_password }] }
+    if (route === "admins" && method === "GET") {
+      const allowlist = await getAllowlist(env);
+      const people = await Promise.all(allowlist.map(async (a) => ({
+        ...personView(a), has_password: Boolean(await getAccount(env, a.email)),
+      })));
+      return json({ people });
+    }
+
+    if (method !== "POST") return json({ error: "Not found" }, 404);
+    const body = await readJsonBody(request);
+    if (!body) return json({ error: "Bad request" }, 400);
+    const email = normalizeEmail(body.email);
+    const allowlist = await getAllowlist(env);
+
+    // ---- POST admins { email, role? } -- adds a person. That's it; they pick their own
+    // username and password the first time they use "Set up new account". A new person is a
+    // user with no apps unless role "admin" is chosen.
+    if (route === "admins" && method === "POST") {
+      if (!email || email.indexOf("@") < 0) return json({ error: "Enter a valid email address." }, 400);
+      const role = body.role === undefined || body.role === null || body.role === "" ? "user" : String(body.role);
+      if (!ROLES.includes(role)) return json({ error: "Role must be admin or user." }, 400);
+      if (findAllowlistEntry(allowlist, email)) return json({ ok: true, already_present: true });
+      allowlist.push({ email, username: null, role, apps: [], appAdmin: [] });
+      await saveAllowlist(env, allowlist);
+      return json({ ok: true, person: personView(allowlist[allowlist.length - 1]) });
+    }
+
+    const entry = findAllowlistEntry(allowlist, email);
+    if (!entry) return json({ error: "That email isn't on the list." }, 404);
+
+    // ---- POST admins/update { email, role?, apps?, appAdmin? } -- each field given replaces
+    // what is stored. apps and appAdmin are lists of app ids from public/apps.js.
+    if (route === "admins/update" && method === "POST") {
+      const role = body.role === undefined ? roleOf(entry) : String(body.role);
+      if (!ROLES.includes(role)) return json({ error: "Role must be admin or user." }, 400);
+      const lists = {};
+      for (const field of ["apps", "appAdmin"]) {
+        if (body[field] === undefined) continue;
+        if (!Array.isArray(body[field])) return json({ error: `${field} must be a list of app ids.` }, 400);
+        const unknown = body[field].map((v) => String(v)).filter((v) => !KNOWN_APPS.has(v));
+        if (unknown.length) return json({ error: `Unknown app: ${unknown[0].slice(0, 60)}` }, 400);
+        lists[field] = appList(body[field]);
+      }
+      if (roleOf(entry) === "admin" && role !== "admin" && adminCount(allowlist) <= 1) {
+        return json({ error: LAST_ADMIN }, 409);
+      }
+      entry.role = role;
+      if (lists.apps) entry.apps = lists.apps;
+      if (lists.appAdmin) entry.appAdmin = lists.appAdmin;
+      await saveAllowlist(env, allowlist);
+      return json({ ok: true, person: personView(entry) });
+    }
+
+    // ---- POST admins/remove { email } -- takes them off the list and deletes their account
+    // record, which ends their sessions. The last overall admin cannot be removed.
+    if (route === "admins/remove" && method === "POST") {
+      if (roleOf(entry) === "admin" && adminCount(allowlist) <= 1) return json({ error: LAST_ADMIN }, 409);
+      await saveAllowlist(env, allowlist.filter((a) => a !== entry));
+      await deleteAccount(env, email);
+      return json({ ok: true, email });
+    }
+
+    // ---- POST admins/reset { email } -- clears that person's password (deletes their account
+    // record, which also ends their sessions; they stay on the list) and returns a single-use
+    // link, good for 48 hours, that lets them set a new one. Also gives a not-yet-set-up person
+    // a link to set their first password.
+    if (route === "admins/reset" && method === "POST") {
+      await deleteAccount(env, email);
+      const reset = await issueResetToken(env, email);
+      return json({ ok: true, email, has_password: false, link: "/admin/login.html?reset=" + encodeURIComponent(reset) });
+    }
   }
 
   return json({ error: "Not found" }, 404);
