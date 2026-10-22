@@ -43,9 +43,9 @@
   .card h2 { margin:0 0 4px; font-size:19px; font-weight:600; color:var(--navy); }
   .card > p.desc { margin:0 0 18px; font-size:14px; color:var(--muted); max-width:680px; }
   label.field { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:0 0 4px; }
-  input[type=email], select { font:inherit; font-size:14px; padding:8px 10px; border-radius:4px;
+  input[type=email], input[type=text], select { font:inherit; font-size:14px; padding:8px 10px; border-radius:4px;
                              border:1px solid var(--btn-border); background:var(--page); color:var(--text); }
-  input[type=email] { width:100%; }
+  input[type=email], input[type=text] { width:100%; }
   button { font:inherit; font-size:13.5px; font-weight:600; border-radius:4px; cursor:pointer;
            padding:7px 14px; border:1px solid var(--btn-border); background:var(--page); color:var(--navy); }
   button:hover { background:var(--soft); }
@@ -55,7 +55,8 @@
   button.link { border:0; background:none; padding:0; color:var(--blue); font-size:13.5px; }
   button.link:hover { text-decoration:underline; background:none; }
   button.danger { color:var(--bad); }
-  .addrow { display:grid; grid-template-columns:minmax(0,1fr) 140px auto; gap:12px; align-items:end; }
+  .addrow { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr) 120px auto; gap:12px; align-items:end; }
+  .editor .names { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
   .msg { font-size:13.5px; margin:10px 0 0; min-height:0; }
   .msg:empty { display:none; }
   .msg.err { color:var(--bad); }
@@ -94,7 +95,7 @@
     h1 { font-size:28px; }
     .card { padding:20px 16px; }
     .addrow { grid-template-columns:minmax(0,1fr) auto; }
-    .addrow > div:first-child { grid-column:1 / -1; }
+    .addrow > div:nth-child(-n+3) { grid-column:1 / -1; }
   }
 </style>
 </head>
@@ -117,9 +118,11 @@
     <h2>People</h2>
     <p class="desc"><b>Admins</b> reach every app, every control panel and this page. <b>Users</b> reach only
       the apps ticked for them. Ticking <b>Admin</b> on an app also gives that app's control panel. A new
-      person sets their own username and password the first time they use "Set up new account" on the
-      sign-in page. Changes apply at once, without anyone signing out.</p>
+      person signs in with their email and sets their own password the first time they use "Set up new
+      account" on the sign-in page. Changes apply at once, without anyone signing out.</p>
     <div class="addrow">
+      <div><label class="field" for="newFirst">First name</label><input type="text" id="newFirst" autocomplete="off"></div>
+      <div><label class="field" for="newLast">Last name</label><input type="text" id="newLast" autocomplete="off"></div>
       <div><label class="field" for="newEmail">Email</label><input type="email" id="newEmail" placeholder="name@example.com"></div>
       <div><label class="field" for="newRole">Role</label>
         <select id="newRole"><option value="user" selected>User</option><option value="admin">Admin</option></select></div>
@@ -177,7 +180,7 @@
   var myEmail = "";
   api("me").then(function (me) {
     myEmail = me.email;
-    el("whoami").textContent = "Signed in as " + (me.username || me.email);
+    el("whoami").textContent = "Signed in as " + (me.name || me.email);
     if (people.length) render();
   }).catch(function () {});
 
@@ -226,6 +229,8 @@
           (adm ? " checked" : "") + "></td></tr>";
     }).join("");
     return '<div class="editor">' +
+      '<div class="names"><div><label class="field" for="firstSel">First name</label><input type="text" id="firstSel" value="' + esc(p.firstName || "") + '"></div>' +
+      '<div><label class="field" for="lastSel">Last name</label><input type="text" id="lastSel" value="' + esc(p.lastName || "") + '"></div></div>' +
       '<label class="field" for="roleSel">Role</label>' +
       '<select id="roleSel"><option value="user"' + (p.role === "user" ? " selected" : "") + '>User</option>' +
       '<option value="admin"' + (p.role === "admin" ? " selected" : "") + ">Admin</option></select>" +
@@ -241,8 +246,10 @@
       var set = p.has_password && !justReset[p.email];
       var you = p.email === myEmail ? " (you)" : "";
       return '<div class="person" data-email="' + esc(p.email) + '">' +
-        '<div class="top"><span class="email">' + esc(p.email) + esc(you) + "</span>" +
-          (p.username ? '<span class="uname">' + esc(p.username) + "</span>" : "") +
+        // Name first, email beside it. Someone added before names were asked for shows by email until
+        // a name is entered under Change access.
+        '<div class="top"><span class="email">' + esc(p.name || p.email) + esc(you) + "</span>" +
+          '<span class="uname">' + esc(p.name ? p.email : "No name yet") + "</span>" +
           '<span class="pill' + (p.role === "admin" ? " admin" : "") + '">' + (p.role === "admin" ? "Admin" : "User") + "</span>" +
           (set ? '<span class="pill">Password set</span>' : '<span class="pill pending">No password yet</span>') + "</div>" +
         '<p class="access">' + esc(accessLine(p)) + "</p>" +
@@ -299,12 +306,14 @@
       Array.prototype.forEach.call(box.querySelectorAll("input.use"), function (c) { if (c.checked) apps.push(c.getAttribute("data-app")); });
       Array.prototype.forEach.call(box.querySelectorAll("input.adm"), function (c) { if (c.checked) appAdmin.push(c.getAttribute("data-app")); });
       var role = el("roleSel").value;
+      var first = el("firstSel").value.trim(), last = el("lastSel").value.trim();
+      if (!first || !last) { say("editMsg", "Enter their first and last name.", "err"); return; }
       btn.disabled = true;
-      post("admins/update", { email: p.email, role: role, apps: apps, appAdmin: appAdmin }).then(function () {
+      post("admins/update", { email: p.email, firstName: first, lastName: last, role: role, apps: apps, appAdmin: appAdmin }).then(function () {
         // Demoting yourself ends your access to this page.
         if (p.email === myEmail && role !== "admin") { window.location.href = "/admin/index.html"; return; }
         editing = "";
-        say("peopleMsg", "Saved " + p.email + ".", "ok");
+        say("peopleMsg", "Saved " + (first + " " + last) + ".", "ok");
         return loadPeople();
       }).catch(function (err) { btn.disabled = false; say("editMsg", err.message, "err"); });
       return;
@@ -350,12 +359,14 @@
 
   el("addBtn").addEventListener("click", function () {
     var email = el("newEmail").value.trim();
+    var first = el("newFirst").value.trim(), last = el("newLast").value.trim();
+    if (!first || !last) { say("addMsg", "Enter their first and last name.", "err"); return; }
     if (!email) { say("addMsg", "Enter an email address.", "err"); return; }
     el("addBtn").disabled = true;
-    post("admins", { email: email, role: el("newRole").value })
+    post("admins", { email: email, firstName: first, lastName: last, role: el("newRole").value })
       .then(function (r) {
         el("addBtn").disabled = false;
-        el("newEmail").value = "";
+        el("newEmail").value = ""; el("newFirst").value = ""; el("newLast").value = "";
         say("addMsg", r.already_present ? email + " is already on the list." : "Added. Use Change access to give them apps.", "ok");
         if (!r.already_present && r.person && r.person.role === "user") editing = r.person.email;
         return loadPeople();

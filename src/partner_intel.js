@@ -3205,14 +3205,23 @@ async function assistant(env, auth, data, roster, overrides, body) {
   const turn = { id: crypto.randomUUID(), q: question, ...result, at: now };
   // Read again: another question from this person may have been saved while Claude was answering, and
   // writing back the copy read before would lose it.
-  const latest = await loadHistory(env, who);
-  const base = conversation ? latest.conversations.find((c) => c.id === conversation.id) || conversation : null;
-  const conv = base ? { ...base } : { id: crypto.randomUUID(), title: clip(question, 90) + (focusName ? ` (${focusName})` : ""),
-    createdAt: now, turns: [], companyId: focusId };
-  conv.turns = [...(base ? base.turns : []), turn].slice(-HISTORY_TURNS);
-  conv.updatedAt = now;
-  latest.conversations = [conv, ...latest.conversations.filter((c) => c.id !== conv.id)];
-  const saved = await saveHistory(env, who, latest);
+  // Read again: another question from this person (on this device or another) may have been saved while
+  // Claude was answering, and writing back the copy read before would lose it. Two answers can also finish
+  // at the same moment, so the save is checked and, if the other one landed on top, made again.
+  const newId = crypto.randomUUID();
+  let conv = null, saved = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const latest = await loadHistory(env, who);
+    const base = conversation ? latest.conversations.find((c) => c.id === conversation.id) || conversation : null;
+    conv = base ? { ...base } : (latest.conversations.find((c) => c.id === newId) || { id: newId,
+      title: clip(question, 90) + (focusName ? ` (${focusName})` : ""), createdAt: now, turns: [], companyId: focusId });
+    if (!conv.turns.some((t) => t.id === turn.id)) conv.turns = [...conv.turns, turn].slice(-HISTORY_TURNS);
+    conv.updatedAt = now;
+    latest.conversations = [conv, ...latest.conversations.filter((c) => c.id !== conv.id)];
+    saved = await saveHistory(env, who, latest);
+    const check = await readJson(env, historyKey(who), null);
+    if (check && check.conversations.some((c) => c.id === conv.id && c.turns.some((t) => t.id === turn.id))) break;
+  }
   return json({ conversation: conversationSummary(conv), turn, saved });
 }
 

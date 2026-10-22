@@ -130,7 +130,7 @@
   PI.whoami = function (target) {
     fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
       .then(function (r) { if (!r.ok) throw new Error("no"); return r.json(); })
-      .then(function (me) { if (target) target.textContent = "Signed in as " + (me.username || me.email); })
+      .then(function (me) { if (target) target.textContent = "Signed in as " + (me.name || me.email); })
       .catch(PI.signOut);
   };
 })();

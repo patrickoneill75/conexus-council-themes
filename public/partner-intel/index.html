@@ -499,7 +499,7 @@
      written answer from the notes as a whole. History is a panel on the left, open by default on a
      wide screen (as in Claude), with History and New at its top; the Ask box shares the same history.
      A citation opens its note in the sources listed under the answer. */
-  var askView = { rail: !!(window.matchMedia && window.matchMedia("(min-width: 1101px)").matches), conv: null, sel: null };
+  var askView = { rail: !!(window.matchMedia && window.matchMedia("(min-width: 1101px)").matches), conv: null, sel: null, pending: [] };
   var ASK_START = "Search the notes, ask a question, or describe what a partner needs";
 
   function ask() {
@@ -521,7 +521,7 @@
         '<div class="asx-out" id="asxOut"></div><div class="asx-recent" id="asxRecent"></div>' +
       "</div></div>";
     var box = el("asx"), q = el("asxQ"), out = el("asxOut"), form = el("asxForm");
-    var exclude = null, waiting = false;
+    var exclude = null;
     function autosize() { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 160) + "px"; }
     /** Start or leave the chat. The pill moves from the middle of the page to the bottom, so it is
      * slid from where it was to where it lands rather than jumping. */
@@ -580,13 +580,17 @@
       }).join("") + "</div>";
     }
     function turnHtml(t, last) {
+      if (t.error) return AU.errorHtml(t);
       return '<div class="turn asx-turn" data-tid="' + esc(t.id) + '"><div class="qb">' + esc(t.q) + "</div>" +
         (t.kind === "matches" ? matchesHtml(t) : AU.answerHtml(t, { last: last, matchLink: true })) + "</div>";
     }
     function draw() {
       var turns = (askView.conv && askView.conv.turns) || [];
-      out.innerHTML = turns.map(function (t, i) { return turnHtml(t, i === turns.length - 1); }).join("");
-      toChat(turns.length > 0);
+      // Questions still being answered show in the conversation they were asked in, in the order asked.
+      var here = askView.pending.filter(function (p) { return AU.sameConv(p.conv, askView.conv); });
+      out.innerHTML = turns.map(function (t, i) { return turnHtml(t, i === turns.length - 1 && !here.length); }).join("") +
+        here.map(function (p) { return AU.pendingHtml(p.q); }).join("");
+      toChat(turns.length + here.length > 0);
       drawRail();
       drawRecent();
     }
@@ -594,39 +598,37 @@
      * the answer coming under it, and the answer joins the conversation that is open. */
     function run(question, mode, fresh) {
       question = String(question || "").trim();
-      if (waiting) return;
       if (question.length < 3) { q.focus(); return; }
-      waiting = true;
-      if (!askView.conv) out.innerHTML = "";
+      // Each question is answered on its own, so another can be asked while one is still being answered.
+      // It belongs to the conversation on screen when it was asked (Answer fresh starts a new one), and
+      // its answer joins that conversation wherever the person has gone since.
+      if (!askView.conv || fresh) askView.conv = AU.newConv("");
+      var conv = askView.conv, item = { q: question, conv: conv };
+      askView.pending.push(item);
+      // A Find solution exclusion goes with the question it came with, and so does its banner.
+      var excluded = exclude ? exclude.id : "";
+      if (exclude) { exclude = null; if (!el("asxBack").querySelector("[data-resume]")) el("asxBack").innerHTML = ""; }
       q.value = "";
-      toChat(true);
       autosize();
-      out.insertAdjacentHTML("beforeend", '<div class="turn pending"><div class="qb">' + esc(question) + "</div>" +
-        '<div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>');
+      draw();
       el("asxRecent").innerHTML = "";
       scrollToTurn(out.lastElementChild);
-      // The conversation on screen when the question was asked. If the person opens another one (or New)
-      // before the answer comes, the answer goes to its own conversation in the history, not onto the screen.
-      var askedIn = askView.conv ? askView.conv.id : "";
-      PI.post("assistant", { question: question, mode: mode || "auto", sources: chosenList(), exclude: exclude ? exclude.id : "",
-        conversationId: askView.conv && !fresh ? askView.conv.id : "", fresh: Boolean(fresh) }).then(function (r) {
-        waiting = false;
-        if (mine !== seq) return;
-        // A Find solution exclusion goes with the question it came with, and so does its banner.
-        if (exclude) { exclude = null; if (!el("asxBack").querySelector("[data-resume]")) el("asxBack").innerHTML = ""; }
-        if ((askView.conv ? askView.conv.id : "") !== askedIn) { AU.remember(r.conversation); drawRail(); return; }
-        if (!askView.conv || askView.conv.id !== r.conversation.id) askView.conv = { id: r.conversation.id, title: r.conversation.title, turns: [] };
-        askView.conv.turns.push(r.turn);
-        askView.sel = r.turn.id;
+      var done = function () { askView.pending = askView.pending.filter(function (p) { return p !== item; }); };
+      AU.send(conv, { question: question, mode: mode || "auto", sources: chosenList(), exclude: excluded, fresh: Boolean(fresh) }).then(function (r) {
+        done();
+        conv.turns.push(r.turn);
+        if (askView.conv && askView.conv !== conv && AU.sameConv(askView.conv, conv)) askView.conv.turns.push(r.turn);
         AU.remember(r.conversation);
-        draw();
-        scrollToTurn(out.querySelector('.turn[data-tid="' + r.turn.id + '"]'));
-      }).catch(function (err) {
-        waiting = false;
         if (mine !== seq) return;
-        if ((askView.conv ? askView.conv.id : "") !== askedIn) { if (!q.value) { q.value = question; autosize(); } return; }
-        var pending = out.querySelector(".turn.pending .thinking");
-        if (pending) pending.outerHTML = '<div class="msg err">' + esc(err.message || "Something went wrong.") + "</div>";
+        var shown = AU.sameConv(askView.conv, conv);
+        if (shown) askView.sel = r.turn.id;
+        draw();
+        if (shown) scrollToTurn(out.querySelector('.turn[data-tid="' + r.turn.id + '"]'));
+      }).catch(function (err) {
+        done();
+        conv.turns.push(AU.errorTurn(question, err.message));
+        if (mine !== seq) return;
+        draw();
         if (!q.value) { q.value = question; autosize(); } // nothing typed is lost
       });
     }

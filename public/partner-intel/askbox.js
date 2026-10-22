@@ -208,11 +208,58 @@
     }
   };
 
+  /**
+   * Several questions can be in flight at once, on one device or several. Each belongs to the
+   * conversation object that was on screen when it was asked, and its answer is added to that object,
+   * wherever the person has gone since. A new conversation has no id until its first answer comes
+   * back (conv.temp), so a follow-up asked before then waits for it and joins the same conversation.
+   */
+  A.send = function (conv, body) {
+    var send = function () {
+      return PI.post("assistant", Object.assign({}, body, { conversationId: body.fresh || conv.temp ? "" : conv.id })).then(function (r) {
+        if (conv.temp) {
+          conv.temp = false; conv.id = r.conversation.id; conv.title = r.conversation.title;
+          conv.companyId = r.conversation.companyId || conv.companyId || "";
+        }
+        return r;
+      });
+    };
+    var p = conv.temp && conv.first ? conv.first.then(send, send) : send();
+    if (conv.temp && !conv.first) conv.first = p;
+    return p;
+  };
+  var newIds = 0;
+  /** A conversation that exists only on this screen until its first answer gives it an id. */
+  A.newConv = function (companyId) { return { id: "new-" + (++newIds), temp: true, turns: [], companyId: companyId || "" }; };
+  /** Is this pending question (or turn) for the conversation on screen? The same conversation may have been
+   * opened again from history since, as another object with the same id. */
+  A.sameConv = function (a, b) { return Boolean(a && b) && (a === b || (!a.temp && !b.temp && a.id === b.id)); };
+  /** A failed question, kept in its conversation on screen only, with the error under it. */
+  A.errorTurn = function (q, message) { return { id: "err-" + (++newIds), q: q, error: message || "Something went wrong." }; };
+  A.errorHtml = function (t) {
+    return '<div class="turn"><div class="qb">' + esc(t.q) + '</div><div class="msg err">' + esc(t.error) + "</div></div>";
+  };
+  A.pendingHtml = function (q) {
+    return '<div class="turn pending"><div class="qb">' + esc(q) + '</div><div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>';
+  };
+
+  /** The longer prompt when it fits on one line, else the shorter one. On a phone "Ask anything about the
+   * partner notes" ran onto a second line the one-line pill cut in half. Measured at one line's height,
+   * so it works whatever the font and the width. */
+  A.fitPlaceholder = function (t, long, short) {
+    if (t.value) return;
+    var h = t.style.height;
+    t.style.height = "auto";
+    t.placeholder = long;
+    if (t.scrollHeight > t.clientHeight + 2) t.placeholder = short;
+    t.style.height = h;
+  };
+
   /* ---- the floating box */
 
   var EXAMPLES = ["What are the top issues to discuss at the next quarterly meeting?",
     "What have members said about hiring this year?", "Which topics have grown in the last 90 days?"];
-  var box = { open: false, rail: false, conv: null, sel: null, busy: null, error: null };
+  var box = { open: false, rail: false, conv: null, sel: null, pending: [], error: null };
   var root, veil, q, thread, railEl, noteEl;
 
   function onAskPage() { return /^#\/?ask(\/|$)/.test(location.hash); }
@@ -227,6 +274,7 @@
     var w = 820 + (box.rail ? 270 : 0);
     root.style.width = "min(" + w + "px, calc(100vw - 32px))";
   }
+  function fitPrompt() { A.fitPlaceholder(q, "Ask anything about the partner notes", "Ask about the notes"); autosize(); }
   function autosize() {
     q.style.height = "auto";
     q.style.height = Math.min(q.scrollHeight, box.open ? 140 : 40) + "px";
@@ -240,7 +288,7 @@
   function render() {
     root.classList.toggle("has-conv", Boolean(box.conv));
     var html = "";
-    if (!box.conv && !box.busy && !box.error) {
+    if (!box.conv && !box.error) {
       var co = companyHere();
       var ex = EXAMPLES.slice();
       if (co) ex.unshift("Summarize what we have heard from this company.");
@@ -249,16 +297,14 @@
         '<div class="fus">' + ex.map(function (e) { return '<button type="button" class="fu" data-q="' + esc(e) + '">' + esc(e) + "</button>"; }).join("") + "</div></div>";
     }
     var turns = (box.conv && box.conv.turns) || [];
+    // Questions still being answered show in the conversation they were asked in, in the order asked.
+    var here = box.pending.filter(function (p) { return A.sameConv(p.conv, box.conv); });
     html += turns.map(function (t, i) {
+      if (t.error) return A.errorHtml(t);
       return '<div class="turn" data-tid="' + esc(t.id) + '"><div class="qb">' + esc(t.q) + "</div>" +
-        A.answerHtml(t, { last: i === turns.length - 1 && !box.busy, matchLink: true }) + "</div>";
+        A.answerHtml(t, { last: i === turns.length - 1 && !here.length, matchLink: true }) + "</div>";
     }).join("");
-    // The question being answered shows only in the conversation it was asked in.
-    if (box.busy && (box.conv ? box.conv.id : "") === box.busyIn) {
-      html += '<div class="turn pending"><div class="qb">' + esc(box.busy) + '</div><div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>';
-    } else if (box.busy) {
-      html += '<p class="memo">Still answering your question in another conversation.</p>';
-    }
+    html += here.map(function (p) { return A.pendingHtml(p.q); }).join("");
     if (box.error) {
       html += '<div class="turn"><div class="qb">' + esc(box.error.q) + '</div><div class="msg err">' + esc(box.error.message) + "</div></div>";
     }
@@ -286,6 +332,7 @@
     setWidth();
     render();
     autosize();
+    setTimeout(fitPrompt, 500); // once the box has grown to its width
   }
   function shrink(instant) {
     if (!box.open) return;
@@ -297,6 +344,7 @@
     document.documentElement.classList.remove("ax-lock");
     setWidth();
     autosize();
+    setTimeout(fitPrompt, 500);
     var done = function () { if (!box.open) root.classList.remove("show"); };
     if (instant) done(); else setTimeout(done, 480);
   }
@@ -314,39 +362,34 @@
 
   function submit(text, fresh) {
     text = String(text || "").trim();
-    if (!text || box.busy) return;
+    if (!text) return;
     openBox();
-    box.busy = text;
     box.error = null;
+    // A conversation keeps the company it started on: a follow-up, or Answer fresh, asked from another
+    // company's page is still about the first company. Answer fresh starts a new conversation.
+    if (!box.conv || fresh) box.conv = A.newConv(box.conv ? box.conv.companyId : companyHere());
+    var conv = box.conv, item = { q: text, conv: conv };
+    box.pending.push(item);
     q.value = "";
     autosize();
     render();
     scrollToLast();
-    var convId = box.conv ? box.conv.id : "";
-    box.busyIn = convId;
-    // A conversation keeps the company it started on: a follow-up, or Answer fresh, asked from another
-    // company's page is still about the first company.
-    var company = box.conv ? box.conv.companyId || "" : companyHere();
-    PI.post("assistant", { question: text, conversationId: fresh ? "" : convId, mode: "answer", companyId: company, fresh: Boolean(fresh) }).then(function (r) {
-      // Another conversation was opened while this one was being answered: the answer is in the
-      // history under its own conversation, and the screen stays where the person went.
-      if ((box.conv ? box.conv.id : "") !== convId) {
-        A.remember(r.conversation); box.busy = null; render();
-        if (box.rail) railEl.innerHTML = A.railHtml(box.conv && box.conv.id);
-        return;
-      }
-      if (!box.conv || box.conv.id !== r.conversation.id) box.conv = { id: r.conversation.id, title: r.conversation.title, turns: [], companyId: r.conversation.companyId || "" };
-      box.conv.turns.push(r.turn);
-      box.sel = r.turn.id;
+    var done = function () { box.pending = box.pending.filter(function (p) { return p !== item; }); };
+    A.send(conv, { question: text, mode: "answer", companyId: conv.companyId || "", fresh: Boolean(fresh) }).then(function (r) {
+      done();
+      conv.turns.push(r.turn);
+      // The same conversation opened again from history since is another object: it gets the answer too.
+      if (box.conv && box.conv !== conv && A.sameConv(box.conv, conv) && !findTurn(r.turn.id)) box.conv.turns.push(r.turn);
       A.remember(r.conversation);
-      box.busy = null;
+      var shown = A.sameConv(box.conv, conv);
+      if (shown) box.sel = r.turn.id;
       render();
-      scrollToLast();
+      if (shown) scrollToLast();
     }).catch(function (err) {
-      box.busy = null;
-      box.error = { q: text, message: err.message || "Something went wrong." };
+      done();
+      conv.turns.push(A.errorTurn(text, err.message));
       render();
-      scrollToLast();
+      if (A.sameConv(box.conv, conv)) scrollToLast();
       if (!q.value) { q.value = text; autosize(); }
     });
   }
@@ -372,7 +415,7 @@
 
   /** "Find partners who can help": the question goes to the Ask page's partner search. */
   function toAskPage(question) {
-    PI.askPrefill = { question: question, mode: "match", from: box.conv ? { id: box.conv.id, title: box.conv.title } : null };
+    PI.askPrefill = { question: question, mode: "match", from: box.conv && !box.conv.temp ? { id: box.conv.id, title: box.conv.title } : null };
     shrink(true);
     location.hash = "#/ask";
   }
@@ -442,8 +485,10 @@
       if (t.closest(".ax-hist")) { openBox(); setToggle("rail", true); }
     });
     window.addEventListener("resize", setWidth);
+    window.addEventListener("resize", fitPrompt);
     window.addEventListener("hashchange", place);
     place();
+    fitPrompt();
   }
 
   /** Not on the Ask page, which has its own search. A conversation sent there can come back. */
