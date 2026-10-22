@@ -2963,6 +2963,18 @@ test("partner_intel: the Home dashboard counts what the notes hold, and follows 
   assert.equal((await d("&source=Board%20Meetings")).insights, 1, "naming Board Meetings includes its internal row");
 });
 
+test("partner_intel: number 1's dotted trail tucks away after its cue, leaving it like every other number", () => {
+  const dir = path.join(path.dirname(SRC), "public", "partner-intel");
+  const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(dir, "pi.css"), "utf8");
+  assert.match(html, /e\.animationName === "trail-chevron"[^\n]*classList\.add\("tucked"\)/, "the cue's end tucks the trail");
+  assert.match(html, /if \(tl\.classList\.contains\("trail"\)\) tl\.classList\.add\("tucked"\)/, "and so does a click before it ends");
+  // The longer trail only applies until it is tucked; tucked, number 1 falls back to the rule every number uses.
+  assert.match(css, /\.pi-app \.tline\.trail:not\(\.tucked\) \{ --rest:39px; \}/);
+  assert.match(css, /\.pi-app \.tp:not\(\.open\):has\(\.tp-row:hover\) \.tline\.trail:not\(\.tucked\) \{ --rest:45px; \}/);
+  assert.match(css, /\.pi-app \.tline\.tucked b \{ opacity:0; transform:translateY\(-\d+px\)/, "the dots go up under the number");
+});
+
 test("partner_intel: the tabs run Home, Companies, Programs, Ask, with no Explore, and the app name goes Home", () => {
   const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "index.html"), "utf8");
   const nav = [...html.slice(html.indexOf('id="nav"'), html.indexOf("</nav>")).matchAll(/data-r="(\w+)"/g)].map((m) => m[1]);

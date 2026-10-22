@@ -139,6 +139,8 @@
     node.classList.add(cls);
   }
   document.addEventListener("animationend", function (e) {
+    // Number 1's cue ends with its chevron's last dip: then its dots tuck away under the number.
+    if (e.animationName === "trail-chevron" && e.target.classList) e.target.classList.add("tucked");
     if (e.target.classList) e.target.classList.remove("c-open", "c-close", "grow", "shrink", "hint", "cue", "a-shrink", "a-expand");
   });
   /* The topic line. Opening a topic draws one stroke from its number down the left of the block and
@@ -258,7 +260,9 @@
     var card = btn.closest(".tp");
     var opening = !card.classList.contains("open") || card.classList.contains("closing");
     Array.prototype.forEach.call(card.parentNode.querySelectorAll(":scope > .tp"), function (c) {
-      c.querySelector(".tline").classList.remove("cue");
+      var tl = c.querySelector(".tline");
+      tl.classList.remove("cue");
+      if (tl.classList.contains("trail")) tl.classList.add("tucked"); // clicked before the cue finished
       if (c !== card && c.classList.contains("open") && !c.classList.contains("closing")) setTopic(c, false);
     });
     setTopic(card, opening);
