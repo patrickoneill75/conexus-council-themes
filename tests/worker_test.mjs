@@ -5984,6 +5984,20 @@ test("partner_intel: BUG on a phone the Ask pill's prompt ran onto a second line
   assert.equal(phone.style.height, "26px", "the height is put back");
 });
 
+test("access: Settings lists each person as a name link and a role, and the rest is in their popup", () => {
+  const page = fs.readFileSync(path.join(path.dirname(SRC), "public", "admin", "settings.html"), "utf8");
+  const row = page.slice(page.indexOf("  function render() {"), page.indexOf("  function loadPeople() {"));
+  assert.match(row, /class="link pname" data-act="open">' \+ esc\(nameOf\(p\)\)/, "the name is the link, the email when there is no name");
+  assert.match(row, /"Admin" : "User"/);
+  assert.ok(!/reset|signout|remove|Password set|accessLine/.test(row), "nothing else in the list");
+  assert.match(page, /id="personModal"/);
+  const popup = page.slice(page.indexOf("  function modalHtml(p) {"), page.indexOf("  function openModal(email) {"));
+  for (const part of ["editorHtml(p)", 'data-act="reset"', 'data-act="signout"', 'data-act="remove"', 'role="dialog"']) {
+    assert.ok(popup.includes(part), `the popup has ${part}`);
+  }
+  assert.match(page, /e\.key === "Escape" && openEmail\) closeModal\(\)/);
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {
