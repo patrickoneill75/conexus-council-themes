@@ -4615,6 +4615,37 @@ test("partner_intel: a company named in the question, or the page it is asked fr
   assert.ok((pagePrompt.match(/Gamma note/g) || []).length >= 20);
 });
 
+test("partner_intel: BUG the Ask box said it had no PCN notes when asked about the PCN, though there were dozens", async () => {
+  // The program a note came from lives only in its Box folder path. The notes' own words rarely say
+  // "PCN", and the program's notes were older than the recent spread, so none reached Claude.
+  const pcn = Array.from({ length: 20 }, (_, k) => ins({ id: `pcn${k}`, company_id: k % 2 ? "c-a" : "c-b", topic: "talent_pipeline",
+    title: `Peer topic ${k}`, detail: "Discussed at the network call.", date: isoAgo(150 + k), meeting_id: `pcn-m${k % 4}`,
+    meeting_label: "President and CEO Network Call", sources: [{ id: `p${k}`, name: "pcn.docx", path: `Notes/PCN/pcn${k}.docx` }] }));
+  const crowd = Array.from({ length: 200 }, (_, k) => ins({ id: `cr${k}`, company_id: ["c-a", "c-b", "c-c"][k % 3], topic: "quality",
+    title: `Workshop item ${k}`, date: isoAgo(k % 60), meeting_id: `cm${k}`, meeting_label: `Workshop ${k}`, sources: [{ id: `c${k}`, name: "w.docx", path: `Notes/CIAIC/w${k}.docx` }] }));
+  const { env, token } = await piEnv([...pcn, ...crowd], { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const r = await withFetch(assistantClaude("They discussed peer topics [n1].", [], bodies),
+    async () => (await pi("assistant", askBox(token, { question: "What have they been talking about at the PCN recently?", mode: "answer" }), env)).json());
+  assert.equal(r.error, undefined, r.error);
+  const prompt = bodies.find((b) => b.tools[0].name === "write_answer").messages[0].content;
+  assert.match(prompt, /<program name="PCN">\n20 notes/, "the program the question names is given, with its notes and meetings");
+  assert.equal((prompt.match(/program: PCN/g) || []).length, 20, "every PCN note is in front of Claude in full, labelled with its program");
+  const fullRefs = prompt.slice(prompt.indexOf("<notes>"), prompt.indexOf("</notes>")).match(/^\[n\d+\]/gm).length;
+  const headlines = prompt.slice(prompt.indexOf("<all_notes>"), prompt.indexOf("</all_notes>")).match(/^\[n\d+\]/gm).length;
+  assert.equal(fullRefs + headlines, 220, "and every note on file is there, in full or as a headline");
+  assert.equal(r.turn.sources[0].id.startsWith("pcn") || r.turn.sources[0].id.startsWith("cr"), true);
+});
+
+test("partner_intel: a note listed only as a headline can still be cited", async () => {
+  const rows = Array.from({ length: 220 }, (_, k) => ins({ id: `r${k}`, title: `Row ${k}`, date: isoAgo(k), meeting_id: `m${k}`, meeting_label: `Meeting ${k}` }));
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const r = await withFetch(assistantClaude("The oldest one [n220].", []),
+    async () => (await pi("assistant", askBox(token, { question: "What is the oldest thing on file?", mode: "answer" }), env)).json());
+  assert.equal(r.turn.sources.length, 1);
+  assert.equal(r.turn.answer, "The oldest one [1].");
+});
+
 /* ---------------------------------------------------- trending summaries written ahead, kept in Box */
 
 test("partner_intel: new data queues Home and the main programs, and the cron writes their summaries once, then saves them to Box", async () => {
