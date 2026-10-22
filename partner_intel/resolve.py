@@ -11,6 +11,15 @@ Order of attempts for a company name:
   2. subset   every word of the name appears in one partner's name ("Ivy Tech")
   3. superset one partner's name appears whole inside the text ("Hitachi Astemo Americas")
   4. fuzzy    near-identical spelling, with a clear winner
+
+A subset or superset match must still identify the partner. A name made only of common words
+("State of Indiana") matches a longer partner name only when the words it lacks are corporate
+form ("Group", "Holdings"), never a word that says what the organization is ("University"):
+the State of Indiana is not Indiana State University. The same holds the other way round.
+
+A partner's one-word name or brand word ("Allison" for Allison Transmission) does not count
+when the word is a person's first name in the text: "Allison Clay - interview.docx" is about
+Allison Clay. See person_words().
 """
 from __future__ import annotations
 
@@ -30,6 +39,11 @@ COMMON = {"indiana", "america", "american", "national", "group", "systems", "sol
           "industries", "industrial", "services", "technologies", "technology", "products",
           "manufacturing", "engineering", "university", "college", "state", "international",
           "global", "holdings", "enterprises", "partners", "associates"}
+# Words of a company name that say only its corporate form. A name of common words that lacks
+# one of these (or adds one) is still the same organization; one that lacks or adds any other
+# word ("University", "State", "Health") is not.
+FORM_WORDS = {"group", "holdings", "enterprises", "international", "global", "partners", "associates",
+              "industries", "products", "systems", "solutions", "services"}
 # Abbreviations seen in the notes that no rule can derive. Keyed by what the notes say.
 SEED_ALIASES = {"hitachi astemo": "Astemo Indiana", "murray mentor": "Mursix"}
 
@@ -38,6 +52,25 @@ TITLE_WORDS = {"dr", "mr", "ms", "mrs", "prof"}
 GENERIC_FIRST = {"midwest", "central", "southern", "northern", "western", "eastern", "advanced", "precision",
                  "applied", "general", "united", "premier", "quality", "custom", "great", "first", "major",
                  "flexible", "progressive", "superior", "summit", "pioneer", "heritage"}
+# Words that follow a company's name in a file or meeting title. After a partner's brand word
+# they are not a surname, so "Allison Interview" still names Allison Transmission.
+TITLE_FOLLOWERS = {
+    "interview", "interviews", "call", "calls", "meeting", "meetings", "notes", "note", "visit", "visits",
+    "site", "plant", "plants", "tour", "recap", "transcript", "onboarding", "summary", "demo", "check",
+    "checkin", "update", "updates", "review", "follow", "followup", "intro", "introduction", "kickoff",
+    "kick", "sync", "debrief", "chat", "discussion", "session", "workshop", "conversation", "minutes",
+    "agenda", "quarterly", "annual", "team", "board", "council", "cohort", "field", "prep", "partner",
+    "partnership", "member", "members", "membership", "sales", "draft", "final", "copy", "version",
+    "with", "at", "for", "to", "from", "on", "in", "by", "about", "joint", "event", "events", "facility",
+    "headquarters", "hq", "campus", "office", "presentation", "proposal", "report", "survey", "feedback",
+    "questions", "teams", "zoom", "video", "audio", "recording", "leadership", "executive", "exec", "ceo",
+    "president", "staff", "training", "lunch", "dinner", "breakfast", "roundtable", "panel", "forum",
+    "contact", "contacts", "news", "press", "release", "case", "study", "data", "pilot", "project",
+    "program", "overview", "profile", "intake", "assessment", "plan", "planning",
+    "jan", "january", "feb", "february", "mar", "march", "apr", "april", "may", "jun", "june", "jul",
+    "july", "aug", "august", "sep", "sept", "september", "oct", "october", "nov", "november", "dec",
+    "december", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+_WORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*")
 
 
 def fold(text: str) -> str:
@@ -54,6 +87,42 @@ def tokens(name: str) -> list[str]:
 
 def core_key(name: str) -> str:
     return " ".join(tokens(name))
+
+
+def _distinctive(toks) -> bool:
+    return any(t not in COMMON and len(t) >= 3 for t in toks)
+
+
+def _same_organization(shorter: frozenset, longer: frozenset, loose: frozenset | set = frozenset()) -> bool:
+    """Whether a name and a longer name that contains every word of it can be the same
+    organization. Yes when the shorter one has a word of its own ("Lucas Oil" in "Lucas Oil
+    Products", "Ivy Tech" in "Ivy Tech Community College"). A name of common words only is the
+    same organization only when the longer name adds nothing but corporate form ("National
+    Industries" and "National Industries Group"), never a word that says what it is: "State of
+    Indiana" is not Indiana State University, and Indiana University is not Indiana University
+    Health. The same common words in another order are not the same name either: "Indiana
+    State" is not the State of Indiana (the same words in the same order match exactly).
+    loose is further words the longer one may add, for text that is not only a name: a file
+    name's "meeting notes" or date say nothing about what the organization is."""
+    if _distinctive(shorter):
+        return True
+    extra = longer - shorter
+    return bool(extra) and all(t in FORM_WORDS or t in loose or t.isdigit() for t in extra)
+
+
+def _key(word: str) -> str:
+    """A word as a company token: folded, apostrophes dropped ("O'Neill" gives "oneill")."""
+    return re.sub(r"['’]", "", fold(word))
+
+
+def _surname_like(word: str, own: set[str]) -> bool:
+    """A capitalized word that could be a surname after a first name: not part of the partner's
+    own name, not a legal or common company word, not a word that follows a company in a title."""
+    if len(word) < 2 or not word[0].isupper() or not any(c.islower() for c in word[1:]):
+        return False
+    key = _key(word)
+    return (key.isalpha() and key not in own and key not in LEGAL and key not in COMMON
+            and key not in GENERIC_FIRST and key not in TITLE_FOLLOWERS)
 
 
 def _variants(name: str) -> list[str]:
@@ -124,6 +193,15 @@ def person_keys(name: str) -> list[str]:
 class Resolver:
     def __init__(self, roster: Roster):
         self.roster = roster
+        # Who is a person, filled below; defined first because name matching consults it.
+        self.people: dict[str, set[str]] = defaultdict(set)
+        self.first_names: dict[str, set[tuple[str, str]]] = defaultdict(set)  # first name -> {(company, full name)}
+        self.full_names: dict[str, tuple[str, set[str]]] = {}  # "ben larson" -> (display name, companies)
+        self.by_last: dict[str, set[tuple[str, str, str]]] = defaultdict(set)  # last -> {(first, company, display)}
+        self.staff_keys = {k for s in roster.staff for k in person_keys(s)}
+        self.staff_names = {" ".join(re.split(r"[^a-z0-9]+", fold(s))).strip() for s in roster.staff}
+        self.brand_words: list[tuple[str, str]] = []
+        self.own_words: dict[str, set[str]] = {}
         self.exact: dict[str, set[str]] = defaultdict(set)
         self.variants: list[tuple[str, frozenset[str]]] = []
         initialisms: dict[str, set[str]] = defaultdict(set)
@@ -141,6 +219,7 @@ class Resolver:
                 self.exact[key] |= ids
         self._recount()
         self.brand_words = [(p["id"], tokens(p["name"])[0]) for p in roster.partners if tokens(p["name"])]
+        self.own_words = {p["id"]: set(tokens(p["name"])) for p in roster.partners}
         partner_ids = {p["id"] for p in roster.partners}
         ids_by_name = {core_key(p["name"]): p["id"] for p in roster.partners}
         for alias, target in {**SEED_ALIASES, **roster.aliases}.items():
@@ -154,10 +233,6 @@ class Resolver:
                 self.variants.append((target_id, frozenset(tokens(alias))))
         self._recount()
 
-        self.people: dict[str, set[str]] = defaultdict(set)
-        self.first_names: dict[str, set[tuple[str, str]]] = defaultdict(set)  # first name -> {(company, full name)}
-        self.full_names: dict[str, tuple[str, set[str]]] = {}  # "ben larson" -> (display name, companies)
-        self.by_last: dict[str, set[tuple[str, str, str]]] = defaultdict(set)  # last -> {(first, company, display)}
         for p in roster.partners:
             for contact in p["contacts"]:
                 self.learn_person(contact, p["id"])
@@ -170,8 +245,6 @@ class Resolver:
                 account_ids[c["account"]] = hit.company_id
             if account_ids[c["account"]]:
                 self.learn_person(c["name"], account_ids[c["account"]])
-        self.staff_keys = {k for s in roster.staff for k in person_keys(s)}
-        self.staff_names = {" ".join(re.split(r"[^a-z0-9]+", fold(s))).strip() for s in roster.staff}
 
     def _recount(self) -> None:
         """How many different partners use each word. A word used by one partner identifies it."""
@@ -182,7 +255,11 @@ class Resolver:
         self.df = Counter({t: len(ids) for t, ids in seen.items()})
 
     # ---------------------------------------------------------------- companies
-    def _match_text(self, raw: str, allow_fuzzy: bool = True) -> Match:
+    def _lone_word_names(self, word: str) -> bool:
+        """A single word that names one partner on its own: long, uncommon, used by one partner."""
+        return len(word) >= 5 and word not in COMMON and self.df[word] == 1
+
+    def _match_text(self, raw: str, allow_fuzzy: bool = True, people=(), guess: bool = False) -> Match:
         toks = tokens(raw)
         if not toks:
             return Match(None, "none")
@@ -193,22 +270,28 @@ class Resolver:
             return Match(ids[0], "exact") if len(ids) == 1 else Match(None, "ambiguous", ids)
 
         raw_set = frozenset(toks)
-        distinctive = [t for t in raw_set if t not in COMMON and len(t) >= 3]
-        if distinctive or len(raw_set) >= 2:
-            subset_ids = sorted({cid for cid, vt in self.variants if raw_set <= vt})
+        if _distinctive(raw_set) or len(raw_set) >= 2:
+            subset_ids = sorted({cid for cid, vt in self.variants if raw_set <= vt and _same_organization(raw_set, vt)})
             if len(subset_ids) == 1:
                 return Match(subset_ids[0], "subset")
             if len(subset_ids) > 1:
                 return Match(None, "ambiguous", subset_ids)
 
         super_hits: dict[str, int] = {}
+        skip: set[str] | None = None
         for cid, vt in self.variants:
             if not vt <= raw_set:
                 continue
             if len(vt) == 1:
                 (only,) = tuple(vt)
-                if len(only) < 5 or only in COMMON or self.df[only] != 1:
+                if not self._lone_word_names(only):
                     continue
+                if skip is None:
+                    skip = self.person_words(raw, people, guess=guess)
+                if only in skip:
+                    continue  # "Allison Clay" is a person, not Allison Transmission
+            elif not _same_organization(vt, raw_set, TITLE_FOLLOWERS):
+                continue  # "Indiana State University" is not a partner called "State of Indiana"
             super_hits[cid] = max(super_hits.get(cid, 0), len(vt))
         if super_hits:
             best = max(super_hits.values())
@@ -228,37 +311,80 @@ class Resolver:
                     return Match(None, "none", candidates[:3])
         return Match(None, "none")
 
-    def companies_named(self, raw: str) -> set[str]:
+    def companies_named(self, raw: str, people=()) -> set[str]:
         """Every partner whose name appears whole in the text, by the superset rule, without
         picking one: "Lucas Oil and Zoeller joint call" names two. A name that is part of a
-        longer matched name ("Lucas Oil" inside "Lucas Oil Products") counts once, as the longer."""
+        longer matched name ("Lucas Oil" inside "Lucas Oil Products") counts once, as the longer.
+        A word that is part of a person's name here names no partner (see person_words); people
+        is any further full names known to be people, such as a meeting's attendees."""
         raw_set = frozenset(tokens(raw))
+        skip = self.person_words(raw, people)
         hits: list[tuple[str, frozenset]] = []
         for cid, vt in self.variants:
             if not vt or not vt <= raw_set:
                 continue
             if len(vt) == 1:
                 (only,) = tuple(vt)
-                if len(only) < 5 or only in COMMON or self.df[only] != 1:
+                if not self._lone_word_names(only) or only in skip:
                     continue
+            elif not _same_organization(vt, raw_set, TITLE_FOLLOWERS):
+                continue
             hits.append((cid, vt))
         named = {cid for cid, vt in hits if not any(vt < other for _, other in hits)}
         # A partner's brand word ("zoeller", "evonik", "lippert": the first word of its name, used
         # by no other partner) names it too. Only the first word: "Development" in "Conexus
         # Workforce Development" must not name the Indiana Economic Development Corporation.
         for t in raw_set:
-            if len(t) >= 5 and t not in COMMON and t not in GENERIC_FIRST and self.df[t] == 1:
+            if self._lone_word_names(t) and t not in GENERIC_FIRST and t not in skip:
                 named |= {cid for cid, first in self.brand_words if first == t}
         return named
 
-    def company(self, raw: str) -> Match:
+    def person_words(self, text: str, people=(), guess: bool = True) -> set[str]:
+        """The words of text (as company tokens) that are part of a person's name, so that a
+        partner's brand word used as a first name does not name the partner.
+
+        Always: a known person's full name anywhere in the text (the contact list, Conexus staff,
+        or one of people, such as the meeting's attendees). With guess: a partner's brand word or
+        one-word name followed by a capitalized word that could be a surname ("Allison Clay",
+        "Allison M. Clay"), while "Allison Transmission", "Allison Interview" and "Allison"
+        alone still name the partner. The guess is for file and folder names, where a person's
+        name is common and a wrong partner would be repeated for every statement in the file."""
+        words = _WORD.findall(text or "")
+        if not words:
+            return set()
+        keys = [_key(w) for w in words]
+        known = {" ".join(name_tokens(p)) for p in people or () if len(name_tokens(p)) >= 2}
+        out: set[str] = set()
+        for n in (3, 2):
+            for i in range(len(words) - n + 1):
+                span = " ".join(words[i:i + n])
+                toks = " ".join(name_tokens(span))
+                if toks in known or toks in self.full_names or self.is_staff(span):
+                    out.update(keys[i:i + n])
+        if guess:
+            for i, key in enumerate(keys):
+                owners = [cid for cid, first in self.brand_words if first == key]
+                owners += [cid for cid, vt in self.variants if vt == frozenset([key])]
+                if not owners or not self._lone_word_names(key):
+                    continue
+                j = i + 1
+                if j < len(words) and len(words[j]) == 1 and words[j].isupper():
+                    j += 1  # a middle initial
+                own = set().union(*(self.own_words.get(cid, set()) for cid in owners))
+                if j < len(words) and _surname_like(words[j], own):
+                    out.add(key)
+        return out
+
+    def company(self, raw: str, people=(), guess: bool = False) -> Match:
+        """people and guess: see person_words. By default only a known person's name keeps a
+        one-word partner name from matching; a file name passes guess=True."""
         raw = (raw or "").strip()
         if not raw or fold(raw).strip() in ("unknown", "n/a", "none", "group", "various", "multiple"):
             return Match(None, "none")
         direct = self.roster.aliases.get(raw)
         if direct and direct in self.roster.by_id():
             return Match(direct, "alias")
-        return self._match_text(raw)
+        return self._match_text(raw, people=people, guess=guess)
 
     def affiliation(self, text: str) -> Match:
         """A free-text affiliation such as "President & CEO, MBC Group" or "Murray Mentor/Mursix"."""

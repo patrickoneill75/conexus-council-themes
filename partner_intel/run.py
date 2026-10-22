@@ -27,12 +27,15 @@ from datetime import datetime, timezone
 from . import config, extract, shape as shape_mod, text as text_mod
 from .build import _file_stem, build_dataset, source_folder, unit_context
 from . import export
-from .dates import resolve_date
+from .dates import estimated_written, resolve_date
 from .relay import Api
 from .resolve import Resolver
 from .roster import Roster
 
 IGNORED_NAMES = {".ds_store", "thumbs.db"}
+# A file in one of these states is not read again until it changes. Anything else (partial,
+# download_failed, read_failed) is tried again on the next scan.
+SETTLED = ("done", "unreadable", "no_text", "too_large")
 CHECKPOINT_EVERY = 40
 
 
@@ -60,20 +63,24 @@ def _unit_record(unit, key: str, date: str, source: str) -> dict:
             "date": date, "date_source": source, "file_company": unit.file_company}
 
 
-def file_company(resolver: Resolver, name: str, path: str = "") -> str:
+def file_company(resolver: Resolver, name: str, path: str = "", people=()) -> str:
     """The one partner a file's name points to, or "".
 
     "Ben Larson - Evonik.txt" gives Evonik Industries; so does a call named for a partner's
     contact ("30 Minutes with Patrick O'Neill - Jerry Grangier.vtt" gives Zoeller), and so does
     a folder below the program folder ("Field Demo Visits/Aegis - 10.05.26/transcript.txt").
     Every piece is tried; when the pieces point to two partners, or to none, the answer is
-    nothing, because a guess here would be repeated for every statement in the file."""
+    nothing, because a guess here would be repeated for every statement in the file.
+
+    A partner's brand word that is a person's first name here names no partner: "Allison Clay -
+    interview.docx" is about Allison Clay, not Allison Transmission. people is the file's
+    attendees, whose full names count as people too (see Resolver.person_words)."""
     folders = [p for p in (path or "").split("/") if p][2:]  # below the chosen root and the program
     found: set[str] = set()
     for text in [_file_stem(name)] + folders:
         for piece in [text] + [p.strip() for p in re.split(r"\s[-\u2013\u2014]\s|[_,;|()+]", text) if p.strip()]:
-            hit = resolver.company(piece)
-            named = resolver.companies_named(piece)
+            hit = resolver.company(piece, people=people, guess=True)
+            named = resolver.companies_named(piece, people)
             if hit.ok or named:
                 found |= named | ({hit.company_id} if hit.ok else set())
             elif not resolver.is_staff(piece):
@@ -137,17 +144,12 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
 
 def _restore_from_box(api):
     """Bring back the saved registry and results from the Box database folder, if the
-    Worker's own copy is empty. Returns (registry, cache) or None."""
+    Worker's own copy is empty. Returns (registry, cache) or None. Reads the single state file
+    and the state written in parts alike (export.read_state)."""
     try:
-        text = api.load_from_box(export.STATE_FILE)
-        if not text:
-            return None
-        saved = json.loads(text)
-        if isinstance(saved.get("registry"), dict) and isinstance(saved.get("cache"), dict):
-            return saved["registry"], saved["cache"]
+        return export.read_state(api.load_from_box(export.STATE_FILE), api.load_from_box)
     except Exception:
         return None
-    return None
 
 
 def _save_to_box(api, cfg, dataset, registry, cache, roster, report) -> None:
@@ -161,7 +163,6 @@ def _save_to_box(api, cfg, dataset, registry, cache, roster, report) -> None:
     files = {
         export.DATABASE_FILE: lambda: export.database_json(dataset),
         export.INSIGHTS_FILE: lambda: export.insights_csv(dataset, roster),
-        export.STATE_FILE: lambda: export.state_json(clean, cache, now_iso()),
     }
     for name, make in files.items():
         try:
@@ -169,9 +170,37 @@ def _save_to_box(api, cfg, dataset, registry, cache, roster, report) -> None:
             saved.append(name)
         except Exception as e:
             errors.append(f"{name}: {str(e)[:200]}")
+    _save_state_to_box(api, clean, cache, saved, errors)
     report["box_saved"] = saved
     if errors:
         report["box_errors"] = errors
+
+
+def _save_state_to_box(api, registry: dict, cache: dict, saved: list, errors: list) -> None:
+    """The state file, whole when it is small, otherwise in parts with the list of them written
+    last (see export.py). A part that fails stops the save before the list is written, so the
+    list in Box still names the last complete save."""
+    stamp = now_iso()
+    whole = export.state_json(registry, cache, stamp)
+    if len(whole) <= export.STATE_PART_CHARS:
+        files = [(export.STATE_FILE, whole)]
+    else:
+        del whole
+        try:
+            current = api.load_from_box(export.STATE_FILE)
+        except Exception:
+            current = None  # unknown: write "a"; a mixed save is refused on reading, never used
+        files = export.state_parts(registry, cache, stamp, export.next_state_set(current))
+    for name, text in files:
+        try:
+            api.save_to_box(name, text)
+            saved.append(name)
+        except Exception as e:
+            errors.append(f"{name}: {str(e)[:200]}")
+            if name != export.STATE_FILE:
+                errors.append(f"{export.STATE_FILE}: not updated, because a part could not be saved; "
+                              "the last complete save is still the one Box holds.")
+            return
 
 
 class _Archive:
@@ -241,6 +270,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     ignored: Counter = Counter()
     resolver = Resolver(roster)
     needs_conversion, unreadable, no_text, too_large = [], [], [], []
+    failed: list[dict] = []  # files Box would not hand over, or that broke the reader: retried next scan
 
     for f in walk(api, cfg["folderId"], cfg.get("folderName") or "Notes"):
         seen_ids.add(f["id"])
@@ -253,7 +283,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             ignored[ext or "(none)"] += 1
             continue
         prior = registry.get(f["id"])
-        if prior and prior.get("sha1") == f.get("sha1") and prior.get("status") in ("done", "unreadable", "no_text", "too_large") and not force:
+        if prior and prior.get("sha1") == f.get("sha1") and prior.get("status") in SETTLED and not force:
             stats["files_unchanged"] += 1
             continue
         pending.append(f)
@@ -276,7 +306,16 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             too_large.append(f["name"])
             continue
         try:
-            doc = text_mod.to_document(f["name"], api.download(f["id"]))
+            data = api.download(f["id"])
+        except Exception as e:
+            # One file Box would not hand over (after the relay's retries) must not stop the
+            # scan. It is recorded, reported, and tried again on the next scan; a file read
+            # before keeps its insights until then.
+            _not_read(registry, f, entry, "download_failed", f"Box download failed: {str(e)[:200]}", failed)
+            stats["files_download_failed"] += 1
+            continue
+        try:
+            doc = text_mod.to_document(f["name"], data)
         except text_mod.NoTextLayer as e:
             entry.update(status="no_text", error=str(e))
             registry[f["id"]] = entry
@@ -287,10 +326,14 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             registry[f["id"]] = entry
             unreadable.append({"file": f["path"] + "/" + f["name"], "error": str(e)})
             continue
+        except Exception as e:  # a reader fault on one file: the same, so a fixed reader picks it up
+            _not_read(registry, f, entry, "read_failed", f"Could not be read: {str(e)[:200]}", failed)
+            stats["files_read_failed"] += 1
+            continue
         s = shape_mod.classify(f["name"], f["path"], doc)
         # A file with section headings already names the company of each section.
         if s.units and not any(u.default_company for u in s.units):
-            named = file_company(resolver, f["name"], f["path"])
+            named = file_company(resolver, f["name"], f["path"], people=[n for u in s.units for n, _ in u.attendees])
             if named:
                 s.units = [dataclasses.replace(u, file_company=named) for u in s.units]
         if roster.contacts:
@@ -308,16 +351,26 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     # Dates and unit records, then the list of units that have never been read.
     to_run: dict[str, tuple] = {}
     for f, entry, s, (full_text,) in work:
-        prior_units = {u["key"]: u for u in (registry.get(f["id"], {}).get("units") or [])}
+        prior = registry.get(f["id"]) or {}
+        prior_units = {u["key"]: u for u in (prior.get("units") or [])}
+        prior_event = prior.get("event") or {}
+        # A file never read before (a failed download leaves an entry, but no event) with no
+        # date in its text or name is dated when it was most likely written, not when it was
+        # uploaded: a backfill of old notes must not read as this week's news. A file read
+        # before keeps that date, and a section added to it later is dated when it arrived.
+        first_read = not prior_event
+        estimate = estimated_written(f.get("created_at"), f.get("content_modified_at")) if first_read else None
         file_date, file_source = resolve_date(
-            f["name"], full_text, f.get("created_at"), text_allowed=s.text_date_allowed)
+            f["name"], full_text, f.get("created_at"), text_allowed=s.text_date_allowed, fallback_at=estimate)
+        if file_source == "box_upload" and prior_event.get("date_source") == "box_upload" and prior_event.get("date"):
+            file_date = prior_event["date"]
         units = []
         for unit in s.units:
             key = extract.cache_key(unit, s.event_type, model)
             if key in prior_units:
                 date, source = prior_units[key]["date"], prior_units[key]["date_source"]
             elif file_source == "box_upload":
-                fallback = f.get("modified_at") if f["id"] in registry else f.get("created_at")
+                fallback = estimate if first_read else f.get("modified_at")
                 date, source = resolve_date(f["name"], "", f.get("created_at"), text_allowed=False,
                                             fallback_at=fallback)
             else:
@@ -346,28 +399,36 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     lock = threading.Lock()
     done_since_push = 0
 
+    cut: set[str] = set()  # cut off in the batch: read in halves, not whole again
+
     def one(key: str):
         unit, event_type, _ = to_run[key]
-        return key, extract.extract_unit(unit, event_type, roster.staff, model, caller=caller)
+        return key, extract.extract_unit(unit, event_type, roster.staff, model, caller=caller, cut=key in cut)
 
     if to_run and caller is extract.call_claude and not config.CLAUDE_API_KEY:
         errors.append("PARTNER_INTEL_CLAUDE_API_KEY is not set. Add the repository secret "
                       "partner_intel_claude_api. Nothing new was read.")
         to_run = {}
 
+    def spend(how: str, usage: dict | None, calls: int) -> None:
+        """Count Claude use for the report, which the Worker adds to its monthly meter. Every
+        answer is billed, so this is called for cut-off, declined and failed attempts too."""
+        if not calls:
+            return
+        stats["claude_calls"] += calls
+        stats[f"claude_calls_{how}"] += calls
+        for side in ("in", "out"):
+            n = (usage or {}).get("input" if side == "in" else "output", 0) or 0
+            stats[f"tokens_{side}"] += n
+            stats[f"tokens_{side}_{how}"] += n
+
     def record(key: str, result: dict) -> None:
         nonlocal done_since_push
         with lock:
             cache[key] = result
             how = "batch" if result.get("batch") else "sync"
-            calls = 1 + result.get("split_calls", 0)
-            stats["claude_calls"] += calls
-            stats[f"claude_calls_{how}"] += calls
+            spend(how, result["usage"], result.get("calls") or 1 + result.get("split_calls", 0))
             stats["sections_split"] += 1 if result.get("split_calls") else 0
-            for side in ("in", "out"):
-                n = result["usage"].get("input" if side == "in" else "output", 0)
-                stats[f"tokens_{side}"] += n
-                stats[f"tokens_{side}_{how}"] += n
             stats["rows_kept"] += len(result["rows"])
             stats["rows_rejected"] += result["rejected"]
             if result.get("refused"):
@@ -383,8 +444,12 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     if to_run and use_batch:
         jobs = {k: (unit, event_type) for k, (unit, event_type, _) in to_run.items()}
         try:
-            got, leftover, note = extract.extract_batch(jobs, roster.staff, model, client=batch_client,
-                                                        wait_minutes=config.BATCH_WAIT_MINUTES)
+            outcome = extract.extract_batch(jobs, roster.staff, model, client=batch_client,
+                                            wait_minutes=config.BATCH_WAIT_MINUTES)
+            got, leftover, note = outcome.entries, outcome.leftover, outcome.note
+            cut |= outcome.cut
+            spend("batch", outcome.spent, outcome.spent.get("calls", 0))
+            stats["sections_cut_off_in_batch"] += len(outcome.cut)
         except Exception as e:  # a batch that cannot start must not stop the scan
             got, leftover, note = {}, list(jobs), f"The batch could not run ({str(e)[:150]}); every section was read directly."
         for key, result in got.items():
@@ -405,6 +470,9 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
                 except Exception as e:  # one bad unit must not lose the rest
                     unit, _, file_name = to_run[key]
                     errors.append(f"{file_name}, section {unit.label or '(unnamed)'}: {e}"[:300])
+                    spent = getattr(e, "usage", None) or {}
+                    with lock:
+                        spend("sync", spent, spent.get("calls", 0))
                     continue
                 record(key, result)
 
@@ -427,8 +495,25 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             del cache[stale]
 
     _store(api, registry, cache)
+    # Files not read this time lead the errors, which the control panel shows, and have a list
+    # of their own.
+    not_read = [f"{x['file']}: {x['error']} It is tried again on the next scan." for x in failed]
     report.update({"needs_conversion": needs_conversion, "unreadable": unreadable, "no_text": no_text,
-                   "too_large": too_large, "errors": errors[:20]})
+                   "too_large": too_large, "errors": (not_read + errors)[:20],
+                   "download_failed": [x for x in failed if x["status"] == "download_failed"],
+                   "read_failed": [x for x in failed if x["status"] == "read_failed"]})
+
+
+def _not_read(registry: dict, f: dict, entry: dict, status: str, error: str, failed: list) -> None:
+    """Record a file that could not be read this scan, in a state the next scan retries. A file
+    read before keeps its units (and so its insights) until a new version can be read."""
+    prior = registry.get(f["id"])
+    if prior and prior.get("units"):
+        registry[f["id"]] = {**prior, "status": status, "error": error}
+    else:
+        entry.update(status=status, error=error)
+        registry[f["id"]] = entry
+    failed.append({"file": f["path"] + "/" + f["name"], "error": error, "status": status})
 
 
 def _store(api, registry: dict, cache: dict) -> None:

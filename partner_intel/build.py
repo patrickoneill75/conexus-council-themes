@@ -17,7 +17,7 @@ from collections import Counter, defaultdict
 
 from . import topics
 from .extract import normalize
-from .resolve import Match, Resolver, Speaker, core_key
+from .resolve import Match, Resolver, Speaker, core_key, name_tokens
 from .roster import Roster
 
 # Bumped when the published dataset gains fields the Worker's pages depend on. The control panel
@@ -73,6 +73,55 @@ def _meeting(shape: str, series: str, event_type: str, company_name: str, single
     if single_company:
         return single_company, "company"
     return stem, "meeting"
+
+
+def _person_named_as_company(resolver: Resolver, staff_resolver: Resolver, raw: str, speaker_name: str,
+                             speaker: Speaker, attendees, context: set[str]):
+    """When the company a row gives is really a person, who: (full name, company id or None,
+    candidate companies). None when raw is not known to be a person.
+
+    A person is the row's own speaker, an attendee, Conexus staff, someone on the contact list,
+    or a name the speaker resolver recognizes. A lone first name counts only as the first name
+    of the row's speaker or of an attendee ("Allison" said by Allison Clay is not Allison
+    Transmission), or of the one contact with it at a company the file is about. Nothing else
+    is guessed: an unknown two-word company stays a company."""
+    toks = name_tokens(raw)
+    if not toks:
+        return None
+    # A speaker label or attendee entry that is itself a partner's name ("Lucas Oil: ..." in a
+    # text transcript) is a company, not a person.
+    is_partner = lambda n: resolver.company(n, guess=True).ok
+    spoken = name_tokens(speaker_name or "") if speaker_name and not is_partner(speaker_name) else []
+    names = [n for n, _ in attendees or [] if n and not is_partner(n)]
+    if len(toks) == 1:
+        if len(spoken) >= 2 and spoken[0] == toks[0]:
+            return speaker.full_name or speaker_name, speaker.company_id, list(speaker.candidates)
+        matching = [n for n in names if len(name_tokens(n)) >= 2 and name_tokens(n)[0] == toks[0]]
+        by_first = resolver.speaker(raw, context)
+        if matching:
+            if len(matching) == 1:
+                one = resolver.speaker(matching[0], context)
+                return matching[0], one.company_id, list(one.candidates)
+            return raw, by_first.company_id, list(by_first.candidates)
+        if by_first.how == "first name in context":
+            return by_first.full_name, by_first.company_id, []
+        return None
+    key = " ".join(toks)
+    if spoken and key == " ".join(spoken):
+        return speaker.full_name or speaker_name, speaker.company_id, list(speaker.candidates)
+    for n in names:
+        if key == " ".join(name_tokens(n)):
+            hit = resolver.speaker(n, context)
+            return n, hit.company_id, list(hit.candidates)
+    if staff_resolver.is_staff(raw):
+        return raw, None, []
+    hit = resolver.speaker(raw, context)
+    if hit.how in ("contact", "contact in context", "ambiguous"):
+        return hit.full_name or raw, hit.company_id, list(hit.candidates)
+    cid = resolver.person(raw)
+    if cid:
+        return raw, cid, []
+    return None
 
 
 def _note_company_id(raw: str) -> str:
@@ -181,6 +230,27 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                 by_person = speaker.company_id
                 by_section = resolver.company(unit.get("default_company", "")) if unit.get("default_company") else Match(None, "none")
                 company_id, raw_name = "", row["company"] or unit.get("default_company", "")
+                attendees = unit.get("attendees") or []
+                # The company the notes give can be a person: Claude copied the speaker ("Chad
+                # Smith"), or wrote a first name that is also a partner's brand ("Allison" for
+                # Allison Clay). A person is never made a company, and a name that only partly
+                # matches a partner does not make them that partner. An exact partner name or an
+                # admin's alias is trusted as written.
+                person = None
+                if row["company"] and by_model.method not in ("exact", "alias"):
+                    person = _person_named_as_company(resolver, staff_resolver, row["company"], row["speaker"],
+                                                      speaker, attendees, context)
+                if person and by_model.ok:
+                    options.append({"id": by_model.company_id,
+                                    "why": f"\"{row['company']}\" is how the notes name {person[0]}, and also part of {_name(partners, by_model.company_id)}"})
+                    by_model = Match(None, "none")
+                if not person and not row["company"] and raw_name and not by_section.ok and not by_person:
+                    # A section heading that is a person's name.
+                    person = _person_named_as_company(resolver, staff_resolver, raw_name, row["speaker"],
+                                                      speaker, attendees, context)
+                if person:
+                    raw_name = ""
+                    review.append("company_is_person")
                 if by_model.ok:
                     # Claude named the company. A statement can be about another company than the
                     # speaker's (a customer, a supplier), so the speaker does not overrule it; a
@@ -193,6 +263,23 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     # A section heading names the partner interviewed. When the model's own
                     # spelling of it is not recognized, the heading is the stronger signal.
                     company_id = by_section.company_id
+                elif person:
+                    # The person's own company when it is known, put up for checking; otherwise
+                    # no company (flagged no_company below), with what is known offered.
+                    full, person_cid, candidates = person
+                    company_id = person_cid or ""
+                    if company_id:
+                        options.append({"id": company_id, "why": f"the notes gave {full}, a person, as the company; {full} works at {_name(partners, company_id)}"})
+                        if by_person and by_person != company_id:
+                            review.append("speaker_company_conflict")
+                            options.append({"id": by_person, "why": f"{speaker.full_name} works at {_name(partners, by_person)}"})
+                    else:
+                        if candidates:
+                            review.append("speaker_ambiguous")
+                            options.extend({"id": cid, "why": f"a {full} works at {_name(partners, cid)}"} for cid in candidates[:4])
+                        if by_person:
+                            review.append("speaker_company_conflict")
+                            options.append({"id": by_person, "why": f"{speaker.full_name} works at {_name(partners, by_person)}"})
                 elif by_person and not row["company"]:
                     company_id = by_person
                 elif raw_name:
@@ -237,6 +324,8 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     review.append("estimated_date")
                 date = unit.get("date") or event.get("date") or ""
                 meeting_key = f"{date}|{company_id or core_key(raw_name)}"
+                seen_options: set[str] = set()
+                options = [o for o in options if not (o["id"] in seen_options or seen_options.add(o["id"]))]
                 row_dict = {
                     "id": hashlib.sha1(f"{unit['key']}:{index}".encode()).hexdigest()[:12],
                     "kind": row["kind"], "company_id": company_id,
