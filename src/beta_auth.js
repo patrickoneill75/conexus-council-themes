@@ -3,7 +3,8 @@
  * predates the "Connector"/"/admin" rebrand and was kept as-is to avoid churn -- it's
  * an internal name, never shown to a user).
  *
- * A multi-user account system (each person has their own email/username/password) that
+ * A multi-user account system (each person signs in with their email and a password; an admin enters
+ * their first and last name when adding them; there are no usernames) that
  * every mini app's control panel and staff pages sign into via requireBetaAuth --
  * including Council Themes/Quant's own (see src/council_data.js), which used to have its
  * own separate CONTROL_PASSWORD. There is no per-app password anywhere in this repo any
@@ -27,13 +28,13 @@
  * Storage: reuses the BOX_KV namespace (no new namespace to create in the Cloudflare
  * dashboard) under a "beta:" key prefix, so it never collides with the Box connection
  * state already living there.
- *   beta:admin-emails         -> JSON [{ email, username, role, apps, appAdmin }, ...] --
+ *   beta:admin-emails         -> JSON [{ email, firstName, lastName, role, apps, appAdmin }, ...] --
  *                                 who is ALLOWED to have an account (the key name predates
  *                                 roles: it holds users as well as admins). An entry
  *                                 written before roles existed has no role and counts as
  *                                 an overall admin, so nobody lost access when roles
  *                                 shipped. A newly added person is a user with no apps.
- *   beta:admin-account:<email> -> JSON { email, username, password_hash, password_salt,
+ *   beta:admin-account:<email> -> JSON { email, password_hash, password_salt,
  *                                 session_version, created_at } -- only exists once that
  *                                 person has actually set a password. Its absence is
  *                                 exactly what "hasn't set up yet" / "just got reset" means.
@@ -44,7 +45,7 @@
  *   beta:app-visibility        -> see the module docstring further down, near
  *                                 APP_VISIBILITY_KEY.
  *
- * Sessions: an HMAC-signed token { email, username, sv, exp } that lasts 8 hours. "sv" is
+ * Sessions: an HMAC-signed token { email, sv, exp } that lasts 8 hours. "sv" is
  * the account's session_version at sign-in. Every authenticated request re-reads the list
  * and the account record and refuses the token when the person is off the list, the
  * record is gone (a password reset deletes it), or the version moved on ("Sign out
@@ -133,7 +134,6 @@ const LAST_ADMIN = "Connector needs at least one admin. Make someone else an adm
 const NOT_LISTED = "That email isn't on the Connector list. Ask an admin to add you.";
 
 const SEED_ADMIN_EMAIL = "poneill@conexusindiana.com";
-const SEED_ADMIN_USERNAME = "poneill";
 // Set once, the first time the seed admin is provisioned -- see ensureSeedAdmin().
 const SEED_ADMIN_DONE_KEY = "beta:seed-admin-provisioned";
 
@@ -239,7 +239,7 @@ async function issueToken(env, payload) {
 
 /* A session for this account record, carrying its current session version. */
 function issueSession(env, account) {
-  return issueToken(env, { email: account.email, username: account.username, sv: account.session_version || "" });
+  return issueToken(env, { email: account.email, sv: account.session_version || "" });
 }
 
 /* A new random session version. Writing one to an account record ends every session issued before it. */
@@ -302,7 +302,7 @@ async function verifyResetToken(env, token, email) {
 
 /* Exported so every mini app on this platform (e.g. src/consensus.js) gates its own routes with
    the same accounts, without each mini app inventing its own login system. Returns
-   { email, username, role, apps, appAdmin } or null -- never throws. Being signed in is not
+   { email, firstName, lastName, name, role, apps, appAdmin } or null -- never throws. Being signed in is not
    being allowed: pair it with canUseApp or canAdminApp for the app's own id. */
 export async function requireBetaAuth(request, env) {
   return requireAuth(request, env);
@@ -328,7 +328,7 @@ function identity(entry, account) {
   const role = roleOf(entry);
   const appAdmin = role === "admin" ? [...KNOWN_APP_IDS] : appList(entry.appAdmin);
   const apps = role === "admin" ? [...KNOWN_APP_IDS] : appList([...appList(entry.apps), ...appAdmin]);
-  return { email: account.email, username: account.username || entry.username || null, role, apps, appAdmin };
+  return { email: account.email, ...namesOf(entry), role, apps, appAdmin };
 }
 
 /* The pure checks every mini app applies to requireBetaAuth's result. An overall admin passes both for
@@ -343,6 +343,16 @@ export function isOverallAdmin(auth) {
   return Boolean(auth) && auth.role === "admin";
 }
 
+/* A person's name as an admin entered it. Entries made before names were asked for have none: they show
+   by email until an admin adds it. */
+function cleanName(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 60);
+}
+function namesOf(entry) {
+  const firstName = cleanName(entry.firstName), lastName = cleanName(entry.lastName);
+  return { firstName, lastName, name: [firstName, lastName].filter(Boolean).join(" ") };
+}
+
 /* ---------- storage ---------- */
 
 async function getAllowlist(env) {
@@ -354,7 +364,7 @@ async function getAllowlist(env) {
    first time the list is saved. */
 async function saveAllowlist(env, list) {
   await env.BOX_KV.put(ALLOWLIST_KEY, JSON.stringify(list.map((a) => ({
-    email: normalizeEmail(a.email), username: a.username || null, role: roleOf(a),
+    email: normalizeEmail(a.email), firstName: cleanName(a.firstName), lastName: cleanName(a.lastName), role: roleOf(a),
     apps: appList(a.apps), appAdmin: appList(a.appAdmin),
   }))));
 }
@@ -368,7 +378,7 @@ function adminCount(list) {
 /* One person as Settings shows them: what was assigned, not the effective lists. */
 function personView(entry) {
   return {
-    email: normalizeEmail(entry.email), username: entry.username || null, role: roleOf(entry),
+    email: normalizeEmail(entry.email), ...namesOf(entry), role: roleOf(entry),
     apps: appList(entry.apps), appAdmin: appList(entry.appAdmin),
   };
 }
@@ -397,9 +407,8 @@ async function deleteAccount(env, email) {
 
 /* ---------- login rate limit ---------- */
 
-/* The counters one sign-in attempt is held against: the account (keyed on its email, whichever of
-   email or username was typed, so switching between them buys nothing; an unknown identifier is
-   counted under itself, so a lockout says nothing about whether an account exists), and the client
+/* The counters one sign-in attempt is held against: the account (keyed on its email; an unknown
+   email is counted under itself, so a lockout says nothing about whether an account exists), and the client
    address Cloudflare reports. With no address header (local tests), only the account is counted. */
 function loginLimits(request, accountId) {
   const limits = [{ key: `${LOGIN_FAIL_PREFIX}account:${accountId}`, max: LOGIN_MAX_FAILURES_PER_ACCOUNT }];
@@ -457,13 +466,13 @@ async function ensureSeedAdmin(env) {
 
   const allowlist = await getAllowlist(env);
   if (!findAllowlistEntry(allowlist, SEED_ADMIN_EMAIL)) {
-    allowlist.push({ email: SEED_ADMIN_EMAIL, username: SEED_ADMIN_USERNAME, role: "admin" });
+    allowlist.push({ email: SEED_ADMIN_EMAIL, role: "admin" });
     await saveAllowlist(env, allowlist);
   }
 
   const { hash, salt } = await hashPassword(env.poneill_password);
   await saveAccount(env, SEED_ADMIN_EMAIL, {
-    email: SEED_ADMIN_EMAIL, username: SEED_ADMIN_USERNAME,
+    email: SEED_ADMIN_EMAIL,
     password_hash: hash, password_salt: salt, session_version: newSessionVersion(),
     created_at: new Date().toISOString(),
   });
@@ -484,36 +493,34 @@ export async function handleBetaApi(route, request, env) {
   const method = request.method.toUpperCase();
 
   // ---- POST /api/beta/login -----------------------------------------------------------
-  // { identifier, password } -- identifier is an email or a username, either works.
+  // { email, password }. Sign-in is by email only; "identifier" is the field's older name.
   if (route === "login" && method === "POST") {
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
-    const identifier = normalizeEmail(body && body.identifier).slice(0, 200);
+    const identifier = normalizeEmail(body && (body.email || body.identifier)).slice(0, 200);
     const password = String((body && body.password) || "");
     // Flat delay regardless of which way this fails, same reasoning as admin.html's own
     // login: a wrong guess always costs the same, so timing can't narrow down why.
     await new Promise((resolve) => setTimeout(resolve, 300));
     if (!identifier || !password) {
-      return json({ error: "Enter your email/username and password." }, 400);
+      return json({ error: "Enter your email and password." }, 400);
     }
 
     const allowlist = await getAllowlist(env);
-    const entry = allowlist.find((a) =>
-      normalizeEmail(a.email) === identifier
-      || (a.username && a.username.toLowerCase() === identifier));
+    const entry = findAllowlistEntry(allowlist, identifier);
     const limits = loginLimits(request, entry ? normalizeEmail(entry.email) : identifier);
     // Checked before the password, so a locked account stays locked even for the right one.
     if (await loginLocked(env, limits)) return json({ error: LOGIN_LOCKED_MESSAGE }, 429);
     const account = entry ? await getAccount(env, entry.email) : null;
     if (!account || !(await verifyPassword(password, account.password_hash, account.password_salt))) {
       await recordLoginFailure(env, limits);
-      return json({ error: "Incorrect email/username or password." }, 401);
+      return json({ error: "Incorrect email or password." }, 401);
     }
     // Success clears the account's counter. The address counter stays, so one valid account does
     // not reset the limit for guesses at everyone else's.
     await env.BOX_KV.delete(limits[0].key);
     const token = await issueSession(env, account);
-    return json({ ok: true, token, email: account.email, username: account.username });
+    return json({ ok: true, token, email: account.email, ...namesOf(entry) });
   }
 
   // ---- POST /api/beta/setup-check ------------------------------------------------------
@@ -540,16 +547,14 @@ export async function handleBetaApi(route, request, env) {
   }
 
   // ---- POST /api/beta/setup-complete ---------------------------------------------------
-  // { email, username, password } -- the same endpoint for a brand-new person and for an
+  // { email, password } -- the same endpoint for a brand-new person and for an
   // existing one whose password an admin just reset (see module docstring).
   if (route === "setup-complete" && method === "POST") {
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
     const email = normalizeEmail(body.email);
-    const username = String(body.username || "").trim();
     const password = String(body.password || "");
     if (!email) return json({ error: "Enter an email address." }, 400);
-    if (!username) return json({ error: "Choose a username." }, 400);
     if (password.length < 8) return json({ error: "Password must be at least 8 characters." }, 400);
 
     const allowlist = await getAllowlist(env);
@@ -561,17 +566,10 @@ export async function handleBetaApi(route, request, env) {
     if (!reset && await getAccount(env, email)) {
       return json({ error: "That account already has a password. Ask an admin to reset it and send you the link." }, 409);
     }
-    const usernameTaken = allowlist.some((a) =>
-      normalizeEmail(a.email) !== email && a.username && a.username.toLowerCase() === username.toLowerCase());
-    if (usernameTaken) return json({ error: "That username is already taken." }, 409);
-
-    entry.username = username;
-    await saveAllowlist(env, allowlist);
-
     const { hash, salt } = await hashPassword(password);
     // A new session version, so no token issued before a reset works again.
     const account = {
-      email, username, password_hash: hash, password_salt: salt,
+      email, password_hash: hash, password_salt: salt,
       session_version: newSessionVersion(), created_at: new Date().toISOString(),
     };
     await saveAccount(env, email, account);
@@ -580,7 +578,7 @@ export async function handleBetaApi(route, request, env) {
     await env.BOX_KV.delete(`${LOGIN_FAIL_PREFIX}account:${email}`);
 
     const token = await issueSession(env, account);
-    return json({ ok: true, token, email, username });
+    return json({ ok: true, token, email, ...namesOf(entry) });
   }
 
   // ---- GET /api/beta/app-visibility --------------------------------------------------
@@ -604,7 +602,8 @@ export async function handleBetaApi(route, request, env) {
   // includes every app they admin; an overall admin's lists name every known app.
   if (route === "me" && method === "GET") {
     if (!auth) return json({ error: "Not signed in" }, 401);
-    return json({ email: auth.email, username: auth.username, role: auth.role, apps: auth.apps, appAdmin: auth.appAdmin });
+    return json({ email: auth.email, firstName: auth.firstName, lastName: auth.lastName, name: auth.name,
+      role: auth.role, apps: auth.apps, appAdmin: auth.appAdmin });
   }
 
   // ---- POST /api/beta/sign-out-everywhere ---------------------------------------------
@@ -652,7 +651,7 @@ export async function handleBetaApi(route, request, env) {
     if (!auth) return json({ error: "Not signed in" }, 401);
     if (!isOverallAdmin(auth)) return json({ error: ADMINS_ONLY }, 403);
 
-    // ---- GET admins -> { people: [{ email, username, role, apps, appAdmin, has_password }] }
+    // ---- GET admins -> { people: [{ email, firstName, lastName, name, role, apps, appAdmin, has_password }] }
     if (route === "admins" && method === "GET") {
       const allowlist = await getAllowlist(env);
       const people = await Promise.all(allowlist.map(async (a) => ({
@@ -667,15 +666,17 @@ export async function handleBetaApi(route, request, env) {
     const email = normalizeEmail(body.email);
     const allowlist = await getAllowlist(env);
 
-    // ---- POST admins { email, role? } -- adds a person. That's it; they pick their own
-    // username and password the first time they use "Set up new account". A new person is a
-    // user with no apps unless role "admin" is chosen.
+    // ---- POST admins { email, firstName, lastName, role? } -- adds a person. They choose their own
+    // password the first time they use "Set up new account". A new person is a user with no apps
+    // unless role "admin" is chosen.
     if (route === "admins" && method === "POST") {
       if (!email || email.indexOf("@") < 0) return json({ error: "Enter a valid email address." }, 400);
       const role = body.role === undefined || body.role === null || body.role === "" ? "user" : String(body.role);
       if (!ROLES.includes(role)) return json({ error: "Role must be admin or user." }, 400);
+      const firstName = cleanName(body.firstName), lastName = cleanName(body.lastName);
+      if (!firstName || !lastName) return json({ error: "Enter their first and last name." }, 400);
       if (findAllowlistEntry(allowlist, email)) return json({ ok: true, already_present: true });
-      allowlist.push({ email, username: null, role, apps: [], appAdmin: [] });
+      allowlist.push({ email, firstName, lastName, role, apps: [], appAdmin: [] });
       await saveAllowlist(env, allowlist);
       return json({ ok: true, person: personView(allowlist[allowlist.length - 1]) });
     }
@@ -683,7 +684,7 @@ export async function handleBetaApi(route, request, env) {
     const entry = findAllowlistEntry(allowlist, email);
     if (!entry) return json({ error: "That email isn't on the list." }, 404);
 
-    // ---- POST admins/update { email, role?, apps?, appAdmin? } -- each field given replaces
+    // ---- POST admins/update { email, firstName?, lastName?, role?, apps?, appAdmin? } -- each field given replaces
     // what is stored. apps and appAdmin are lists of app ids from public/apps.js.
     if (route === "admins/update" && method === "POST") {
       const role = body.role === undefined ? roleOf(entry) : String(body.role);
@@ -699,7 +700,14 @@ export async function handleBetaApi(route, request, env) {
       if (roleOf(entry) === "admin" && role !== "admin" && adminCount(allowlist) <= 1) {
         return json({ error: LAST_ADMIN }, 409);
       }
+      // A name given replaces the stored one; an empty name is refused, so nobody is left nameless by mistake.
+      for (const field of ["firstName", "lastName"]) {
+        if (body[field] === undefined) continue;
+        if (!cleanName(body[field])) return json({ error: "Enter their first and last name." }, 400);
+      }
       entry.role = role;
+      if (body.firstName !== undefined) entry.firstName = cleanName(body.firstName);
+      if (body.lastName !== undefined) entry.lastName = cleanName(body.lastName);
       if (lists.apps) entry.apps = lists.apps;
       if (lists.appAdmin) entry.appAdmin = lists.appAdmin;
       await saveAllowlist(env, allowlist);

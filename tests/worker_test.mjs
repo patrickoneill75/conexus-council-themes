@@ -145,13 +145,13 @@ test("beta_auth: seed admin can sign in and /me round-trips", async () => {
   const { env, token } = await signedInEnv();
   const me = await (await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${token}` } }), env)).json();
   assert.equal(me.email, "poneill@conexusindiana.com");
-  assert.equal(me.username, "poneill");
+  assert.equal(me.username, undefined, "no usernames: everyone signs in with their email");
 });
 
 test("beta_auth: a wrong password is rejected with 401", async () => {
   const { env } = await signedInEnv();
   const res = await beta("login", jsonReq("/api/beta/login", "POST",
-    { identifier: "poneill", password: "wrong" }), env);
+    { email: "poneill@conexusindiana.com", password: "wrong" }), env);
   assert.equal(res.status, 401);
 });
 
@@ -189,7 +189,7 @@ test("beta_auth: resetting the seed admin's password actually sticks", async () 
   assert.equal(check.allowed, true, "after a reset the account must be claimable again");
 
   const relogin = await beta("login", jsonReq("/api/beta/login", "POST",
-    { identifier: "poneill", password: "seed-password-123" }), env);
+    { email: "poneill@conexusindiana.com", password: "seed-password-123" }), env);
   assert.equal(relogin.status, 401, "the old seed password must stop working after a reset");
 });
 
@@ -211,12 +211,12 @@ test("beta_auth: BUG admin Reset looked like it did nothing while KV still serve
   const check = async (body) => (await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", body), env)).json()).allowed;
   assert.equal(await check({ email }), false, "without the link, a stale read still blocks setup");
   assert.equal(await check({ email, reset: link }), true, "with the link, setup goes ahead");
-  const set = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, username: "poneill", password: "brand-new-pass", reset: link }), env);
+  const set = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, password: "brand-new-pass", reset: link }), env);
   assert.equal(set.status, 200, "the new password is set despite the stale record");
-  const login = async (password) => (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password }), env)).status;
+  const login = async (password) => (await beta("login", jsonReq("/api/beta/login", "POST", { email: "poneill@conexusindiana.com", password }), env)).status;
   assert.equal(await login("brand-new-pass"), 200);
   assert.equal(await login("seed-password-123"), 401, "the old password no longer works");
-  const again = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, username: "poneill", password: "another-pass-9", reset: link }), env);
+  const again = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email, password: "another-pass-9", reset: link }), env);
   assert.equal(again.status, 410, "a reset link works once");
   const used = await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", { email, reset: link }), env)).json();
   assert.match(used.reason, /expired or was already used/, "a spent link says so");
@@ -225,35 +225,35 @@ test("beta_auth: BUG admin Reset looked like it did nothing while KV still serve
   // Resetting this admin's own password ended the session that asked for it, so sign in again.
   const oldSession = await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${token}` } }), env);
   assert.equal(oldSession.status, 401, "a password reset ends the sessions issued before it");
-  const fresh = (await (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password: "brand-new-pass" }), env)).json()).token;
-  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com" }, fresh), env);
+  const fresh = (await (await beta("login", jsonReq("/api/beta/login", "POST", { email: "poneill@conexusindiana.com", password: "brand-new-pass" }), env)).json()).token;
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com", firstName: "Test", lastName: "Person" }, fresh), env);
   const other = await (await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "other@example.com" }, fresh), env)).json();
   const wrong = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email, username: "poneill", password: "hijack-pass-1", reset: decodeURIComponent(other.link.split("reset=")[1]) }), env);
+    { email, password: "hijack-pass-1", reset: decodeURIComponent(other.link.split("reset=")[1]) }), env);
   assert.equal(wrong.status, 410, "a link for one admin cannot set another's password");
 });
 
 test("beta_auth: setup-complete rejects a short password and an unlisted email", async () => {
   const env = makeEnv();
   const short = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email: "a@b.com", username: "a", password: "short" }), env);
+    { email: "a@b.com", password: "short" }), env);
   assert.equal(short.status, 400);
 
   const unlisted = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email: "nobody@b.com", username: "nobody", password: "longenough1" }), env);
+    { email: "nobody@b.com", password: "longenough1" }), env);
   assert.equal(unlisted.status, 403);
 });
 
 test("beta_auth: a new admin is added, claims an account, and cannot be claimed twice", async () => {
   const { env, token } = await signedInEnv();
-  assert.equal((await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "New@Example.com" }, token), env)).status, 200);
+  assert.equal((await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "New@Example.com", firstName: "Test", lastName: "Person" }, token), env)).status, 200);
 
   const claimed = await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email: "new@example.com", username: "newbie", password: "longenough1" }), env)).json();
+    { email: "new@example.com", password: "longenough1" }), env)).json();
   assert.ok(claimed.token, "claiming an allowlisted email should return a session");
 
   const again = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email: "new@example.com", username: "newbie2", password: "longenough2" }), env);
+    { email: "new@example.com", password: "longenough2" }), env);
   assert.equal(again.status, 409, "an account with a password must not be re-claimable");
 });
 
@@ -3304,7 +3304,7 @@ test("partner_intel: the daily scan starts once a day at the time set on the con
     Date.now = () => Date.parse(nowIso);
     try {
       // Signed in at that moment too: the clock jump would otherwise outlive the 8-hour session.
-      const t = (await (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password: "seed-password-123" }), env)).json()).token;
+      const t = (await (await beta("login", jsonReq("/api/beta/login", "POST", { email: "poneill@conexusindiana.com", password: "seed-password-123" }), env)).json()).token;
       return await pi("schedule", piReq("schedule", "POST", { time, enabled }, t), env);
     } finally { Date.now = realNow; }
   };
@@ -5384,13 +5384,13 @@ test("access: an allowlist entry from before roles is an overall admin, so nobod
   // before roles wrote them: no role, no apps, no session version.
   await env.BOX_KV.put(ALLOWLIST, JSON.stringify([{ email: "old@example.com", username: null }]));
   await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email: "old@example.com", username: "old", password: "long-enough-1" }), env);
+    { email: "old@example.com", password: "long-enough-1" }), env);
   const { password_hash, password_salt } = JSON.parse(await env.BOX_KV.get(key));
   await env.BOX_KV.put(ALLOWLIST, JSON.stringify([{ email: "old@example.com", username: "old" }]));
-  await env.BOX_KV.put(key, JSON.stringify({ email: "old@example.com", username: "old", password_hash, password_salt,
+  await env.BOX_KV.put(key, JSON.stringify({ email: "old@example.com", password_hash, password_salt,
     created_at: "2026-01-01T00:00:00Z" }));
 
-  const login = await loginAs(env, "old", "long-enough-1");
+  const login = await loginAs(env, "old@example.com", "long-enough-1");
   assert.equal(login.status, 200);
   const token = (await login.json()).token;
   const me = await (await meOf(env, token)).json();
@@ -5400,7 +5400,7 @@ test("access: an allowlist entry from before roles is an overall admin, so nobod
   assert.equal((await handleMcmApi("box/status", bearerReq("/api/mcm/box/status", token), env)).status, 200);
   assert.notEqual((await pi("status", piGet("status", token), env)).status, 403);
   // Saving the list once writes the admin role down, and the person keeps it.
-  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com" }, token), env);
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com", firstName: "Test", lastName: "Person" }, token), env);
   assert.deepEqual(JSON.parse(await env.BOX_KV.get(ALLOWLIST)).map((a) => [a.email, a.role]),
     [["old@example.com", "admin"], ["new@example.com", "user"]]);
   assert.equal((await meOf(env, token)).status, 200, "the session from before still works");
@@ -5408,13 +5408,13 @@ test("access: an allowlist entry from before roles is an overall admin, so nobod
 
 test("access: a newly added person is a user with no apps, and /me says so", async () => {
   const { env, token } = await signedInEnv();
-  const add = await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com" }, token), env);
+  const add = await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com", firstName: "Test", lastName: "Person" }, token), env);
   assert.equal(add.status, 200);
-  assert.deepEqual((await add.json()).person, { email: "new@example.com", username: null, role: "user", apps: [], appAdmin: [] });
+  assert.deepEqual((await add.json()).person, { email: "new@example.com", firstName: "Test", lastName: "Person", name: "Test Person", role: "user", apps: [], appAdmin: [] });
   const t = (await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email: "new@example.com", username: "newbie", password: "long-enough-1" }), env)).json()).token;
+    { email: "new@example.com", password: "long-enough-1" }), env)).json()).token;
   assert.deepEqual(await (await meOf(env, t)).json(),
-    { email: "new@example.com", username: "newbie", role: "user", apps: [], appAdmin: [] });
+    { email: "new@example.com", firstName: "Test", lastName: "Person", name: "Test Person", role: "user", apps: [], appAdmin: [] });
   const people = (await (await beta("admins", bearerReq("/api/beta/admins", token), env)).json()).people;
   assert.deepEqual(people.map((p) => [p.email, p.role, p.has_password]),
     [["poneill@conexusindiana.com", "admin", true], ["new@example.com", "user", true]]);
@@ -5587,22 +5587,22 @@ test("access: BUG anyone could start replacing the shared Box connection", async
 test("access: BUG unlimited password guesses: the sixth wrong password is refused with 429, even when right", async () => {
   const { env } = await signedInEnv();
   await withoutLoginDelay(async () => {
-    // Email and username are the same account, so switching between them buys nothing.
-    for (const id of ["poneill", "poneill@conexusindiana.com", "POneill", "poneill", "poneill@conexusindiana.com"]) {
+    // The same email in any case is the same account, so switching case buys nothing.
+    for (const id of ["poneill@conexusindiana.com", "POneill@conexusindiana.com", "poneill@CONEXUSINDIANA.com", "poneill@conexusindiana.com", "poneill@conexusindiana.com"]) {
       assert.equal((await loginAs(env, id, "wrong-guess")).status, 401, id);
     }
-    const locked = await loginAs(env, "poneill", "seed-password-123");
+    const locked = await loginAs(env, "poneill@conexusindiana.com", "seed-password-123");
     assert.equal(locked.status, 429, "locked, even for the right password");
     assert.match((await locked.json()).error, /Too many wrong passwords\. Wait 15 minutes/);
     const realNow = Date.now;
     try {
       Date.now = () => realNow() + 16 * 60 * 1000;
-      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200, "the lock lifts after 15 minutes");
+      assert.equal((await loginAs(env, "poneill@conexusindiana.com", "seed-password-123")).status, 200, "the lock lifts after 15 minutes");
       // A successful sign-in clears the count: four more misses do not lock.
-      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill", "wrong-guess")).status, 401);
-      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200);
-      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill", "wrong-guess")).status, 401);
-      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200, "the count started again after success");
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill@conexusindiana.com", "wrong-guess")).status, 401);
+      assert.equal((await loginAs(env, "poneill@conexusindiana.com", "seed-password-123")).status, 200);
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill@conexusindiana.com", "wrong-guess")).status, 401);
+      assert.equal((await loginAs(env, "poneill@conexusindiana.com", "seed-password-123")).status, 200, "the count started again after success");
     } finally { Date.now = realNow; }
   });
 });
@@ -5643,7 +5643,7 @@ test("access: BUG a session outlived Sign out everywhere, removal and a password
   assert.equal((await meOf(env, beforeReset)).status, 401, "a reset ends the sessions issued before it");
   assert.equal((await pi("home", piGet("home", beforeReset), env)).status, 401, "in every app, not just /me");
   // So does removal.
-  await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email: "u@example.com", username: "u", password: "long-enough-2" }), env);
+  await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email: "u@example.com", password: "long-enough-2" }), env);
   const beforeRemoval = (await (await loginAs(env, "u@example.com", "long-enough-2")).json()).token;
   assert.equal((await meOf(env, beforeRemoval)).status, 200);
   const removed = await beta("admins/remove", jsonReq("/api/beta/admins/remove", "POST", { email: "u@example.com" }, token), env);
@@ -5664,13 +5664,13 @@ test("access: BUG the last overall admin could be removed or demoted", async () 
   assert.equal((await post("admins/remove", { email: me })).status, 409);
   assert.equal((await (await meOf(env, token)).json()).role, "admin", "still an admin");
   // A user on the list does not count: there is still only one admin.
-  await post("admins", { email: "u@example.com" });
+  await post("admins", { email: "u@example.com", firstName: "U", lastName: "Ser" });
   assert.equal((await post("admins/remove", { email: me })).status, 409);
   // With a second admin, either can go.
-  await post("admins", { email: "second@example.com", role: "admin" });
+  await post("admins", { email: "second@example.com", firstName: "Sec", lastName: "Ond", role: "admin" });
   assert.equal((await post("admins/update", { email: me, role: "user" })).status, 200);
   const second = (await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
-    { email: "second@example.com", username: "second", password: "long-enough-1" }), env)).json()).token;
+    { email: "second@example.com", password: "long-enough-1" }), env)).json()).token;
   assert.equal((await post("admins/remove", { email: "second@example.com" }, second)).status, 409, "the remaining admin cannot remove themselves");
   assert.equal((await post("admins/remove", { email: "u@example.com" }, second)).status, 200, "a user can be removed");
 });
@@ -5937,6 +5937,36 @@ test("partner_intel: a follow-up asked before a new conversation's first answer 
   assert.deepEqual(sent, ["", "c-real"]);
   assert.equal(conv.id, "c-real");
   assert.equal(conv.temp, false);
+});
+
+test("access: accounts are email and password only, and an admin adding a person enters their first and last name", async () => {
+  const { env, token } = await signedInEnv();
+  const post = (route, body, t = token) => beta(route, jsonReq(`/api/beta/${route}`, "POST", body, t), env);
+  const noName = await post("admins", { email: "brooke@example.com" });
+  assert.equal(noName.status, 400);
+  assert.match((await noName.json()).error, /first and last name/);
+  assert.equal((await post("admins", { email: "brooke@example.com", firstName: "  Brooke ", lastName: "Smith" })).status, 200);
+  // No username is asked for when they set up: email and a password.
+  const set = await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email: "brooke@example.com", password: "long-enough-1" }), env)).json();
+  assert.equal(set.name, "Brooke Smith");
+  assert.equal((await loginAs(env, "brooke@example.com", "long-enough-1")).status, 200);
+  // An old username no longer signs anyone in.
+  const list = JSON.parse(await env.BOX_KV.get(ALLOWLIST));
+  list.find((a) => a.email === "brooke@example.com").username = "brooke";
+  await env.BOX_KV.put(ALLOWLIST, JSON.stringify(list));
+  assert.equal((await loginAs(env, "brooke", "long-enough-1")).status, 401);
+  // An admin can correct the name; an empty one is refused.
+  assert.equal((await post("admins/update", { email: "brooke@example.com", firstName: "Brook", lastName: "Smith" })).status, 200);
+  assert.equal((await post("admins/update", { email: "brooke@example.com", firstName: " " })).status, 400);
+  const people = (await (await beta("admins", bearerReq("/api/beta/admins", token), env)).json()).people;
+  assert.equal(people.find((p) => p.email === "brooke@example.com").name, "Brook Smith");
+  assert.ok(!("username" in JSON.parse(await env.BOX_KV.get(ALLOWLIST))[0]), "usernames are no longer stored");
+  const home = fs.readFileSync(path.join(path.dirname(SRC), "public", "index.html"), "utf8");
+  assert.ok(!/username/i.test(home.replace(/autocomplete="[^"]*"/g, "")), "the sign-in page asks for no username");
+  const settings = fs.readFileSync(path.join(path.dirname(SRC), "public", "admin", "settings.html"), "utf8");
+  assert.match(settings, /id="newFirst"/);
+  assert.match(settings, /id="newLast"/);
 });
 
 let failed = 0;

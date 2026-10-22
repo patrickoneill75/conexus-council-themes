@@ -252,24 +252,26 @@ lock.
 1. Add `poneill_password` as a repository secret (a password of your choosing), then run
    **Actions → Set Cloudflare secrets → Run workflow** — same mechanism as every other
    secret in this project (step 4 above). This seeds one admin account: email
-   `poneill@conexusindiana.com`, username `poneill`, that password. It's read exactly
+   `poneill@conexusindiana.com`, that password. It's read exactly
    once, the first time anyone hits `/admin`; after that the account is stored the same
    way every other admin's is, and the secret is never read again.
-2. Open `/admin/login.html` and sign in with that username/email and password.
+2. Open the site's home page (the sign-in page) and sign in with that email and password.
+   Add your first and last name under **Settings** → **People** → **Change access**.
 
 ### Adding a person and giving them apps
 
 1. Open **Settings** (`/admin/settings.html`, linked from the hub for admins) →
    **People**.
-2. Enter their email, choose **User** or **Admin**, and click **Add**. They're now
+2. Enter their first name, last name and email, choose **User** or **Admin**, and click **Add**.
+   Everyone signs in with their email; there are no usernames. They're now
    allowed to set up their own account, but nothing is created for them yet.
 3. For a user, **Change access** opens a tick list of every app. Tick **Use** for each
    app they should open, and **Admin** for each app whose control panel they should run.
    Click **Save**.
 
-They go to `/admin/login.html` → **Set up new account / Forgot password** → enter their
+They go to the site's home page → **Set up new account / Forgot password** → enter their
 email → if it's on the list and doesn't have a password yet, they're prompted to pick a
-username and password right there. The same button handles "I forgot my password": once
+password right there. The same button handles "I forgot my password": once
 an admin clears it for you (**Settings** → **Reset password**), your account is back in
 that same "allowed, no password yet" state, and you use the same button to set a new one.
 
@@ -287,8 +289,7 @@ Each person in **People** also has:
    still has a password, and hasn't been signed out everywhere since that session began.
    A reset, a removal or **Sign out everywhere** ends their sessions on the next click.
 2. Five wrong passwords for one account within 15 minutes lock that account's sign-in
-   for 15 minutes, even with the right password. Email and username count as the same
-   account. The sign-in page shows "Too many wrong passwords. Wait 15 minutes, then try
+   for 15 minutes, even with the right password. The sign-in page shows "Too many wrong passwords. Wait 15 minutes, then try
    again." A successful sign-in clears the count.
 3. About twenty wrong passwords from one network address within 15 minutes lock that
    address for 15 minutes, so one person can't try a few guesses at every account.

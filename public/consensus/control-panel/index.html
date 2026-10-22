@@ -257,7 +257,7 @@
 
   fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
     .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
-    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.name || me.email); })
     .catch(signOut);
 
   /* ---------- list view ---------- */

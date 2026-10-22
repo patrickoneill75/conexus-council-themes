@@ -61,8 +61,8 @@
   <p class="sub">Conexus Indiana staff tools. Sign in with your Connector account.</p>
 
   <div class="card" id="loginCard">
-    <label for="loginId">Email or username</label>
-    <input type="text" id="loginId" autocomplete="username">
+    <label for="loginId">Email</label>
+    <input type="email" id="loginId" autocomplete="email">
     <label for="loginPw">Password</label>
     <input type="password" id="loginPw" autocomplete="current-password">
     <button type="button" id="loginBtn">Sign in</button>
@@ -80,8 +80,6 @@
       <p class="msg" id="setupCheckMsg"></p>
     </div>
     <div id="setupPasswordStep" hidden>
-      <label for="setupUsername">Choose a username</label>
-      <input type="text" id="setupUsername" autocomplete="username">
       <label for="setupPassword">Choose a password</label>
       <input type="password" id="setupPassword" autocomplete="new-password">
       <p class="msg muted">At least 8 characters.</p>
@@ -150,17 +148,17 @@
   } catch (e) {}
 
   el("loginBtn").addEventListener("click", function () {
-    var identifier = el("loginId").value.trim();
+    var email = el("loginId").value.trim();
     var password = el("loginPw").value;
-    if (!identifier || !password) {
+    if (!email || !password) {
       el("loginMsg").className = "msg err";
-      el("loginMsg").textContent = "Enter your email/username and password.";
+      el("loginMsg").textContent = "Enter your email and password.";
       return;
     }
     el("loginBtn").disabled = true;
     el("loginMsg").className = "msg muted";
     el("loginMsg").textContent = "Signing in…";
-    api("login", { identifier: identifier, password: password })
+    api("login", { email: email, password: password })
       .then(function (data) { goToPlatform(data.token); })
       .catch(function (e) {
         el("loginBtn").disabled = false;
@@ -209,8 +207,6 @@
       el("setupCheckMsg").textContent = "";
       el("setupEmailStep").hidden = true;
       el("setupPasswordStep").hidden = false;
-      var suggested = email.split("@")[0].replace(/[^a-z0-9._-]/gi, "");
-      if (!el("setupUsername").value) el("setupUsername").value = suggested;
     }).catch(function () {
       el("setupCheckBtn").disabled = false;
       el("setupCheckMsg").className = "msg err";
@@ -220,17 +216,16 @@
 
   el("setupCompleteBtn").addEventListener("click", function () {
     var email = el("setupEmail").value.trim();
-    var username = el("setupUsername").value.trim();
     var password = el("setupPassword").value;
-    if (!username || password.length < 8) {
+    if (password.length < 8) {
       el("setupCompleteMsg").className = "msg err";
-      el("setupCompleteMsg").textContent = "Choose a username and a password of at least 8 characters.";
+      el("setupCompleteMsg").textContent = "Choose a password of at least 8 characters.";
       return;
     }
     el("setupCompleteBtn").disabled = true;
     el("setupCompleteMsg").className = "msg muted";
     el("setupCompleteMsg").textContent = "Saving…";
-    api("setup-complete", { email: email, username: username, password: password, reset: resetLink })
+    api("setup-complete", { email: email, password: password, reset: resetLink })
       .then(function (data) { goToPlatform(data.token); })
       .catch(function (e) {
         el("setupCompleteBtn").disabled = false;
