@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Control Panel — Council Themes</title>
+<script src="/access.js" data-app="council-data" data-need="admin"></script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='15' width='16' height='3' rx='1.5' fill='white'/%3E%3Crect x='8' y='21' width='10' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
 <script src="/claude-confirm.js"></script>
 <style>
@@ -227,6 +228,7 @@
             <button id="boxDisconnectBtn" type="button">Disconnect</button>
           </div>
         </div>
+        <p class="small muted" id="boxAdminNote" style="margin:10px 0 0" hidden>Only an admin can connect or disconnect Box, because every app shares this one connection.</p>
         <p class="small" id="boxNotice" style="margin:10px 0 0"></p>
       </div>
 
@@ -289,7 +291,15 @@
 
   fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
     .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
-    .then(function (me) { el("whoami").textContent = "Signed in as " + (me.username || me.email); })
+    .then(function (me) {
+      el("whoami").textContent = "Signed in as " + (me.username || me.email);
+      // Box is one connection shared by every app, so only an overall admin connects or disconnects it.
+      if (me.role !== "admin") {
+        el("boxConnectBtn").hidden = true;
+        el("boxDisconnectBtn").hidden = true;
+        el("boxAdminNote").hidden = false;
+      }
+    })
     .catch(signOut);
 
   /* Box's OAuth callback redirects the whole page back here with ?box=connected or

@@ -1,4 +1,4 @@
-import { handleBetaApi } from "./beta_auth.js";
+import { handleBetaApi, requireBetaAuth, isOverallAdmin } from "./beta_auth.js";
 import { handleConsensusApi } from "./consensus.js";
 import { handlePcnApi } from "./pcn.js";
 import { handleMcmApi } from "./mcm.js";
@@ -16,9 +16,9 @@ import { handlePartnerIntelApi, runScheduledScan, runSummariesAhead } from "./pa
  * /api/ runs here, on Cloudflare's servers, which is what keeps every secret out of
  * the browser. This file itself only holds what's genuinely shared platform-wide:
  *
- *   /api/beta/*         -- the admin-account system (see src/beta_auth.js) -- sign-in,
- *                          settings, and the per-app visibility tiers every mini app's
- *                          own page reads.
+ *   /api/beta/*         -- the staff-account system (see src/beta_auth.js) -- sign-in,
+ *                          people and their app access, and the per-app visibility tiers
+ *                          every mini app's own page reads.
  *   /api/council-data/* -- Council Themes/Quant dashboard (see src/council_data.js).
  *   /api/consensus/*    -- Consensus (see src/consensus.js).
  *   /api/pcn/*          -- Issue Network Mapper (see src/pcn.js).
@@ -34,7 +34,8 @@ import { handlePartnerIntelApi, runScheduledScan, runSummariesAhead } from "./pa
  *     a small read/refresh helper -- see e.g. src/pcn.js's own boxAccessToken()); this
  *     is the only place that flow's initial code exchange happens, since there's one
  *     registered callback URL for the whole app. The actual "Log in with Box" button
- *     lives only in Council Data's own control panel -- see src/council_data.js.
+ *     lives only in Council Data's own control panel -- see src/council_data.js -- and
+ *     starting it (authorize-url) needs an overall admin's session.
  *
  * CONFIGURATION
  *   GITHUB_TOKEN       (secret)  fine-grained PAT, Actions: read+write on this repo.
@@ -167,11 +168,17 @@ async function handleApi(route, request, env) {
   }
 
   // ---- GET /api/box/authorize-url -----------------------------------------------------
+  // Starts replacing the one Box connection every mini app shares, so it needs an overall
+  // admin's session. It used to need none: anyone could start the flow, and whoever finished
+  // it would have pointed every app at their own Box account.
   if (route === "box/authorize-url" && method === "GET") {
     if (!env.BOX_CLIENT_ID || !env.BOX_KV) {
       return json({ error: "Box is not set up yet on this Worker (BOX_CLIENT_ID or the "
                           + "BOX_KV binding is missing). See SETUP.md." }, 500);
     }
+    const auth = await requireBetaAuth(request, env);
+    if (!auth) return json({ error: "Not signed in" }, 401);
+    if (!isOverallAdmin(auth)) return json({ error: "Only an admin can connect Box." }, 403);
     const state = crypto.randomUUID();
     await env.BOX_KV.put(`box:state:${state}`, "1", { expirationTtl: 600 });
     const redirectUri = `${new URL(request.url).origin}/api/box/callback`;

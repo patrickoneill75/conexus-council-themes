@@ -57,7 +57,7 @@
  *     panel's status card reads.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canAdminApp, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 import bundledOccupationData from "./data/stars-occupations.json";
 import {
   findTransfers,
@@ -234,6 +234,8 @@ export async function handleStarsApi(route, request, env) {
   if (!env.BOX_KV) return json({ error: "BOX_KV binding is missing -- see SETUP.md." }, 500);
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
+  // Every route below is this app's control panel: its own admins, or an overall admin.
+  if (!canAdminApp(auth, "stars")) return json({ error: NO_SETTINGS_ACCESS }, 403);
 
   // GET box/folders?id=0 -- same folder-picker copy every other mini app here has.
   if (route === "box/folders" && method === "GET") {

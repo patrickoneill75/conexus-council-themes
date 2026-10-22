@@ -20,9 +20,10 @@ gated by the shared admin accounts, never a password of its own.
 | --- | --- | --- |
 | `public/index.html` | Worker static assets | The **public grid** -- Connector's own front door. Reads `public/apps.js` and each app's current visibility tier and shows a tile only for the ones set to "Public". No login, no control-panel links. |
 | `public/apps.js` | Worker static assets | The one shared registry of every mini app (id, name, description, base URL, control panel URL) -- read by both the public grid and the admin hub. Add a new mini app here once. |
-| `public/admin/` | Worker static assets | The admin hub: sign-in (`login.html`), the grid of *every* mini app regardless of visibility (`index.html`), and Settings (`settings.html`) -- admin accounts plus each app's visibility tier. See **8 · The admin hub** below. |
-| `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. Multi-user admin accounts (signup, sign-in, password reset, the admin list) and the per-app visibility tiers every mini app's own page reads via `public/tier-gate.js`. |
-| `public/tier-gate.js` | Worker static assets | Included by every mini app's public base page. Redirects to sign-in when that app's tier is "Admin-only" and there's no session; otherwise reveals the page immediately. |
+| `public/admin/` | Worker static assets | The admin hub: sign-in (`login.html`), the grid of the apps each person can use, with control panels for the ones they admin (`index.html`), and Settings (`settings.html`, overall admins only) -- people, their app access, and each app's visibility tier. See **8 · The admin hub** below. |
+| `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. Staff accounts (sign-in, set-up, password reset, sign out everywhere), roles and per-app access (`canUseApp` / `canAdminApp`, which every mini app checks), the login rate limit, and the per-app visibility tiers every mini app's own page reads via `public/tier-gate.js`. |
+| `public/access.js` | Worker static assets | The page-side access check every control panel and staff page loads: sign-in when there's no session, a plain "You don't have access" message when the person lacks that app (or its admin). The API checks the same thing on every route. |
+| `public/tier-gate.js` | Worker static assets | Included by every mini app's public base page. When that app's tier is "Staff with access" (stored as `admin-only`), redirects to sign-in without a session and loads `public/access.js` with one; otherwise reveals the page immediately. |
 | `public/council-data/` | Worker static assets | Council Themes/Quant: the public dashboard (`index.html`, Power BI pages plus the Council Themes tab) and its control panel (`control-panel/index.html` -- Helper/Survey upload, Update Dashboard, the Meetings table, Box login and the Data Folder picker under Developer). See **5 · Connect Box and set up the panel** below. |
 | `src/council_data.js` | Cloudflare Worker | `/api/council-data/*`. Everything the Council Themes/Quant control panel does, gated by the shared admin accounts via `requireBetaAuth` -- no password of its own. |
 | `src/worker.js` | Cloudflare Worker | `/api/*` routing to every mini app, plus the one shared Box OAuth login flow (`box/authorize-url`, `box/callback`) every mini app's own Box connection reuses. |
@@ -47,8 +48,8 @@ gated by the shared admin accounts, never a password of its own.
 | `public/apprenticeship/` | Worker static assets | Apprenticeship Readiness Toolbox: the employer's front door (`index.html` — signed in goes to their dashboard, everyone else to sign-in/registration), sign-in (`account.html`), the respondent chat (`respond.html`), the workforce needs assessment (`workforce.html`), their readiness dashboard (`dashboard.html`), and the control panel (`control-panel/index.html` and `control-panel/responses.html`, both admin-gated). See **15 · Apprenticeship Readiness Toolbox** below. |
 | `src/apprenticeship_workforce.js` | Cloudflare Worker | Step 2's Manufacturing Workforce Needs Assessment: role normalisation, the gap arithmetic, the apprentice projection and the CSV. No Claude call anywhere in it. |
 | `src/apprenticeship.js` | Cloudflare Worker | `/api/apprenticeship/*`. The respondent chat, results and dashboard routes are public and unauthenticated; projects, the assessment editor, responses, the issue log and the CSV are admin-gated. Its own Claude key, `apprenticeship_claude_api`, is called live from the Worker (see step 15). |
-| `public/partner-intel/` | Worker static assets | Partner Intelligence, staff only: the app (`index.html`: Home, Companies, Programs, Ask, and the Ask box on every page; `askbox.js`) and its control panel (`control-panel/index.html`: Box folder, scans, partner list, names to review, topics). Both always require a signed-in admin account. |
-| `src/partner_intel.js` | Cloudflare Worker | `/api/partner-intel/*`. Every route except the pipeline relay requires an admin session. Holds the Box credential, so the pipeline only sees file bytes. Its own Claude key, `partner_intel_claude_api`, answers Ask (see step 16). |
+| `public/partner-intel/` | Worker static assets | Partner Intelligence, staff only: the app (`index.html`: Home, Companies, Programs, Ask, and the Ask box on every page; `askbox.js`) and its control panel (`control-panel/index.html`: Box folder, scans, partner list, names to review, topics). Both always require a signed-in account: the app needs use access to Partner Intelligence, the control panel needs its admin. |
+| `src/partner_intel.js` | Cloudflare Worker | `/api/partner-intel/*`. Every route except the pipeline relay requires a session with Partner Intelligence access; the control panel's routes require its admin. Holds the Box credential, so the pipeline only sees file bytes. Its own Claude key, `partner_intel_claude_api`, answers Ask (see step 16). |
 | `partner_intel/` + `.github/workflows/partner_intel_run.yml` | Python / GitHub Actions | The scan: Box files to text, to units, to one Claude call each, verified and published. Runs every morning and from the control panel. |
 
 ---
@@ -214,10 +215,38 @@ which is the problem this wrapper exists to avoid.
 
 **Connector** is the name of the whole platform: one public grid at the site root
 (`public/index.html`, no login) listing whichever mini apps are currently set to
-"Public", and one admin hub at `/admin/` (sign-in, the grid of *every* mini app, and
-Settings) that every mini app's control panel signs into via the same admin accounts.
-There is no per-app password anywhere — Council Themes/Quant's control panel signs in
-exactly the same way Issue Network Mapper/Consensus/MCM's always have.
+"Public", and one admin hub at `/admin/` (sign-in, the apps each person can use, and
+Settings) that every mini app's control panel and staff page signs into via the same
+accounts. There is no per-app password anywhere — Council Themes/Quant's control panel
+signs in exactly the same way Issue Network Mapper/Consensus/MCM's always have.
+
+### Who can do what
+
+Every person on the list is an **Admin** or a **User**.
+
+1. **Admins** reach everything: every app, every control panel, and Settings. Only
+   admins add, remove or change people, change app visibility, and connect or
+   disconnect Box.
+2. **Users** reach only the apps ticked for them in Settings, one app at a time. **Use**
+   opens that app's staff pages: its base page when its visibility is "Staff with
+   access", and Partner Intelligence and Issue Network Mapper, which are always staff
+   only.
+3. A user can also be **Admin** of particular apps. For example, Brooke can be a user
+   with admin on the Council Meeting Survey Dashboard: she runs its control panel and
+   nothing else. Admin of an app includes using it. Plain users never reach a control
+   panel.
+4. Changes apply on the person's next click. Access is read fresh on every request, not
+   stored in their session, so nobody has to sign out.
+5. Everyone on the list before roles existed became an admin when this shipped, so
+   nobody lost access. A person added now starts as a user with no apps.
+6. Connector always keeps at least one admin: the last one can't be removed or made a
+   user.
+
+The hub shows each person only the apps they can use, with a **Control panel** link for
+the ones they admin. A page they can't open shows "You don't have access to this app"
+(or "...to this app's settings" for a control panel) instead of the page. Every API route
+checks the same access and refuses with 403, so the page check is a courtesy, not the
+lock.
 
 ### Signing in
 
@@ -229,22 +258,50 @@ exactly the same way Issue Network Mapper/Consensus/MCM's always have.
    way every other admin's is, and the secret is never read again.
 2. Open `/admin/login.html` and sign in with that username/email and password.
 
-### Adding another admin
+### Adding a person and giving them apps
 
-From **Settings** (`/admin/settings.html`, linked from the hub) → **Add an admin** →
-enter their email → **Add**. That's it — they're now allowed to set up their own
-account, but nothing is created for them yet.
+1. Open **Settings** (`/admin/settings.html`, linked from the hub for admins) →
+   **People**.
+2. Enter their email, choose **User** or **Admin**, and click **Add**. They're now
+   allowed to set up their own account, but nothing is created for them yet.
+3. For a user, **Change access** opens a tick list of every app. Tick **Use** for each
+   app they should open, and **Admin** for each app whose control panel they should run.
+   Click **Save**.
 
 They go to `/admin/login.html` → **Set up new account / Forgot password** → enter their
 email → if it's on the list and doesn't have a password yet, they're prompted to pick a
 username and password right there. The same button handles "I forgot my password": once
-another admin clears it for you (**Settings** → **Reset**), your account is back in
+an admin clears it for you (**Settings** → **Reset password**), your account is back in
 that same "allowed, no password yet" state, and you use the same button to set a new one.
 
+Each person in **People** also has:
+
+1. **Reset password**: clears their password, signs them out everywhere, and gives you a
+   single-use link (48 hours) to send them.
+2. **Sign out everywhere**: ends every session they have. Anyone can do this to
+   themselves from the hub's **Sign out everywhere**.
+3. **Remove**: takes them off the list and ends their sessions at once.
+
+### Sign-in limits and sessions
+
+1. A session lasts 8 hours. Every request checks that the person is still on the list,
+   still has a password, and hasn't been signed out everywhere since that session began.
+   A reset, a removal or **Sign out everywhere** ends their sessions on the next click.
+2. Five wrong passwords for one account within 15 minutes lock that account's sign-in
+   for 15 minutes, even with the right password. Email and username count as the same
+   account. The sign-in page shows "Too many wrong passwords. Wait 15 minutes, then try
+   again." A successful sign-in clears the count.
+3. About twenty wrong passwords from one network address within 15 minutes lock that
+   address for 15 minutes, so one person can't try a few guesses at every account.
+4. Both limits are best effort. They are stored in Workers KV, which is eventually
+   consistent: attempts that reach different Cloudflare locations within seconds of each
+   other can each see an older count, and a revocation can take up to about a minute to
+   reach every location. They stop sustained guessing, not a burst of a few extra tries.
+
 **Worth knowing:** there's no email-sending step anywhere in that flow — setting a
-password only checks that the email is on the admin list, not that whoever's typing
+password only checks that the email is on the list, not that whoever's typing
 actually owns that inbox. For a small, trusted team that's a reasonable trade for staying
-free and simple, but it does mean anyone who knows an admin's email (and that it doesn't
+free and simple, but it does mean anyone who knows a listed email (and that it doesn't
 have a password set yet, e.g. right after a reset) could claim the account first. If that
 ever stops being an acceptable trade, the fix is a real "magic link" flow — a one-time
 link emailed to the address, using something like Resend or Postmark — which would need
@@ -257,14 +314,15 @@ project doesn't otherwise need.
 
 Also on **Settings**, per app: **Public** (listed on the public grid at the site root),
 **Hidden** (not listed there, but the page still works for anyone with the direct
-link), or **Admin-only** (not listed, and the page itself redirects to sign-in unless
-you're already signed in — the same check every admin page here already does, just
-driven by this setting instead of being hardcoded). Council Themes/Quant and
-Manufacturing Conditions Monitor default to Public; Issue Network Mapper and Consensus
-default to Admin-only, since neither has a public-facing page built yet.
+link), or **Staff with access** (not listed, and the page opens only for a signed-in
+admin or a user given that app; anyone else is sent to sign-in or sees "You don't have
+access to this app"). "Staff with access" is stored as `admin-only`, its name before
+per-app access existed. Council Themes/Quant and Manufacturing Conditions Monitor default
+to Public; Issue Network Mapper and Consensus default to Staff with access, since
+neither has a public-facing page built yet.
 
 One thing this does **not** do: for a page whose content is plain static JSON
-(Council Themes/Quant, MCM's dashboard), "Admin-only" gates the *page*, not the
+(Council Themes/Quant, MCM's dashboard), "Staff with access" gates the *page*, not the
 underlying JSON files themselves (`council-themes.json`, `/mcm/data.json`, etc.) —
 those stay fetchable directly by anyone who already knows or guesses the exact
 filename, same as today. Airtight gating of the data itself would mean serving it
@@ -274,14 +332,19 @@ through an authenticated `/api/*` route instead of a static file; ask if you nee
 
 1. Build it wherever makes sense in the repo — its own `public/<id>/` pages (base page
    at `public/<id>/index.html`, control panel at `public/<id>/control-panel/index.html`),
-   its own `/api/<id>/*` routes if it needs a backend (gated by `requireBetaAuth`, never
-   a password of its own), its own GitHub Actions workflow if it needs one.
+   its own `/api/<id>/*` routes if it needs a backend (gated by `requireBetaAuth` plus
+   `canAdminApp(auth, "<id>")` for control-panel routes or `canUseApp(auth, "<id>")` for
+   staff routes, never a password of its own), its own GitHub Actions workflow if it
+   needs one. Its control panel pages load
+   `<script src="/access.js" data-app="<id>" data-need="admin"></script>` in `<head>`.
    `src/beta_auth.js` and the rest of the platform don't need to know anything about how
    it works internally.
 2. Add one entry to the `APPS` array in `public/apps.js` — id, name, description; its
    `baseUrl`/`controlPanelUrl` are just `/<id>` and `/<id>/control-panel`. That's the
    only step that makes it show up in the admin hub's grid and in Settings' visibility
-   list. If its base page should ever be gated by the "Admin-only" tier, also add
+   and People lists. Also add its id to `KNOWN_APP_IDS` in `src/beta_auth.js`, so it can
+   be given to users. If its base page should ever be gated by the "Staff with access"
+   tier, also add
    `<script src="/tier-gate.js" data-app="<id>"></script>` (and
    `<style>html{visibility:hidden}</style>`) to that page, same as
    `public/council-data/index.html`/`public/mcm/index.html` do.
@@ -1208,23 +1271,34 @@ Box holds the notes you point it at, the member list, and the database files des
   Developer section) deletes the stored token pair, and you can revoke the app's access
   from your own Box account settings at any time. Every other mini app's own Box
   connection is the same underlying token, so this disconnects all of them at once.
+  Connecting (`GET /api/box/authorize-url`) and disconnecting both need an overall
+  admin's session, because either one changes Box for every app. Box's return trip
+  (`/api/box/callback`) carries no session, so a one-time `state` value issued by
+  authorize-url proves it belongs to a login an admin started.
 - **Auditable.** Every analysis run is a logged GitHub Actions run showing when it ran,
   who triggered it, and exactly what it extracted, appended, and published.
-- **The admin accounts (`/api/beta/*`) are a separate, lighter-weight system** from
-  Box/GitHub credentials, and now the *only* sign-in system in this app — there is no
-  per-app password anywhere any more. Passwords are hashed (PBKDF2-SHA256, a random
+- **The staff accounts (`/api/beta/*`) are a separate, lighter-weight system** from
+  Box/GitHub credentials, and now the *only* staff sign-in system in this app — there is
+  no per-app password anywhere any more. Passwords are hashed (PBKDF2-SHA256, a random
   salt per account) — never stored or logged in plain text — and session tokens are
   HMAC-signed, not cookies, so there's nothing for a CSRF attack to ride on. The
   iteration count is intentionally lower than a typical server-side recommendation,
   because it has to fit inside a Cloudflare Worker's per-request CPU budget (not
   wall-clock time) rather than a normal server's — see the comment above
-  `PBKDF2_ITERATIONS` in `src/beta_auth.js` for the actual numbers. What it does *not* do
-  is verify email ownership before letting someone set a password (see step 8 above) — a
-  deliberate simplicity trade for a small, trusted admin list, not an oversight.
+  `PBKDF2_ITERATIONS` in `src/beta_auth.js` for the actual numbers. The login rate limit
+  (step 8) is what keeps that low count from being guessed at quickly; it is best effort,
+  because Workers KV is eventually consistent. Every request re-reads the person's role,
+  apps and session version, so removing someone, resetting their password or signing
+  them out everywhere takes effect on their next click, give or take KV's propagation
+  delay of up to about a minute. Every mini app's API checks app access itself
+  (`canUseApp` / `canAdminApp`); the page-side check in `public/access.js` only decides
+  what to show. What it does *not* do is verify email ownership before letting someone
+  set a password (see step 8 above) — a deliberate simplicity trade for a small, trusted
+  staff list, not an oversight.
 - **Per-app visibility (Settings, step 8) is a curation/UI control, not a hard access
-  boundary for static-JSON pages.** "Admin-only" gates the *page* the same way every
-  admin page here already gates itself (a client-side session check redirecting to
-  sign-in), but does not additionally lock the underlying static JSON files
+  boundary for static-JSON pages.** "Staff with access" gates the *page* with a
+  client-side check (sign-in, then whether the person was given that app), but does
+  not additionally lock the underlying static JSON files
   (`council-themes.json`, `quant-dashboard.json`, `/mcm/data.json`, etc.) — those stay
   fetchable directly by anyone who already knows or guesses the exact filename. Nothing
   in any of them is more sensitive than what "Public" already shows by design (see
@@ -1236,8 +1310,8 @@ Box holds the notes you point it at, the member list, and the database files des
   the client for anything that matters: which follow-up to generate (and how many to
   allow) is read from the stored survey, never from the request, and `submit` only
   writes to the one Box folder that survey's admin already configured. The control
-  panel routes (create/edit a survey, trigger analysis) require a signed-in admin
-  account, same as the rest of the platform.
+  panel routes (create/edit a survey, trigger analysis) require a signed-in Consensus
+  admin or overall admin, same as the rest of the platform.
 - **Issue Network Mapper's network view is the one page in this repo that loads an external
   script** (D3, from a CDN) — needed for the force-directed graph layout; every other
   page here is hand-rolled with no third-party JS. It's a static, widely-used
@@ -1248,13 +1322,15 @@ Box holds the notes you point it at, the member list, and the database files des
   about council members or survey respondents — whether it's currently public is set in
   Settings (step 8), same as Council Themes/Quant's own dashboard. Only its control
   panel (`public/mcm/control-panel/index.html`), which *runs* the download/analyze/
-  publish jobs, always requires a signed-in admin account. `SEC_CONTACT_EMAIL` is not
+  publish jobs, always requires a signed-in MCM admin or overall admin. `SEC_CONTACT_EMAIL` is not
   sensitive — it's sent in plain text as part of SEC EDGAR's required fair-access
   request header, the same way any browser's user agent is — it's a repository secret
   only because there's no other per-repo config file for it.
 - **Partner Intelligence holds members' candid statements, so it has no public tier.** Every
-  `/api/partner-intel/*` route except `relay/*` requires a beta-account session, and both pages
-  redirect to sign-in without one, regardless of the app-visibility setting. The relay routes
+  `/api/partner-intel/*` route except `relay/*` requires a session with access to Partner
+  Intelligence (an overall admin, or a user given the app), and its control-panel routes require
+  its admin. Before per-app access, any signed-in account could read it. Both pages redirect to
+  sign-in without a session, regardless of the app-visibility setting. The relay routes
   require the shared `BOX_RELAY_SECRET`. The Box credential never leaves the Worker: the pipeline
   receives folder listings and file bytes through the relay. Notes are fenced as data in every
   prompt, and every extracted row must quote the notes, checked in code.
@@ -1275,8 +1351,10 @@ Box holds the notes you point it at, the member list, and the database files des
 | Update Dashboard says "No new meetings found" | Every meeting in the current Post-Meeting Survey export is already in `data/feedback_log.json` — this is expected if nothing new was uploaded, not a bug. |
 | Run succeeds, page unchanged | Nothing changed, or Cloudflare is still redeploying. Give it a minute. |
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
-| `/admin/login.html` says "That email isn't on the admin list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
-| "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an existing admin to **Reset** it under Manage admins, then try again. |
+| `/admin/login.html` says "That email isn't on the Connector list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
+| "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an admin to **Reset password** for it under Settings → People, then try again. |
+| Sign-in says "Too many wrong passwords" | Five wrong passwords for that account (or about twenty from that network) in 15 minutes. Wait 15 minutes, or have an admin **Reset password** and use the link, which signs you in. See step 8. |
+| A page says "You don't have access to this app" or "...to this app's settings" | You're signed in but not given that app (or not its admin). An admin ticks it under Settings → People → **Change access**; it applies on your next click. |
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
 | **Set Cloudflare secrets** reports success but a key/secret still shows as missing on the live site, for every secret at once, not just one | `wrangler.jsonc`'s `"name"` doesn't match the Worker's actual name in the Cloudflare dashboard (Workers & Pages → the one "Workers Builds" deploys to). `wrangler secret put` creates a Worker under whatever name it's given if none exists yet, so a mismatch here silently sends every secret to a separate, never-deployed Worker instead of erroring — this happened once already (see `wrangler.jsonc`'s comment on `"name"`). Fix the name in `wrangler.jsonc` to match the dashboard, commit, then re-run **Set Cloudflare secrets**. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |

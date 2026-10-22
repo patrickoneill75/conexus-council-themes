@@ -37,7 +37,7 @@
  *   BOX_RELAY_SECRET, GITHUB_TOKEN, GITHUB_REPO as for every Box-backed tool here.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canUseApp, canAdminApp, NO_APP_ACCESS, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
@@ -3304,6 +3304,14 @@ async function handleRelay(route, request, env) {
   return json({ error: "Not found" }, 404);
 }
 
+/* The control panel's routes (public/partner-intel/control-panel/): Partner Intelligence admins, or an
+   overall admin. Every other staff route, the ones the app itself and its Ask box call, needs use access
+   to "partner-intel". relay/* is the pipeline's, on BOX_RELAY_SECRET, and never reaches this check. */
+const PI_ADMIN_ROUTES = new Set(["status", "settings", "schedule", "run", "run-status", "roster", "contacts",
+  "contacts/import", "attribution/review", "attribution/decide", "review", "review/add", "review/map", "topics",
+  "topics/override", "update/apply", "box/folders"]);
+const piAdminRoute = (route) => PI_ADMIN_ROUTES.has(route) || route.startsWith("roster/");
+
 export async function handlePartnerIntelApi(route, request, env) {
   if (!env.BOX_KV) return json({ error: "BOX_KV binding is missing. See SETUP.md." }, 500);
   const method = request.method.toUpperCase();
@@ -3312,6 +3320,9 @@ export async function handlePartnerIntelApi(route, request, env) {
 
     const auth = await requireBetaAuth(request, env);
     if (!auth) return json({ error: "Not signed in" }, 401);
+    if (piAdminRoute(route) ? !canAdminApp(auth, "partner-intel") : !canUseApp(auth, "partner-intel")) {
+      return json({ error: piAdminRoute(route) ? NO_SETTINGS_ACCESS : NO_APP_ACCESS }, 403);
+    }
     const url = new URL(request.url);
     const params = url.searchParams;
 

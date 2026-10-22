@@ -4,7 +4,8 @@
  *
  * Admin routes (survey builder, analyze) reuse Connector's shared admin accounts
  * (see src/beta_auth.js's requireBetaAuth) rather than inventing another login
- * system. Respondent-facing routes are public, matching this survey's whole point:
+ * system, and need a consensus app admin or an overall admin (canAdminApp).
+ * Respondent-facing routes are public, matching this survey's whole point:
  * anyone with the link answers it, no account needed.
  *
  * Storage:
@@ -38,7 +39,7 @@
  * real `anthropic` SDK like every other Claude call in this repo already does.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canAdminApp, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 
 const SURVEY_PREFIX = "consensus:survey:";
 const PROGRESS_PREFIX = "consensus:progress:";
@@ -586,6 +587,8 @@ export async function handleConsensusApi(route, request, env) {
   // ---- Admin (beta account required) ----------------------------------------------------
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
+  // Every route below is this app's control panel: its own admins, or an overall admin.
+  if (!canAdminApp(auth, "consensus")) return json({ error: NO_SETTINGS_ACCESS }, 403);
 
   // GET box/folders?id=0 -- the survey builder's own folder picker. src/council_data.js
   // already has one of these for Council Themes/Quant, but rather than share a route

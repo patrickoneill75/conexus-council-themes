@@ -62,7 +62,8 @@
     <div class="brand">Connector</div>
     <div class="who">
       <span id="whoami"></span>
-      <a href="/admin/settings.html">Settings</a>
+      <a href="/admin/settings.html" id="settingsLink" hidden>Settings</a>
+      <button type="button" id="signOutAllBtn">Sign out everywhere</button>
       <button type="button" id="signOutBtn">Sign out</button>
     </div>
   </div>
@@ -70,8 +71,8 @@
 
 <main>
   <h1>Tools</h1>
-  <p class="lede">Every Conexus Indiana tool, including the ones not shown publicly. Open a tool or its control panel.</p>
-  <div class="apps" id="grid"></div>
+  <p class="lede">The Conexus Indiana tools you can use, including ones not shown publicly.</p>
+  <div class="apps" id="grid"><p class="lede">Loading…</p></div>
 </main>
 
 <script>
@@ -91,26 +92,45 @@
     window.location.href = "/admin/login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
   }
   el("signOutBtn").addEventListener("click", signOut);
+  // Ends this person's sessions on every device, this one included (POST /api/beta/sign-out-everywhere).
+  el("signOutAllBtn").addEventListener("click", function () {
+    if (!window.confirm("Sign out of Connector on every device, including this one?")) return;
+    fetch("/api/beta/sign-out-everywhere", {
+      method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + token }, body: "{}",
+    }).then(signOut, signOut);
+  });
+
+  function canUse(me, id) { return me.role === "admin" || (me.apps || []).indexOf(id) >= 0; }
+  function canAdmin(me, id) { return me.role === "admin" || (me.appAdmin || []).indexOf(id) >= 0; }
 
   fetch("/api/beta/me", { headers: { authorization: "Bearer " + token } })
     .then(function (r) { if (!r.ok) throw new Error("not signed in"); return r.json(); })
     .then(function (me) {
       el("whoami").textContent = "Signed in as " + (me.username || me.email);
+      el("settingsLink").hidden = me.role !== "admin";
+      render(me);
     })
     .catch(signOut);
 
-  // Always lists every app regardless of its current visibility tier -- admins need
-  // to reach everything. The public/private/admin-only distinction only affects the
-  // public grid at the site root (see public/index.html) and, for "admin-only", the
-  // app's own base page.
-  el("grid").innerHTML = APPS.map(function (app) {
-    var links = '<a class="open" href="' + esc(app.baseUrl) + '">Open</a>' +
-      '<a class="cp" href="' + esc(app.controlPanelUrl) + '">Control panel</a>';
-    return '<div class="app"><div>' +
-      "<h2>" + esc(app.name) + "</h2>" +
-      "<p>" + esc(app.description || "") + "</p>" +
-      '</div><div class="acts">' + links + "</div></div>";
-  }).join("");
+  // Lists every app this person can use, whatever its visibility tier, and a control panel link
+  // only for the apps they admin. An overall admin sees everything. The visibility tier only
+  // affects the public grid at the site root (see public/index.html) and, for "admin-only", who
+  // may open the app's own base page.
+  function render(me) {
+    var mine = APPS.filter(function (app) { return canUse(me, app.id) || canAdmin(me, app.id); });
+    if (!mine.length) {
+      el("grid").innerHTML = '<p class="lede">You don\'t have access to any tools yet. Ask an admin to give you access.</p>';
+      return;
+    }
+    el("grid").innerHTML = mine.map(function (app) {
+      var links = (canUse(me, app.id) ? '<a class="open" href="' + esc(app.baseUrl) + '">Open</a>' : "") +
+        (canAdmin(me, app.id) ? '<a class="cp" href="' + esc(app.controlPanelUrl) + '">Control panel</a>' : "");
+      return '<div class="app"><div>' +
+        "<h2>" + esc(app.name) + "</h2>" +
+        "<p>" + esc(app.description || "") + "</p>" +
+        '</div><div class="acts">' + links + "</div></div>";
+    }).join("");
+  }
 })();
 </script>
 </body>

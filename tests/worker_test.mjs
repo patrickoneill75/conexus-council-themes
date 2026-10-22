@@ -222,8 +222,12 @@ test("beta_auth: BUG admin Reset looked like it did nothing while KV still serve
   assert.match(used.reason, /expired or was already used/, "a spent link says so");
   const asSession = await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${link}` } }), env);
   assert.equal(asSession.status, 401, "a reset link is never a session");
-  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com" }, token), env);
-  const other = await (await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "other@example.com" }, token), env)).json();
+  // Resetting this admin's own password ended the session that asked for it, so sign in again.
+  const oldSession = await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${token}` } }), env);
+  assert.equal(oldSession.status, 401, "a password reset ends the sessions issued before it");
+  const fresh = (await (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password: "brand-new-pass" }), env)).json()).token;
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com" }, fresh), env);
+  const other = await (await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "other@example.com" }, fresh), env)).json();
   const wrong = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
     { email, username: "poneill", password: "hijack-pass-1", reset: decodeURIComponent(other.link.split("reset=")[1]) }), env);
   assert.equal(wrong.status, 410, "a link for one admin cannot set another's password");
@@ -255,8 +259,9 @@ test("beta_auth: a new admin is added, claims an account, and cannot be claimed 
 
 test("beta_auth: every admin route refuses an anonymous caller", async () => {
   const env = makeEnv();
-  for (const [route, method] of [["admins", "GET"], ["admins", "POST"],
-                                 ["admins/reset", "POST"], ["app-visibility", "POST"]]) {
+  for (const [route, method] of [["admins", "GET"], ["admins", "POST"], ["admins/reset", "POST"],
+                                 ["admins/update", "POST"], ["admins/remove", "POST"],
+                                 ["sign-out-everywhere", "POST"], ["app-visibility", "POST"]]) {
     const request = method === "GET" ? req(`/api/beta/${route}`) : jsonReq(`/api/beta/${route}`, "POST", {});
     assert.equal((await beta(route, request, env)).status, 401, `${method} ${route}`);
   }
@@ -1286,8 +1291,9 @@ test("worker: the Box OAuth callback rejects an unknown state", async () => {
 });
 
 test("worker: a Box authorize-url issues a single-use state", async () => {
-  const env = makeEnv();
-  const body = await (await workerModule.default.fetch(req("/api/box/authorize-url"), env, {})).json();
+  const { env, token } = await signedInEnv();
+  const body = await (await workerModule.default.fetch(req("/api/box/authorize-url",
+    { headers: { authorization: `Bearer ${token}` } }), env, {})).json();
   const state = new URL(body.url).searchParams.get("state");
   assert.ok(state, "a state parameter must be issued");
   assert.equal(await env.BOX_KV.get(`box:state:${state}`), "1");
@@ -5329,6 +5335,366 @@ test("partner_intel: BUG pages: an answer landed in whatever conversation was op
   assert.match(panel, /\["Active", "Inactive", "Non-member"\]\.indexOf\(p\.status\) >= 0 \? p\.status/);
   assert.match(panel, /!r\.items\.length && r\.total > 0 && checkOffset > 0/);
   assert.match(page, /data-exact=\\?"1/);
+});
+
+/* ============================================================ roles and app access
+ * Every account is an overall admin or a user; users are given whole apps, and can be made admin of
+ * particular apps. People are put on the list by writing it directly, the way a list written before
+ * roles existed looks in KV, so these tests also run against code that predates roles.
+ */
+const { handlePcnApi } = await mod("pcn.js");
+const ALLOWLIST = "beta:admin-emails";
+const bearerReq = (url, token, init = {}) =>
+  req(url, { ...init, headers: { ...(init.headers || {}), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+
+/** Put someone on the list with these fields, let them set a password, and return their session. */
+async function personSession(env, email, fields = {}) {
+  const list = JSON.parse((await env.BOX_KV.get(ALLOWLIST)) || "[]");
+  list.push({ email, username: null, ...fields });
+  await env.BOX_KV.put(ALLOWLIST, JSON.stringify(list));
+  const res = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email, username: email.split("@")[0], password: "long-enough-1" }), env);
+  assert.equal(res.status, 200, `${email} should be able to set a password`);
+  return (await res.json()).token;
+}
+const meOf = async (env, token) => beta("me", bearerReq("/api/beta/me", token), env);
+
+/** The login handler waits a flat 300ms on every attempt. Run the many attempts below without it. */
+async function withoutLoginDelay(fn) {
+  const real = globalThis.setTimeout;
+  globalThis.setTimeout = (cb, ms, ...args) => real(cb, 0, ...args);
+  try { return await fn(); } finally { globalThis.setTimeout = real; }
+}
+const loginAs = async (env, identifier, password, ip) => beta("login", req("/api/beta/login", {
+  method: "POST",
+  headers: { "content-type": "application/json", ...(ip ? { "cf-connecting-ip": ip } : {}) },
+  body: JSON.stringify({ identifier, password }),
+}), env);
+
+test("access: an allowlist entry from before roles is an overall admin, so nobody loses access on deploy", async () => {
+  const env = makeEnv();
+  const key = "beta:admin-account:old@example.com";
+  // Set a password through the real flow, then put the list and the account back in the shape the code
+  // before roles wrote them: no role, no apps, no session version.
+  await env.BOX_KV.put(ALLOWLIST, JSON.stringify([{ email: "old@example.com", username: null }]));
+  await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email: "old@example.com", username: "old", password: "long-enough-1" }), env);
+  const { password_hash, password_salt } = JSON.parse(await env.BOX_KV.get(key));
+  await env.BOX_KV.put(ALLOWLIST, JSON.stringify([{ email: "old@example.com", username: "old" }]));
+  await env.BOX_KV.put(key, JSON.stringify({ email: "old@example.com", username: "old", password_hash, password_salt,
+    created_at: "2026-01-01T00:00:00Z" }));
+
+  const login = await loginAs(env, "old", "long-enough-1");
+  assert.equal(login.status, 200);
+  const token = (await login.json()).token;
+  const me = await (await meOf(env, token)).json();
+  assert.equal(me.role, "admin", "no role on file means an overall admin");
+  assert.ok(me.apps.includes("partner-intel") && me.appAdmin.includes("council-data"), "an admin's lists name every app");
+  assert.equal((await beta("admins", bearerReq("/api/beta/admins", token), env)).status, 200, "and can manage people");
+  assert.equal((await handleMcmApi("box/status", bearerReq("/api/mcm/box/status", token), env)).status, 200);
+  assert.notEqual((await pi("status", piGet("status", token), env)).status, 403);
+  // Saving the list once writes the admin role down, and the person keeps it.
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com" }, token), env);
+  assert.deepEqual(JSON.parse(await env.BOX_KV.get(ALLOWLIST)).map((a) => [a.email, a.role]),
+    [["old@example.com", "admin"], ["new@example.com", "user"]]);
+  assert.equal((await meOf(env, token)).status, 200, "the session from before still works");
+});
+
+test("access: a newly added person is a user with no apps, and /me says so", async () => {
+  const { env, token } = await signedInEnv();
+  const add = await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com" }, token), env);
+  assert.equal(add.status, 200);
+  assert.deepEqual((await add.json()).person, { email: "new@example.com", username: null, role: "user", apps: [], appAdmin: [] });
+  const t = (await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email: "new@example.com", username: "newbie", password: "long-enough-1" }), env)).json()).token;
+  assert.deepEqual(await (await meOf(env, t)).json(),
+    { email: "new@example.com", username: "newbie", role: "user", apps: [], appAdmin: [] });
+  const people = (await (await beta("admins", bearerReq("/api/beta/admins", token), env)).json()).people;
+  assert.deepEqual(people.map((p) => [p.email, p.role, p.has_password]),
+    [["poneill@conexusindiana.com", "admin", true], ["new@example.com", "user", true]]);
+});
+
+test("access: BUG any signed-in account could read Partner Intelligence, with no way to give it to some people only", async () => {
+  const { env } = await piEnv([ins()]);
+  const plain = await personSession(env, "plain@example.com", { role: "user", apps: [] });
+  const other = await personSession(env, "mcm-user@example.com", { role: "user", apps: ["mcm"] });
+  for (const token of [plain, other]) {
+    for (const route of ["home", "insights", "companies", "company?id=c-a", "programs", "facets", "assistant/history", "recent-questions"]) {
+      const res = await pi(route.split("?")[0], piGet(route, token), env);
+      assert.equal(res.status, 403, `${route} without access`);
+      assert.match((await res.json()).error, /don't have access to this app/);
+    }
+    assert.equal((await pi("ask", piReq("ask", "POST", { question: "x" }, token), env)).status, 403);
+    assert.equal((await pi("assistant", piReq("assistant", "POST", { question: "x" }, token), env)).status, 403);
+  }
+  const user = await personSession(env, "pi-user@example.com", { role: "user", apps: ["partner-intel"] });
+  assert.equal((await pi("home", piGet("home", user), env)).status, 200, "given the app, they can read it");
+  assert.equal((await pi("companies", piGet("companies", user), env)).status, 200);
+});
+
+test("access: BUG a Partner Intelligence user could run its control panel: scans, Box folders, the partner list", async () => {
+  const { env } = await piEnv([ins()]);
+  const user = await personSession(env, "pi-user@example.com", { role: "user", apps: ["partner-intel"] });
+  const gets = ["status", "schedule", "run-status", "roster", "contacts", "attribution/review", "review", "topics", "box/folders"];
+  for (const route of gets) {
+    const res = await pi(route, piGet(route, user), env);
+    assert.equal(res.status, 403, `GET ${route}`);
+    assert.match((await res.json()).error, /settings/);
+  }
+  const posts = ["settings", "schedule", "run", "update/apply", "roster/sync", "roster/import", "roster/partner",
+    "roster/partner/delete", "roster/staff", "roster/alias", "contacts/import", "attribution/decide", "review/add",
+    "review/map", "topics/override"];
+  for (const route of posts) assert.equal((await pi(route, piReq(route, "POST", {}, user), env)).status, 403, `POST ${route}`);
+  const settingsBefore = await env.BOX_KV.get("pi:settings");
+  await pi("settings", piReq("settings", "POST", { which: "notes", folderId: "999", folderName: "Mine" }, user), env);
+  assert.equal(await env.BOX_KV.get("pi:settings"), settingsBefore, "a refused call changes nothing");
+
+  const piAdmin = await personSession(env, "pi-admin@example.com", { role: "user", apps: [], appAdmin: ["partner-intel"] });
+  assert.equal((await pi("status", piGet("status", piAdmin), env)).status, 200, "its app admin runs the control panel");
+  assert.equal((await pi("home", piGet("home", piAdmin), env)).status, 200, "app admin implies use");
+});
+
+test("access: Partner Intelligence's split matches the pages: what the app calls is use, what the control panel calls is admin", async () => {
+  // Read the routes each page actually calls, so a new route on either page lands on the right side.
+  const page = (p) => fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", p), "utf8");
+  const called = (src) => [...src.matchAll(/PI\.(?:api|post)\("([a-z][a-z/-]*)/g)].map((m) => m[1]);
+  // companies is built in a variable on the Companies page; insights and ask are older staff routes.
+  const staff = [...new Set([...called(page("index.html")), ...called(page("askbox.js")), "companies", "insights", "ask"])];
+  const panel = [...new Set(called(page("control-panel/index.html")))];
+  assert.ok(staff.includes("home") && staff.includes("assistant/history"), `staff routes found: ${staff}`);
+  assert.ok(panel.includes("status") && panel.includes("roster/import"), `control panel routes found: ${panel}`);
+  const { env } = await piEnv([ins()]);
+  const user = await personSession(env, "pi-user@example.com", { role: "user", apps: ["partner-intel"] });
+  await withFetch(() => new Response("{}", { status: 500 }), async () => {
+    for (const route of staff) assert.notEqual((await pi(route, piGet(route, user), env)).status, 403, `staff route ${route}`);
+    for (const route of panel) assert.equal((await pi(route, piGet(route, user), env)).status, 403, `control panel route ${route}`);
+  });
+});
+
+test("access: BUG one app's admin could run every app's control panel", async () => {
+  const { env } = await signedInEnv();
+  const brooke = await personSession(env, "brooke@example.com", { role: "user", apps: [], appAdmin: ["council-data"] });
+  const cdUser = await personSession(env, "cd-user@example.com", { role: "user", apps: ["council-data"] });
+  const cd = (route, token) => handleCouncilDataApi(route, bearerReq(`/api/council-data/${route}`, token), env);
+  assert.equal((await cd("box/status", brooke)).status, 200, "Brooke runs the Council Survey tool's control panel");
+  const refused = await cd("box/status", cdUser);
+  assert.equal(refused.status, 403, "use access alone never opens a control panel");
+  assert.equal((await refused.json()).error, "You don't have access to this app's settings. Ask an admin.");
+  const others = [
+    ["mcm", () => handleMcmApi("box/status", bearerReq("/api/mcm/box/status", brooke), env)],
+    ["stars", () => handleStarsApi("status", bearerReq("/api/stars/status", brooke), env)],
+    ["artifacts", () => handleArtifactsApi("catalogue", bearerReq("/api/artifacts/catalogue", brooke), env)],
+    ["consensus", () => handleConsensusApi("surveys", bearerReq("/api/consensus/surveys", brooke), env)],
+    ["job-description", () => handleJobDescriptionApi("status", bearerReq("/api/job-description/status", brooke), env)],
+    ["apprenticeship", () => handleApprenticeshipApi("projects", bearerReq("/api/apprenticeship/projects", brooke), env)],
+    ["pcn", () => handlePcnApi("box/status", bearerReq("/api/pcn/box/status", brooke), env)],
+    ["partner-intel", () => pi("status", piGet("status", brooke), env)],
+  ];
+  await withFetch(() => okJson({}), async () => {
+    for (const [app, call] of others) assert.equal((await call()).status, 403, `${app} control panel`);
+  });
+  // Box is shared by every app: disconnecting it is an overall admin's call, not one app admin's.
+  await env.BOX_KV.put("box:tokens", JSON.stringify({ access_token: "t", refresh_token: "r", obtained_at: 0, expires_in: 3600 }));
+  assert.equal((await handleCouncilDataApi("box/disconnect", jsonReq("/api/council-data/box/disconnect", "POST", {}, brooke), env)).status, 403);
+  assert.ok(await env.BOX_KV.get("box:tokens"), "the shared Box connection stays");
+});
+
+test("access: Issue Network Mapper's page needs use access, its control panel needs pcn admin", async () => {
+  const { env, token } = await signedInEnv();
+  const id = (await (await handlePcnApi("projects", bearerReq("/api/pcn/projects", token), env)).json()).projects[0].id;
+  const user = await personSession(env, "inm@example.com", { role: "user", apps: ["pcn"] });
+  const none = await personSession(env, "none@example.com", { role: "user", apps: [] });
+  const get = (route, t) => handlePcnApi(route, bearerReq(`/api/pcn/${route}`, t), env);
+  for (const route of ["projects", `projects/${id}`, `projects/${id}/network`, `projects/${id}/timeline`]) {
+    assert.notEqual((await get(route, user)).status, 403, `${route} with use access`);
+    assert.equal((await get(route, none)).status, 403, `${route} without it`);
+  }
+  for (const route of ["box/status", `projects/${id}/meetings`, `projects/${id}/run-status`]) {
+    assert.equal((await get(route, user)).status, 403, `${route} is the control panel's`);
+  }
+  assert.equal((await handlePcnApi("projects", jsonReq("/api/pcn/projects", "POST", { name: "Mine" }, user), env)).status, 403);
+});
+
+test("access: BUG any signed-in account could manage people and app visibility", async () => {
+  const { env } = await signedInEnv();
+  const plain = await personSession(env, "plain@example.com", { role: "user", apps: ["partner-intel"] });
+  const brooke = await personSession(env, "brooke@example.com", { role: "user", apps: [], appAdmin: ["council-data"] });
+  for (const token of [plain, brooke]) {
+    assert.equal((await beta("admins", bearerReq("/api/beta/admins", token), env)).status, 403, "list people");
+    for (const [route, body] of [["admins", { email: "x@example.com", role: "admin" }],
+                                 ["admins/update", { email: "plain@example.com", role: "admin" }],
+                                 ["admins/update", { email: "brooke@example.com", appAdmin: ["mcm"] }],
+                                 ["admins/remove", { email: "poneill@conexusindiana.com" }],
+                                 ["admins/reset", { email: "poneill@conexusindiana.com" }],
+                                 ["sign-out-everywhere", { email: "poneill@conexusindiana.com" }],
+                                 ["app-visibility", { id: "partner-intel", tier: "public" }]]) {
+      const res = await beta(route, jsonReq(`/api/beta/${route}`, "POST", body, token), env);
+      assert.equal(res.status, 403, `${route} ${JSON.stringify(body)}`);
+    }
+  }
+  const list = JSON.parse(await env.BOX_KV.get(ALLOWLIST));
+  assert.deepEqual(list.map((a) => a.email), ["poneill@conexusindiana.com", "plain@example.com", "brooke@example.com"]);
+  assert.equal((await (await meOf(env, plain)).json()).role, "user", "nobody promoted themselves");
+  assert.equal(await env.BOX_KV.get("beta:app-visibility"), null, "visibility unchanged");
+  assert.ok(await env.BOX_KV.get("beta:admin-account:poneill@conexusindiana.com"), "the admin's password was not reset");
+});
+
+test("access: an overall admin sets role, apps and app admin, and the change applies without signing out", async () => {
+  const { env, token } = await signedInEnv();
+  const user = await personSession(env, "u@example.com", { role: "user", apps: [] });
+  assert.equal((await pi("home", piGet("home", user), env)).status, 403);
+  const update = (body) => beta("admins/update", jsonReq("/api/beta/admins/update", "POST", { email: "u@example.com", ...body }, token), env);
+  assert.equal((await update({ apps: ["partner-intel"] })).status, 200);
+  assert.notEqual((await pi("home", piGet("home", user), env)).status, 403, "the same session now reads it");
+  assert.equal((await pi("status", piGet("status", user), env)).status, 403);
+  const r = await update({ appAdmin: ["partner-intel"] });
+  assert.deepEqual((await r.json()).person.appAdmin, ["partner-intel"]);
+  assert.notEqual((await pi("status", piGet("status", user), env)).status, 403, "and now runs its control panel");
+  assert.equal((await update({ role: "admin" })).status, 200);
+  assert.equal((await beta("admins", bearerReq("/api/beta/admins", user), env)).status, 200, "an overall admin manages people");
+  assert.equal((await update({ role: "user", apps: [], appAdmin: [] })).status, 200);
+  assert.equal((await pi("home", piGet("home", user), env)).status, 403, "and access comes away just as fast");
+  for (const body of [{ role: "owner" }, { role: "constructor" }, { apps: ["nope"] }, { apps: ["constructor"] },
+                      { appAdmin: ["__proto__"] }, { apps: "partner-intel" }]) {
+    assert.equal((await update(body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal((await beta("admins/update", jsonReq("/api/beta/admins/update", "POST", { email: "nobody@example.com", role: "user" }, token), env)).status, 404);
+});
+
+test("access: BUG anyone could start replacing the shared Box connection", async () => {
+  // GET /api/box/authorize-url had no authentication: anyone could start the Box login, and whoever
+  // finished it pointed every app at their own Box account.
+  const { env, token } = await signedInEnv();
+  const brooke = await personSession(env, "brooke@example.com", { role: "user", apps: [], appAdmin: ["council-data"] });
+  const states = async () => [...env.BOX_KV.store.keys()].filter((k) => k.startsWith("box:state:")).length;
+  const authorize = (t) => workerModule.default.fetch(bearerReq("/api/box/authorize-url", t), env, {});
+  assert.equal((await authorize(null)).status, 401, "anonymous");
+  assert.equal((await authorize("forged.token")).status, 401);
+  assert.equal((await authorize(brooke)).status, 403, "even the Council Survey tool's own admin");
+  assert.equal(await states(), 0, "no login was started");
+  const ok = await authorize(token);
+  assert.equal(ok.status, 200, "an overall admin can");
+  assert.match((await ok.json()).url, /^https:\/\/account\.box\.com\/api\/oauth2\/authorize\?/);
+  assert.equal(await states(), 1);
+});
+
+test("access: BUG unlimited password guesses: the sixth wrong password is refused with 429, even when right", async () => {
+  const { env } = await signedInEnv();
+  await withoutLoginDelay(async () => {
+    // Email and username are the same account, so switching between them buys nothing.
+    for (const id of ["poneill", "poneill@conexusindiana.com", "POneill", "poneill", "poneill@conexusindiana.com"]) {
+      assert.equal((await loginAs(env, id, "wrong-guess")).status, 401, id);
+    }
+    const locked = await loginAs(env, "poneill", "seed-password-123");
+    assert.equal(locked.status, 429, "locked, even for the right password");
+    assert.match((await locked.json()).error, /Too many wrong passwords\. Wait 15 minutes/);
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 16 * 60 * 1000;
+      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200, "the lock lifts after 15 minutes");
+      // A successful sign-in clears the count: four more misses do not lock.
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill", "wrong-guess")).status, 401);
+      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200);
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill", "wrong-guess")).status, 401);
+      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200, "the count started again after success");
+    } finally { Date.now = realNow; }
+  });
+});
+
+test("access: one client address is limited across accounts, so it cannot spray every account", async () => {
+  const { env } = await signedInEnv();
+  await personSession(env, "a@example.com", { role: "user" });
+  await withoutLoginDelay(async () => {
+    // Four misses each at five accounts: no account reaches its own limit of five.
+    for (const id of ["x1@example.com", "x2@example.com", "x3@example.com", "x4@example.com", "a@example.com"]) {
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, id, "wrong", "203.0.113.9")).status, 401);
+    }
+    assert.equal((await loginAs(env, "a@example.com", "long-enough-1", "203.0.113.9")).status, 429, "twenty from one address lock it");
+    assert.equal((await loginAs(env, "a@example.com", "long-enough-1", "198.51.100.7")).status, 200, "another address is not affected");
+  });
+});
+
+test("access: BUG a session outlived Sign out everywhere, removal and a password reset", async () => {
+  const { env, token } = await signedInEnv();
+  const signIn = async () => (await (await loginAs(env, "u@example.com", "long-enough-1")).json()).token;
+  await personSession(env, "u@example.com", { role: "user", apps: ["partner-intel"] });
+  const [laptop, phone] = [await signIn(), await signIn()];
+  assert.equal((await meOf(env, phone)).status, 200);
+  // Anyone may sign themselves out everywhere.
+  const self = await beta("sign-out-everywhere", jsonReq("/api/beta/sign-out-everywhere", "POST", {}, laptop), env);
+  assert.equal(self.status, 200);
+  assert.equal((await meOf(env, laptop)).status, 401, "this session ends");
+  assert.equal((await meOf(env, phone)).status, 401, "and every other one");
+  const again = await signIn();
+  assert.equal((await meOf(env, again)).status, 200, "signing in again works");
+  // An overall admin may do it to anyone.
+  assert.equal((await beta("sign-out-everywhere", jsonReq("/api/beta/sign-out-everywhere", "POST", { email: "u@example.com" }, token), env)).status, 200);
+  assert.equal((await meOf(env, again)).status, 401);
+  assert.equal((await meOf(env, token)).status, 200, "the admin's own session is untouched");
+  // A password reset ends their sessions too.
+  const beforeReset = await signIn();
+  await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "u@example.com" }, token), env);
+  assert.equal((await meOf(env, beforeReset)).status, 401, "a reset ends the sessions issued before it");
+  assert.equal((await pi("home", piGet("home", beforeReset), env)).status, 401, "in every app, not just /me");
+  // So does removal.
+  await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email: "u@example.com", username: "u", password: "long-enough-2" }), env);
+  const beforeRemoval = (await (await loginAs(env, "u@example.com", "long-enough-2")).json()).token;
+  assert.equal((await meOf(env, beforeRemoval)).status, 200);
+  const removed = await beta("admins/remove", jsonReq("/api/beta/admins/remove", "POST", { email: "u@example.com" }, token), env);
+  assert.equal(removed.status, 200);
+  assert.equal((await meOf(env, beforeRemoval)).status, 401, "removal ends their sessions");
+  assert.equal((await loginAs(env, "u@example.com", "long-enough-2")).status, 401, "and they cannot sign in");
+  assert.equal((await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", { email: "u@example.com" }), env)).json()).allowed,
+    false, "or set a new password");
+});
+
+test("access: BUG the last overall admin could be removed or demoted", async () => {
+  const { env, token } = await signedInEnv();
+  const me = "poneill@conexusindiana.com";
+  const post = (route, body, t = token) => beta(route, jsonReq(`/api/beta/${route}`, "POST", body, t), env);
+  const demote = await post("admins/update", { email: me, role: "user" });
+  assert.equal(demote.status, 409);
+  assert.match((await demote.json()).error, /at least one admin/);
+  assert.equal((await post("admins/remove", { email: me })).status, 409);
+  assert.equal((await (await meOf(env, token)).json()).role, "admin", "still an admin");
+  // A user on the list does not count: there is still only one admin.
+  await post("admins", { email: "u@example.com" });
+  assert.equal((await post("admins/remove", { email: me })).status, 409);
+  // With a second admin, either can go.
+  await post("admins", { email: "second@example.com", role: "admin" });
+  assert.equal((await post("admins/update", { email: me, role: "user" })).status, 200);
+  const second = (await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email: "second@example.com", username: "second", password: "long-enough-1" }), env)).json()).token;
+  assert.equal((await post("admins/remove", { email: "second@example.com" }, second)).status, 409, "the remaining admin cannot remove themselves");
+  assert.equal((await post("admins/remove", { email: "u@example.com" }, second)).status, 200, "a user can be removed");
+});
+
+test("access: every control panel page checks that app's admin, and the staff pages check use access", () => {
+  // The page-side check shows "You don't have access" instead of a broken panel. The API refuses
+  // regardless; this keeps a page from forgetting to ask.
+  const root = path.join(path.dirname(SRC), "public");
+  const gate = (file) => {
+    const html = fs.readFileSync(path.join(root, file), "utf8");
+    const m = html.match(/<script src="\/access\.js"(?: data-app="([a-z-]+)")? data-need="([a-z]+)"><\/script>/);
+    assert.ok(m, `${file} loads /access.js`);
+    assert.ok(html.indexOf(m[0]) < html.indexOf("</head>"), `${file} loads it in <head>, before the page shows`);
+    return [m[1] || "", m[2]];
+  };
+  const panels = {
+    "council-data/control-panel/index.html": "council-data", "mcm/control-panel/index.html": "mcm",
+    "inm/control-panel/index.html": "pcn", "consensus/control-panel/index.html": "consensus",
+    "consensus/control-panel/results.html": "consensus", "stars/control-panel/index.html": "stars",
+    "artifacts/control-panel/index.html": "artifacts", "job-description/control-panel/index.html": "job-description",
+    "apprenticeship/control-panel/index.html": "apprenticeship", "apprenticeship/control-panel/responses.html": "apprenticeship",
+    "partner-intel/control-panel/index.html": "partner-intel",
+  };
+  for (const [file, app] of Object.entries(panels)) assert.deepEqual(gate(file), [app, "admin"], file);
+  assert.deepEqual(gate("partner-intel/index.html"), ["partner-intel", "use"]);
+  assert.deepEqual(gate("inm/index.html"), ["pcn", "use"]);
+  assert.deepEqual(gate("admin/settings.html"), ["", "overall"]);
+  // Every app's control panel is covered: none added to apps.js without one here.
+  const apps = fs.readFileSync(path.join(root, "apps.js"), "utf8");
+  for (const [, id] of apps.matchAll(/\bid: "([a-z-]+)"/g)) assert.ok(Object.values(panels).includes(id), `${id} has a gated control panel`);
 });
 
 let failed = 0;
