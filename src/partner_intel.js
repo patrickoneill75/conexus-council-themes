@@ -2041,16 +2041,20 @@ async function ask(env, data, roster, overrides, question, sourceList = [], excl
 /*
  * The Ask page finds partners who can help with one need. The Ask box answers anything staff
  * want to know from the notes as a whole: what to put on the next quarterly agenda, what a
- * company has said this year, how a topic has moved. The dataset is far too large to hand over,
- * so the prompt is built in code first: the overview, a table of every topic with its breadth and
- * trend, the saved topic summaries, recent meetings, and at most ASSISTANT_NOTES numbered notes
- * (the companies the question names, the notes that match its words, and a spread of recent
- * notes). One Sonnet call reads it and answers with [n12] citations, which are checked against
- * the notes it was shown. Each person's questions and answers are kept by person, in Box.
+ * company has said this year, what a program has been discussing, how a topic has moved. The
+ * prompt is built in code first: the overview, a table of every topic with its breadth and trend,
+ * the saved topic summaries, recent meetings, the programs the question names with their meetings
+ * and summaries, up to ASSISTANT_NOTES notes in full (the programs and companies the question
+ * names, the notes that match its words, and a spread of recent notes), and EVERY other note on
+ * file as a one-line headline, so nothing in the notes is out of Claude's sight. One Sonnet call
+ * reads it and answers with [n12] citations, which are checked against the notes it was shown.
+ * Each person's questions and answers are kept by person, in Box.
  */
-const ASSISTANT_PROMPT_VERSION = "pi-asst-1";
+const ASSISTANT_PROMPT_VERSION = "pi-asst-2"; // 2: every note listed; programs named in the question
 const ASSISTANT_EXPAND_VERSION = "pi-asst-expand-1";
-const ASSISTANT_NOTES = 140;        // numbered notes in one prompt, at most
+const ASSISTANT_NOTES = 160;        // notes in full in one prompt, at most
+const ASSISTANT_PER_PROGRAM = 60;   // of which come from each program the question names
+const ASSISTANT_HEADLINES = 4000;   // every other note as a one-line headline, up to this many (newest first)
 const ASSISTANT_MATCHED = 70;       // of which match the question's words
 const ASSISTANT_PER_COMPANY = 25;   // of which come from each company the question names
 const ASSISTANT_RECENT_DAYS = 120;  // the window the spread of recent notes comes from
@@ -2078,15 +2082,18 @@ const ASSISTANT_SYSTEM =
   "You are the Partner Intelligence assistant for Conexus Indiana staff. Conexus Indiana works with " +
   "Indiana's advanced manufacturing and logistics companies. Staff meet partner companies at council " +
   "meetings, workshops, site visits and programs, and the notes from those meetings are summarized for " +
-  "you: an overview, a table of every topic, saved topic summaries, recent meetings, and numbered notes " +
-  "chosen for this question.\n\n" +
+  "you: an overview, a table of every topic, saved topic summaries, recent meetings, the programs the " +
+  "question names, numbered notes chosen for this question in full, and every other note on file as a " +
+  "one-line headline under <all_notes>. Each note names its program: the Box folder it came from, such " +
+  "as PCN (the President and CEO Network), CIAIC or Board Meetings.\n\n" +
   "How to answer:\n" +
   "1. Answer the question in the opening sentence, then give the support.\n" +
   "2. Synthesize across the material. For priorities, agendas, themes and trends, rank by how many " +
   "different companies raised a point, how urgent it was and how recent it is. Several notes from one " +
   "meeting are one voice. Use the topic table for breadth and trend and the notes for specifics.\n" +
   "3. Cite the notes you rely on by reference in square brackets, such as [n12] or [n3][n8], right after " +
-  "the claim. Cite only references that appear in the notes. Name companies when it helps staff act.\n" +
+  "the claim. Cite only references that appear in the notes or the headlines. A headline gives only the " +
+  "title: do not claim detail it does not show. Name companies when it helps staff act.\n" +
   "4. For anything about partners, companies, people or meetings, use only the material given. Never " +
   "invent companies, numbers, quotes or events. If the material does not cover the question, say so " +
   "plainly and say what is missing. The notes are a selection: say so when a count could be incomplete.\n" +
@@ -2216,16 +2223,31 @@ function spreadRows(rows, index, limit) {
 
 const clip = (s, n) => { const t = text(s).replace(/\s+/g, " "); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 
+/** Programs (top-level Box folders) the question names, by name: "the PCN", "CIAIC", "Board Meetings". */
+function programsNamed(question, data, index) {
+  const q = ` ${nameKey(question)} `;
+  return programsView(data, index).filter((p) => {
+    const k = nameKey(p.name);
+    return p.name !== "(root)" && k.length >= 2 && q.includes(` ${k} `);
+  }).map((p) => p.name).slice(0, 3);
+}
+
 function noteLine(ref, i, index, labels, overrides) {
   const c = companyOf(index, i);
   const who = c.id ? `${c.name} (${[c.industry !== "Unknown" ? c.industry : "", c.member ? "Council Member" : "Not Council"].filter(Boolean).join(", ")})`
     : c.name;
-  const head = [i.date || "no date", PI_KIND[i.kind] || i.kind, who, i.event_type || i.series || "", `topic: ${labels.get(finalTopic(overrides, i.topic)) || "Other"}`,
+  const head = [i.date || "no date", `program: ${sourcesOf(i).join(", ")}`, PI_KIND[i.kind] || i.kind, who, i.event_type || i.series || "",
+    `topic: ${labels.get(finalTopic(overrides, i.topic)) || "Other"}`,
     i.urgency === "high" ? "urgent" : "", i.status === "resolved" ? "resolved" : "", i.scope === "internal" ? "internal Conexus note" : ""]
     .filter(Boolean).join(" · ");
   const body = [clip(i.title, 200), clip(i.detail, 600), i.solves ? `Addresses: ${clip(i.solves, 200)}` : "",
     i.quote ? `Quote: "${clip(i.quote, 240)}"` : ""].filter(Boolean).join(" ");
   return `[${ref}] ${head}\n${body}`;
+}
+/** Every note not given in full, in one line: enough to know it is there and to cite it. */
+function headline(ref, i, index, labels, overrides) {
+  return `[${ref}] ${i.date || "no date"} · ${sourcesOf(i).join(", ")} · ${companyOf(index, i).name} · ${PI_KIND[i.kind] || i.kind} · ` +
+    `${labels.get(finalTopic(overrides, i.topic)) || "Other"} · ${clip(i.title, 110)}`;
 }
 const PI_KIND = { problem: "Issue", ask: "Ask", solution: "Solution", offer: "Offer", equipment: "Equipment", win: "Win",
   news: "News", commitment: "Commitment" };
@@ -2250,13 +2272,21 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
       n++;
     }
   };
-  // 1. The companies the question names, and the company page it was asked from.
+  // 1. The programs the question names: all their notes are on file under the program's folder, which
+  // the notes' own words rarely mention ("the PCN" matched 4 of 157 PCN notes by text). Board notes
+  // are included when Board Meetings is named, as on the program's own page.
+  const programs = programsNamed(question, data, index);
+  const inProgram = (name) => data.insights.filter((i) => sourcesOf(i).includes(name) && inWindow(i));
+  // Newest first and every note of a meeting, not a spread: the question is about this program.
+  const newest = (a, b) => (b.date || "").localeCompare(a.date || "") || a.id.localeCompare(b.id);
+  for (const name of programs) take(inProgram(name).sort(newest), ASSISTANT_PER_PROGRAM);
+  // 2. The companies the question names, and the company page it was asked from.
   const named = companiesNamed(question, data, index, roster);
   if (opts.focusId && !named.includes(opts.focusId)) named.unshift(opts.focusId);
   for (const id of named.slice(0, 3)) {
     take(spreadRows(data.insights.filter((i) => i.company_id === id && inWindow(i)), index, ASSISTANT_PER_COMPANY), ASSISTANT_PER_COMPANY);
   }
-  // 2. Notes that match the question's subject, internal Conexus notes included: staff may ask about the board.
+  // 3. Notes that match the question's subject, internal Conexus notes included: staff may ask about the board.
   const scored = scoreRows(question, terms, data.insights.filter(inWindow), overrides, labels, ASSISTANT_SKIP) || [];
   scored.sort((a, b) => b.score - a.score || a.i.id.localeCompare(b.i.id));
   const perMeeting = new Map();
@@ -2269,13 +2299,18 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
   }
   const matchedCount = matched.length;
   take(matched, ASSISTANT_MATCHED);
-  // 3. A spread of recent notes, so a broad question ("top issues", "what's new") has what is happening now.
+  // 4. A spread of recent notes, so a broad question ("top issues", "what's new") has what is happening now.
   const recentSince = since || daysAgo(ASSISTANT_RECENT_DAYS);
   const recent = external.filter((i) => i.date && i.date >= recentSince && i.kind !== "news");
   take(spreadRows(recent, index, ASSISTANT_NOTES), ASSISTANT_NOTES);
 
-  const notes = [...picked.values()].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  const byDate = (a, b) => (b.date || "").localeCompare(a.date || "") || a.id.localeCompare(b.id);
+  const notes = [...picked.values()].sort(byDate);
   const refs = new Map(notes.map((i, n) => [`n${n + 1}`, i]));
+  // 5. Every other note on file, as a headline, numbered on from the full notes so any can be cited.
+  const rest = data.insights.filter((i) => !picked.has(i.id) && inWindow(i)).sort(byDate);
+  const shownRest = rest.slice(0, ASSISTANT_HEADLINES);
+  shownRest.forEach((i, n) => refs.set(`n${notes.length + n + 1}`, i));
 
   const scope = external.filter(inWindow);
   const dash = dashboardOf(scope, index);
@@ -2283,6 +2318,16 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
   const summaries = t.trending.filter((g) => g.summary).map((g) => `${g.label}: ${g.summary.bullets.map((b) => b.text).join(" ")}`);
   const meetings = meetingGroups(external.filter((i) => i.date && i.date >= recentSince), index, overrides, labels).slice(0, 25);
   const focus = opts.focusId ? index.get(opts.focusId) : null;
+  const programParts = await Promise.all(programs.map(async (name) => {
+    const rows = inProgram(name);
+    const pt = await trendingView(env, data, index, overrides, labels, new URLSearchParams({ source: name }), 10);
+    const pm = meetingGroups(rows, index, overrides, labels).slice(0, 15);
+    return `<program name="${name}">\n${rows.length} notes${since ? ` since ${since}` : ""}, ${pm.length ? `latest meeting ${pm[0].date}` : "no meetings"}.\n` +
+      (pt.trending.length ? `Top topics: ${pt.trending.map((g) => g.summary ? `${g.label}: ${g.summary.bullets.map((b) => b.text).join(" ")}` : `${g.label} (${g.companyCount} companies)`).join("\n")}\n` : "") +
+      (pm.length ? `Meetings, newest first:\n${pm.map((m) => `${m.date} · ${m.label} · ${m.companyCount} companies · ${m.counts.issues} issues, ` +
+        `${m.counts.solutions} solutions, ${m.counts.wins} wins${m.topics.length ? ` · ${m.topics.join(", ")}` : ""}`).join("\n")}\n` : "") +
+      "</program>";
+  }));
 
   const material = [
     `<today>${today()}</today>`,
@@ -2296,13 +2341,17 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
       topicTable(scope, index, overrides, labels).map((r) => `${r.label} | ${r.issues} | ${r.meetings} | ${r.urgent} | ${r.recent} | ${r.prior} | ${r.solutions} | ${r.wins} | ${r.last || "?"}`).join("\n") +
       "\n</topic_table>",
     summaries.length ? `<topic_summaries>\n${summaries.join("\n")}\n</topic_summaries>` : "",
+    ...programParts,
     meetings.length ? `<recent_meetings>\n${meetings.map((m) => `${m.date} · ${m.label} · ${m.companyCount} companies · ` +
       `${m.counts.issues} issues, ${m.counts.solutions} solutions, ${m.counts.wins} wins${m.topics.length ? ` · ${m.topics.join(", ")}` : ""}`).join("\n")}\n</recent_meetings>` : "",
-    `<notes>\n${notes.length} notes, newest first. ${matchedCount ? `${Math.min(matchedCount, ASSISTANT_MATCHED)} match the question's words; the rest are ` : ""}` +
-      `${named.length ? "from the companies named, and " : ""}a spread of recent notes.\n\n` +
-      `${[...refs].map(([ref, i]) => noteLine(ref, i, index, labels, overrides)).join("\n\n")}\n</notes>`,
+    `<notes>\n${notes.length} notes in full, newest first: ${[programs.length ? `the programs named (${programs.join(", ")})` : "",
+      named.length ? "the companies named" : "", matchedCount ? "notes matching the question's words" : "", "a spread of recent notes"].filter(Boolean).join(", ")}.\n\n` +
+      `${notes.map((i, n) => noteLine(`n${n + 1}`, i, index, labels, overrides)).join("\n\n")}\n</notes>`,
+    shownRest.length ? `<all_notes>\nEvery other note on file${since ? ` since ${since}` : ""}, newest first, one line each: ` +
+      `reference · date · program · company · kind · topic · title.${rest.length > shownRest.length ? ` The oldest ${rest.length - shownRest.length} are left out.` : ""}\n` +
+      `${shownRest.map((i, n) => headline(`n${notes.length + n + 1}`, i, index, labels, overrides)).join("\n")}\n</all_notes>` : "",
   ].filter(Boolean).join("\n\n");
-  return { material, refs, considered: { notes: notes.length, matched: matchedCount, windowDays, companies: named } };
+  return { material, refs, considered: { notes: notes.length, headlines: shownRest.length, matched: matchedCount, windowDays, companies: named, programs } };
 }
 
 /** A note as it is kept with an answer: enough to show it and link to it without the dataset. */
