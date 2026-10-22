@@ -4947,7 +4947,11 @@ test("partner_intel: summaries written when someone opens a page are saved to Bo
     return summaryOut(t.payload, (x) => ({ topic_id: x.topic_id, bullets: [{ text: "P.", evidence_ids: [x.evidence[0].id] }] }));
   }, () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env));
   assert.equal(await env.BOX_KV.get("pi:sum:dirty"), "1");
-  await withFetch(boxFake({ 22: [] }, {}, uploads), () => runSummariesAhead(env));
+  // The same tick also writes the main views ahead (nothing had marked them written), then saves all to Box once.
+  const box = boxFake({ 22: [] }, {}, uploads);
+  await withFetch((url, init) => (url.includes("api.anthropic.com")
+    ? summaryOut(topicsIn(init).payload, (x) => ({ topic_id: x.topic_id, bullets: [{ text: "P.", evidence_ids: [x.evidence[0].id] }] }))
+    : box(url, init)), () => runSummariesAhead(env));
   assert.equal(uploads.length, 1);
   assert.equal(await env.BOX_KV.get("pi:sum:dirty"), null);
   assert.deepEqual(await runSummariesAhead(env), { idle: true }, "nothing to do: no Box or Claude call");
@@ -5836,6 +5840,37 @@ test("partner_intel: BUG a row whose company was a person's name (the pipeline's
   const { env, token } = await piEnv([ins({ id: "cp1", company_id: "c-a", review: ["company_is_person"] }), ins({ id: "cp2", company_id: "c-b" })]);
   assert.equal((await getJson("insights?days=30", env, token)).items.find((i) => i.id === "cp1").checkCompany, true);
   assert.deepEqual((await getJson("attribution/review", env, token)).items.map((i) => i.id), ["cp1"]);
+});
+
+test("partner_intel: BUG Home, Field Demos, Council, PCN, ITA and Board Meetings said 'Writing the summary' after an update until the next scan; the cron now notices and writes them", async () => {
+  const folders = ["Field Demo Visits", "CIAIC", "PCN", "ITA", "Board Meetings"];
+  const rows = [...trendingRows(), ...folders.flatMap((f, n) => ["c-a", "c-b"].map((c, k) => ins({ topic: "quality", company_id: c,
+    meeting_id: `am${n}${k}`, meeting_label: `Meeting ${n}${k}`, scope: f === "Board Meetings" ? "internal" : "partner", sources: [{ id: `a${n}${k}`, name: "a.docx", path: `Notes/${f}/a.docx` }] })))];
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const writer = (url, init) => summaryOut(topicsIn(init).payload, (x) => ({ topic_id: x.topic_id, bullets: [{ text: "P.", evidence_ids: [x.evidence[0].id] }] }));
+  const pages = ["home", ...["Field Demo Visits", "Council", "PCN", "ITA", "Board Meetings"].map((p) => `program?name=${encodeURIComponent(p)}`)];
+  const unwritten = async () => {
+    const out = [];
+    for (const p of pages) { const r = await getJson(p, env, token); if (!r.trending || !r.trending.length || r.trending.some((g) => !g.summary)) out.push(`${p}: ${r.error || (r.trending || []).length}`); }
+    return out;
+  };
+  await withFetch(writer, () => runSummariesAhead(env));
+  assert.deepEqual(await unwritten(), [], "after a publish, every one opens written, Field Demo Visits included");
+  // A new version of the app saves summaries under new keys: every saved one is out of date, and no
+  // scan has run to queue them again.
+  // A new version of the app: nothing is marked written under it, as on the first tick after a deploy.
+  for (const k of [...env.BOX_KV.store.keys()]) if (/^pi:sum:[0-9a-f]{20,}/.test(k)) env.BOX_KV.store.delete(k);
+  await env.BOX_KV.delete("pi:sum:ahead-done");
+  assert.equal((await unwritten()).length, pages.length);
+  await withFetch(writer, () => runSummariesAhead(env));
+  assert.deepEqual(await unwritten(), [], "the next cron tick writes them, so nobody waits");
+  let calls = 0;
+  const quiet = await withFetch(() => { calls++; throw new Error("no call expected"); }, () => runSummariesAhead(env));
+  assert.deepEqual([calls, quiet.done || []], [0, []], "nothing changed since: the next tick writes nothing and calls nothing");
+  // Staff moving a statement changes the company a summary names: caught as well.
+  await pi("attribution/decide", piReq("attribution/decide", "POST", { id: rows[rows.length - 1].id, companyId: "c-c" }, token), env);
+  await withFetch(writer, () => runSummariesAhead(env));
+  assert.deepEqual(await unwritten(), []);
 });
 
 let failed = 0;
