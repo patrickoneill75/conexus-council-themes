@@ -58,6 +58,8 @@ const ATTRIBUTION_KEY = "pi:attribution"; // staff decisions on which company sa
 // one shows "Check company" and is listed on the control panel until someone decides.
 // company_is_person: the name given as the company was a person's (the pipeline credits their company, if known).
 const ATTRIBUTION_FLAGS = ["speaker_company_conflict", "company_differs_from_file", "speaker_ambiguous", "company_is_person"];
+// Change this whenever the summary prompt OR summaryKey changes: it is part of every key and of what the
+// cron checks (aheadFingerprint), so the written-ahead views are written again under the new keys.
 const SUMMARY_PROMPT_VERSION = "pi-sum-4"; // 4: CIAIC is the Council; 3: asks for the tool call (no forced tool choice)
 const MAX_SUMMARY_TOPICS = 8;     // topics written in one Claude call
 const EVIDENCE_PER_TOPIC = 25;    // rows the model reads per topic
@@ -1158,7 +1160,7 @@ async function trendingView(env, data, index, overrides, labels, params, limit =
   const { groups, uncategorized } = issueGroups(issues, index, overrides, labels);
   const trending = await Promise.all(groups.slice(0, limit).map(async (g, n) => {
     const evidence = pickEvidence(g.items, index);
-    const stored = n < 10 ? await readJson(env, await summaryKey(g, evidence, index), null) : null;
+    const stored = n < AHEAD_TOPICS ? await readJson(env, await summaryKey(g, evidence, index), null) : null;
     return { topic: g.topic, label: g.label, companyCount: g.companyCount, meetingCount: g.meetingCount, mentions: g.mentions,
       highUrgency: g.highUrgency, companies: g.companies.slice(0, 12),
       examples: stored ? [] : evidence.slice(0, 3).map((i) => shapeInsight(i, index, labels, overrides)),
@@ -1382,6 +1384,23 @@ const AHEAD_QUEUE = "pi:sum:queue";
 const AHEAD_LOCK = "pi:sum:lock";
 const AHEAD_BUDGET_MS = 20000;
 const AHEAD_TRIES = 3;
+const AHEAD_DONE = "pi:sum:ahead-done"; // what the last finished run was written for (aheadFingerprint)
+const AHEAD_TOPICS = 15;                 // as many topics as a program page shows
+
+/**
+ * Everything the written-ahead summaries depend on: the data, the partner list (company names and
+ * status), staff decisions on who said what, topic edits, the summary prompt and model, and the day
+ * (Home's 90 days move daily). A publish queues the views at once; this catches every other change,
+ * including a new version of the app that changes how summaries are saved, which left Home and the
+ * main programs writing their summaries on demand until the next scan.
+ */
+async function aheadFingerprint(env) {
+  const [meta, roster, topics, store] = await Promise.all([readJson(env, DATA_META, null), getRoster(env),
+    readJson(env, TOPICS_KEY, null), readJson(env, ATTRIBUTION_KEY, null)]);
+  if (!meta) return "";
+  return sha([SUMMARY_PROMPT_VERSION, SUMMARY_MODEL, AHEAD_PROGRAMS.join(","), meta.version, roster.updatedAt || "",
+    (store && store.updatedAt) || "", JSON.stringify((topics && topics.overrides) || {}), today()].join("|"));
+}
 const SUMMARY_LOG = "pi:sum:log";           // keys of the summaries kept, newest first: what the Box copy holds
 const SUMMARY_LOG_SIZE = 300;
 const SUMMARY_DIRTY = "pi:sum:dirty";       // set when the Box copy is behind
@@ -1407,7 +1426,11 @@ function aheadParams(view, data, index) {
   if (view === "home") return new URLSearchParams({ days: "90" });
   const want = nameKey(view.replace(/^program:/, ""));
   const programs = programsView(data, index);
-  const hit = programs.find((p) => nameKey(p.name) === want) || programs.find((p) => nameKey(p.name).startsWith(`${want} `));
+  // "Field Demos" is the folder "Field Demo Visits": words compared without their plural s, the
+  // wanted name's words are the start of the folder's.
+  const words = (k) => k.split(" ").filter(Boolean).map(stem);
+  const starts = (k) => { const a = words(want), b = words(k); return a.length <= b.length && a.every((w, n) => w === b[n]); };
+  const hit = programs.find((p) => nameKey(p.name) === want) || programs.find((p) => starts(nameKey(p.name)));
   return hit ? new URLSearchParams({ source: hit.name }) : null;
 }
 
@@ -1464,7 +1487,18 @@ async function restoreSummariesFromBox(env) {
 /** One cron tick: write the queued views' missing summaries for up to AHEAD_BUDGET_MS, then bring the
  * Box copy up to date. */
 export async function runSummariesAhead(env, now = Date.now()) {
-  const queue = await readJson(env, AHEAD_QUEUE, null);
+  let queue = await readJson(env, AHEAD_QUEUE, null);
+  let fingerprint = "";
+  if (env.partner_intel_claude_api && !(queue && queue.views.length)) {
+    fingerprint = await aheadFingerprint(env);
+    if (fingerprint && fingerprint !== (await env.BOX_KV.get(AHEAD_DONE))) {
+      // Something the summaries depend on changed with no publish to queue them: queue them now.
+      // Views whose summaries are all saved cost a read each and no Claude call.
+      await queueAhead(env, "catch-up");
+      queue = await readJson(env, AHEAD_QUEUE, null);
+    }
+  }
+  if (queue && !queue.fingerprint) queue.fingerprint = fingerprint || await aheadFingerprint(env);
   const pending = Boolean(queue && queue.views.length && env.partner_intel_claude_api);
   if (!pending && !(await env.BOX_KV.get(SUMMARY_DIRTY)) && !(await env.BOX_KV.get(MEMORY_DIRTY))) return { idle: true };
   const lock = await readJson(env, AHEAD_LOCK, null);
@@ -1486,7 +1520,7 @@ export async function runSummariesAhead(env, now = Date.now()) {
         while (queue.views.length && Date.now() - started < AHEAD_BUDGET_MS) {
           const view = queue.views[0];
           const params = aheadParams(view, data, index);
-          const t = params ? await trendingView(env, data, index, overrides, labels, params, 10) : { trending: [] };
+          const t = params ? await trendingView(env, data, index, overrides, labels, params, AHEAD_TOPICS) : { trending: [] };
           // A topic Claude left out is not asked for again in the same tick.
           // Per view: the same topic in another view has other rows, so it needs its own summary.
           const missing = t.trending.filter((g) => !g.summary && !tried.has(`${view}|${g.topic}`)).map((g) => g.topic).slice(0, MAX_SUMMARY_TOPICS);
@@ -1505,6 +1539,7 @@ export async function runSummariesAhead(env, now = Date.now()) {
         }
       }
       await env.BOX_KV.put(AHEAD_QUEUE, JSON.stringify(queue));
+      if (!queue.views.length && queue.fingerprint) await env.BOX_KV.put(AHEAD_DONE, queue.fingerprint);
     }
     if (await env.BOX_KV.get(SUMMARY_DIRTY)) {
       try { await saveSummariesToBox(env); } catch { /* the flag stays set: the next tick tries again */ }
