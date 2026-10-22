@@ -31,7 +31,12 @@ h4 { font-size:13.5px; }
 @media (max-width:600px) { .wrap { padding:20px 16px 64px; } h1 { font-size:26px; } }
 
 /* The navy bar across the top: app name, pages, and the account links. */
-.appbar { background:var(--navy); color:#fff; }
+/* The link bar stays at the top while the page scrolls, and casts a faint shadow once the page is
+   scrolled (pi.js adds .raised). Below the Ask box and its blurred backdrop (z-index 900+). */
+.appbar { background:var(--navy); color:#fff; position:sticky; top:0; z-index:100; transition:box-shadow .2s ease; }
+.appbar.raised { box-shadow:0 2px 10px rgba(7,33,78,.10); }
+/* A jump to a note or a turn stops below the bar, not under it. */
+html { scroll-padding-top:84px; }
 .appbar .in { max-width:1080px; margin:0 auto; padding:0 32px; display:flex; flex-wrap:wrap; align-items:center;
               gap:0 28px; min-height:56px; }
 .appname { font-size:15px; font-weight:600; color:#fff; margin-right:8px; padding:12px 0; }
