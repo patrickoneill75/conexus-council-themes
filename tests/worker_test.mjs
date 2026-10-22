@@ -2975,6 +2975,18 @@ test("partner_intel: number 1's dotted trail tucks away after its cue, leaving i
   assert.match(css, /\.pi-app \.tline\.tucked b \{ opacity:0; transform:translateY\(-\d+px\)/, "the dots go up under the number");
 });
 
+test("partner_intel: the Ask page is a chat: the box clears, the conversation builds above it, and follow-ups join it", () => {
+  const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "index.html"), "utf8");
+  const page = html.slice(html.indexOf("function ask()"), html.indexOf("function companyFacts"));
+  assert.match(page, /q\.value = "";\s*toChat\(true\);/, "the box clears as the question is sent");
+  assert.match(page, /conversationId: askView\.conv \? askView\.conv\.id : ""/, "a typed question follows on in the open conversation");
+  assert.match(page, /<div class="qb">' \+ esc\(t\.q\)/, "each question shows in the conversation, above its answer");
+  assert.match(page, /if \(!q\.value\) \{ q\.value = question;/, "a failed question is put back in the box, not lost");
+  assert.match(page, /data-new/, "New starts again");
+  const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
+  assert.match(css, /\.asx\.has-out \.asx-pill \{ order:2; position:sticky; bottom:24px;/, "the pill stays at the bottom, below the conversation");
+});
+
 test("partner_intel: the tabs run Home, Companies, Programs, Ask, with no Explore, and the app name goes Home", () => {
   const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "index.html"), "utf8");
   const nav = [...html.slice(html.indexOf('id="nav"'), html.indexOf("</nav>")).matchAll(/data-r="(\w+)"/g)].map((m) => m[1]);

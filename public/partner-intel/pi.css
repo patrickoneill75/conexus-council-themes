@@ -699,7 +699,19 @@ html.ax-lock { overflow:hidden; }
 
 /* The Ask page: the same pill, in the page, with History and Sources as columns either side. */
 .asx { display:flex; gap:0 36px; align-items:flex-start; }
-.asx-main { flex:1 1 auto; min-width:0; max-width:1020px; margin:0 auto; }
+.asx-main { flex:1 1 auto; min-width:0; max-width:1020px; margin:0 auto; display:flex; flex-direction:column; }
+/* Before the first question: heading, pill, buttons, recent questions. After: buttons at the top, the
+ * conversation, and the pill at the bottom of the screen, where it stays as the conversation grows. */
+.asx-h1 { order:1; } .asx-pill { order:2; } .asx-tools { order:3; } .asx-out { order:4; } .asx-recent { order:5; }
+.pi-app .wrap:has(.asx.has-out) { padding-bottom:0; }
+.asx.has-out .asx-tools { order:0; margin-top:0; }
+.asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:12px; }
+.asx.has-out .asx-pill { order:2; position:sticky; bottom:24px; z-index:5; margin-top:20px; }
+.asx-new, .pi-app .asx-new { display:none; }
+.asx.has-out .asx-new { display:inline-flex; }
+.asx-out .turn .qb { font-size:18px; background:#fff; border:1px solid var(--border); }
+.asx-out .turn { margin-bottom:40px; }
+.asx-out .msg.err { font-size:16px; }
 .asx-rail, .asx-side { display:none; flex:none; box-sizing:border-box; position:sticky; top:20px; max-height:calc(125vh - 120px); overflow-y:auto; }
 .asx.rail .asx-rail { display:flex; flex-direction:column; width:300px; background:var(--wash); border-radius:16px; padding:18px 12px; }
 .asx.side.has-out .asx-side { display:block; width:360px; border-left:1px solid #edf0f5; padding:0 0 0 24px; }
@@ -728,7 +740,6 @@ html.ax-lock { overflow:hidden; }
 .asx-out .srcs { font-size:15.5px; }
 .asx-out .srow .sbody { font-size:15.5px; }
 .asx-out .fu { font-size:15px; }
-.asx-out .asx-q { font-size:20px; margin:30px 0 4px; color:var(--navy); }
 .asx-recent { margin-top:44px; text-align:center; }
 .asx-recent .rl-group { padding:0 0 12px; }
 .asx-recent .fus { justify-content:center; }
@@ -739,6 +750,7 @@ html.ax-lock { overflow:hidden; }
        font:inherit; font-size:15px; font-weight:400; padding:6px 4px; }
 .asx .ax-back svg { width:16px; height:16px; }
 .asx-rail .rl-item { font-size:15px; }
+@media (min-width:761px) { .asx.has-out .asx-pill { bottom:30px; } }
 @media (max-width:1100px) {
   .asx.rail .asx-rail, .asx.side.has-out .asx-side { position:fixed; z-index:950; top:0; bottom:0; max-height:none; width:min(360px, 88vw); border-radius:0;
        box-shadow:0 0 40px rgba(7,33,78,.2); background:#fff; padding:20px; }
