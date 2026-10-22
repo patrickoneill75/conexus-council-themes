@@ -47,7 +47,7 @@ Decisions already made and settled. Act on these rather than re-asking.
    guide or the user calls for one (`claude-sonnet-5` and `claude-haiku-4-5` are the
    previous generation).
    **Partner Intelligence is the exception, by the owner's choice:** `claude-sonnet-5-5`
-   reads the notes and answers Ask; `claude-haiku-5-5` writes the trending summaries.
+   reads the notes and answers Ask and the Ask box; `claude-haiku-5-5` writes the trending summaries.
    Keep that split; do not move it back to Opus or further down to Haiku unasked.
    Claude Sonnet 5.5 rejects a forced `tool_choice` (`tool` / `any`) with a 400: use
    `auto`, `strict: true`, a prompt that asks for the call, and a check that it came.

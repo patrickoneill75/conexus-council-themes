@@ -7,7 +7,7 @@ import { handleStarsApi } from "./stars.js";
 import { handleArtifactsApi } from "./artifacts.js";
 import { handleJobDescriptionApi } from "./job_description.js";
 import { handleApprenticeshipApi } from "./apprenticeship.js";
-import { handlePartnerIntelApi, runScheduledScan } from "./partner_intel.js";
+import { handlePartnerIntelApi, runScheduledScan, runSummariesAhead } from "./partner_intel.js";
 
 /**
  * Worker entry point: serves every mini app's public/ pages and delegates /api/*.
@@ -224,5 +224,7 @@ export default {
   // on its control panel, in Eastern time.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runScheduledScan(env, new Date(event.scheduledTime || Date.now())));
+    // Trending summaries for Home and the main programs, written ahead after new data, and saved to Box.
+    ctx.waitUntil(runSummariesAhead(env));
   },
 };
