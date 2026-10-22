@@ -9,6 +9,14 @@
   window.PI = PI; // pages check for it, so none of them runs without a session
   PI.token = token;
 
+  // The link bar floats at the top; a faint shadow shows once the page has scrolled under it.
+  function raiseBar() {
+    var bar = document.querySelector(".appbar");
+    if (bar) bar.classList.toggle("raised", (window.scrollY || document.documentElement.scrollTop) > 2);
+  }
+  window.addEventListener("scroll", raiseBar, { passive: true });
+  document.addEventListener("DOMContentLoaded", raiseBar);
+
   PI.esc = function (s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");

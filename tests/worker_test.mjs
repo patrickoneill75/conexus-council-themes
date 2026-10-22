@@ -5873,6 +5873,16 @@ test("partner_intel: BUG Home, Field Demos, Council, PCN, ITA and Board Meetings
   assert.deepEqual(await unwritten(), []);
 });
 
+test("partner_intel: the link bar stays at the top while a page scrolls, with a faint shadow once scrolled", () => {
+  const pub = path.join(path.dirname(SRC), "public", "partner-intel");
+  const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
+  const js = fs.readFileSync(path.join(pub, "pi.js"), "utf8");
+  assert.match(css, /\.appbar \{[^}]*position:sticky; top:0;/);
+  assert.match(css, /\.appbar\.raised \{ box-shadow:/);
+  assert.match(js, /classList\.toggle\("raised"/);
+  assert.match(js, /addEventListener\("scroll", raiseBar/);
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {
