@@ -487,10 +487,13 @@
   });
 
   /* ------------------------------------------------------------------ Ask: search the notes
-     One pill. A question that asks who can help ranks partners; anything else gets a written
-     answer from the notes as a whole. History and Sources are columns either side, off until
-     pressed, as in the Ask box, and both share one history. */
+     A chat. The pill starts in the middle of the page; the first question slides it down to the
+     bottom, and the conversation builds above it, each question and its answer in turn, the box
+     clearing after each. A question that asks who can help ranks partners; anything else gets a
+     written answer from the notes as a whole. History and Sources are columns either side, off
+     until pressed, as in the Ask box, and both share one history. New starts again. */
   var askView = { rail: false, side: false, conv: null, sel: null };
+  var ASK_START = "Search the notes, ask a question, or describe what a partner needs";
 
   function ask() {
     var mine = ++seq;
@@ -504,15 +507,52 @@
         '<h1 class="asx-h1">Search Conexus Notes</h1>' +
         '<form class="asx-pill" id="asxForm"><span id="asxSrc"></span>' +
           '<label class="sr-only" for="asxQ">Search Conexus notes</label>' +
-          '<textarea id="asxQ" rows="1" maxlength="1500" placeholder="Search the notes, ask a question, or describe what a partner needs"></textarea>' +
+          '<textarea id="asxQ" rows="1" maxlength="1500" placeholder="' + ASK_START + '"></textarea>' +
           '<button type="submit" class="asx-go" aria-label="Search">' + AU.ICON.arrow + "</button></form>" +
-        '<div class="asx-tools"><span id="asxBack"></span><span class="grow"></span>' + AU.toggle("rail", askView.rail) + AU.toggle("side", askView.side) + "</div>" +
+        '<div class="asx-tools"><span id="asxBack"></span><span class="grow"></span>' +
+          '<button type="button" class="ax-tg asx-new" data-new>' + AU.ICON.plus + "New</button>" + AU.toggle("rail", askView.rail) + AU.toggle("side", askView.side) + "</div>" +
         '<div class="asx-out" id="asxOut"></div><div class="asx-recent" id="asxRecent"></div>' +
       '</div><aside class="asx-side" aria-label="Sources"><div class="rl-top"><button type="button" class="ax-back" data-off="side">' + BACK + "Back</button></div>" +
         '<div id="asxSide"></div></aside></div>';
-    var box = el("asx"), q = el("asxQ"), out = el("asxOut");
-    var exclude = null;
+    var box = el("asx"), q = el("asxQ"), out = el("asxOut"), form = el("asxForm");
+    var exclude = null, waiting = false;
     function autosize() { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 160) + "px"; }
+    /** Start or leave the chat. The pill moves from the middle of the page to the bottom, so it is
+     * slid from where it was to where it lands rather than jumping. */
+    var main = box.querySelector(".asx-main");
+    /** In the chat the page is exactly as tall as the window or more, so the pill sits at the bottom
+     * of the screen even under a short answer. Measured, because the desktop zoom scales vh too. */
+    function fitChat() {
+      if (!document.body.contains(main)) { window.removeEventListener("resize", fitChat); return; }
+      if (!box.classList.contains("has-out")) { main.style.minHeight = ""; return; }
+      var r = main.getBoundingClientRect(), k = r.width / (main.offsetWidth || r.width || 1) || 1;
+      main.style.minHeight = Math.max(0, (window.innerHeight - (r.top + window.scrollY)) / k) + "px";
+    }
+    window.addEventListener("resize", fitChat);
+    function toChat(on) {
+      if (box.classList.contains("has-out") === on) return;
+      var before = form.getBoundingClientRect();
+      box.classList.toggle("has-out", on);
+      fitChat();
+      q.placeholder = on ? "Ask a follow-up" : ASK_START;
+      autosize();
+      if (STILL) return;
+      var after = form.getBoundingClientRect();
+      var k = after.width / (form.offsetWidth || after.width || 1) || 1; // the desktop zoom
+      var dy = (before.top - after.top) / k;
+      if (!dy) return;
+      form.style.transition = "none";
+      form.style.transform = "translateY(" + dy + "px)";
+      void form.offsetWidth;
+      form.style.transition = "transform .7s cubic-bezier(.22,.8,.24,1)";
+      form.style.transform = "";
+      setTimeout(function () { form.style.transition = ""; }, 750);
+    }
+    /** Bring a turn's question to the top of the screen, below the toolbar. */
+    function scrollToTurn(node) {
+      if (!node) return;
+      window.scrollTo({ top: Math.max(0, window.scrollY + node.getBoundingClientRect().top - 96), behavior: STILL ? "auto" : "smooth" });
+    }
     function drawSources() {
       el("asxSrc").innerHTML = '<select id="asxProgram" aria-label="Program"><option value="">All programs</option>' + (state.sourceList || []).map(function (s) {
         return '<option value="' + esc(s.value) + '"' + (chosen === s.value ? " selected" : "") + ">" + esc(s.value) + "</option>";
@@ -538,44 +578,50 @@
         return '<button type="button" class="fu" data-conv="' + esc(c.id) + '">' + esc(c.title) + "</button>";
       }).join("") + "</div>";
     }
+    function turnHtml(t, last) {
+      return '<div class="turn asx-turn" data-tid="' + esc(t.id) + '"><div class="qb">' + esc(t.q) + "</div>" +
+        (t.kind === "matches" ? matchesHtml(t) : AU.answerHtml(t, { last: last, matchLink: true })) + "</div>";
+    }
     function draw() {
       var turns = (askView.conv && askView.conv.turns) || [];
-      box.classList.toggle("has-out", turns.length > 0);
-      out.innerHTML = turns.map(function (t, i) {
-        return '<div class="turn asx-turn" data-tid="' + esc(t.id) + '">' + (i ? '<h2 class="asx-q">' + esc(t.q) + "</h2>" : "") +
-          (t.kind === "matches" ? matchesHtml(t) : AU.answerHtml(t, { last: i === turns.length - 1, matchLink: true })) + "</div>";
-      }).join("");
+      out.innerHTML = turns.map(function (t, i) { return turnHtml(t, i === turns.length - 1); }).join("");
+      toChat(turns.length > 0);
       el("asxSide").innerHTML = AU.sourcesSide(selected());
       drawRail();
       drawRecent();
-      autosize(); // the column narrows once there are results, so the question may wrap
     }
-    function busy(text) {
-      box.classList.add("has-out");
-      var pending = '<div class="turn"><div class="thinking"><span class="spinner"></span>' + esc(text) + "</div></div>";
-      if (askView.conv) out.insertAdjacentHTML("beforeend", pending); else out.innerHTML = pending;
-      el("asxRecent").innerHTML = "";
-    }
-    /** follow continues the open conversation (a suggested next question); otherwise a new search. */
-    function run(question, mode, follow) {
+    /** One message in the chat. The box clears at once, the question shows in the conversation with
+     * the answer coming under it, and the answer joins the conversation that is open. */
+    function run(question, mode) {
       question = String(question || "").trim();
-      if (question.length < 3) { out.innerHTML = '<div class="msg err">Type a question first.</div>'; return; }
-      if (!follow) { askView.conv = null; askView.sel = null; q.value = question; autosize(); }
-      busy("Reading the notes…");
+      if (waiting) return;
+      if (question.length < 3) { q.focus(); return; }
+      waiting = true;
+      if (!askView.conv) out.innerHTML = "";
+      q.value = "";
+      toChat(true);
       autosize();
+      out.insertAdjacentHTML("beforeend", '<div class="turn pending"><div class="qb">' + esc(question) + "</div>" +
+        '<div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>');
+      el("asxRecent").innerHTML = "";
+      scrollToTurn(out.lastElementChild);
       PI.post("assistant", { question: question, mode: mode || "auto", sources: chosenList(), exclude: exclude ? exclude.id : "",
-        conversationId: follow && askView.conv ? askView.conv.id : "" }).then(function (r) {
+        conversationId: askView.conv ? askView.conv.id : "" }).then(function (r) {
+        waiting = false;
         if (mine !== seq) return;
+        exclude = null; // a Find solution exclusion goes with the question it came with
         if (!askView.conv || askView.conv.id !== r.conversation.id) askView.conv = { id: r.conversation.id, title: r.conversation.title, turns: [] };
         askView.conv.turns.push(r.turn);
         askView.sel = r.turn.id;
         AU.remember(r.conversation);
         draw();
+        scrollToTurn(out.querySelector('.turn[data-tid="' + r.turn.id + '"]'));
       }).catch(function (err) {
+        waiting = false;
         if (mine !== seq) return;
-        var pending = out.querySelector(".thinking");
-        if (pending) pending.parentNode.outerHTML = emptyState(err);
-        else out.insertAdjacentHTML("beforeend", emptyState(err));
+        var pending = out.querySelector(".turn.pending .thinking");
+        if (pending) pending.outerHTML = '<div class="msg err">' + esc(err.message || "Something went wrong.") + "</div>";
+        if (!q.value) { q.value = question; autosize(); } // nothing typed is lost
       });
     }
     function openConversation(id) {
@@ -583,9 +629,19 @@
         if (mine !== seq) return;
         askView.conv = r.conversation; askView.sel = null; exclude = null;
         el("asxBack").innerHTML = "";
-        q.value = r.conversation.turns.length ? r.conversation.turns[0].q : ""; autosize();
+        q.value = ""; autosize();
         draw();
+        window.scrollTo(0, 0);
       }).catch(function (err) { if (mine === seq) out.innerHTML = emptyState(err); });
+    }
+    function newChat() {
+      askView.conv = null; askView.sel = null; exclude = null;
+      el("asxBack").innerHTML = "";
+      out.innerHTML = "";
+      q.value = "";
+      draw();
+      window.scrollTo(0, 0);
+      q.focus();
     }
     function setToggle(which, on) {
       askView[which] = on;
@@ -601,8 +657,7 @@
 
     el("asxForm").addEventListener("submit", function (e) { e.preventDefault(); run(q.value); });
     q.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); run(q.value); } });
-    // Editing the question means a new search, so a Find solution exclusion is dropped.
-    q.addEventListener("input", function () { autosize(); if (exclude) { exclude = null; el("asxBack").innerHTML = ""; } });
+    q.addEventListener("input", autosize);
     box.addEventListener("click", function (e) {
       var t = e.target, b;
       if ((b = t.closest("[data-tg]"))) { setToggle(b.getAttribute("data-tg"), b.getAttribute("aria-pressed") !== "true"); return; }
@@ -616,15 +671,15 @@
         AU.showSource(out, el("asxSide"), askView.side, turn, b.getAttribute("data-ref"));
         return;
       }
-      if ((b = t.closest(".fu[data-q]"))) { run(b.getAttribute("data-q"), "answer", true); return; }
+      if ((b = t.closest("[data-new]"))) { newChat(); return; }
+      if ((b = t.closest(".fu[data-q]"))) { run(b.getAttribute("data-q"), "answer"); return; }
       if ((b = t.closest(".fu[data-match]"))) { run(b.getAttribute("data-match"), "match"); return; }
       if ((b = t.closest("[data-conv]"))) { openConversation(b.getAttribute("data-conv")); return; }
       if ((b = t.closest(".rl-del"))) {
         var id = b.getAttribute("data-del");
         if (!window.confirm("Delete this conversation from your history?")) return;
         AU.forget(id).then(function () {
-          if (askView.conv && askView.conv.id === id) { askView.conv = null; q.value = ""; }
-          draw();
+          if (askView.conv && askView.conv.id === id) newChat(); else draw();
         }).catch(function (err) { window.alert(err.message); });
         return;
       }
