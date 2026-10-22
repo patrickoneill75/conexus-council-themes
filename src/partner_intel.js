@@ -76,6 +76,11 @@ const ONE_TIME_UPDATES = [{
 // The only files the pipeline may write to the database folder in Box.
 const DB_FILES = new Set(["partner_intel_database.json", "partner_intel_insights.csv", "partner_intel_state.json",
   "partner_intel_results_archive.json"]);
+// Caches (what the scan already paid Claude for, written summaries, saved answers) go to the Cache folder
+// when one is chosen on the control panel, and to the Database folder otherwise.
+const CACHE_FILES = new Set(["partner_intel_state.json", "partner_intel_results_archive.json"]);
+const cacheFolderOf = (settings) => settings.cacheFolderId || settings.dataFolderId || "";
+const folderFor = (settings, name) => (CACHE_FILES.has(name) ? cacheFolderOf(settings) : settings.dataFolderId || "");
 
 // The Sonnet/Haiku split (CLAUDE.md). Summaries are short, bounded and checked against the rows
 // they cite, and staff wait on them, so they run on Haiku at low effort. Ask decides which
@@ -192,7 +197,8 @@ async function boxSaveText(token, folderId, name, content) {
   const existing = (await boxItems(token, folderId)).find((e) => e.type === "file" && e.name === name);
   const form = new FormData();
   if (!existing) form.append("attributes", JSON.stringify({ name, parent: { id: folderId } }));
-  form.append("file", new Blob([content], { type: name.endsWith(".json") ? "application/json" : "text/csv" }), name);
+  const type = name.endsWith(".json") ? "application/json" : name.endsWith(".csv") ? "text/csv" : "application/octet-stream";
+  form.append("file", new Blob([content], { type }), name);
   const res = await fetch(existing ? `${BOX_UPLOAD_API}/files/${existing.id}/content` : `${BOX_UPLOAD_API}/files/content`,
     { method: "POST", headers: { authorization: `Bearer ${token}` }, body: form });
   if (!res.ok) throw new Error(`Box upload failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
@@ -510,8 +516,10 @@ function cleanPartner(input, existing) {
       name,
       industry: text(input.industry).slice(0, 80),
       status,
-      program: text(input.program).slice(0, 160),
-      participationId: text(input.participationId).slice(0, 40),
+      // The control panel's edit form does not send these: an edit must not erase the Salesforce
+      // participation id that a later rename is matched on.
+      program: (hasOwn(input, "program") ? text(input.program) : (existing && existing.program) || "").slice(0, 160),
+      participationId: (hasOwn(input, "participationId") ? text(input.participationId) : (existing && existing.participationId) || "").slice(0, 40),
       contacts: cleanList(input.contacts),
       aliases: cleanList(input.aliases),
     },
@@ -544,7 +552,8 @@ const COLUMNS = {
   name: ["organization account name", "account name", "organization", "company", "name"],
   industry: ["organization industry", "industry"],
   status: ["status"],
-  program: ["programs councils programs councils name", "program", "council"],
+  // nameKey turns "&" into "and": Salesforce's "Programs & Councils: Programs & Councils Name".
+  program: ["programs and councils programs and councils name", "programs councils programs councils name", "program", "council"],
   participationId: ["participation participation name", "participation", "participation id"],
   primary: ["primary contact"],
   secondary: ["secondary contact"],
@@ -690,12 +699,23 @@ export function applyRosterRows(roster, rows, mode) {
     const name = get(row, "name").slice(0, 160);
     if (!name) { summary.skipped++; continue; }
     const participationId = get(row, "participationId");
-    const rawStatus = get(row, "status");
-    const status = /^(active|inactive)$/i.test(rawStatus)
-      ? (rawStatus[0].toUpperCase() + rawStatus.slice(1).toLowerCase()) : "Active";
+    const rawStatus = get(row, "status").trim();
+    // Only a status that says active is Active. "Former Member", "Lapsed" or "Non-member" were imported as
+    // Active and shown as Council Members. A file with no status is a list of members, as before.
+    const status = !rawStatus || /^(?:active|current|(?:active |current )?member)$/i.test(rawStatus) ? "Active" : "Inactive";
     const contacts = cleanList([get(row, "primary"), get(row, "secondary")]);
     const extraAliases = cleanList(get(row, "aliases").split(/[;|]/));
     const match = (participationId && byParticipation.get(participationId)) || byName.get(nameKey(name));
+    if (match && inFile.has(match.id)) {
+      // A second row for the same company (one row per participation): it is a member if any row says
+      // so, and keeps every row's contacts and programs. The last row used to decide.
+      if (status === "Active") match.status = "Active";
+      match.contacts = cleanList([...match.contacts, ...contacts]);
+      const program = get(row, "program").slice(0, 160);
+      if (program && !match.program.split("; ").includes(program)) match.program = [match.program, program].filter(Boolean).join("; ").slice(0, 160);
+      match.aliases = cleanList([...match.aliases, ...extraAliases]);
+      continue;
+    }
     if (match) {
       inFile.add(match.id);
       const before = JSON.stringify([match.name, match.industry, match.status, match.program, match.contacts]);
@@ -834,7 +854,14 @@ function withDecisions(data, store) {
     if (!hasOwn(decisions, i.id)) return i;
     changed = true;
     const d = decisions[i.id];
-    return { ...i, company_id: d.keep ? i.company_id : text(d.companyId),
+    const remap = data.remap || {};
+    const decided = text(d.companyId) && hasOwn(remap, text(d.companyId)) ? text(remap[text(d.companyId)]) : text(d.companyId);
+    // "Keep" settles the company the person saw. When a re-link has since moved the statement to
+    // another company, nobody has checked that one: the statement goes back to be checked. (A keep
+    // saved before the company was recorded has none and stands.)
+    if (d.keep && decided && decided !== (i.company_id || "")) return i;
+    changed = true;
+    return { ...i, company_id: d.keep ? i.company_id : decided,
       review: [...(i.review || []).filter((f) => !ATTRIBUTION_FLAGS.includes(f)), "company_checked"] };
   });
   const live = changed ? { ...data, insights } : data;
@@ -880,7 +907,7 @@ function shapeInsight(i, index, labels, overrides) {
     id: i.id, kind: i.kind, title: i.title, detail: i.detail, quote: i.quote,
     topic, topicLabel: labels.get(topic) || "Other", tags: i.tags, urgency: i.urgency,
     urgencyReason: i.urgency_reason, status: i.status, solves: i.solves, confidence: i.confidence,
-    scope: i.scope, date: i.date, dateSource: i.date_source, estimated: i.date_source === "box_upload",
+    scope: i.scope, date: i.date, dateSource: i.date_source, estimated: isEstimated(i),
     eventType: i.event_type, series: i.series, speaker: i.speaker, sources: sourcesWithLinks(i.sources),
     review: i.review, checkCompany: needsCheck(i), company: companyOf(index, i),
   };
@@ -889,12 +916,18 @@ function shapeInsight(i, index, labels, overrides) {
 /** The top-level Box sub-folders a row came from ("CIAIC", "Board Meetings"). Older datasets
  * carry no source_folders field, so it is read from the file paths: "Notes/CIAIC/x.docx". */
 function sourcesOf(i) {
-  if (Array.isArray(i.source_folders) && i.source_folders.length) return i.source_folders;
-  if (i.source_folder) return [i.source_folder];
+  // A folder name never ends in ":". "https:" came from splitting a web link's address, its file name,
+  // as if it were folders (data published before the pipeline fix); that is worked out again below.
+  const bad = (f) => /:$/.test(text(f));
+  if (Array.isArray(i.source_folders) && i.source_folders.length && !i.source_folders.some(bad)) return i.source_folders;
+  if (i.source_folder && !bad(i.source_folder)) return [i.source_folder];
   const found = new Set();
   for (const s of i.sources || []) {
-    const parts = text(s.path).split("/").filter(Boolean);
-    found.add(parts.length > 1 ? parts[1] : "(root)");
+    let path = text(s.path);
+    const name = text(s.name);
+    if (name && path.endsWith(`/${name}`)) path = path.slice(0, -name.length - 1);
+    const parts = path.split("/").filter(Boolean);
+    found.add(parts.length > 1 && !bad(parts[1]) ? parts[1] : "(root)");
   }
   return found.size ? [...found] : ["(root)"];
 }
@@ -932,7 +965,7 @@ function filterInsights(data, index, overrides, params, extra = {}) {
     if (company && i.company_id !== company) continue;
     if (from && (!i.date || i.date < from)) continue;
     if (to && (!i.date || i.date > to)) continue;
-    if (excludeEstimated && i.date_source === "box_upload") continue;
+    if (excludeEstimated && isEstimated(i)) continue;
     const c = companyOf(index, i);
     if (industries.size && !industries.has(c.industry.toLowerCase())) continue;
     if (statuses.size && !statuses.has(c.status)) continue;
@@ -1036,10 +1069,21 @@ function pickEvidence(items, index) {
   return out;
 }
 
-async function summaryKey(topic, evidence) {
-  const ids = evidence.map((e) => e.id).sort().join(",");
-  return `pi:sum:${await sha(`${SUMMARY_PROMPT_VERSION}|${SUMMARY_MODEL}|${topic}|${ids}`)}`;
+/** Keyed on everything the prompt is given, not only the row ids: a statement moved to another
+ * company, or a merge that raised its urgency, needs new bullets, not ones naming the old company. */
+async function summaryKey(g, evidence, index) {
+  const rows = evidence.map((i) => [i.id, companyOf(index, i).name, meetingOf(i, index).label, i.date, i.kind,
+    i.urgency, i.title, i.detail].join("\u0001")).sort().join("\u0002");
+  return `pi:sum:${await sha(`${SUMMARY_PROMPT_VERSION}|${SUMMARY_MODEL}|${g.topic}|${g.label}|${g.companyCount}|${g.meetingCount}|${rows}`)}`;
 }
+
+/** A row as a near match sees it: the same row credited to another company is another row. */
+/** A date the pipeline guessed: the Box upload, or the first of a month the file name gives. */
+const ESTIMATED_SOURCES = new Set(["box_upload", "filename_month"]);
+const isEstimated = (i) => ESTIMATED_SOURCES.has(i.date_source);
+
+const summarySig = (i) => `${i.id}:${i.company_id || ""}`;
+const companySet = (evidence) => [...new Set(evidence.map((i) => i.company_id || ""))].sort().join(",");
 
 function presentSummary(stored, evidence, index, labels, overrides) {
   const byId = new Map(evidence.map((e) => [e.id, e]));
@@ -1064,7 +1108,7 @@ async function trendingView(env, data, index, overrides, labels, params, limit =
   const { groups, uncategorized } = issueGroups(issues, index, overrides, labels);
   const trending = await Promise.all(groups.slice(0, limit).map(async (g, n) => {
     const evidence = pickEvidence(g.items, index);
-    const stored = n < 10 ? await readJson(env, await summaryKey(g.topic, evidence), null) : null;
+    const stored = n < 10 ? await readJson(env, await summaryKey(g, evidence, index), null) : null;
     return { topic: g.topic, label: g.label, companyCount: g.companyCount, meetingCount: g.meetingCount, mentions: g.mentions,
       highUrgency: g.highUrgency, companies: g.companies.slice(0, 12),
       examples: stored ? [] : evidence.slice(0, 3).map((i) => shapeInsight(i, index, labels, overrides)),
@@ -1168,10 +1212,10 @@ async function summarizeTopics(env, data, index, overrides, labels, params, topi
   let reused = 0;
   for (const g of wanted) {
     const evidence = pickEvidence(g.items, index);
-    const key = await summaryKey(g.topic, evidence);
+    const key = await summaryKey(g, evidence, index);
     let stored = await readJson(env, key, null);
     if (!stored) {
-      stored = await nearSummary(env, g.topic, evidence, key);
+      stored = await nearSummary(env, g, evidence, key);
       if (stored) reused++;
     }
     if (stored) summaries[g.topic] = presentSummary(stored, evidence, index, labels, overrides);
@@ -1207,9 +1251,10 @@ async function summarizeTopics(env, data, index, overrides, labels, params, topi
     const bullets = bulletsByTopic.get(g.topic);
     if (!bullets) continue;
     const stored = { topic: g.topic, bullets, model: SUMMARY_MODEL, promptVersion: SUMMARY_PROMPT_VERSION, usage,
-      evidenceIds: evidence.map((e) => e.id), createdAt: new Date().toISOString() };
+      evidenceIds: evidence.map((e) => e.id), evidenceSigs: evidence.map(summarySig),
+      companies: companySet(evidence), counts: [g.companyCount, g.meetingCount], createdAt: new Date().toISOString() };
     await env.BOX_KV.put(key, JSON.stringify(stored));
-    await indexSummary(env, g.topic, key, stored.evidenceIds);
+    await indexSummary(env, g.topic, key, stored);
     await logSummary(env, key);
     summaries[g.topic] = presentSummary(stored, evidence, index, labels, overrides);
   }
@@ -1218,26 +1263,31 @@ async function summarizeTopics(env, data, index, overrides, labels, params, topi
 
 const summaryIndexKey = (topic) => `pi:sumidx:${encodeURIComponent(topic)}`;
 
-/** Remember a summary Claude wrote, and the rows it was written from, so a near match can find it. */
-async function indexSummary(env, topic, key, ids) {
+/** Remember a summary Claude wrote, and the rows it was written from, so a near match can find it.
+ * Summaries saved before rows carried their company have no sigs and are never matched. */
+async function indexSummary(env, topic, key, stored, newest = true) {
+  if (!Array.isArray(stored.evidenceSigs)) return;
   const list = (await readJson(env, summaryIndexKey(topic), [])).filter((e) => e && e.key !== key);
-  list.unshift({ key, ids });
+  const entry = { key, ids: stored.evidenceSigs, companies: stored.companies, counts: stored.counts };
+  if (newest) list.unshift(entry); else list.push(entry);
   await env.BOX_KV.put(summaryIndexKey(topic), JSON.stringify(list.slice(0, SUMMARY_INDEX_SIZE)));
 }
 
 /**
  * A saved summary written from nearly the same rows, or null. Near means the rows overlap by
- * at least SUMMARY_REUSE_OVERLAP (shared rows over all rows of either set), and every bullet
- * still has at least one of its cited rows in the current set, so no bullet is left making a
- * point the page can no longer show. A reuse is saved under the exact key, so the next view
- * is one read, but it is not indexed: the next near match is measured against the rows the
- * summary was actually written from.
+ * at least SUMMARY_REUSE_OVERLAP (shared rows over all rows of either set), the same companies
+ * and the same company and meeting counts (bullets say "two companies"), and every row every
+ * bullet cites is still there, credited to the same company. A reuse is saved under the exact
+ * key, so the next view is one read, but it is not indexed: the next near match is measured
+ * against the rows the summary was actually written from.
  */
-async function nearSummary(env, topic, evidence, key) {
-  const now = new Set(evidence.map((e) => e.id));
+async function nearSummary(env, g, evidence, key) {
+  const now = new Set(evidence.map(summarySig));
+  const companies = companySet(evidence);
   let best = null, bestOverlap = 0;
-  for (const entry of await readJson(env, summaryIndexKey(topic), [])) {
-    if (!entry || !Array.isArray(entry.ids)) continue;
+  for (const entry of await readJson(env, summaryIndexKey(g.topic), [])) {
+    if (!entry || !Array.isArray(entry.ids) || entry.companies !== companies
+        || !Array.isArray(entry.counts) || entry.counts[0] !== g.companyCount || entry.counts[1] !== g.meetingCount) continue;
     const basis = new Set(entry.ids);
     let shared = 0;
     for (const id of now) if (basis.has(id)) shared++;
@@ -1246,7 +1296,8 @@ async function nearSummary(env, topic, evidence, key) {
   }
   if (!best || bestOverlap < SUMMARY_REUSE_OVERLAP) return null;
   const stored = await readJson(env, best.key, null);
-  if (!stored || !stored.bullets.every((b) => b.evidence_ids.some((id) => now.has(id)))) return null;
+  const sigOf = new Map((stored?.evidenceIds || []).map((id, n) => [id, stored.evidenceSigs?.[n]]));
+  if (!stored || !stored.bullets.every((b) => b.evidence_ids.every((id) => now.has(sigOf.get(id))))) return null;
   const copy = { ...stored, reusedFrom: best.key, overlap: Math.round(bestOverlap * 100) / 100 };
   await env.BOX_KV.put(key, JSON.stringify(copy));
   await logSummary(env, key);
@@ -1302,14 +1353,14 @@ function aheadParams(view, data, index) {
 /** Save every kept summary to Box. Failing leaves the flag set, so the next tick tries again. */
 async function saveSummariesToBox(env) {
   const settings = await readJson(env, SETTINGS_KEY, {});
-  const token = settings.dataFolderId ? await boxAccessToken(env) : null;
+  const token = cacheFolderOf(settings) ? await boxAccessToken(env) : null;
   if (!token) return false;
   const summaries = [];
   for (const key of await readJson(env, SUMMARY_LOG, [])) {
     const value = await readJson(env, key, null);
     if (value) summaries.push({ key, value });
   }
-  await boxSaveText(token, settings.dataFolderId, SUMMARY_BOX_FILE, JSON.stringify({ savedAt: new Date().toISOString(),
+  await boxSaveText(token, cacheFolderOf(settings), SUMMARY_BOX_FILE, JSON.stringify({ savedAt: new Date().toISOString(),
     model: SUMMARY_MODEL, promptVersion: SUMMARY_PROMPT_VERSION, summaries }));
   await env.BOX_KV.delete(SUMMARY_DIRTY);
   return true;
@@ -1320,11 +1371,11 @@ async function saveSummariesToBox(env) {
 async function restoreSummariesFromBox(env) {
   if (await env.BOX_KV.get(SUMMARY_RESTORED)) return 0;
   const settings = await readJson(env, SETTINGS_KEY, {});
-  const token = settings.dataFolderId ? await boxAccessToken(env) : null;
+  const token = cacheFolderOf(settings) ? await boxAccessToken(env) : null;
   if (!token) return 0;
   let restored = 0;
   try {
-    const file = (await boxItems(token, settings.dataFolderId)).find((e) => e.type === "file" && e.name === SUMMARY_BOX_FILE);
+    const file = (await boxItems(token, cacheFolderOf(settings))).find((e) => e.type === "file" && e.name === SUMMARY_BOX_FILE);
     if (file) {
       const res = await fetch(`${BOX_API}/files/${file.id}/content`, { headers: { authorization: `Bearer ${token}` } });
       if (!res.ok) return 0;
@@ -1335,7 +1386,8 @@ async function restoreSummariesFromBox(env) {
         kept.push(e.key);
         if (await env.BOX_KV.get(e.key)) continue;
         await env.BOX_KV.put(e.key, JSON.stringify(e.value));
-        if (!e.value.reusedFrom && Array.isArray(e.value.evidenceIds)) await indexSummary(env, text(e.value.topic), e.key, e.value.evidenceIds);
+        // The file lists the newest first, so each one goes behind those already restored.
+        if (!e.value.reusedFrom) await indexSummary(env, text(e.value.topic), e.key, e.value, false);
         restored++;
       }
       const log = await readJson(env, SUMMARY_LOG, []);
@@ -1353,7 +1405,7 @@ async function restoreSummariesFromBox(env) {
 export async function runSummariesAhead(env, now = Date.now()) {
   const queue = await readJson(env, AHEAD_QUEUE, null);
   const pending = Boolean(queue && queue.views.length && env.partner_intel_claude_api);
-  if (!pending && !(await env.BOX_KV.get(SUMMARY_DIRTY))) return { idle: true };
+  if (!pending && !(await env.BOX_KV.get(SUMMARY_DIRTY)) && !(await env.BOX_KV.get(MEMORY_DIRTY))) return { idle: true };
   const lock = await readJson(env, AHEAD_LOCK, null);
   if (lock && lock.until > now) return { busy: true };
   await env.BOX_KV.put(AHEAD_LOCK, JSON.stringify({ until: now + 4 * 60000 }), { expirationTtl: 300 });
@@ -1396,6 +1448,9 @@ export async function runSummariesAhead(env, now = Date.now()) {
     if (await env.BOX_KV.get(SUMMARY_DIRTY)) {
       try { await saveSummariesToBox(env); } catch { /* the flag stays set: the next tick tries again */ }
     }
+    if (await env.BOX_KV.get(MEMORY_DIRTY)) {
+      try { await saveMemoryIndexToBox(env); } catch { /* likewise */ }
+    }
   } finally {
     await env.BOX_KV.delete(AHEAD_LOCK);
   }
@@ -1427,8 +1482,54 @@ async function addUsage(env, kind, usage, extra = {}) {
   await env.BOX_KV.put(key, JSON.stringify(all));
 }
 
+const CONTACTS_BOX_FILE = "partner_intel_contacts.json";
+
+/** The uploaded contact list: the app's copy, or the copy saved in the Contact list folder in Box when
+ * the app has none (a new deployment), read back once. */
+async function getContacts(env) {
+  const kept = await readJson(env, CONTACTS_KEY, null);
+  if (kept) return kept;
+  if (await env.BOX_KV.get("pi:contacts:restored")) return null;
+  try {
+    const settings = await readJson(env, SETTINGS_KEY, {});
+    const token = settings.contactsFolderId ? await boxAccessToken(env) : null;
+    if (!token) return null;
+    const file = (await boxItems(token, settings.contactsFolderId)).find((e) => e.type === "file" && e.name === CONTACTS_BOX_FILE);
+    let stored = null;
+    if (file) {
+      const res = await fetch(`${BOX_API}/files/${file.id}/content`, { headers: { authorization: `Bearer ${token}` } });
+      const body = res.ok ? JSON.parse(await res.text()) : null;
+      if (body && Array.isArray(body.contacts)) {
+        stored = { fileName: text(body.fileName), updatedAt: text(body.updatedAt), by: text(body.by), summary: body.summary || {},
+          contacts: body.contacts.filter((c) => c && typeof c.name === "string").map((c) => ({ name: text(c.name).slice(0, 120),
+            title: text(c.title).slice(0, 160), account: text(c.account).slice(0, 200), email: text(c.email).slice(0, 200) })) };
+        await env.BOX_KV.put(CONTACTS_KEY, JSON.stringify(stored));
+      }
+    }
+    await env.BOX_KV.put("pi:contacts:restored", new Date().toISOString());
+    return stored;
+  } catch {
+    return null;
+  }
+}
+
+/** Save an uploaded contact list to the Contact list folder: the file as uploaded, and the list as read. */
+async function saveContactsToBox(env, stored, fileName, bytes) {
+  const settings = await readJson(env, SETTINGS_KEY, {});
+  if (!settings.contactsFolderId) return { box: false, note: "Saved in the app. Choose a Contact list folder to keep a copy in Box." };
+  const token = await boxAccessToken(env);
+  if (!token) return { box: false, note: "Saved in the app. Box is not connected." };
+  try {
+    if (fileName && bytes) await boxSaveText(token, settings.contactsFolderId, fileName.replace(/[\\/]/g, "_"), bytes);
+    await boxSaveText(token, settings.contactsFolderId, CONTACTS_BOX_FILE, JSON.stringify(stored));
+    return { box: true, note: "" };
+  } catch (e) {
+    return { box: false, note: `Saved in the app. Box did not take the copy: ${String(e.message || e).slice(0, 160)}` };
+  }
+}
+
 async function contactsStatus(env) {
-  const stored = await readJson(env, CONTACTS_KEY, null);
+  const stored = await getContacts(env);
   return stored ? { fileName: stored.fileName, updatedAt: stored.updatedAt, summary: stored.summary } : null;
 }
 
@@ -1506,7 +1607,7 @@ function meetingGroups(rows, index, overrides, labels) {
       counts: { issues: 0, solutions: 0, wins: 0, other: 0 }, companies: new Map(), topics: new Map(), files: new Set() });
     const g = groups.get(key);
     g.counts[CATEGORY_OF[i.kind] || "other"]++;
-    if (i.date_source === "box_upload") g.estimated = true;
+    if (isEstimated(i)) g.estimated = true;
     const c = companyOf(index, i);
     if (c.id) g.companies.set(c.id, c.name);
     const topic = finalTopic(overrides, i.topic);
@@ -1549,7 +1650,7 @@ function profileView(data, roster, overrides, labels, id, includeInternal) {
     const m = meetingOf(i, index);
     const key = `${i.date}|${m.id}`;
     if (!meetings.has(key)) meetings.set(key, { date: i.date, label: m.label, eventType: i.event_type, series: i.series,
-      estimated: i.date_source === "box_upload", programs: new Set(), files: new Map() });
+      estimated: isEstimated(i), programs: new Set(), files: new Map() });
     const g = meetings.get(key);
     for (const p of sourcesOf(i)) g.programs.add(p);
     for (const f of i.sources || []) if (!g.files.has(f.id || f.name)) g.files.set(f.id || f.name, { id: f.id, name: f.name, url: boxFileUrl(f.id) });
@@ -1611,7 +1712,7 @@ function bySource(rows, index, labels, overrides) {
       estimated: false, programs: new Set(), files: new Map(), rows: [] });
     const s = sources.get(key);
     s.rows.push(i);
-    if (i.date_source === "box_upload") s.estimated = true;
+    if (isEstimated(i)) s.estimated = true;
     for (const p of sourcesOf(i)) s.programs.add(p);
     for (const f of i.sources || []) if (!s.files.has(f.id || f.name)) s.files.set(f.id || f.name, { id: f.id, name: f.name, url: boxFileUrl(f.id) });
   }
@@ -2050,11 +2151,14 @@ async function ask(env, data, roster, overrides, question, sourceList = [], excl
  * reads it and answers with [n12] citations, which are checked against the notes it was shown.
  * Each person's questions and answers are kept by person, in Box.
  */
-const ASSISTANT_PROMPT_VERSION = "pi-asst-2"; // 2: every note listed; programs named in the question
+const ASSISTANT_PROMPT_VERSION = "pi-asst-4"; // 4: estimated dates marked, people "probably"; 3: people named in the question; 2: every note listed, programs named
 const ASSISTANT_EXPAND_VERSION = "pi-asst-expand-1";
 const ASSISTANT_NOTES = 160;        // notes in full in one prompt, at most
 const ASSISTANT_PER_PROGRAM = 60;   // of which come from each program the question names
-const ASSISTANT_HEADLINES = 4000;   // every other note as a one-line headline, up to this many (newest first)
+// Every other note as a one-line headline, up to this many: the named programs' and companies' first,
+// then newest first. About 30 tokens a line, so the prompt stays near 50,000 tokens however many notes
+// are on file; the topic table and the summaries cover what is older.
+const ASSISTANT_HEADLINES = 1200;
 const ASSISTANT_MATCHED = 70;       // of which match the question's words
 const ASSISTANT_PER_COMPANY = 25;   // of which come from each company the question names
 const ASSISTANT_RECENT_DAYS = 120;  // the window the spread of recent notes comes from
@@ -2099,7 +2203,12 @@ const ASSISTANT_SYSTEM =
   "plainly and say what is missing. The notes are a selection: say so when a count could be incomplete.\n" +
   "5. You may use general knowledge for background, definitions and drafting (an agenda, an email, " +
   "talking points). Say when something is general knowledge rather than from the notes.\n" +
-  "6. Council Member means an active member of the council. Every other company is Not Council.\n" +
+  "6. Council Member means an active member of the council. Every other company is Not Council. A date " +
+  "marked (estimated) or with ~ is a guess from when the file reached Box or the month in its name: do not " +
+  "state it as the meeting date.\n" +
+  "When <people> lists a person, they are on Conexus's contact list at the company given. Notes usually name " +
+  "people by first name only: a first-name mention in a note from their company is probably that person, as " +
+  "<people> says. Say that is how you connected them, and say when <people> warns the match is uncertain.\n" +
   "7. Write for busy executives: short plain sentences, active voice, no filler, no flattery. Use " +
   "numbered lists for steps, rankings and agendas. Use short ## headings only when the answer has " +
   "distinct parts. Never use em dashes or en dashes. Keep answers under 350 words unless the question " +
@@ -2151,39 +2260,52 @@ function companiesNamed(question, data, index, roster) {
   const found = [];
   const names = [];
   for (const c of index.values()) if (withNotes.has(c.id)) names.push([c.name, c.id]);
+  for (const p of roster.partners || []) for (const a of p.aliases || []) if (withNotes.has(p.id)) names.push([a, p.id]);
   for (const [alias, id] of Object.entries(roster.aliases || {})) if (withNotes.has(id)) names.push([alias, id]);
   for (const [name, id] of names) {
     const full = nameKey(name);
     const core = full.replace(COMPANY_SUFFIX, " ").replace(/\s+/g, " ").trim();
-    const hit = [full, core].some((k) => k.length >= 4 && q.includes(` ${k} `));
+    // A name of two or three characters (GE, 3M, ATI) counts only written as it is spelled, in capitals:
+    // "ge" or "ati" inside ordinary words and phrases is not the company.
+    const hit = [full, core].some((k) => k.length >= 4 ? q.includes(` ${k} `)
+      : k.length >= 2 && /^[A-Z0-9&]+$/.test(name.trim()) && asWord(question, name.trim()));
     if (hit && !found.includes(id)) found.push(id);
   }
   return found.slice(0, 3);
 }
 
 /** Every topic with its breadth (companies and meetings), urgency and trend, for the topic table. */
-function topicTable(rows, index, overrides, labels) {
-  const recent = daysAgo(90), prior = daysAgo(180);
+/** rows are all notes, not only the question's window: the trend columns compare the window (or the last
+ * 90 days) with the same span before it, and a window that cut the rows first left "before" at 0 for
+ * every topic, so shrinking topics read as growing. The other columns count the window only. */
+function topicTable(rows, index, overrides, labels, windowDays = 0) {
+  const span = windowDays || 90;
+  const since = windowDays ? daysAgo(windowDays) : "";
+  const recent = daysAgo(span), prior = daysAgo(2 * span);
   const topics = new Map();
   for (const i of rows) {
     const topic = finalTopic(overrides, i.topic);
     if (topic === "other") continue;
     if (!topics.has(topic)) topics.set(topic, { issues: new Set(), meetings: new Set(), urgent: new Set(), recent: new Set(),
-      prior: new Set(), solutions: new Set(), wins: new Set(), last: "" });
+      prior: new Set(), solutions: new Set(), wins: new Set(), last: "", seen: false });
     const t = topics.get(topic);
     const c = companyOf(index, i).id || `raw:${nameKey(i.company_raw)}`;
     const category = CATEGORY_OF[i.kind] || "other";
+    if (category === "issues" && i.date) {
+      if (i.date >= recent) t.recent.add(c);
+      else if (i.date >= prior) t.prior.add(c);
+    }
+    if (since && !(i.date && i.date >= since)) continue;
+    t.seen = true;
     if (category === "issues") {
       const m = meetingOf(i, index).id;
       t.issues.add(c); t.meetings.add(m);
       if (i.urgency === "high") t.urgent.add(m);
-      if (i.date >= recent) t.recent.add(c);
-      else if (i.date >= prior) t.prior.add(c);
     } else if (category === "solutions") t.solutions.add(c);
     else if (category === "wins") t.wins.add(c);
     if (i.date > t.last) t.last = i.date;
   }
-  return [...topics.entries()].map(([topic, t]) => ({ label: labels.get(topic) || topic, issues: t.issues.size,
+  return [...topics.entries()].filter(([, t]) => t.seen).map(([topic, t]) => ({ label: labels.get(topic) || topic, issues: t.issues.size,
     meetings: t.meetings.size, urgent: t.urgent.size, recent: t.recent.size, prior: t.prior.size,
     solutions: t.solutions.size, wins: t.wins.size, last: t.last }))
     .sort((a, b) => b.issues - a.issues || b.recent - a.recent || b.solutions + b.wins - a.solutions - a.wins || a.label.localeCompare(b.label))
@@ -2223,12 +2345,49 @@ function spreadRows(rows, index, limit) {
 
 const clip = (s, n) => { const t = text(s).replace(/\s+/g, " "); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 
+/** People on the uploaded contact list whom the question names in full ("Chad Nord", "Chad Nord's"), with
+ * their title and company. The notes usually give only a first name, so this is the link between a
+ * person and what their company said. sameFirst counts the contacts at that company with that first name. */
+function peopleNamed(question, contacts, roster, index) {
+  if (!contacts || !contacts.length) return [];
+  const q = ` ${nameKey(question)} `;
+  const keys = partnerKeyMap(roster);
+  const byName = new Map([...index.values()].map((c) => [nameKey(c.name), c.id]));
+  const out = [];
+  for (const c of contacts) {
+    const k = nameKey(c.name);
+    if (k.split(" ").length < 2 || !q.includes(` ${k} `)) continue;
+    const companyId = keys.get(nameKey(c.account)) || byName.get(nameKey(c.account)) || "";
+    if (out.some((p) => nameKey(p.name) === k && p.account === c.account)) continue;
+    const first = k.split(" ")[0];
+    // Everyone at the company with that first name, from the upload and the roster's own contact names.
+    const firsts = new Set(contacts.filter((x) => x.account === c.account && nameKey(x.name).split(" ")[0] === first).map((x) => nameKey(x.name)));
+    const partner = companyId ? (roster.partners || []).find((x) => x.id === companyId) : null;
+    for (const n of (partner && partner.contacts) || []) if (nameKey(n).split(" ")[0] === first) firsts.add(nameKey(n));
+    const accounts = new Set(contacts.filter((x) => nameKey(x.name) === k).map((x) => nameKey(x.account))).size;
+    out.push({ name: c.name, title: c.title || "", account: c.account, companyId, first, sameFirst: firsts.size, accounts });
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
 /** Programs (top-level Box folders) the question names, by name: "the PCN", "CIAIC", "Board Meetings". */
+/** The text appears in the question as a whole word, spelled exactly so. */
+function asWord(question, word) {
+  const at = ` ${question.replace(/[^A-Za-z0-9&]+/g, " ")} `;
+  return at.includes(` ${word.replace(/[^A-Za-z0-9&]+/g, " ").trim()} `);
+}
+
 function programsNamed(question, data, index) {
   const q = ` ${nameKey(question)} `;
   return programsView(data, index).filter((p) => {
     const k = nameKey(p.name);
-    return p.name !== "(root)" && k.length >= 2 && q.includes(` ${k} `);
+    if (p.name === "(root)" || k.length < 2) return false;
+    // A one-word program in capitals that is long enough to be an ordinary word ("ADAPT") counts only in
+    // capitals: "how are members trying to adapt" is not about the ADAPT program. PCN, ITA and the like
+    // match however they are typed.
+    if (/^[A-Z]{5,}$/.test(p.name)) return asWord(question, p.name);
+    return q.includes(` ${k} `);
   }).map((p) => p.name).slice(0, 3);
 }
 
@@ -2236,7 +2395,7 @@ function noteLine(ref, i, index, labels, overrides) {
   const c = companyOf(index, i);
   const who = c.id ? `${c.name} (${[c.industry !== "Unknown" ? c.industry : "", c.member ? "Council Member" : "Not Council"].filter(Boolean).join(", ")})`
     : c.name;
-  const head = [i.date || "no date", `program: ${sourcesOf(i).join(", ")}`, PI_KIND[i.kind] || i.kind, who, i.event_type || i.series || "",
+  const head = [i.date ? (isEstimated(i) ? `${i.date} (estimated)` : i.date) : "no date", `program: ${sourcesOf(i).join(", ")}`, PI_KIND[i.kind] || i.kind, who, i.event_type || i.series || "",
     `topic: ${labels.get(finalTopic(overrides, i.topic)) || "Other"}`,
     i.urgency === "high" ? "urgent" : "", i.status === "resolved" ? "resolved" : "", i.scope === "internal" ? "internal Conexus note" : ""]
     .filter(Boolean).join(" · ");
@@ -2246,7 +2405,7 @@ function noteLine(ref, i, index, labels, overrides) {
 }
 /** Every note not given in full, in one line: enough to know it is there and to cite it. */
 function headline(ref, i, index, labels, overrides) {
-  return `[${ref}] ${i.date || "no date"} · ${sourcesOf(i).join(", ")} · ${companyOf(index, i).name} · ${PI_KIND[i.kind] || i.kind} · ` +
+  return `[${ref}] ${i.date ? (isEstimated(i) ? `~${i.date}` : i.date) : "no date"} · ${sourcesOf(i).join(", ")} · ${companyOf(index, i).name} · ${PI_KIND[i.kind] || i.kind} · ` +
     `${labels.get(finalTopic(overrides, i.topic)) || "Other"} · ${clip(i.title, 110)}`;
 }
 const PI_KIND = { problem: "Issue", ask: "Ask", solution: "Solution", offer: "Offer", equipment: "Equipment", win: "Win",
@@ -2280,11 +2439,21 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
   // Newest first and every note of a meeting, not a spread: the question is about this program.
   const newest = (a, b) => (b.date || "").localeCompare(a.date || "") || a.id.localeCompare(b.id);
   for (const name of programs) take(inProgram(name).sort(newest), ASSISTANT_PER_PROGRAM);
-  // 2. The companies the question names, and the company page it was asked from.
+  // 2. The people the question names (from the contact list) and their companies, the companies it names,
+  // and the company page it was asked from. A person's company's notes that mention them by first name
+  // come first.
+  const people = opts.people || [];
   const named = companiesNamed(question, data, index, roster);
+  for (const p of people) if (p.companyId && !named.includes(p.companyId)) named.unshift(p.companyId);
   if (opts.focusId && !named.includes(opts.focusId)) named.unshift(opts.focusId);
   for (const id of named.slice(0, 3)) {
-    take(spreadRows(data.insights.filter((i) => i.company_id === id && inWindow(i)), index, ASSISTANT_PER_COMPANY), ASSISTANT_PER_COMPANY);
+    const rows = data.insights.filter((i) => i.company_id === id && inWindow(i));
+    const firsts = people.filter((p) => p.companyId === id).map((p) => p.first);
+    if (firsts.length) {
+      const mentions = (i) => { const t = ` ${nameKey([i.speaker, i.title, i.detail, i.quote].join(" "))} `; return firsts.some((f) => t.includes(` ${f} `)); };
+      take(rows.filter(mentions).sort((a, b) => (b.date || "").localeCompare(a.date || "") || a.id.localeCompare(b.id)), ASSISTANT_PER_COMPANY);
+    }
+    take(spreadRows(rows, index, ASSISTANT_PER_COMPANY), ASSISTANT_PER_COMPANY);
   }
   // 3. Notes that match the question's subject, internal Conexus notes included: staff may ask about the board.
   const scored = scoreRows(question, terms, data.insights.filter(inWindow), overrides, labels, ASSISTANT_SKIP) || [];
@@ -2307,8 +2476,12 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
   const byDate = (a, b) => (b.date || "").localeCompare(a.date || "") || a.id.localeCompare(b.id);
   const notes = [...picked.values()].sort(byDate);
   const refs = new Map(notes.map((i, n) => [`n${n + 1}`, i]));
-  // 5. Every other note on file, as a headline, numbered on from the full notes so any can be cited.
-  const rest = data.insights.filter((i) => !picked.has(i.id) && inWindow(i)).sort(byDate);
+  // 5. Every other note on file, as a headline, numbered on from the full notes so any can be cited. The
+  // programs and companies the question names come first, so they are never the ones left out.
+  const named1 = new Set(named);
+  const inScope = (i) => (programs.length && sourcesOf(i).some((x) => programs.includes(x))) || named1.has(i.company_id);
+  const rest = data.insights.filter((i) => !picked.has(i.id) && inWindow(i))
+    .sort((a, b) => Number(inScope(b)) - Number(inScope(a)) || byDate(a, b));
   const shownRest = rest.slice(0, ASSISTANT_HEADLINES);
   shownRest.forEach((i, n) => refs.set(`n${notes.length + n + 1}`, i));
 
@@ -2332,13 +2505,22 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
   const material = [
     `<today>${today()}</today>`,
     focus ? `<page>The person is on the page for ${focus.name}. A question that names no company is probably about it.</page>` : "",
+    people.length ? `<people>\nPeople the question names, from the contact list:\n${people.map((p) => {
+      const c = p.companyId ? index.get(p.companyId) : null;
+      const where = c ? `${c.name} (${c.status === "Active" ? "Council Member" : "Not Council"})` : `${p.account} (not a company in the notes)`;
+      return `${p.name}${p.title ? `, ${p.title}` : ""}, ${where}.` +
+        (p.accounts > 1 ? ` The contact list has a ${p.name} at ${p.accounts} companies: they may be different people, so say so.` : "") +
+        (c ? ` Notes often give only a first name: in notes from ${c.name}, ` +
+        (p.sameFirst > 1 ? `"${p.name.split(" ")[0]}" may be ${p.name}, but ${p.sameFirst} people there share that first name, so say so.`
+          : `"${p.name.split(" ")[0]}" is probably ${p.name}, the only one there by that first name.`) : "");
+    }).join("\n")}\n</people>` : "",
     `<overview>\n${windowDays ? `The question covers the last ${windowDays} days (since ${since}).` : "All notes on file."} ` +
       `${dash.insights} notes from ${dash.meetings} meetings with ${dash.partners} companies, ${dash.members} of them Council Members, ` +
       `${dash.first || "?"} to ${dash.last || "?"}: ${dash.issues} issues, ${dash.solutions} solutions, ${dash.wins} wins.\n` +
       `Programs: ${programsView(data, index).slice(0, 20).map((p) => `${p.name} (${p.meetings} meetings, last ${p.last || "?"})`).join("; ")}.\n</overview>`,
     `<topic_table>\nEach line: topic | companies raising it as an issue | meetings | meetings calling it urgent | ` +
-      `companies raising it in the last 90 days | in the 90 days before that | companies with a solution | with a win | last mentioned\n` +
-      topicTable(scope, index, overrides, labels).map((r) => `${r.label} | ${r.issues} | ${r.meetings} | ${r.urgent} | ${r.recent} | ${r.prior} | ${r.solutions} | ${r.wins} | ${r.last || "?"}`).join("\n") +
+      `companies raising it in the last ${windowDays || 90} days | in the ${windowDays || 90} days before that | companies with a solution | with a win | last mentioned\n` +
+      topicTable(external, index, overrides, labels, windowDays).map((r) => `${r.label} | ${r.issues} | ${r.meetings} | ${r.urgent} | ${r.recent} | ${r.prior} | ${r.solutions} | ${r.wins} | ${r.last || "?"}`).join("\n") +
       "\n</topic_table>",
     summaries.length ? `<topic_summaries>\n${summaries.join("\n")}\n</topic_summaries>` : "",
     ...programParts,
@@ -2347,18 +2529,19 @@ async function assistantContext(env, data, index, roster, overrides, labels, que
     `<notes>\n${notes.length} notes in full, newest first: ${[programs.length ? `the programs named (${programs.join(", ")})` : "",
       named.length ? "the companies named" : "", matchedCount ? "notes matching the question's words" : "", "a spread of recent notes"].filter(Boolean).join(", ")}.\n\n` +
       `${notes.map((i, n) => noteLine(`n${n + 1}`, i, index, labels, overrides)).join("\n\n")}\n</notes>`,
-    shownRest.length ? `<all_notes>\nEvery other note on file${since ? ` since ${since}` : ""}, newest first, one line each: ` +
-      `reference · date · program · company · kind · topic · title.${rest.length > shownRest.length ? ` The oldest ${rest.length - shownRest.length} are left out.` : ""}\n` +
+    shownRest.length ? `<all_notes>\nEvery other note on file${since ? ` since ${since}` : ""}, ${programs.length || named.length ? "those of the programs and companies named first, then " : ""}newest first, one line each: ` +
+      `reference · date · program · company · kind · topic · title.${rest.length > shownRest.length ? ` The oldest ${rest.length - shownRest.length} are not listed; the topic table and summaries cover them.` : ""}\n` +
       `${shownRest.map((i, n) => headline(`n${notes.length + n + 1}`, i, index, labels, overrides)).join("\n")}\n</all_notes>` : "",
   ].filter(Boolean).join("\n\n");
-  return { material, refs, considered: { notes: notes.length, headlines: shownRest.length, matched: matchedCount, windowDays, companies: named, programs } };
+  return { material, refs, considered: { notes: notes.length, headlines: shownRest.length, matched: matchedCount, windowDays, companies: named, programs,
+    people: people.map((p) => p.name) } };
 }
 
 /** A note as it is kept with an answer: enough to show it and link to it without the dataset. */
 function sourceSnapshot(ref, i, index, labels, overrides) {
   const c = companyOf(index, i);
   return { ref, id: i.id, kind: i.kind, title: clip(i.title, 200), detail: clip(i.detail, 320), date: i.date,
-    topicLabel: labels.get(finalTopic(overrides, i.topic)) || "Other",
+    estimated: isEstimated(i), checkCompany: needsCheck(i), topicLabel: labels.get(finalTopic(overrides, i.topic)) || "Other",
     company: { id: c.id, name: c.name, industry: c.industry, status: c.status },
     files: sourcesWithLinks(i.sources).slice(0, 3).map((f) => ({ name: text(f.name).slice(0, 160), url: f.url })) };
 }
@@ -2367,7 +2550,9 @@ function sourceSnapshot(ref, i, index, labels, overrides) {
  * order first cited, and the cited notes are listed in that order. */
 function checkAnswer(raw, refs, index, labels, overrides) {
   const order = [];
-  const answer = text(raw.answer).slice(0, 12000).replace(/\[(n\d{1,4})\]/g, (all, ref) => {
+  // A bare "[2]" is not a reference given to the model (an earlier answer's numbering, copied): it would
+  // become a chip pointing at this answer's second source, another note. Only [nX] survives.
+  const answer = text(raw.answer).slice(0, 12000).replace(/\s*\[\d{1,3}\]/g, "").replace(/\[(n\d{1,4})\]/g, (all, ref) => {
     if (!refs.has(ref)) return "";
     if (!order.includes(ref)) order.push(ref);
     const n = order.indexOf(ref) + 1;
@@ -2389,7 +2574,7 @@ export const looksLikeMatch = (question) => MATCH_QUESTION.test(text(question));
 function snapshotOf(ref, s) {
   const c = s.company || {};
   return { ref, id: s.id, kind: s.kind, title: clip(s.title, 200), detail: clip(s.detail, 320), date: s.date,
-    topicLabel: s.topicLabel, company: { id: c.id || "", name: c.name || "", industry: c.industry || "", status: c.status || "" },
+    estimated: !!s.estimated, checkCompany: !!s.checkCompany, topicLabel: s.topicLabel, company: { id: c.id || "", name: c.name || "", industry: c.industry || "", status: c.status || "" },
     files: (s.sources || []).slice(0, 3).map((f) => ({ name: text(f.name).slice(0, 160), url: f.url || "" })) };
 }
 
@@ -2413,24 +2598,28 @@ function matchesTurn(r) {
 const whoKey = (auth) => text(auth.email || auth.username).toLowerCase();
 const historyFileName = (who) => `ask-history-${who.replace(/[^a-z0-9@._-]+/g, "_").slice(0, 120)}.json`;
 
-/** The Ask history folder inside the Database folder: found, or made the first time. */
-async function historyFolder(env, token, settings) {
-  if (settings.askHistoryFolderId && settings.askHistoryParent === settings.dataFolderId) return settings.askHistoryFolderId;
-  let id = ((await boxItems(token, settings.dataFolderId)).find((e) => e.type === "folder" && e.name === HISTORY_FOLDER) || {}).id;
+/** A folder inside the Database folder (or another parent), found or made the first time, its id
+ * remembered in the settings under `${field}FolderId`. */
+async function dataSubfolder(env, token, settings, name, field, parent = settings.dataFolderId) {
+  if (settings[`${field}FolderId`] && settings[`${field}Parent`] === parent) return settings[`${field}FolderId`];
+  let id = ((await boxItems(token, parent)).find((e) => e.type === "folder" && e.name === name) || {}).id;
   if (!id) {
     const res = await fetch(`${BOX_API}/folders`, { method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ name: HISTORY_FOLDER, parent: { id: settings.dataFolderId } }) });
+      body: JSON.stringify({ name, parent: { id: parent } }) });
     const body = await res.json().catch(() => ({}));
-    // Two first questions at once: the second finds the folder the first made.
+    // Two first writes at once: the second finds the folder the first made.
     if (res.status === 409) id = (((body.context_info || {}).conflicts || [])[0] || {}).id;
     else if (res.ok) id = body.id;
     if (!id) throw new Error(`Box folder create failed (${res.status})`);
   }
-  const fresh = { ...(await readJson(env, SETTINGS_KEY, {})), askHistoryFolderId: id, askHistoryParent: settings.dataFolderId };
+  const fresh = { ...(await readJson(env, SETTINGS_KEY, {})), [`${field}FolderId`]: id, [`${field}Parent`]: parent };
   await env.BOX_KV.put(SETTINGS_KEY, JSON.stringify(fresh));
   return id;
 }
+
+/** The Ask history folder inside the Database folder. */
+const historyFolder = (env, token, settings) => dataSubfolder(env, token, settings, HISTORY_FOLDER, "askHistory");
 
 async function boxHistoryTarget(env) {
   const settings = await readJson(env, SETTINGS_KEY, {});
@@ -2477,7 +2666,262 @@ async function saveHistory(env, who, history) {
   }
 }
 
-const conversationSummary = (c) => ({ id: c.id, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, turns: c.turns.length });
+const conversationSummary = (c) => ({ id: c.id, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, turns: c.turns.length,
+  companyId: c.companyId || "" });
+
+/* ---- saved answers: reused, or brought up to date, instead of paid for again */
+
+/*
+ * Every standalone answer (not a follow-up, which leans on its conversation) is saved with what it
+ * covered: the programs and companies its question named, its time window and program filter, and
+ * the notes in that scope. A later question in the same scope that asks the same thing (the same
+ * words once filler is set aside: a different number, year, name or "not" is a different question)
+ * is answered from it:
+ *   - nothing in the scope changed: the saved answer, re-shown with today's company names. No Claude call.
+ *   - notes were added to a named company's, person's or program's notes: Claude reads the saved answer,
+ *     the notes it cited and only the new notes, and updates it. A few thousand tokens instead of a full
+ *     answer's fifty thousand. At most MEMORY_MAX_UPDATES times, and for MEMORY_MAX_DAYS, after the last
+ *     full answer.
+ *   - anything else: a full answer, as if new. That is a cited note removed or now another company's, a
+ *     cited company renamed or its membership changed, a note dropping out of a time window, any change
+ *     to the notes behind a question that names no company, person or program (its ranking may move),
+ *     or too many new notes.
+ * A question that compares or excludes ("other than", "not", "versus") is never answered from memory.
+ * The answer says which it is, and "Answer fresh" always asks again. Saved answers are kept in the app
+ * and each is written to Box (Cache/Saved answers) as its own file, with an index file the cron keeps
+ * current, so a lost app copy is read back from Box.
+ */
+const MEMORY_INDEX = "pi:mem:index";
+const MEMORY_DIRTY = "pi:mem:dirty";
+const MEMORY_RESTORED = "pi:mem:restored";
+const memoryKey = (id) => `pi:mem:${id}`;
+const MEMORY_FOLDER = "Saved answers";
+export const MEMORY_INDEX_FILE = "partner_intel_saved_answers.json";
+const MEMORY_SIZE = 3000;      // saved answers indexed, newest first
+const MEMORY_MAX_NEW = 60;     // more new notes than this in the scope, and a full answer is cheaper to trust
+const MEMORY_MAX_UPDATES = 3;  // updates on top of one full answer before it is written in full again
+const MEMORY_MAX_DAYS = 30;    // and the age of that full answer
+// Words that do not change what a question asks for. Everything else, numbers and one-letter words
+// included, must be the same for two questions to be one question.
+const MEMORY_IGNORE = new Set(("a an the of in on at to for from with by about and or is are was were be been has have had " +
+  "do does did what whats which who how we our us me my you your they them their this that these those there it its " +
+  "any anything can could would should will please tell show give list say said saying talk talking discuss discussed " +
+  "discussing mention mentioned hear heard recent recently lately latest new going update updates so far").split(" ").map(stem));
+// A question that compares or leaves something out covers more than the notes its names point to.
+const MEMORY_NEVER = new Set(("other others except excluding exclude besides beside than versus vs compare compared comparison " +
+  "not no never without unlike differ different difference nor havent hasnt hadnt didnt dont doesnt isnt arent wasnt werent " +
+  "cant couldnt wont wouldnt shouldnt").split(" ").map(stem));
+
+/** A question's meaning words, sorted, or null when it should never be answered from memory. */
+function memoryWords(question) {
+  const words = [...new Set(String(question || "").toLowerCase().replace(/[\u2018\u2019']/g, "").split(/[^a-z0-9]+/)
+    .filter(Boolean).map(stem))];
+  if (words.some((w) => MEMORY_NEVER.has(w))) return null;
+  return words.filter((w) => !MEMORY_IGNORE.has(w)).sort();
+}
+
+/** What a question covers, worked out without a model, or null when it is never answered from memory. */
+async function answerScope(question, data, index, roster, focusId, sourceList, people = []) {
+  const words = memoryWords(question);
+  if (!words) return null;
+  const windowDays = questionWindow(question);
+  const since = windowDays ? daysAgo(windowDays) : "";
+  const programs = programsNamed(question, data, index);
+  const companies = companiesNamed(question, data, index, roster);
+  for (const p of people) if (p.companyId && !companies.includes(p.companyId)) companies.unshift(p.companyId);
+  if (focusId && !companies.includes(focusId)) companies.unshift(focusId);
+  const named = programs.length > 0 || companies.length > 0;
+  const rows = data.insights.filter((i) => (!since || (i.date && i.date >= since)) &&
+    (programs.length ? sourcesOf(i).some((x) => programs.includes(x)) : companies.length ? companies.includes(i.company_id) : true));
+  const signature = JSON.stringify({ v: ASSISTANT_PROMPT_VERSION, q: words, p: [...programs].sort(), c: [...companies].sort(),
+    n: people.map((x) => nameKey(x.name)).sort(), w: windowDays, s: [...sourceList].sort() });
+  // A question that names nothing is about every note: any change may move its ranking, so it is
+  // matched on a fingerprint of the notes and their companies, not brought up to date.
+  const fingerprint = named ? "" : await sha(rows.map((i) => `${i.id}:${i.company_id || ""}`).sort().join(","));
+  return { signature, rows, named, windowDays, fingerprint };
+}
+
+async function memoryBox(env) {
+  const settings = await readJson(env, SETTINGS_KEY, {});
+  const folder = cacheFolderOf(settings);
+  const token = folder ? await boxAccessToken(env) : null;
+  return token ? { token, settings, folder } : null;
+}
+
+/** The saved-answer index, read back from Box once if the app has lost it. null when Box could not be
+ * read: nothing is then written over the Box copy, and the restore is tried again next time. */
+async function memoryIndex(env) {
+  const kept = await readJson(env, MEMORY_INDEX, null);
+  if (kept) return kept;
+  if (await env.BOX_KV.get(MEMORY_RESTORED)) return [];
+  let list = [];
+  try {
+    const box = await memoryBox(env);
+    if (!box) return [];
+    const file = (await boxItems(box.token, box.folder)).find((e) => e.type === "file" && e.name === MEMORY_INDEX_FILE);
+    if (file) {
+      const res = await fetch(`${BOX_API}/files/${file.id}/content`, { headers: { authorization: `Bearer ${box.token}` } });
+      if (!res.ok) return null;
+      const body = JSON.parse(await res.text());
+      list = (Array.isArray(body.answers) ? body.answers : []).filter((e) => e && /^[\w-]{8,64}$/.test(text(e.id)) && typeof e.sig === "string")
+        .slice(0, MEMORY_SIZE);
+      await env.BOX_KV.put(MEMORY_INDEX, JSON.stringify(list));
+    }
+    await env.BOX_KV.put(MEMORY_RESTORED, new Date().toISOString());
+  } catch {
+    return null;
+  }
+  return list;
+}
+
+/** A saved answer: the app's copy, or its own file in Box. */
+async function memoryEntry(env, entry) {
+  const kept = await readJson(env, memoryKey(entry.id), null);
+  if (kept) return kept;
+  if (!/^\d+$/.test(text(entry.boxFileId))) return null;
+  try {
+    const box = await memoryBox(env);
+    if (!box) return null;
+    const res = await fetch(`${BOX_API}/files/${entry.boxFileId}/content`, { headers: { authorization: `Bearer ${box.token}` } });
+    if (!res.ok) return null;
+    const body = JSON.parse(await res.text());
+    if (body.id !== entry.id) return null;
+    await env.BOX_KV.put(memoryKey(entry.id), JSON.stringify(body));
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+/** The saved answer to this question in this scope, or null. The signature holds the question's words. */
+async function findMemory(env, signature) {
+  const hit = ((await memoryIndex(env)) || []).find((e) => e.sig === signature);
+  return hit ? memoryEntry(env, hit) : null;
+}
+
+/** Save an answer, replacing any saved answer to the same question in the same scope. */
+async function saveMemory(env, entry) {
+  try {
+    // Its own file in Box, named by its id, so nothing has to be looked up to write it.
+    const box = await memoryBox(env);
+    if (box) {
+      const folder = await dataSubfolder(env, box.token, box.settings, MEMORY_FOLDER, "savedAnswers", box.folder);
+      const form = new FormData();
+      form.append("attributes", JSON.stringify({ name: `answer-${entry.id}.json`, parent: { id: folder } }));
+      form.append("file", new Blob([JSON.stringify(entry)], { type: "application/json" }), `answer-${entry.id}.json`);
+      const res = await fetch(`${BOX_UPLOAD_API}/files/content`, { method: "POST", headers: { authorization: `Bearer ${box.token}` }, body: form });
+      if (res.ok) entry.boxFileId = (((await res.json()).entries || [])[0] || {}).id || "";
+    }
+  } catch { /* the app's copy is enough to answer from; the index file still lists it */ }
+  await env.BOX_KV.put(memoryKey(entry.id), JSON.stringify(entry));
+  const index = await memoryIndex(env);
+  if (!index) return; // Box could not be read: the answer's own file is there, the index waits for the restore
+  const replaced = index.filter((e) => e.sig === entry.sig);
+  const list = index.filter((e) => e.sig !== entry.sig);
+  list.unshift({ id: entry.id, sig: entry.sig, q: entry.q, at: entry.at, boxFileId: entry.boxFileId || "" });
+  await env.BOX_KV.put(MEMORY_INDEX, JSON.stringify(list.slice(0, MEMORY_SIZE)));
+  await env.BOX_KV.put(MEMORY_DIRTY, "1");
+  // The app's copy of a replaced answer goes; its Box file stays as a record.
+  for (const e of [...replaced, ...list.slice(MEMORY_SIZE)]) await env.BOX_KV.delete(memoryKey(e.id));
+}
+
+/** Bring the Box copy of the saved-answer index up to date. The cron calls it; a failure leaves the flag set. */
+async function saveMemoryIndexToBox(env) {
+  const box = await memoryBox(env);
+  if (!box) return false;
+  await boxSaveText(box.token, box.folder, MEMORY_INDEX_FILE,
+    JSON.stringify({ savedAt: new Date().toISOString(), answers: await readJson(env, MEMORY_INDEX, []) }));
+  await env.BOX_KV.delete(MEMORY_DIRTY);
+  return true;
+}
+
+/** How a saved answer stands against the notes now: reusable, updatable with these new notes, or not. */
+function memoryStatus(saved, scope, data, index) {
+  const byId = new Map(data.insights.map((i) => [i.id, i]));
+  for (const s of saved.sources || []) {
+    const now = byId.get(s.id);
+    // A cited note gone, or now said by another company: the answer's words may be wrong. Ask again.
+    if (!now || (companyOf(index, now).id || "") !== ((s.company && s.company.id) || "")) return { use: false };
+  }
+  // The answer names its companies and says whether they are members: a rename or a status change
+  // makes its words wrong even when its notes are the same.
+  for (const [id, was] of Object.entries(saved.companies || {})) {
+    const c = index.get(id);
+    if (!c || `${c.name}|${c.member ? 1 : 0}` !== was) return { use: false };
+  }
+  if (!scope.named) return saved.fingerprint && saved.fingerprint === scope.fingerprint ? { use: true, added: [] } : { use: false };
+  const now = new Set(scope.rows.map((i) => i.id));
+  // A deleted note, or with a time window, a note the window has moved past, leaves the answer
+  // describing notes the question no longer covers.
+  if ((saved.scopeIds || []).some((id) => !byId.has(id) || (scope.windowDays && !now.has(id)))) return { use: false };
+  const before = new Set(saved.scopeIds || []);
+  const added = scope.rows.filter((i) => !before.has(i.id));
+  if (!added.length) return { use: true, added };
+  const age = (Date.now() - Date.parse(saved.fullAt || saved.at || 0)) / 86400000;
+  if (added.length > MEMORY_MAX_NEW || (saved.updates || 0) >= MEMORY_MAX_UPDATES || !(age <= MEMORY_MAX_DAYS)) return { use: false };
+  return { use: true, added };
+}
+
+const ASSISTANT_UPDATE_SYSTEM =
+  "You are the Partner Intelligence assistant for Conexus Indiana staff. Conexus Indiana works with Indiana's " +
+  "advanced manufacturing and logistics companies. You answered a question like this one earlier. You are given " +
+  "that earlier answer, the notes it cited, the notes added since, and the question as asked now.\n\n" +
+  "Update the earlier answer for the question as asked now: keep what the notes still support, change what the new " +
+  "notes change, add what they add, and fit the answer to the question's wording. Cite only the references given.\n\n" +
+  ASSISTANT_SYSTEM.slice(ASSISTANT_SYSTEM.indexOf("How to answer:"));
+
+/** A turn's answer as a saved answer: what it said, what it cited, the companies it cited as they stood,
+ * and its scope (every note id for a named scope, a fingerprint otherwise). earlier is the saved answer
+ * this one updates, if any. */
+function memoryOf(result, question, scope, index, earlier = null) {
+  const at = new Date().toISOString();
+  const companies = {};
+  for (const s of result.sources || []) {
+    const c = s.company && s.company.id ? index.get(s.company.id) : null;
+    if (c) companies[c.id] = `${c.name}|${c.member ? 1 : 0}`;
+  }
+  return { id: crypto.randomUUID(), sig: scope.signature, q: question, at,
+    fullAt: earlier ? earlier.fullAt || earlier.at : at, updates: earlier ? (earlier.updates || 0) + 1 : 0,
+    answer: result.answer, followUps: result.followUps || [], sources: result.sources || [], considered: result.considered || {},
+    companies, scopeIds: scope.named ? scope.rows.map((i) => i.id) : [], fingerprint: scope.fingerprint,
+    model: ASK_MODEL, promptVersion: ASSISTANT_PROMPT_VERSION };
+}
+
+/** Answer from a saved answer: as it is when nothing in its scope changed, or updated with only the new notes. */
+async function fromMemory(env, saved, added, question, data, index, labels, overrides) {
+  const byId = new Map(data.insights.map((i) => [i.id, i]));
+  const cited = (saved.sources || []).map((s) => byId.get(s.id));
+  const memory = { from: saved.at, newNotes: added.length };
+  if (!added.length) {
+    await addUsage(env, "assistant", null, { reused: 1 });
+    // Today's company names and statuses, on the same notes in the same order.
+    return { kind: "answer", answer: saved.answer, followUps: saved.followUps || [],
+      sources: cited.map((i, k) => sourceSnapshot(k + 1, i, index, labels, overrides)), considered: saved.considered || {},
+      offerMatch: looksLikeMatch(question), memory: { ...memory, mode: "reused" } };
+  }
+  const refs = new Map();
+  cited.forEach((i, k) => refs.set(`n${k + 1}`, i));
+  const newest = [...added].sort((a, b) => (b.date || "").localeCompare(a.date || "") || a.id.localeCompare(b.id));
+  newest.forEach((i, k) => refs.set(`n${cited.length + k + 1}`, i));
+  const userText = `<today>${today()}</today>\n\n` +
+    `<earlier_answer date="${text(saved.at).slice(0, 10)}">\nQuestion: ${saved.q}\n\n${text(saved.answer).replace(/\[(\d{1,2})\]/g, "[n$1]")}\n</earlier_answer>\n\n` +
+    `<earlier_notes>\n${cited.map((i, k) => noteLine(`n${k + 1}`, i, index, labels, overrides)).join("\n\n")}\n</earlier_notes>\n\n` +
+    `<new_notes>\n${newest.length} notes added since, newest first.\n\n` +
+    `${newest.map((i, k) => noteLine(`n${cited.length + k + 1}`, i, index, labels, overrides)).join("\n\n")}\n</new_notes>\n\n` +
+    `<question>\n${question}\n</question>`;
+  const key = `pi:asst:${await sha(`${ASSISTANT_PROMPT_VERSION}|update|${ASK_MODEL}|${userText}`)}`;
+  let raw = await readJson(env, key, null);
+  if (raw) await addUsage(env, "assistant", null, { reused: 1 });
+  else {
+    const { input, usage } = await callClaudeTool(env, ASSISTANT_UPDATE_SYSTEM, userText, ASSISTANT_TOOL, 6000,
+      { model: ASK_MODEL, effort: ASK_EFFORT, fallback: true });
+    await addUsage(env, "assistant", usage);
+    raw = { answer: text(input.answer), follow_ups: Array.isArray(input.follow_ups) ? input.follow_ups : [] };
+    await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
+  }
+  return { kind: "answer", ...checkAnswer(raw, refs, index, labels, overrides), considered: saved.considered || {},
+    offerMatch: looksLikeMatch(question), memory: { ...memory, mode: "updated" } };
+}
 
 /**
  * One question, from the Ask box or the Ask page, added to the person's history. mode "answer" (the Ask
@@ -2494,7 +2938,8 @@ async function assistant(env, auth, data, roster, overrides, body) {
   const sourceList = (Array.isArray(body.sources) ? body.sources : []).map(text).filter(Boolean).slice(0, 40);
   const mode = ["answer", "match"].includes(text(body.mode)) ? text(body.mode) : (looksLikeMatch(question) ? "match" : "answer");
 
-  let result;
+  let result = null;
+  let focusId = "", focusName = "";
   if (mode === "match") {
     result = matchesTurn(await ask(env, data, roster, overrides, question, sourceList, text(body.exclude)));
   } else {
@@ -2503,37 +2948,63 @@ async function assistant(env, auth, data, roster, overrides, body) {
     const scoped = sources.size ? { ...data, insights: data.insights.filter((i) => sourcesOf(i).some((x) => sources.has(x))) } : data;
     const index = companyIndex(roster, data);
     const labels = topicLabels(data, overrides);
-    const focusId = index.has(text(body.companyId)) ? text(body.companyId) : "";
+    // A conversation stays about the company it started on, wherever the person is when they follow up.
+    // An old company id (a bookmark from before a roster re-link) is followed to the company it became.
+    const askedCo = conversation ? text(conversation.companyId) : text(body.companyId);
+    const remapped = hasOwn(data.remap || {}, askedCo) ? text(data.remap[askedCo]) : askedCo;
+    focusId = index.has(remapped) ? remapped : "";
+    focusName = focusId ? index.get(focusId).name : "";
     const earlier = conversation ? conversation.turns.slice(-ASSISTANT_TURNS_READ) : [];
-    const terms = await expandQuestion(env, question, { system: ASSISTANT_EXPAND_SYSTEM, version: ASSISTANT_EXPAND_VERSION, usage: "assistant" });
-    // A follow-up ("and the wins?") leans on the question before it for its subject.
-    const searchTerms = earlier.length ? [...terms, earlier[earlier.length - 1].q] : terms;
-    const ctx = await assistantContext(env, scoped, index, roster, overrides, labels, question, searchTerms, { focusId });
-    const userText = `${ctx.material}\n\n` +
-      (earlier.length ? `<earlier_conversation>\n${earlier.map((t) => `Q: ${t.q}\nA: ${clip(t.answer, 1500)}`).join("\n\n")}\n</earlier_conversation>\n\n` : "") +
-      `<question>\n${question}\n</question>`;
-    // Keyed on exactly what Claude would read, so the same question on the same day costs nothing twice.
-    const key = `pi:asst:${await sha(`${ASSISTANT_PROMPT_VERSION}|${ASK_MODEL}|${userText}`)}`;
-    let raw = await readJson(env, key, null);
-    if (raw) await addUsage(env, "assistant", null, { reused: 1 });
-    else {
-      const { input, usage } = await callClaudeTool(env, ASSISTANT_SYSTEM, userText, ASSISTANT_TOOL, 8000,
-        { model: ASK_MODEL, effort: ASK_EFFORT, fallback: true });
-      await addUsage(env, "assistant", usage);
-      raw = { answer: text(input.answer), follow_ups: Array.isArray(input.follow_ups) ? input.follow_ups : [] };
-      await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
+    const people = peopleNamed(question, ((await getContacts(env)) || {}).contacts, roster, index);
+    // A standalone question may already have a saved answer (see saveMemory). A follow-up leans on its
+    // conversation, so it is never answered from, or saved as, a standalone answer.
+    const scope = earlier.length ? null : await answerScope(question, scoped, index, roster, focusId, sourceList, people);
+    if (scope && !body.fresh) {
+      const kept = await findMemory(env, scope.signature);
+      const status = kept ? memoryStatus(kept, scope, data, index) : { use: false };
+      if (status.use) {
+        result = await fromMemory(env, kept, status.added, question, data, index, labels, overrides);
+        if (result.memory.mode === "updated") await saveMemory(env, memoryOf(result, question, scope, index, kept));
+      }
     }
-    result = { kind: "answer", ...checkAnswer(raw, ctx.refs, index, labels, overrides), considered: ctx.considered,
-      offerMatch: looksLikeMatch(question) };
+    if (!result) {
+      const terms = await expandQuestion(env, question, { system: ASSISTANT_EXPAND_SYSTEM, version: ASSISTANT_EXPAND_VERSION, usage: "assistant" });
+      // A follow-up ("and the wins?") leans on the question before it for its subject.
+      const searchTerms = earlier.length ? [...terms, earlier[earlier.length - 1].q] : terms;
+      const ctx = await assistantContext(env, scoped, index, roster, overrides, labels, question, searchTerms, { focusId, people });
+      const userText = `${ctx.material}\n\n` +
+        (earlier.length ? `<earlier_conversation>\n${earlier.map((t) => `Q: ${t.q}\nA: ${clip(text(t.answer).replace(/\s*\[\d{1,3}\]/g, ""), 1500)}`).join("\n\n")}\n</earlier_conversation>\n\n` : "") +
+        `<question>\n${question}\n</question>`;
+      // Keyed on exactly what Claude would read, so the same question on the same day costs nothing twice.
+      // "Answer fresh" means fresh: it skips this too.
+      const key = `pi:asst:${await sha(`${ASSISTANT_PROMPT_VERSION}|${ASK_MODEL}|${userText}`)}`;
+      let raw = body.fresh ? null : await readJson(env, key, null);
+      if (raw) await addUsage(env, "assistant", null, { reused: 1 });
+      else {
+        const { input, usage } = await callClaudeTool(env, ASSISTANT_SYSTEM, userText, ASSISTANT_TOOL, 8000,
+          { model: ASK_MODEL, effort: ASK_EFFORT, fallback: true });
+        await addUsage(env, "assistant", usage);
+        raw = { answer: text(input.answer), follow_ups: Array.isArray(input.follow_ups) ? input.follow_ups : [] };
+        await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
+      }
+      result = { kind: "answer", ...checkAnswer(raw, ctx.refs, index, labels, overrides), considered: ctx.considered,
+        offerMatch: looksLikeMatch(question) };
+      if (scope) await saveMemory(env, memoryOf(result, question, scope, index));
+    }
   }
 
   const now = new Date().toISOString();
   const turn = { id: crypto.randomUUID(), q: question, ...result, at: now };
-  const conv = conversation || { id: crypto.randomUUID(), title: clip(question, 90), createdAt: now, turns: [] };
-  conv.turns = [...conv.turns, turn].slice(-HISTORY_TURNS);
+  // Read again: another question from this person may have been saved while Claude was answering, and
+  // writing back the copy read before would lose it.
+  const latest = await loadHistory(env, who);
+  const base = conversation ? latest.conversations.find((c) => c.id === conversation.id) || conversation : null;
+  const conv = base ? { ...base } : { id: crypto.randomUUID(), title: clip(question, 90) + (focusName ? ` (${focusName})` : ""),
+    createdAt: now, turns: [], companyId: focusId };
+  conv.turns = [...(base ? base.turns : []), turn].slice(-HISTORY_TURNS);
   conv.updatedAt = now;
-  history.conversations = [conv, ...history.conversations.filter((c) => c.id !== conv.id)];
-  const saved = await saveHistory(env, who, history);
+  latest.conversations = [conv, ...latest.conversations.filter((c) => c.id !== conv.id)];
+  const saved = await saveHistory(env, who, latest);
   return json({ conversation: conversationSummary(conv), turn, saved });
 }
 
@@ -2567,7 +3038,7 @@ async function handleRelay(route, request, env) {
     return json(await readJson(env, SETTINGS_KEY, { folderId: "", folderName: "" }));
   }
   if (sub === "roster" && method === "GET") {
-    const [roster, contacts] = await Promise.all([getRoster(env), readJson(env, CONTACTS_KEY, null)]);
+    const [roster, contacts] = await Promise.all([getRoster(env), getContacts(env)]);
     return json({ partners: roster.partners, aliases: roster.aliases, staff: roster.staff, updatedAt: roster.updatedAt,
       contacts: contacts ? contacts.contacts : [] });
   }
@@ -2592,7 +3063,7 @@ async function handleRelay(route, request, env) {
     if (!settings.dataFolderId) return json({ error: "No database folder is chosen." }, 409);
     const token = await boxAccessToken(env);
     if (!token) return json({ error: "Box is not connected." }, 409);
-    try { return json({ ok: true, name, bytes: content.length, ...(await boxSaveText(token, settings.dataFolderId, name, content)) }); }
+    try { return json({ ok: true, name, bytes: content.length, ...(await boxSaveText(token, folderFor(settings, name), name, content)) }); }
     catch (e) { return json({ error: String(e.message).slice(0, 300) }, 502); }
   }
   if (sub === "box/load" && method === "GET") {
@@ -2603,8 +3074,13 @@ async function handleRelay(route, request, env) {
     const token = await boxAccessToken(env);
     if (!token) return json({ error: "Box is not connected." }, 409);
     let file;
-    try { file = (await boxItems(token, settings.dataFolderId)).find((e) => e.type === "file" && e.name === name); }
-    catch (e) { return json({ error: String(e.message).slice(0, 200) }, 502); }
+    // The cache folder first, then the Database folder, where caches written before it was chosen still are.
+    try {
+      for (const folder of [...new Set([folderFor(settings, name), settings.dataFolderId])]) {
+        file = (await boxItems(token, folder)).find((e) => e.type === "file" && e.name === name);
+        if (file) break;
+      }
+    } catch (e) { return json({ error: String(e.message).slice(0, 200) }, 502); }
     if (!file) return json({ error: "Not found" }, 404);
     const res = await fetch(`${BOX_API}/files/${file.id}/content`, { headers: { authorization: `Bearer ${token}` } });
     if (!res.ok) return json({ error: `Box download failed (${res.status})` }, 502);
@@ -2711,7 +3187,8 @@ export async function handlePartnerIntelApi(route, request, env) {
     if (route === "settings" && method === "POST") {
       const body = (await readBody(request)) || {};
       const fields = { notes: ["folderId", "folderName"], data: ["dataFolderId", "dataFolderName"],
-        roster: ["rosterFolderId", "rosterFolderName"] };
+        roster: ["rosterFolderId", "rosterFolderName"], contacts: ["contactsFolderId", "contactsFolderName"],
+        cache: ["cacheFolderId", "cacheFolderName"] };
       const which = text(body.which) || "notes";
       if (!hasOwn(fields, which)) return json({ error: "Unknown folder setting." }, 400);
       const folderId = text(body.folderId);
@@ -2800,7 +3277,7 @@ export async function handlePartnerIntelApi(route, request, env) {
       return json({ saved: true, mode, summary: result.summary, roster: rosterSummary(roster) });
     }
     if (route === "contacts" && method === "GET") {
-      const stored = await readJson(env, CONTACTS_KEY, null);
+      const stored = await getContacts(env);
       return json(stored ? { fileName: stored.fileName, updatedAt: stored.updatedAt, summary: stored.summary } : { summary: null });
     }
     if (route === "contacts/import" && method === "POST") {
@@ -2810,7 +3287,8 @@ export async function handlePartnerIntelApi(route, request, env) {
       if (data.length > 20_000_000) return json({ error: "That file is too large." }, 413);
       const fileName = text(body.fileName).slice(0, 200);
       let rows;
-      try { rows = await uploadedRows(fileName, base64Bytes(data)); }
+      const bytes = base64Bytes(data);
+      try { rows = await uploadedRows(fileName, bytes); }
       catch (e) { return json({ error: `That file could not be read: ${String(e.message).slice(0, 160)}` }, 400); }
       const roster = await getRoster(env);
       const result = readContacts(rows, roster);
@@ -2818,10 +3296,11 @@ export async function handlePartnerIntelApi(route, request, env) {
       if (body.preview) return json({ preview: true, summary: result.summary });
       const stored = { fileName, updatedAt: new Date().toISOString(), by: auth.email || "", summary: result.summary, contacts: result.contacts };
       await env.BOX_KV.put(CONTACTS_KEY, JSON.stringify(stored));
+      const box = await saveContactsToBox(env, stored, fileName, bytes);
       // Saving the partner list marks the data as needing a Re-link, which re-attributes every
       // statement with the new contacts at no Claude cost.
       await saveRoster(env, roster);
-      return json({ saved: true, fileName, updatedAt: stored.updatedAt, summary: result.summary });
+      return json({ saved: true, fileName, updatedAt: stored.updatedAt, summary: result.summary, box });
     }
     if (route === "roster/partner" && method === "POST") {
       const body = await readBody(request);
@@ -2979,7 +3458,7 @@ export async function handlePartnerIntelApi(route, request, env) {
       return json({ days, since: daysAgo(days), generatedAt: data.generated_at, trending: t.trending,
         dashboard: dashboardOf(filterInsights(data, index, overrides, scope), index),
         uncategorized: t.uncategorized,
-        counts: { issues: t.issues.length, estimatedDates: t.rows.filter((i) => i.date_source === "box_upload").length } });
+        counts: { issues: t.issues.length, estimatedDates: t.rows.filter((i) => isEstimated(i)).length } });
     }
     if (route === "summarize" && method === "POST") {
       const body = (await readBody(request)) || {};
@@ -3009,7 +3488,8 @@ export async function handlePartnerIntelApi(route, request, env) {
       const id = text(body.id);
       if (!/^[\w-]{1,64}$/.test(id) || !raw.insights.some((i) => i.id === id)) return json({ error: "That statement no longer exists." }, 404);
       const keep = Boolean(body.keep);
-      const companyId = keep ? "" : text(body.companyId);
+      // A keep records the company kept, so a later re-link to another company is checked again.
+      const companyId = keep ? ((data.insights.find((i) => i.id === id) || {}).company_id || "") : text(body.companyId);
       if (!keep && companyId && !index.has(companyId)) return json({ error: "Choose a partner from the list." }, 400);
       const store = (await readJson(env, ATTRIBUTION_KEY, null)) || { decisions: {} };
       // Rebuilt through a Map so an id can never land on Object.prototype.
@@ -3073,7 +3553,7 @@ export async function handlePartnerIntelApi(route, request, env) {
       const asked = text(params.get("id"));
       const view = profileView(data, roster, overrides, labels, (data.remap && data.remap.get(asked)) || asked, params.get("internal") === "1");
       if (!view) return json({ error: "Company not found." }, 404);
-      const uploaded = await readJson(env, CONTACTS_KEY, null);
+      const uploaded = await getContacts(env);
       view.company.people = companyPeople(view.company, roster, uploaded ? uploaded.contacts : []);
       return json(view);
     }

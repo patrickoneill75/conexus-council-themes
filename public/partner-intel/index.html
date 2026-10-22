@@ -127,9 +127,8 @@
       "<" + hl + ' class="thead-h"><button type="button" class="tp-row" aria-expanded="' + (open ? "true" : "false") + '">' +
       '<span class="circ" aria-hidden="true">' + n + "</span>" +
       '<span><span class="tname">' + hlName(name) + (opts.after || "") + '</span><span class="tmeta">' + (metaHtml || "") + "</span></span></button></" + hl + ">" +
-      // A chevron under each circle. Number 1 alone has a dotted trail down to it, and the dots run down twice a
-      // moment after the page arrives: a cue that these open.
-      '<i class="tline' + (n === 1 ? " trail" + (open ? "" : " cue") : "") + '" aria-hidden="true">' + (n === 1 ? "<b></b><b></b><b></b>" : "") + "</i>" +
+      // A chevron under each circle. Number 1's dips twice a moment after the page arrives: a cue that these open.
+      '<i class="tline' + (n === 1 && !open ? " cue" : "") + '" aria-hidden="true"></i>' +
       '<div class="tbody" data-body' + (open ? "" : " hidden") + ">" + body + "</div></section>";
   }
   function animate(node, cls) {
@@ -139,8 +138,6 @@
     node.classList.add(cls);
   }
   document.addEventListener("animationend", function (e) {
-    // Number 1's cue ends with its chevron's last dip: then its dots tuck away under the number.
-    if (e.animationName === "trail-chevron" && e.target.classList) e.target.classList.add("tucked");
     if (e.target.classList) e.target.classList.remove("c-open", "c-close", "grow", "shrink", "hint", "cue", "a-shrink", "a-expand");
   });
   /* The topic line. Opening a topic draws one stroke from its number down the left of the block and
@@ -260,9 +257,7 @@
     var card = btn.closest(".tp");
     var opening = !card.classList.contains("open") || card.classList.contains("closing");
     Array.prototype.forEach.call(card.parentNode.querySelectorAll(":scope > .tp"), function (c) {
-      var tl = c.querySelector(".tline");
-      tl.classList.remove("cue");
-      if (tl.classList.contains("trail")) tl.classList.add("tucked"); // clicked before the cue finished
+      c.querySelector(".tline").classList.remove("cue");
       if (c !== card && c.classList.contains("open") && !c.classList.contains("closing")) setTopic(c, false);
     });
     setTopic(card, opening);
@@ -490,9 +485,10 @@
      A chat. The pill starts in the middle of the page; the first question slides it down to the
      bottom, and the conversation builds above it, each question and its answer in turn, the box
      clearing after each. A question that asks who can help ranks partners; anything else gets a
-     written answer from the notes as a whole. History and Sources are columns either side, off
-     until pressed, as in the Ask box, and both share one history. New starts again. */
-  var askView = { rail: false, side: false, conv: null, sel: null };
+     written answer from the notes as a whole. History is a panel on the left, open by default on a
+     wide screen (as in Claude), with History and New at its top; the Ask box shares the same history.
+     A citation opens its note in the sources listed under the answer. */
+  var askView = { rail: !!(window.matchMedia && window.matchMedia("(min-width: 1101px)").matches), conv: null, sel: null };
   var ASK_START = "Search the notes, ask a question, or describe what a partner needs";
 
   function ask() {
@@ -500,8 +496,8 @@
     var AU = PI.AskUI;
     var pre = PI.askPrefill; PI.askPrefill = null;
     askView.conv = null; askView.sel = null;
-    view.innerHTML = '<div class="asx' + (askView.rail ? " rail" : "") + (askView.side ? " side" : "") + '" id="asx">' +
-      '<aside class="asx-rail" aria-label="Past questions"><div class="rl-top"><button type="button" class="ax-back" data-off="rail">' + BACK + "Back</button></div>" +
+    view.innerHTML = '<div class="asx' + (askView.rail ? " rail" : "") + '" id="asx">' +
+      '<aside class="asx-rail" aria-label="Past questions"><div class="rl-head">' + AU.toggle(true) + AU.newButton() + "</div>" +
         '<div class="rl-list" id="asxRail"></div><p class="rl-note" id="asxNote"></p></aside>' +
       '<div class="asx-main">' +
         '<h1 class="asx-h1">Search Conexus Notes</h1>' +
@@ -509,11 +505,10 @@
           '<label class="sr-only" for="asxQ">Search Conexus notes</label>' +
           '<textarea id="asxQ" rows="1" maxlength="1500" placeholder="' + ASK_START + '"></textarea>' +
           '<button type="submit" class="asx-go" aria-label="Search">' + AU.ICON.arrow + "</button></form>" +
-        '<div class="asx-tools"><span id="asxBack"></span><span class="grow"></span>' +
-          '<button type="button" class="ax-tg asx-new" data-new>' + AU.ICON.plus + "New</button>" + AU.toggle("rail", askView.rail) + AU.toggle("side", askView.side) + "</div>" +
+        // With the history panel closed, History and New sit at the top left instead.
+        '<div class="asx-tools"><span class="asx-lb">' + AU.toggle(askView.rail) + AU.newButton() + '</span><span id="asxBack"></span></div>' +
         '<div class="asx-out" id="asxOut"></div><div class="asx-recent" id="asxRecent"></div>' +
-      '</div><aside class="asx-side" aria-label="Sources"><div class="rl-top"><button type="button" class="ax-back" data-off="side">' + BACK + "Back</button></div>" +
-        '<div id="asxSide"></div></aside></div>';
+      "</div></div>";
     var box = el("asx"), q = el("asxQ"), out = el("asxOut"), form = el("asxForm");
     var exclude = null, waiting = false;
     function autosize() { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 160) + "px"; }
@@ -556,17 +551,12 @@
     function drawSources() {
       el("asxSrc").innerHTML = '<select id="asxProgram" aria-label="Program"><option value="">All programs</option>' + (state.sourceList || []).map(function (s) {
         return '<option value="' + esc(s.value) + '"' + (chosen === s.value ? " selected" : "") + ">" + esc(s.value) + "</option>";
-      }).join("") + "</select>";
+      }).join("") + "</select>" + AU.ICON.down;
       el("asxProgram").addEventListener("change", function (e) { chosen = e.target.value; });
     }
     drawSources();
     loadSources().then(function () { if (mine === seq) drawSources(); }).catch(function () {});
 
-    function selected() {
-      var turns = (askView.conv && askView.conv.turns) || [];
-      for (var i = 0; i < turns.length; i++) if (turns[i].id === askView.sel) return turns[i];
-      return turns[turns.length - 1] || null;
-    }
     function drawRail() {
       if (!askView.rail) return;
       el("asxRail").innerHTML = AU.railHtml(askView.conv && askView.conv.id);
@@ -586,13 +576,12 @@
       var turns = (askView.conv && askView.conv.turns) || [];
       out.innerHTML = turns.map(function (t, i) { return turnHtml(t, i === turns.length - 1); }).join("");
       toChat(turns.length > 0);
-      el("asxSide").innerHTML = AU.sourcesSide(selected());
       drawRail();
       drawRecent();
     }
     /** One message in the chat. The box clears at once, the question shows in the conversation with
      * the answer coming under it, and the answer joins the conversation that is open. */
-    function run(question, mode) {
+    function run(question, mode, fresh) {
       question = String(question || "").trim();
       if (waiting) return;
       if (question.length < 3) { q.focus(); return; }
@@ -606,10 +595,11 @@
       el("asxRecent").innerHTML = "";
       scrollToTurn(out.lastElementChild);
       PI.post("assistant", { question: question, mode: mode || "auto", sources: chosenList(), exclude: exclude ? exclude.id : "",
-        conversationId: askView.conv ? askView.conv.id : "" }).then(function (r) {
+        conversationId: askView.conv && !fresh ? askView.conv.id : "", fresh: Boolean(fresh) }).then(function (r) {
         waiting = false;
         if (mine !== seq) return;
-        exclude = null; // a Find solution exclusion goes with the question it came with
+        // A Find solution exclusion goes with the question it came with, and so does its banner.
+        if (exclude) { exclude = null; if (!el("asxBack").querySelector("[data-resume]")) el("asxBack").innerHTML = ""; }
         if (!askView.conv || askView.conv.id !== r.conversation.id) askView.conv = { id: r.conversation.id, title: r.conversation.title, turns: [] };
         askView.conv.turns.push(r.turn);
         askView.sel = r.turn.id;
@@ -648,11 +638,11 @@
       box.classList.toggle(which, on);
       Array.prototype.forEach.call(box.querySelectorAll('[data-tg="' + which + '"]'), function (b) { b.setAttribute("aria-pressed", on ? "true" : "false"); });
       autosize();
+      fitChat();
       if (which === "rail" && on) {
         drawRail();
         if (!AU.history) AU.loadHistory().then(function () { if (mine === seq) { drawRail(); drawRecent(); } }).catch(function () {});
       }
-      if (which === "side") el("asxSide").innerHTML = AU.sourcesSide(selected());
     }
 
     el("asxForm").addEventListener("submit", function (e) { e.preventDefault(); run(q.value); });
@@ -667,12 +657,12 @@
         for (var i = 0; i < turns.length; i++) if (turns[i].id === b.getAttribute("data-turn")) turn = turns[i];
         if (!turn) return;
         askView.sel = turn.id;
-        if (turn.kind === "matches" && !askView.side) setToggle("side", true);
-        AU.showSource(out, el("asxSide"), askView.side, turn, b.getAttribute("data-ref"));
+        AU.showSource(out, turn, b.getAttribute("data-ref"));
         return;
       }
       if ((b = t.closest("[data-new]"))) { newChat(); return; }
       if ((b = t.closest(".fu[data-q]"))) { run(b.getAttribute("data-q"), "answer"); return; }
+      if ((b = t.closest(".fu[data-fresh]"))) { run(b.getAttribute("data-fresh"), "answer", true); return; }
       if ((b = t.closest(".fu[data-match]"))) { run(b.getAttribute("data-match"), "match"); return; }
       if ((b = t.closest("[data-conv]"))) { openConversation(b.getAttribute("data-conv")); return; }
       if ((b = t.closest(".rl-del"))) {
@@ -711,7 +701,8 @@
   }
   /** A kept note as the card the rest of the app shows. */
   function cardOf(s) {
-    return { id: s.id, kind: s.kind, title: s.title, detail: s.detail, date: s.date, company: s.company, sources: s.files, quote: "" };
+    return { id: s.id, kind: s.kind, title: s.title, detail: s.detail, date: s.date, company: s.company, sources: s.files, quote: "",
+      estimated: s.estimated, checkCompany: s.checkCompany };
   }
 
   /** A partner search: who matched and why, each opening onto the notes behind it. */
@@ -740,6 +731,8 @@
     }).join("") + "</div>";
     if (t.gaps) html += '<p class="secsub" style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rule)"><b style="color:var(--navy)">Not covered:</b> ' + esc(t.gaps) + "</p>";
     if (t.searchTerms && t.searchTerms.length) html += '<p class="secsub" style="margin-top:8px">Also searched for: ' + t.searchTerms.map(esc).join(", ") + ".</p>";
+    // The cited notes, closed, as under an answer: a citation chip opens its note here.
+    html += AU.sourcesInline(t);
     // Companies working through the same thing: a peer to compare notes with, not a solution.
     if (t.peers && t.peers.length) {
       html += '<div class="card" style="margin-top:28px"><h2>Working through the same thing</h2>' + t.peers.map(function (p) {
@@ -765,12 +758,16 @@
       '<option value="Active">Council Member</option><option value="' + PI.NOT_COUNCIL + '">Not Council</option></select></div>' +
       '<div style="align-self:end;height:46px;display:flex;align-items:center"><label class="chk"><input type="checkbox" id="cw" checked> Only companies with notes</label></div></div></div>' +
       '<div class="card" id="clist" style="padding:12px 28px 20px"></div>';
+    var loads = 0;
     function load() {
+      // Typing, filtering and sorting each send a request; only the newest may draw the table, or a slow
+      // earlier answer shows the wrong filter's companies under the new filter.
+      var mineLoad = ++loads;
       var qs = "companies?q=" + encodeURIComponent(el("cq").value) + (el("ci").value ? "&industry=" + encodeURIComponent(el("ci").value) : "") +
         (el("cs").value ? "&status=" + encodeURIComponent(el("cs").value) : "") + (el("cw").checked ? "&withInsights=1" : "") +
         "&sort=" + companySort.key + "&dir=" + companySort.dir;
       PI.api(qs).then(function (r) {
-        if (mine !== seq) return;
+        if (mine !== seq || mineLoad !== loads) return;
         if (el("ci").options.length === 1) {
           el("ci").innerHTML = '<option value="">All</option>' + r.industries.map(function (i) { return "<option>" + esc(i) + "</option>"; }).join("");
         }

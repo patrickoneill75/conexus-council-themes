@@ -76,11 +76,12 @@
                     : '<span class="co">' + PI.esc(co.name) + "</span>");
       if (co.industry && co.industry !== "Unknown") by.push("<span>" + PI.esc(co.industry) + "</span>");
       if (co.id) by.push("<span>" + PI.esc(PI.memberLabel(co.status)) + "</span>");
-      // Which company said this is in doubt (the speaker works elsewhere, the file is named for
-      // another partner, or two people share the speaker's name). Listed on the control panel.
-      if (i.checkCompany) {
-        by.push('<span class="pill medium" title="Which company said this is uncertain. Staff can settle it on the control panel, under Statements to check.">Check company</span>');
-      }
+    }
+    // Which company said this is in doubt (the speaker works elsewhere, the file is named for another
+    // partner, or two people share the speaker's name). Listed on the control panel. Shown on a company's
+    // own page too, where the company is not named on the card: that is where it would pass as fact.
+    if (i.checkCompany) {
+      by.push('<span class="pill medium" title="Which company said this is uncertain. Staff can settle it on the control panel, under Statements to check.">Check company</span>');
     }
     if (i.status === "resolved") by.push("<span>Resolved</span>");
     var src = ["<span>" + PI.esc(PI.fmtDate(i.date)) + "</span>"];

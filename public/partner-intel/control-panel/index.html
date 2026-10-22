@@ -287,7 +287,9 @@
   var FOLDERS = [
     { which: "notes", id: "folderId", name: "folderName", label: "Meeting notes", use: "Read. Every subfolder is read too. Word, text, VTT, SRT, HTML and PDFs with a text layer are used; images, audio and spreadsheets are ignored." },
     { which: "data", id: "dataFolderId", name: "dataFolderName", label: "Database", use: "Written after every scan: partner_intel_database.json, partner_intel_insights.csv (opens in Excel) and partner_intel_state.json. The state file lets the tool restore itself without reading the notes again. partner_intel_results_archive.json keeps every Claude result ever paid for, so none is paid for twice." },
-    { which: "roster", id: "rosterFolderId", name: "rosterFolderName", label: "Member list", use: "Read. Put the member list here as a .csv or .xlsx. The newest file is used, and it is re-read at the start of every scan." }
+    { which: "roster", id: "rosterFolderId", name: "rosterFolderName", label: "Member list", use: "Read. Put the member list here as a .csv or .xlsx. The newest file is used, and it is re-read at the start of every scan." },
+    { which: "contacts", id: "contactsFolderId", name: "contactsFolderName", label: "Contact list", use: "Written when a contact list is uploaded below: the file as uploaded, and partner_intel_contacts.json, the list as read. If the app loses its copy it reads this one back." },
+    { which: "cache", id: "cacheFolderId", name: "cacheFolderName", label: "Cache", use: "Written as the tool works, so nothing Claude wrote is paid for twice: partner_intel_results_archive.json and partner_intel_state.json (what the scan has read), partner_intel_summaries.json (trending summaries), and Saved answers with partner_intel_saved_answers.json (Ask answers reused for similar questions). Until one is chosen, these go to the Database folder." }
   ];
   var settings = {};
   function renderFolders() {
@@ -537,8 +539,9 @@
       el("contactsResult").innerHTML = contactsSummaryHtml(r.summary) +
         '<div class="row" style="margin-top:10px"><button class="primary" id="contactsSave">Save this contact list</button></div><div class="msg" id="contactsMsg"></div>';
       el("contactsSave").addEventListener("click", function () {
-        PI.post("contacts/import", contactsFile).then(function () {
-          el("contactsResult").innerHTML = '<div class="msg ok">Saved. Press Re-link to apply it to the data.</div>';
+        PI.post("contacts/import", contactsFile).then(function (r) {
+          el("contactsResult").innerHTML = '<div class="msg ok">Saved' + (r.box && r.box.box ? ", with a copy in Box" : "") +
+            '. Press Re-link to apply it to the data.</div>' + (r.box && r.box.note ? '<div class="msg warn">' + esc(r.box.note) + "</div>" : "");
           el("contactsFile").value = ""; el("contactsPreview").disabled = true; contactsFile = null;
           return loadStatus();
         }).catch(function (e) { msg("contactsMsg", e.message, "err"); });

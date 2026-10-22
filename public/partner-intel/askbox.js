@@ -1,8 +1,8 @@
 /* The Ask box: a pill that floats at the bottom of every Partner Intelligence page except Ask. A
    question opens it upward into a conversation about the notes as a whole, with the page blurred
-   behind it. History (the person's past conversations) and Sources (the cited notes beside the
-   answer) are buttons, off until pressed. Also the pieces the Ask page shares with it: the answer,
-   its sources and the history list. */
+   behind it. History (the person's past conversations) is a button, off until pressed; New starts
+   again. Also the pieces the Ask page shares with it: the answer, its sources (listed under it,
+   closed until opened) and the history list. */
 (function () {
   "use strict";
   var PI = window.PI;
@@ -24,15 +24,15 @@
     plus: svg('<path d="M8 3v10M3 8h10"/>', 14),
     back: svg('<path d="M14 8H3M7 3.5 2.5 8 7 12.5"/>', 16, null, 2.2),
     rail: svg('<rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/>', 15, null, 1.6),
-    side: svg('<rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M10 2.5v11"/>', 15, null, 1.6),
     bin: svg('<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/>', 15, null, 1.6),
   };
 
-  /** A toggle button for the History rail or the Sources column. */
-  A.toggle = function (which, on) {
-    return '<button type="button" class="ax-tg" data-tg="' + which + '" aria-pressed="' + (on ? "true" : "false") + '">' +
-      (which === "rail" ? ICON.rail + "History" : ICON.side + "Sources") + "</button>";
+  /** The History button, which shows or hides the list of past conversations. */
+  A.toggle = function (on) {
+    return '<button type="button" class="ax-tg" data-tg="rail" aria-pressed="' + (on ? "true" : "false") + '">' + ICON.rail + "History</button>";
   };
+  /** The New button, which starts a new conversation. */
+  A.newButton = function () { return '<button type="button" class="ax-new" data-new>' + ICON.plus + "New</button>"; };
 
   function cite(n, tid) {
     return '<button type="button" class="cite" data-ref="' + n + '" data-turn="' + esc(tid) + '" aria-label="Source ' + n + '">' + n + "</button>";
@@ -95,29 +95,18 @@
     return bits.length ? '<div class="sfoot">' + bits.join(" · ") + "</div>" : "";
   }
 
-  /** The notes an answer cites, listed under it: a line each, opened for the note itself. */
+  /** The notes an answer cites, listed under it, closed until opened (or until a citation is clicked):
+   * a line each, opened for the note itself. */
   A.sourcesInline = function (turn) {
     var list = turn.sources || [];
-    if (!list.length || turn.kind === "matches") return "";
-    return '<details class="srcs" open><summary>' + ICON.down + list.length + (list.length === 1 ? " source" : " sources") + "</summary>" +
+    if (!list.length) return "";
+    return '<details class="srcs"><summary>' + ICON.down + list.length + (list.length === 1 ? " source" : " sources") + "</summary>" +
       list.map(function (s) {
         return '<details class="srow" data-ref="' + s.ref + '"><summary><span class="sref">' + s.ref + "</span>" + kindHtml(s.kind) +
           '<span class="stitle">' + esc(s.title) + '</span><span class="sby">' + esc((s.company && s.company.name) || "") +
-          (s.date ? " · " + esc(PI.fmtDate(s.date)) : "") + "</span></summary>" +
+          (s.checkCompany ? " (company uncertain)" : "") + (s.date ? " · " + esc(PI.fmtDate(s.date)) + (s.estimated ? " (estimated)" : "") : "") + "</span></summary>" +
           '<div class="sbody">' + esc(s.detail) + sourceFoot(s) + "</div></details>";
       }).join("") + "</details>";
-  };
-
-  /** The same notes as cards, for the Sources column beside the answer. */
-  A.sourcesSide = function (turn) {
-    var list = (turn && turn.sources) || [];
-    if (!list.length) return '<p class="sempty">The sources behind an answer show here.</p>';
-    return '<div class="shead">' + list.length + (list.length === 1 ? " source" : " sources") + "</div>" + list.map(function (s) {
-      return '<div class="scard" data-ref="' + s.ref + '"><div class="smeta"><span class="sref">' + s.ref + "</span>" + kindHtml(s.kind) +
-        (s.date ? "<span>" + esc(PI.fmtDate(s.date)) + "</span>" : "") + "</div>" +
-        '<div class="stitle">' + esc(s.title) + '</div><div class="sby">' + companyLine(s.company) + "</div>" +
-        '<div class="sdetail">' + esc(s.detail) + "</div>" + sourceFoot(s) + "</div>";
-    }).join("");
   };
 
   /** A partner search kept in history, shown briefly: who matched, why, and the notes behind it. */
@@ -139,9 +128,17 @@
   A.answerHtml = function (turn, opts) {
     opts = opts || {};
     var html = turn.kind === "matches" ? A.matchesCompact(turn) : '<div class="ans">' + A.md(turn.answer, turn.id) + "</div>";
+    // From a saved answer: say so, and when it was written. Saved answers are shared by all staff, so the
+    // question someone else asked is not shown.
+    if (turn.memory) {
+      var m = turn.memory, when = esc(PI.fmtDate(String(m.from || "").slice(0, 10)));
+      html += '<p class="memo">' + (m.mode === "updated" ? "A saved answer from " + when + ", updated with " + m.newNotes + " new note" +
+        (m.newNotes === 1 ? "" : "s") + "." : "A saved answer from " + when + ". No notes have been added since.") + "</p>";
+    }
     html += A.sourcesInline(turn);
     if (opts.last) {
       var chips = (turn.followUps || []).map(function (q) { return '<button type="button" class="fu" data-q="' + esc(q) + '">' + esc(q) + "</button>"; });
+      if (turn.memory) chips.push('<button type="button" class="fu" data-fresh="' + esc(turn.q) + '">Answer fresh</button>');
       if (opts.matchLink && turn.offerMatch) {
         chips.push('<button type="button" class="fu go" data-match="' + esc(turn.q) + '">Find partners who can help' + ICON.arrow + "</button>");
       }
@@ -191,23 +188,16 @@
     return "Only you see these." + (A.boxFolder ? " A copy is kept in Box." : "");
   };
 
-  /** Point to one cited note: the citation lights up, and the note is opened in the Sources column
-   * when it is showing, or in the list under the answer. */
-  A.showSource = function (scope, sideEl, sideOn, turn, ref) {
+  /** Point to one cited note: the citation lights up, and the note is opened in the list under the answer. */
+  A.showSource = function (scope, turn, ref) {
     Array.prototype.forEach.call(scope.querySelectorAll(".cite.on"), function (c) { c.classList.remove("on"); });
     Array.prototype.forEach.call(scope.querySelectorAll('.cite[data-turn="' + turn.id + '"][data-ref="' + ref + '"]'),
       function (c) { c.classList.add("on"); });
-    var target;
-    if (sideOn) {
-      sideEl.innerHTML = A.sourcesSide(turn);
-      target = sideEl.querySelector('.scard[data-ref="' + ref + '"]');
-    } else {
-      var t = scope.querySelector('.turn[data-tid="' + turn.id + '"]');
-      var all = t && t.querySelector("details.srcs");
-      if (all) all.open = true;
-      target = t && t.querySelector('details.srow[data-ref="' + ref + '"]');
-      if (target) target.open = true;
-    }
+    var t = scope.querySelector('.turn[data-tid="' + turn.id + '"]');
+    var all = t && t.querySelector("details.srcs");
+    if (all) all.open = true;
+    var target = t && t.querySelector('details.srow[data-ref="' + ref + '"]');
+    if (target) target.open = true;
     if (target) {
       target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
       target.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -218,8 +208,8 @@
 
   var EXAMPLES = ["What are the top issues to discuss at the next quarterly meeting?",
     "What have members said about hiring this year?", "Which topics have grown in the last 90 days?"];
-  var box = { open: false, rail: false, side: false, conv: null, sel: null, busy: null, error: null };
-  var root, veil, q, thread, sideEl, railEl, noteEl;
+  var box = { open: false, rail: false, conv: null, sel: null, busy: null, error: null };
+  var root, veil, q, thread, railEl, noteEl;
 
   function onAskPage() { return /^#\/?ask(\/|$)/.test(location.hash); }
   function companyHere() {
@@ -230,18 +220,12 @@
 
   function setWidth() {
     if (!box.open || narrow()) { root.style.width = ""; return; }
-    var w = Math.min(1240, 820 + (box.rail ? 270 : 0) + (box.side ? 330 : 0));
+    var w = 820 + (box.rail ? 270 : 0);
     root.style.width = "min(" + w + "px, calc(100vw - 32px))";
   }
   function autosize() {
     q.style.height = "auto";
     q.style.height = Math.min(q.scrollHeight, box.open ? 140 : 40) + "px";
-  }
-  function selected() {
-    if (!box.conv) return null;
-    var turns = box.conv.turns;
-    for (var i = 0; i < turns.length; i++) if (turns[i].id === box.sel) return turns[i];
-    return turns[turns.length - 1] || null;
   }
   function findTurn(id) {
     var turns = (box.conv && box.conv.turns) || [];
@@ -272,7 +256,6 @@
       html += '<div class="turn"><div class="qb">' + esc(box.error.q) + '</div><div class="msg err">' + esc(box.error.message) + "</div></div>";
     }
     thread.innerHTML = html;
-    sideEl.innerHTML = A.sourcesSide(selected());
     if (box.rail) railEl.innerHTML = A.railHtml(box.conv && box.conv.id);
     noteEl.textContent = A.railNote();
   }
@@ -320,10 +303,9 @@
       if (!A.history) A.loadHistory().then(function () { railEl.innerHTML = A.railHtml(box.conv && box.conv.id); noteEl.textContent = A.railNote(); })
         .catch(function (e) { railEl.innerHTML = '<p class="rl-note">' + esc(e.message) + "</p>"; });
     }
-    if (which === "side") sideEl.innerHTML = A.sourcesSide(selected());
   }
 
-  function submit(text) {
+  function submit(text, fresh) {
     text = String(text || "").trim();
     if (!text || box.busy) return;
     openBox();
@@ -334,8 +316,11 @@
     render();
     scrollToLast();
     var convId = box.conv ? box.conv.id : "";
-    PI.post("assistant", { question: text, conversationId: convId, mode: "answer", companyId: companyHere() }).then(function (r) {
-      if (!box.conv || box.conv.id !== r.conversation.id) box.conv = { id: r.conversation.id, title: r.conversation.title, turns: [] };
+    // A conversation keeps the company it started on: a follow-up, or Answer fresh, asked from another
+    // company's page is still about the first company.
+    var company = box.conv ? box.conv.companyId || "" : companyHere();
+    PI.post("assistant", { question: text, conversationId: fresh ? "" : convId, mode: "answer", companyId: company, fresh: Boolean(fresh) }).then(function (r) {
+      if (!box.conv || box.conv.id !== r.conversation.id) box.conv = { id: r.conversation.id, title: r.conversation.title, turns: [], companyId: r.conversation.companyId || "" };
       box.conv.turns.push(r.turn);
       box.sel = r.turn.id;
       A.remember(r.conversation);
@@ -384,11 +369,11 @@
         '<aside class="abx-rail" aria-label="Past questions"><div class="rl-top"><button type="button" class="ax-back" data-off="rail">' + ICON.back + "Back</button></div>" +
           '<div class="rl-list"></div><p class="rl-note"></p></aside>' +
         '<div class="abx-main">' +
-          '<header class="abx-head"><h2 class="abx-title">Ask Partner Intelligence</h2>' + A.toggle("rail", false) + A.toggle("side", false) +
-            '<button type="button" class="ax-new">' + ICON.plus + "New</button>" +
+          // The title, with History and New under it on the left (as in Claude), and Shrink on the right.
+          '<header class="abx-head"><div class="abx-hl"><h2 class="abx-title">Ask Partner Intelligence</h2>' +
+            '<div class="abx-hb">' + A.toggle(false) + A.newButton() + "</div></div>" +
             '<button type="button" class="ax-shrink" aria-label="Shrink">' + ICON.down + "</button></header>" +
-          '<div class="abx-body"><div class="abx-thread"></div><aside class="abx-side" aria-label="Sources"><div class="rl-top">' +
-            '<button type="button" class="ax-back" data-off="side">' + ICON.back + 'Back</button></div><div class="abx-side-in"></div></aside></div>' +
+          '<div class="abx-body"><div class="abx-thread"></div></div>' +
           '<form class="abx-bar">' +
             '<button type="button" class="ax-hist" aria-label="Past questions">' + ICON.clock + "</button>" +
             '<label class="sr-only" for="abxq">Ask anything about the partner notes</label>' +
@@ -400,7 +385,6 @@
     veil = document.querySelector(".ax-veil");
     q = root.querySelector("textarea");
     thread = root.querySelector(".abx-thread");
-    sideEl = root.querySelector(".abx-side-in");
     railEl = root.querySelector(".rl-list");
     noteEl = root.querySelector(".abx-rail .rl-note");
 
@@ -421,11 +405,11 @@
         var turn = findTurn(b.getAttribute("data-turn"));
         if (!turn) return;
         box.sel = turn.id;
-        if (turn.kind === "matches" && !box.side) setToggle("side", true);
-        A.showSource(thread, sideEl, box.side, turn, b.getAttribute("data-ref"));
+        A.showSource(thread, turn, b.getAttribute("data-ref"));
         return;
       }
       if ((b = t.closest(".fu[data-q]"))) { submit(b.getAttribute("data-q")); return; }
+      if ((b = t.closest(".fu[data-fresh]"))) { submit(b.getAttribute("data-fresh"), true); return; }
       if ((b = t.closest(".fu[data-match]"))) { toAskPage(b.getAttribute("data-match")); return; }
       if ((b = t.closest(".rl-del"))) {
         var id = b.getAttribute("data-del");
@@ -437,7 +421,7 @@
         return;
       }
       if ((b = t.closest(".rl-item"))) { openConversation(b.getAttribute("data-conv")); return; }
-      if (t.closest(".ax-new")) { startNew(); return; }
+      if (t.closest("[data-new]")) { startNew(); return; }
       if (t.closest(".ax-shrink")) { shrink(); return; }
       if (t.closest(".ax-up")) { openBox(); scrollToLast(); return; }
       if (t.closest(".ax-hist")) { openBox(); setToggle("rail", true); }

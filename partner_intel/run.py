@@ -15,6 +15,7 @@ rebuild  skip Box and Claude entirely; re-join the stored results with the curre
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import re
@@ -54,10 +55,15 @@ def walk(api, root_id: str, root_name: str):
                 yield {**entry, "path": path}
 
 
+def text_key(unit) -> str:
+    """A section's words alone, so its record can be found again after its cache key changes."""
+    return hashlib.sha256(extract.normalize(unit.text).encode()).hexdigest()[:16]
+
+
 def _unit_record(unit, key: str, date: str, source: str) -> dict:
     return {"key": key, "label": unit.label, "default_company": unit.default_company,
             "attendees": [list(a) for a in unit.attendees], "part": unit.part, "parts": unit.parts,
-            "date": date, "date_source": source, "file_company": unit.file_company}
+            "date": date, "date_source": source, "file_company": unit.file_company, "text_key": text_key(unit)}
 
 
 def file_company(resolver: Resolver, name: str, path: str = "") -> str:
@@ -253,7 +259,12 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             ignored[ext or "(none)"] += 1
             continue
         prior = registry.get(f["id"])
-        if prior and prior.get("sha1") == f.get("sha1") and prior.get("status") in ("done", "unreadable", "no_text", "too_large") and not force:
+        # A scan that stopped after a checkpoint saved this file as "done" before every section was
+        # read; the file is unchanged only when each of its sections has a result. A renamed or moved
+        # file is read again for its new date and program; its sections' results are reused.
+        if (prior and prior.get("sha1") == f.get("sha1") and prior.get("status") in ("done", "unreadable", "no_text", "too_large")
+                and prior.get("name", f["name"]) == f["name"] and prior.get("path", f["path"]) == f["path"]
+                and all(u.get("key") in cache for u in prior.get("units") or []) and not force):
             stats["files_unchanged"] += 1
             continue
         pending.append(f)
@@ -269,7 +280,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
         entry = {"id": f["id"], "name": f["name"], "path": f["path"], "ext": text_mod.extension(f["name"]),
                  "sha1": f.get("sha1", ""), "size": f.get("size", 0), "created_at": f.get("created_at", ""),
                  "modified_at": f.get("modified_at", ""), "processed_at": now_iso(),
-                 "source": source_folder(f["path"])}
+                 "source": source_folder(f["path"], f["name"])}
         if (f.get("size") or 0) > config.MAX_FILE_BYTES:
             entry.update(status="too_large", error="Larger than the 40 MB read limit.")
             registry[f["id"]] = entry
@@ -308,20 +319,33 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
     # Dates and unit records, then the list of units that have never been read.
     to_run: dict[str, tuple] = {}
     for f, entry, s, (full_text,) in work:
-        prior_units = {u["key"]: u for u in (registry.get(f["id"], {}).get("units") or [])}
+        prior_list = registry.get(f["id"], {}).get("units") or []
+        prior_units = {u["key"]: u for u in prior_list}
+        # A section keeps the date it arrived with even when its cache key changes (a new contact
+        # list, a new prompt), so it is matched on its words too. Older records have no text key:
+        # a heading and part that appear once in the file stand in for it.
+        prior_by_text = {u["text_key"]: u for u in prior_list if u.get("text_key")}
+        labels = Counter((u.get("label", ""), u.get("part", 1)) for u in prior_list)
+        prior_by_label = {(u.get("label", ""), u.get("part", 1)): u for u in prior_list
+                          if u.get("label") and labels[(u.get("label", ""), u.get("part", 1))] == 1}
         file_date, file_source = resolve_date(
-            f["name"], full_text, f.get("created_at"), text_allowed=s.text_date_allowed)
+            f["name"], full_text, f.get("created_at"), text_allowed=s.text_date_allowed, path=f.get("path", ""))
         units = []
         for unit in s.units:
             key = extract.cache_key(unit, s.event_type, model)
-            if key in prior_units:
-                date, source = prior_units[key]["date"], prior_units[key]["date_source"]
-            elif file_source == "box_upload":
+            prior_unit = (prior_units.get(key) or prior_by_text.get(text_key(unit))
+                          or prior_by_label.get((unit.label, unit.part)))
+            if file_source != "box_upload":
+                # The text or the name dates the meeting, so every section takes that date, including
+                # sections read before the date in the file was corrected.
+                date, source = file_date, file_source
+            elif prior_unit and prior_unit.get("date_source") == "box_upload":
+                # Only an estimate is carried over: in a running file it is when the section arrived.
+                date, source = prior_unit["date"], prior_unit["date_source"]
+            else:
                 fallback = f.get("modified_at") if f["id"] in registry else f.get("created_at")
                 date, source = resolve_date(f["name"], "", f.get("created_at"), text_allowed=False,
                                             fallback_at=fallback)
-            else:
-                date, source = file_date, file_source
             units.append(_unit_record(unit, key, date, source))
             if key not in cache:
                 to_run.setdefault(key, (unit, s.event_type, f["name"]))
