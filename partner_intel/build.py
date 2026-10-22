@@ -16,6 +16,7 @@ import re
 from collections import Counter, defaultdict
 
 from . import topics
+from .dates import ESTIMATED_SOURCES
 from .extract import normalize
 from .resolve import Match, Resolver, Speaker, core_key
 from .roster import Roster
@@ -38,19 +39,42 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b) if a and b else 0.0
 
 
-def _similar(a: dict, b: dict) -> bool:
+def _similarity(a: dict, b: dict) -> float:
+    """How surely two rows are one statement recorded twice, 0 when they are two statements.
+
+    Copies of one meeting (a Word file and a text summary) word the same statement differently, so
+    across files a similar title is enough. Within one file the pieces only overlap by a few lines,
+    so the same statement twice has the same words: the title and the detail must both agree. Two
+    rows from one reading of one piece need the closest agreement: the model was told to record each
+    statement once, and "Steel price increases squeezing margins" and "Resin price increases
+    squeezing margins" from one call are two problems unless their details agree as well."""
     if a["quote"] and normalize(a["quote"]) == normalize(b["quote"]):
-        return True
-    if _jaccard(_words(a["title"]), _words(b["title"])) >= 0.5:
-        return True
-    return a["topic"] == b["topic"] and _jaccard(_words(a["detail"]), _words(b["detail"])) >= 0.6
+        return 2.0
+    title = _jaccard(_words(a["title"]), _words(b["title"]))
+    detail = _jaccard(_words(a["detail"]), _words(b["detail"]))
+    if a["_unit"] == b["_unit"]:
+        # One reading of one piece restating a point says it in the same words, title and detail.
+        return title if title >= 0.5 and detail >= 0.5 else 0.0
+    if a["_file"] == b["_file"]:
+        return title if title >= 0.5 and detail >= 0.3 else (detail if a["topic"] == b["topic"] and detail >= 0.6 else 0.0)
+    if title >= 0.5:
+        return title
+    return detail if a["topic"] == b["topic"] and detail >= 0.6 else 0.0
 
 
-def source_folder(path: str) -> str:
-    """The top-level folder under the chosen Box root: "Notes/CIAIC/2025" gives "CIAIC".
-    A file sitting directly in the root has no sub-folder and is "(root)"."""
-    parts = [p for p in (path or "").split("/") if p]
-    return parts[1] if len(parts) > 1 else "(root)"
+def source_folder(path: str, name: str = "") -> str:
+    """The top-level folder under the chosen Box root: "Notes/CIAIC/2025/x.docx" gives "CIAIC".
+    A file sitting directly in the root has no sub-folder and is "(root)". The file's own name is
+    taken off first: a web link's name is its address, and "Notes/https://www.wfyi.org/..." must not
+    make a program called "https:"."""
+    path = path or ""
+    if name and path.endswith("/" + name):
+        path = path[: -len(name) - 1]
+    elif name and path == name:
+        path = ""
+    parts = [p for p in path.split("/") if p]
+    # A folder name never ends in ":"; "https:" is a web address (a link with no name of its own).
+    return parts[1] if len(parts) > 1 and not parts[1].endswith(":") else "(root)"
 
 
 def _file_stem(name: str) -> str:
@@ -81,12 +105,17 @@ def _note_company_id(raw: str) -> str:
 
 
 def _merge(group: list[dict]) -> list[dict]:
+    """Rows recorded twice become one; each row joins the existing row it is MOST like, so the resin
+    row in a text copy joins the resin row, not the steel row its title also resembles."""
     merged: list[dict] = []
     for row in group:
+        best, score = None, 0.0
         for existing in merged:
-            if _similar(existing, row):
-                _absorb(existing, row)
-                break
+            s = _similarity(existing, row)
+            if s > score:
+                best, score = existing, s
+        if best is not None:
+            _absorb(best, row)
         else:
             merged.append(row)
     return merged
@@ -233,10 +262,12 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     scope = "internal"
                 if row["confidence"] == "low":
                     review.append("low_confidence")
-                if unit.get("date_source") == "box_upload":
+                if unit.get("date_source") in ESTIMATED_SOURCES:
                     review.append("estimated_date")
                 date = unit.get("date") or event.get("date") or ""
-                meeting_key = f"{date}|{company_id or core_key(raw_name)}"
+                # Rows with no company are one meeting's only within one kind of meeting: a CIAIC
+                # council meeting and a workshop on the same day are two meetings.
+                meeting_key = f"{date}|{company_id or core_key(raw_name) or 'event:' + (event.get('series') or event.get('type') or file_id)}"
                 row_dict = {
                     "id": hashlib.sha1(f"{unit['key']}:{index}".encode()).hexdigest()[:12],
                     "kind": row["kind"], "company_id": company_id,
@@ -248,8 +279,11 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     "date": date, "date_source": unit.get("date_source") or event.get("date_source") or "",
                     "event_type": event.get("type", ""), "series": event.get("series", ""),
                     "meeting_key": meeting_key, "review": sorted(set(review)), "company_options": options,
-                    "source_folder": entry.get("source") or source_folder(entry.get("path", "")),
-                    "source_folders": [entry.get("source") or source_folder(entry.get("path", ""))],
+                    "_unit": unit["key"], "_file": file_id,
+                    # Worked out again from the path, not the "source" stored when the file was read: files
+                    # read before the web-link fix stored "https:".
+                    "source_folder": source_folder(entry.get("path", ""), entry.get("name", "")),
+                    "source_folders": [source_folder(entry.get("path", ""), entry.get("name", ""))],
                     "sources": [{"id": file_id, "name": entry.get("name", ""), "path": entry.get("path", "")}],
                 }
                 entry_rows.append(row_dict)
@@ -279,6 +313,9 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
     insights = []
     for group in groups.values():
         insights.extend(_merge(group))
+    for r in insights:
+        r.pop("_unit", None)
+        r.pop("_file", None)
     insights.sort(key=lambda r: (r["date"], r["id"]), reverse=True)
     stats["insights"] = len(insights)
     stats["merged_duplicates"] = len(rows_out) - len(insights)

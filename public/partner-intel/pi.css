@@ -372,31 +372,15 @@ body.pi-app { background:var(--wash); font-size:15px; }
 @keyframes circ-pop { 0% { transform:scale(var(--s)); } 24% { transform:scale(calc(var(--s) * .84)); } 52% { transform:scale(calc(var(--s) * 1.1)); } 74% { transform:scale(calc(var(--s) * .97)); } 100% { transform:scale(var(--s)); } }
 @keyframes circ-close { 0% { transform:scale(var(--s)); } 35% { transform:scale(calc(var(--s) * .95)); } 70% { transform:scale(calc(var(--s) * 1.02)); } 100% { transform:scale(var(--s)); } }
 /* Closed, a topic shows a chevron under its circle, apart from it, with no stem: a circle with an
- * arrow on a stem read as the male symbol. Number 1 alone starts with a dotted trail down to its
- * chevron, and the dots run down twice a moment after the page arrives, a cue that these open. Then
- * the dots tuck up under the number and the chevron rises to where every other one sits, so from then
- * on number 1 looks and hovers like the rest. Opening a topic draws the line down over the trail. */
+ * arrow on a stem read as the male symbol. Number 1's chevron dips twice a moment after the page
+ * arrives, a cue that these open. Opening a topic draws the line down from the circle. */
 .pi-app .tline { --rest:21px; position:absolute; left:19px; top:61px; width:2.5px; height:var(--rest); background:transparent; border-radius:2px;
   transition:height .65s var(--spring); pointer-events:none; }
 .pi-app .tline::after { content:""; position:absolute; left:50%; bottom:1px; width:8px; height:8px; margin-left:-5px;
   border-right:2px solid var(--accent); border-bottom:2px solid var(--accent); transform:rotate(45deg); }
 .pi-app .tp:not(.open):has(.tp-row:hover) .tline { --rest:27px; }
-.pi-app .tline.trail:not(.tucked) { --rest:39px; }
-.pi-app .tp:not(.open):has(.tp-row:hover) .tline.trail:not(.tucked) { --rest:45px; }
-.pi-app .tline b { position:absolute; left:50%; width:4.5px; height:4.5px; margin-left:-2.25px; border-radius:50%; background:var(--accent);
-  transition:opacity .2s; }
-.pi-app .tline b:nth-child(1) { top:6px; } .pi-app .tline b:nth-child(2) { top:14px; } .pi-app .tline b:nth-child(3) { top:22px; }
-.pi-app .tp.open .tline b { opacity:0; }
-.pi-app .tline b { transition:opacity .3s ease, transform .5s cubic-bezier(.4,0,.2,1); }
-.pi-app .tline.tucked b { opacity:0; transform:translateY(-26px) scale(.4); }
-.pi-app .tline.tucked b:nth-child(2) { transition-delay:.05s; }
-.pi-app .tline.tucked b:nth-child(1) { transition-delay:.1s; }
-.pi-app .tline.cue b { animation:trail-dot 1s ease-in-out 1.2s 2; }
-.pi-app .tline.cue b:nth-child(2) { animation-delay:1.36s; }
-.pi-app .tline.cue b:nth-child(3) { animation-delay:1.52s; }
-.pi-app .tline.cue::after { animation:trail-chevron 1s ease-in-out 1.68s 2; }
-@keyframes trail-dot { 0%, 60%, 100% { transform:scale(1); } 25% { transform:scale(1.7); } }
-@keyframes trail-chevron { 0%, 60%, 100% { transform:translateY(0) rotate(45deg); } 25% { transform:translateY(4px) rotate(45deg); } }
+.pi-app .tline.cue::after { animation:chevron-cue 1s ease-in-out 1.2s 2; }
+@keyframes chevron-cue { 0%, 60%, 100% { transform:translateY(0) rotate(45deg); } 25% { transform:translateY(4px) rotate(45deg); } }
 .pi-app .tp.open .tline { width:3px; left:18.5px; height:calc(100% - 61px); background:var(--accent); transition:none; }
 .pi-app .tp.open .tline::after { width:9px; height:9px; margin-left:-4.5px; bottom:-4px; border:0; border-radius:999px; background:var(--accent); transform:none; }
 .pi-app .tline.grow { animation:tline-grow .7s ease-out; }
@@ -447,11 +431,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
 @keyframes pm-bar { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
 @keyframes pm-bar-b { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
 @media (prefers-reduced-motion:reduce) {
-  .pi-app .circ, .pi-app .tline, .pi-app .tline b, .pi-app .tline::after, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i, .pi-app svg.trace .dot { animation:none !important; transition:none !important; }
-  /* No cue to wait for: number 1 starts as the others look. */
-  .pi-app .tp .tline.trail.trail:not(.tucked) { --rest:21px; }
-  .pi-app .tp:not(.open):has(.tp-row:hover) .tline.trail.trail:not(.tucked) { --rest:27px; }
-  .pi-app .tline.trail b { display:none; }
+  .pi-app .circ, .pi-app .tline, .pi-app .tline::after, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i, .pi-app svg.trace .dot { animation:none !important; transition:none !important; }
 }
 .pi-app .topicfoot { display:grid; grid-template-columns:72px minmax(0,1fr); gap:6px 16px; margin-top:28px; padding-top:16px;
   border-top:1px solid var(--line); font-size:13.5px; color:var(--text-secondary); }
@@ -581,13 +561,13 @@ html.ax-lock { overflow:hidden; }
 .abx.show .abx-head, .abx.show .abx-body { display:flex; }
 .abx.show.rail .abx-rail { display:flex; }
 .abx.open .abx-head, .abx.open .abx-body, .abx.open .abx-rail { opacity:1; }
-.abx .abx-head { flex:none; align-items:center; gap:8px; padding:14px 16px 10px 28px; }
-.abx .abx-title { flex:1 1 auto; min-width:0; margin:0; font-size:15px; font-weight:600; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.abx .abx-head { flex:none; align-items:flex-start; gap:8px; padding:14px 16px 10px 28px; }
+/* The title with History and New under it, on the left (as in Claude); Shrink on the right. */
+.abx .abx-hl { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:10px; }
+.abx .abx-hb { display:flex; gap:8px; }
+.abx .abx-title { max-width:100%; margin:0; font-size:15px; font-weight:600; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .abx .abx-body { flex:1 1 auto; min-height:0; }
 .abx .abx-thread { position:relative; flex:1 1 auto; min-width:0; overflow-y:auto; padding:8px 36px 16px; }
-.abx .abx-side { display:none; flex:none; width:330px; box-sizing:border-box; border-left:1px solid #edf0f5; overflow-y:auto; padding:8px 22px 16px; }
-.abx.side .abx-side { display:block; }
-.abx.side .srcs { display:none; }
 .abx .abx-rail { flex:none; flex-direction:column; width:270px; box-sizing:border-box; background:var(--wash); border-right:1px solid var(--border);
                  padding:22px 14px 18px; overflow-y:auto; }
 .abx .rl-top { display:none; }
@@ -607,7 +587,7 @@ html.ax-lock { overflow:hidden; }
 .abx.has-conv:not(.open) .ax-up { display:flex; }
 .abx.open .ax-hist { display:none; }
 .abx .ax-shrink { background:var(--wash); color:var(--navy); }
-.abx .ax-new, .ax-tg, .pi-app .ax-tg { height:36px; padding:0 14px; border:1px solid var(--border); border-radius:999px; background:#fff; color:var(--navy);
+.abx .ax-new, .ax-tg, .pi-app .ax-tg, .pi-app .ax-new { height:36px; padding:0 14px; border:1px solid var(--border); border-radius:999px; background:#fff; color:var(--navy);
        font:inherit; font-size:13px; font-weight:400; display:inline-flex; align-items:center; gap:7px; cursor:pointer; white-space:nowrap; }
 .ax-tg[aria-pressed="true"], .pi-app .ax-tg[aria-pressed="true"] { background:#eef2fa; border-color:#c9d6ee; color:var(--accent); }
 .abx .ax-back { display:inline-flex; align-items:center; gap:6px; border:0; background:transparent; color:var(--accent); font:inherit; font-size:14px; padding:6px 4px; }
@@ -660,6 +640,8 @@ html.ax-lock { overflow:hidden; }
 .fu:hover, .pi-app .fu:hover { border-color:var(--accent); }
 .fu svg { width:13px; height:13px; }
 .ax-empty p { margin:6px 0 14px; color:var(--text-secondary); }
+.memo, .pi-app .memo { margin:0; font-size:13px; color:var(--text-secondary); }
+.asx-out .memo { font-size:15px; }
 .mlist { margin:0; padding-left:22px; }
 .mlist li { margin:0 0 10px; }
 .mlist .mstr { font-size:12.5px; color:var(--text-secondary); }
@@ -682,16 +664,14 @@ html.ax-lock { overflow:hidden; }
 @media (max-width:700px) {
   .abx { bottom:14px; width:calc(100vw - 24px); }
   .abx.open { width:calc(100vw - 20px); height:calc(100dvh - 68px); }
-  .abx .abx-head { padding:8px 8px 4px 12px; gap:4px; }
-  .abx .abx-title { display:none; }
-  .abx .abx-head > :first-of-type { margin-left:auto; }
+  .abx .abx-head { padding:10px 8px 4px 16px; gap:4px; }
   .srow > summary { flex-wrap:wrap; gap:2px 10px; }
   .srow .sk { min-width:0; }
   .srow .stitle { flex-basis:calc(100% - 120px); }
   .srow .sby { white-space:normal; width:100%; padding-left:28px; }
-  .abx .abx-head .ax-tg, .abx .ax-new { padding:0 10px; }
+  .abx .abx-hb .ax-tg, .abx .abx-hb .ax-new { padding:0 10px; }
   .abx .abx-thread { padding:6px 18px 12px; }
-  .abx.rail .abx-rail, .abx.side .abx-side { position:absolute; inset:0; z-index:3; width:auto; border:0; background:#fff; }
+  .abx.rail .abx-rail { position:absolute; inset:0; z-index:3; width:auto; border:0; background:#fff; }
   .abx.rail .abx-rail { background:var(--wash); }
   .abx .rl-top { display:block; margin-bottom:8px; }
   .abx.open .abx-bar { margin:8px 10px 12px; }
@@ -702,25 +682,27 @@ html.ax-lock { overflow:hidden; }
 .asx-main { flex:1 1 auto; min-width:0; max-width:1020px; margin:0 auto; display:flex; flex-direction:column; }
 /* Before the first question: heading, pill, buttons, recent questions. After: buttons at the top, the
  * conversation, and the pill at the bottom of the screen, where it stays as the conversation grows. */
-.asx-h1 { order:1; } .asx-pill { order:2; } .asx-tools { order:3; } .asx-out { order:4; } .asx-recent { order:5; }
+.asx-tools { order:0; } .asx-h1 { order:1; } .asx-pill { order:2; } .asx-out { order:4; } .asx-recent { order:5; }
 .pi-app .wrap:has(.asx.has-out) { padding-bottom:0; }
-.asx.has-out .asx-tools { order:0; margin-top:0; }
 .asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:12px; }
 .asx.has-out .asx-pill { order:2; position:sticky; bottom:24px; z-index:5; margin-top:20px; }
-.asx-new, .pi-app .asx-new { display:none; }
-.asx.has-out .asx-new { display:inline-flex; }
 .asx-out .turn .qb { font-size:18px; background:#fff; border:1px solid var(--border); }
 .asx-out .turn { margin-bottom:40px; }
 .asx-out .msg.err { font-size:16px; }
-.asx-rail, .asx-side { display:none; flex:none; box-sizing:border-box; position:sticky; top:20px; max-height:calc(125vh - 120px); overflow-y:auto; }
-.asx.rail .asx-rail { display:flex; flex-direction:column; width:300px; background:var(--wash); border-radius:16px; padding:18px 12px; }
-.asx.side.has-out .asx-side { display:block; width:360px; border-left:1px solid #edf0f5; padding:0 0 0 24px; }
-.asx.side .srcs { display:none; }
+/* The history panel: its own color, so it reads as a panel apart from the conversation, as in Claude. */
+.asx-rail { display:none; flex:none; box-sizing:border-box; position:sticky; top:16px; max-height:calc(125vh - 120px); overflow-y:auto; }
+.asx.rail .asx-rail { display:flex; flex-direction:column; width:300px; min-height:calc(125vh - 160px); background:#e6ecf5;
+  border:1px solid #d3dcea; border-radius:16px; padding:16px 12px; }
+.asx .rl-head { display:flex; gap:8px; margin:0 0 14px; }
+.asx.rail .asx-lb { display:none; }
+.asx-lb { display:inline-flex; gap:8px; }
 .asx-h1 { text-align:center; margin:110px 0 34px; }
 .asx.has-out .asx-h1 { display:none; }
 .asx-pill { display:flex; align-items:center; gap:6px; min-height:72px; box-sizing:border-box; padding:0 10px 0 12px; background:#fff;
             border:1px solid var(--border); border-radius:999px; box-shadow:0 10px 30px rgba(7,33,78,.1); }
-.pi-app .asx-pill select { flex:none; width:auto; max-width:220px; height:50px; border:0; border-radius:999px; background:var(--wash); color:var(--navy);
+#asxSrc { position:relative; display:inline-flex; align-items:center; flex:none; }
+#asxSrc svg { position:absolute; right:16px; top:50%; width:14px; height:14px; margin-top:-7px; color:var(--navy); pointer-events:none; }
+.pi-app .asx-pill select { -webkit-appearance:none; appearance:none; padding-right:42px !important; flex:none; width:auto; max-width:240px; height:50px; border:0; border-radius:999px; background:var(--wash); color:var(--navy);
             padding:0 16px; font-size:16px; box-shadow:none; }
 .pi-app .asx-pill textarea { flex:1 1 auto; min-width:0; min-height:0; height:30px; border:0; border-radius:0; resize:none; padding:0 8px; background:transparent;
             font-size:19px; line-height:1.55; box-shadow:none; overflow:hidden; }
@@ -728,13 +710,11 @@ html.ax-lock { overflow:hidden; }
 .pi-app .asx-pill .asx-go { flex:none; width:56px; height:56px; padding:0; border:0; border-radius:50%; background:var(--navy); color:#fff;
             display:flex; align-items:center; justify-content:center; }
 .pi-app .asx-pill .asx-go:hover { background:var(--accent); }
-.asx-tools { display:flex; align-items:center; gap:8px; margin:14px 0 0 24px; min-height:36px; }
+.asx-tools { display:flex; align-items:center; gap:14px; margin:0 0 10px; min-height:36px; }
 .asx-tools .grow { flex:1 1 auto; }
 .asx-tools .back { font-size:15px; display:inline-flex; align-items:center; gap:6px; }
 .asx-tools .back svg { width:15px; height:15px; }
-.asx [data-tg="side"] { display:none; }
-.asx.has-out [data-tg="side"] { display:inline-flex; }
-.pi-app .asx .ax-tg { font-size:15px; height:42px; padding:0 18px; }
+.pi-app .asx .ax-tg, .pi-app .asx .ax-new { font-size:15px; height:42px; padding:0 18px; }
 .asx-out { margin-top:26px; padding:0 24px; }
 .asx-out .ans, .asx-out .srcs { font-size:18px; }
 .asx-out .srcs { font-size:15.5px; }
@@ -745,18 +725,15 @@ html.ax-lock { overflow:hidden; }
 .asx-recent .fus { justify-content:center; }
 .asx-recent .fu { font-size:15px; }
 .asx .rl-note { font-size:13px; }
-.asx .rl-top { display:none; }
 .asx .ax-back, .pi-app .asx .ax-back { display:inline-flex; align-items:center; gap:6px; border:0; background:transparent; color:var(--accent);
        font:inherit; font-size:15px; font-weight:400; padding:6px 4px; }
 .asx .ax-back svg { width:16px; height:16px; }
 .asx-rail .rl-item { font-size:15px; }
 @media (min-width:761px) { .asx.has-out .asx-pill { bottom:30px; } }
 @media (max-width:1100px) {
-  .asx.rail .asx-rail, .asx.side.has-out .asx-side { position:fixed; z-index:950; top:0; bottom:0; max-height:none; width:min(360px, 88vw); border-radius:0;
-       box-shadow:0 0 40px rgba(7,33,78,.2); background:#fff; padding:20px; }
-  .asx.rail .asx-rail { left:0; background:var(--wash); }
-  .asx.side.has-out .asx-side { right:0; border:0; }
-  .asx .rl-top { display:block; margin-bottom:8px; }
+  .asx.rail .asx-rail { position:fixed; z-index:950; top:0; bottom:0; max-height:none; min-height:0; width:min(360px, 88vw); border-radius:0;
+       box-shadow:0 0 40px rgba(7,33,78,.2); padding:20px; }
+  .asx.rail .asx-rail { left:0; }
 }
 @media (max-width:600px) {
   .asx-h1 { margin:40px 0 22px; }
