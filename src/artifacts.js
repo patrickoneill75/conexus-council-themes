@@ -24,7 +24,7 @@
  * in claude.ai, outside this app's control.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canAdminApp, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 
 const MANIFEST_KEY = "artifacts:manifest";
 
@@ -91,6 +91,8 @@ export async function handleArtifactsApi(route, request, env) {
 
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
+  // Every route below is this app's control panel: its own admins, or an overall admin.
+  if (!canAdminApp(auth, "artifacts")) return json({ error: NO_SETTINGS_ACCESS }, 403);
 
   // ---- GET catalogue -- the full list (public + private), for the control panel ---
   if (route === "catalogue" && method === "GET") {

@@ -13,7 +13,8 @@
  *
  * Admin routes reuse Connector's shared admin accounts (see
  * src/beta_auth.js's requireBetaAuth), same as src/pcn.js and src/consensus.js -- no
- * password of MCM's own.
+ * password of MCM's own. They are all the control panel's, so each needs an mcm app
+ * admin or an overall admin (canAdminApp).
  *
  * Box: this mini app uses the SAME shared, user-delegated Box connection every other
  * tool in this repo uses (see worker.js's box/authorize-url, box/callback, box/status)
@@ -45,7 +46,7 @@
  * panel (public/mcm/control-panel/index.html) and the routes below are always gated.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canAdminApp, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
@@ -216,6 +217,8 @@ export async function handleMcmApi(route, request, env) {
 
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
+  // Every route below is this app's control panel: its own admins, or an overall admin.
+  if (!canAdminApp(auth, "mcm")) return json({ error: NO_SETTINGS_ACCESS }, 403);
 
   // GET box/folders?id=0 -- same folder-picker copy Issue Network Mapper/Consensus already have,
   // gated by requireBetaAuth like everything else admin-side in this file.

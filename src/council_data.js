@@ -6,7 +6,8 @@
  * CONTROL_PASSWORD rather than the beta-account system every later mini app used.
  * That password is retired -- this file's routes are gated by requireBetaAuth, same
  * as pcn.js/consensus.js/mcm.js, so every mini app on Connector now shares exactly one
- * sign-in system.
+ * sign-in system. All of them are the control panel's, so each needs a council-data
+ * app admin or an overall admin (canAdminApp); disconnecting Box needs an overall admin.
  *
  * Box: uses the SAME shared, user-delegated Box connection every other tool in this
  * repo uses. Unlike the newer mini apps, this one is where the *login* itself is
@@ -31,7 +32,7 @@
  * tracker_file_id, for the length of one Actions run.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canAdminApp, isOverallAdmin, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 
 const BOX_TOKEN_KEY = "box:tokens";
 const BOX_DATA_FOLDER_KEY = "box:data_folder";
@@ -170,6 +171,8 @@ export async function handleCouncilDataApi(route, request, env) {
 
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
+  // Every route below is this app's control panel: its own admins, or an overall admin.
+  if (!canAdminApp(auth, "council-data")) return json({ error: NO_SETTINGS_ACCESS }, 403);
 
   // ---- GET status -----------------------------------------------------------------
   if (route === "status" && method === "GET") {
@@ -258,7 +261,9 @@ export async function handleCouncilDataApi(route, request, env) {
   // "not connected" after this, not just this one) plus this app's own Data Folder/
   // tracker selections. Exposed only from this app's control panel, since it's the
   // only one with a "Disconnect" button -- every other mini app just points back here.
+  // Overall admins only, like connecting: it breaks every app's Box access, not just this one's.
   if (route === "box/disconnect" && method === "POST") {
+    if (!isOverallAdmin(auth)) return json({ error: "Only an admin can disconnect Box." }, 403);
     await env.BOX_KV.delete(BOX_TOKEN_KEY);
     await env.BOX_KV.delete(BOX_DATA_FOLDER_KEY);
     await env.BOX_KV.delete(BOX_TRACKER_KEY);

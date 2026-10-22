@@ -6,6 +6,8 @@
  * Convention: every app's public-ready page lives at its own base path (`baseUrl`);
  * its control panel always lives at `<baseUrl>/control-panel` and is always gated by
  * the shared beta-account system (see src/beta_auth.js) -- no app-specific passwords.
+ * The `id` is what people are given in Settings: use access to the app, or admin of it
+ * (its control panel). Each control panel page loads /access.js with its app's id.
  *
  * This file only lists what exists and where. Whether an app's base page is currently
  * shown on the public grid (and, for "admin-only", whether it's gated at all) is a

@@ -20,9 +20,10 @@ gated by the shared admin accounts, never a password of its own.
 | --- | --- | --- |
 | `public/index.html` | Worker static assets | The **public grid** -- Connector's own front door. Reads `public/apps.js` and each app's current visibility tier and shows a tile only for the ones set to "Public". No login, no control-panel links. |
 | `public/apps.js` | Worker static assets | The one shared registry of every mini app (id, name, description, base URL, control panel URL) -- read by both the public grid and the admin hub. Add a new mini app here once. |
-| `public/admin/` | Worker static assets | The admin hub: sign-in (`login.html`), the grid of *every* mini app regardless of visibility (`index.html`), and Settings (`settings.html`) -- admin accounts plus each app's visibility tier. See **8 · The admin hub** below. |
-| `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. Multi-user admin accounts (signup, sign-in, password reset, the admin list) and the per-app visibility tiers every mini app's own page reads via `public/tier-gate.js`. |
-| `public/tier-gate.js` | Worker static assets | Included by every mini app's public base page. Redirects to sign-in when that app's tier is "Admin-only" and there's no session; otherwise reveals the page immediately. |
+| `public/admin/` | Worker static assets | The admin hub: sign-in (`login.html`), the grid of the apps each person can use, with control panels for the ones they admin (`index.html`), and Settings (`settings.html`, overall admins only) -- people, their app access, and each app's visibility tier. See **8 · The admin hub** below. |
+| `src/beta_auth.js` | Cloudflare Worker | `/api/beta/*`. Staff accounts (sign-in, set-up, password reset, sign out everywhere), roles and per-app access (`canUseApp` / `canAdminApp`, which every mini app checks), the login rate limit, and the per-app visibility tiers every mini app's own page reads via `public/tier-gate.js`. |
+| `public/access.js` | Worker static assets | The page-side access check every control panel and staff page loads: sign-in when there's no session, a plain "You don't have access" message when the person lacks that app (or its admin). The API checks the same thing on every route. |
+| `public/tier-gate.js` | Worker static assets | Included by every mini app's public base page. When that app's tier is "Staff with access" (stored as `admin-only`), redirects to sign-in without a session and loads `public/access.js` with one; otherwise reveals the page immediately. |
 | `public/council-data/` | Worker static assets | Council Themes/Quant: the public dashboard (`index.html`, Power BI pages plus the Council Themes tab) and its control panel (`control-panel/index.html` -- Helper/Survey upload, Update Dashboard, the Meetings table, Box login and the Data Folder picker under Developer). See **5 · Connect Box and set up the panel** below. |
 | `src/council_data.js` | Cloudflare Worker | `/api/council-data/*`. Everything the Council Themes/Quant control panel does, gated by the shared admin accounts via `requireBetaAuth` -- no password of its own. |
 | `src/worker.js` | Cloudflare Worker | `/api/*` routing to every mini app, plus the one shared Box OAuth login flow (`box/authorize-url`, `box/callback`) every mini app's own Box connection reuses. |
@@ -47,8 +48,8 @@ gated by the shared admin accounts, never a password of its own.
 | `public/apprenticeship/` | Worker static assets | Apprenticeship Readiness Toolbox: the employer's front door (`index.html` — signed in goes to their dashboard, everyone else to sign-in/registration), sign-in (`account.html`), the respondent chat (`respond.html`), the workforce needs assessment (`workforce.html`), their readiness dashboard (`dashboard.html`), and the control panel (`control-panel/index.html` and `control-panel/responses.html`, both admin-gated). See **15 · Apprenticeship Readiness Toolbox** below. |
 | `src/apprenticeship_workforce.js` | Cloudflare Worker | Step 2's Manufacturing Workforce Needs Assessment: role normalisation, the gap arithmetic, the apprentice projection and the CSV. No Claude call anywhere in it. |
 | `src/apprenticeship.js` | Cloudflare Worker | `/api/apprenticeship/*`. The respondent chat, results and dashboard routes are public and unauthenticated; projects, the assessment editor, responses, the issue log and the CSV are admin-gated. Its own Claude key, `apprenticeship_claude_api`, is called live from the Worker (see step 15). |
-| `public/partner-intel/` | Worker static assets | Partner Intelligence, staff only: the app (`index.html`: Home, Companies, Programs, Ask, and the Ask box on every page; `askbox.js`) and its control panel (`control-panel/index.html`: Box folder, scans, partner list, names to review, topics). Both always require a signed-in admin account. |
-| `src/partner_intel.js` | Cloudflare Worker | `/api/partner-intel/*`. Every route except the pipeline relay requires an admin session. Holds the Box credential, so the pipeline only sees file bytes. Its own Claude key, `partner_intel_claude_api`, answers Ask (see step 16). |
+| `public/partner-intel/` | Worker static assets | Partner Intelligence, staff only: the app (`index.html`: Home, Companies, Programs, Ask, and the Ask box on every page; `askbox.js`) and its control panel (`control-panel/index.html`: Box folder, scans, partner list, names to review, topics). Both always require a signed-in account: the app needs use access to Partner Intelligence, the control panel needs its admin. |
+| `src/partner_intel.js` | Cloudflare Worker | `/api/partner-intel/*`. Every route except the pipeline relay requires a session with Partner Intelligence access; the control panel's routes require its admin. Holds the Box credential, so the pipeline only sees file bytes. Its own Claude key, `partner_intel_claude_api`, answers Ask (see step 16). |
 | `partner_intel/` + `.github/workflows/partner_intel_run.yml` | Python / GitHub Actions | The scan: Box files to text, to units, to one Claude call each, verified and published. Runs every morning and from the control panel. |
 
 ---
@@ -214,10 +215,38 @@ which is the problem this wrapper exists to avoid.
 
 **Connector** is the name of the whole platform: one public grid at the site root
 (`public/index.html`, no login) listing whichever mini apps are currently set to
-"Public", and one admin hub at `/admin/` (sign-in, the grid of *every* mini app, and
-Settings) that every mini app's control panel signs into via the same admin accounts.
-There is no per-app password anywhere — Council Themes/Quant's control panel signs in
-exactly the same way Issue Network Mapper/Consensus/MCM's always have.
+"Public", and one admin hub at `/admin/` (sign-in, the apps each person can use, and
+Settings) that every mini app's control panel and staff page signs into via the same
+accounts. There is no per-app password anywhere — Council Themes/Quant's control panel
+signs in exactly the same way Issue Network Mapper/Consensus/MCM's always have.
+
+### Who can do what
+
+Every person on the list is an **Admin** or a **User**.
+
+1. **Admins** reach everything: every app, every control panel, and Settings. Only
+   admins add, remove or change people, change app visibility, and connect or
+   disconnect Box.
+2. **Users** reach only the apps ticked for them in Settings, one app at a time. **Use**
+   opens that app's staff pages: its base page when its visibility is "Staff with
+   access", and Partner Intelligence and Issue Network Mapper, which are always staff
+   only.
+3. A user can also be **Admin** of particular apps. For example, Brooke can be a user
+   with admin on the Council Meeting Survey Dashboard: she runs its control panel and
+   nothing else. Admin of an app includes using it. Plain users never reach a control
+   panel.
+4. Changes apply on the person's next click. Access is read fresh on every request, not
+   stored in their session, so nobody has to sign out.
+5. Everyone on the list before roles existed became an admin when this shipped, so
+   nobody lost access. A person added now starts as a user with no apps.
+6. Connector always keeps at least one admin: the last one can't be removed or made a
+   user.
+
+The hub shows each person only the apps they can use, with a **Control panel** link for
+the ones they admin. A page they can't open shows "You don't have access to this app"
+(or "...to this app's settings" for a control panel) instead of the page. Every API route
+checks the same access and refuses with 403, so the page check is a courtesy, not the
+lock.
 
 ### Signing in
 
@@ -229,22 +258,50 @@ exactly the same way Issue Network Mapper/Consensus/MCM's always have.
    way every other admin's is, and the secret is never read again.
 2. Open `/admin/login.html` and sign in with that username/email and password.
 
-### Adding another admin
+### Adding a person and giving them apps
 
-From **Settings** (`/admin/settings.html`, linked from the hub) → **Add an admin** →
-enter their email → **Add**. That's it — they're now allowed to set up their own
-account, but nothing is created for them yet.
+1. Open **Settings** (`/admin/settings.html`, linked from the hub for admins) →
+   **People**.
+2. Enter their email, choose **User** or **Admin**, and click **Add**. They're now
+   allowed to set up their own account, but nothing is created for them yet.
+3. For a user, **Change access** opens a tick list of every app. Tick **Use** for each
+   app they should open, and **Admin** for each app whose control panel they should run.
+   Click **Save**.
 
 They go to `/admin/login.html` → **Set up new account / Forgot password** → enter their
 email → if it's on the list and doesn't have a password yet, they're prompted to pick a
 username and password right there. The same button handles "I forgot my password": once
-another admin clears it for you (**Settings** → **Reset**), your account is back in
+an admin clears it for you (**Settings** → **Reset password**), your account is back in
 that same "allowed, no password yet" state, and you use the same button to set a new one.
 
+Each person in **People** also has:
+
+1. **Reset password**: clears their password, signs them out everywhere, and gives you a
+   single-use link (48 hours) to send them.
+2. **Sign out everywhere**: ends every session they have. Anyone can do this to
+   themselves from the hub's **Sign out everywhere**.
+3. **Remove**: takes them off the list and ends their sessions at once.
+
+### Sign-in limits and sessions
+
+1. A session lasts 8 hours. Every request checks that the person is still on the list,
+   still has a password, and hasn't been signed out everywhere since that session began.
+   A reset, a removal or **Sign out everywhere** ends their sessions on the next click.
+2. Five wrong passwords for one account within 15 minutes lock that account's sign-in
+   for 15 minutes, even with the right password. Email and username count as the same
+   account. The sign-in page shows "Too many wrong passwords. Wait 15 minutes, then try
+   again." A successful sign-in clears the count.
+3. About twenty wrong passwords from one network address within 15 minutes lock that
+   address for 15 minutes, so one person can't try a few guesses at every account.
+4. Both limits are best effort. They are stored in Workers KV, which is eventually
+   consistent: attempts that reach different Cloudflare locations within seconds of each
+   other can each see an older count, and a revocation can take up to about a minute to
+   reach every location. They stop sustained guessing, not a burst of a few extra tries.
+
 **Worth knowing:** there's no email-sending step anywhere in that flow — setting a
-password only checks that the email is on the admin list, not that whoever's typing
+password only checks that the email is on the list, not that whoever's typing
 actually owns that inbox. For a small, trusted team that's a reasonable trade for staying
-free and simple, but it does mean anyone who knows an admin's email (and that it doesn't
+free and simple, but it does mean anyone who knows a listed email (and that it doesn't
 have a password set yet, e.g. right after a reset) could claim the account first. If that
 ever stops being an acceptable trade, the fix is a real "magic link" flow — a one-time
 link emailed to the address, using something like Resend or Postmark — which would need
@@ -257,14 +314,15 @@ project doesn't otherwise need.
 
 Also on **Settings**, per app: **Public** (listed on the public grid at the site root),
 **Hidden** (not listed there, but the page still works for anyone with the direct
-link), or **Admin-only** (not listed, and the page itself redirects to sign-in unless
-you're already signed in — the same check every admin page here already does, just
-driven by this setting instead of being hardcoded). Council Themes/Quant and
-Manufacturing Conditions Monitor default to Public; Issue Network Mapper and Consensus
-default to Admin-only, since neither has a public-facing page built yet.
+link), or **Staff with access** (not listed, and the page opens only for a signed-in
+admin or a user given that app; anyone else is sent to sign-in or sees "You don't have
+access to this app"). "Staff with access" is stored as `admin-only`, its name before
+per-app access existed. Council Themes/Quant and Manufacturing Conditions Monitor default
+to Public; Issue Network Mapper and Consensus default to Staff with access, since
+neither has a public-facing page built yet.
 
 One thing this does **not** do: for a page whose content is plain static JSON
-(Council Themes/Quant, MCM's dashboard), "Admin-only" gates the *page*, not the
+(Council Themes/Quant, MCM's dashboard), "Staff with access" gates the *page*, not the
 underlying JSON files themselves (`council-themes.json`, `/mcm/data.json`, etc.) —
 those stay fetchable directly by anyone who already knows or guesses the exact
 filename, same as today. Airtight gating of the data itself would mean serving it
@@ -274,14 +332,19 @@ through an authenticated `/api/*` route instead of a static file; ask if you nee
 
 1. Build it wherever makes sense in the repo — its own `public/<id>/` pages (base page
    at `public/<id>/index.html`, control panel at `public/<id>/control-panel/index.html`),
-   its own `/api/<id>/*` routes if it needs a backend (gated by `requireBetaAuth`, never
-   a password of its own), its own GitHub Actions workflow if it needs one.
+   its own `/api/<id>/*` routes if it needs a backend (gated by `requireBetaAuth` plus
+   `canAdminApp(auth, "<id>")` for control-panel routes or `canUseApp(auth, "<id>")` for
+   staff routes, never a password of its own), its own GitHub Actions workflow if it
+   needs one. Its control panel pages load
+   `<script src="/access.js" data-app="<id>" data-need="admin"></script>` in `<head>`.
    `src/beta_auth.js` and the rest of the platform don't need to know anything about how
    it works internally.
 2. Add one entry to the `APPS` array in `public/apps.js` — id, name, description; its
    `baseUrl`/`controlPanelUrl` are just `/<id>` and `/<id>/control-panel`. That's the
    only step that makes it show up in the admin hub's grid and in Settings' visibility
-   list. If its base page should ever be gated by the "Admin-only" tier, also add
+   and People lists. Also add its id to `KNOWN_APP_IDS` in `src/beta_auth.js`, so it can
+   be given to users. If its base page should ever be gated by the "Staff with access"
+   tier, also add
    `<script src="/tier-gate.js" data-app="<id>"></script>` (and
    `<style>html{visibility:hidden}</style>`) to that page, same as
    `public/council-data/index.html`/`public/mcm/index.html` do.
@@ -388,18 +451,18 @@ The **Ask box** is a pill that floats at the bottom of every page except Ask. A 
 
 - **History** and **New** sit on the left under the title. History (off until pressed) opens your past conversations in a column on the left; on a phone it opens full screen with a **Back** button.
 - **The Ask page** is titled **Search Conexus Notes** and works as a chat. The pill starts in the middle of the page with a program picker; the first question slides it to the bottom of the screen, and the conversation builds above it, each question and its answer in turn, with the box clearing after each. Later questions follow on in the same conversation; **New** starts again. Its history is a shaded panel on the left, open by default on a wide screen, with History and New at its top. A question that asks who can help ("Who can help with...", "connect them with...") gets the partner search: ranked matches with the notes behind them. Anything else gets a written answer. The Ask box offers **Find partners who can help** for a who-can-help question, which opens the Ask page's partner search with a link back to the conversation.
-- **History is kept per person.** Only the person who asked sees it. Each person's file, `ask-history-<email>.json`, is kept in an **Ask history** folder inside the Database folder chosen on the control panel, updated as a new version each time. If the app's own copy is lost, it is read back from Box. Without a Database folder, history is kept in the app only.
+- **History is kept per person.** Only the person who asked sees it. Each person's file, `ask-history-<email>-<hash>.json`, is kept in an **Ask history** folder inside the Database folder chosen on the control panel, updated as a new version each time. The hash keeps two addresses that differ only in a symbol (`a+b@` and `a_b@`) in two files. If the app's own copy is lost, it is read back from Box, checked field by field first (anything of the wrong shape is dropped, numbers stay numbers, links go only to Box files), and only if the file says it belongs to that person. A file under the older name without the hash is still read once, on the same condition. Without a Database folder, history is kept in the app only.
 - **People.** A question that names someone on the uploaded contact list ("What do we know about Chad Nord?") brings in that person's company and the notes that mention their first name. Claude is told the notes usually give first names only, that a first-name mention in that company's notes is probably the person, and to say when two people there share the first name or the same name is listed at two companies.
 - **Saved answers.** Every standalone answer (not a follow-up) is saved with the scope it covered: the programs, companies and people its question named, its time window and program filter, and the notes in that scope. The same question asked again in the same scope is answered from it. "The same question" means the same words once filler ("what", "the", "recently", "tell me") is set aside: a different number, year, name or a "not" is a different question, and a question that compares or excludes ("other than", "versus", "not") is never answered from memory.
   - Nothing in the scope changed: the saved answer is shown again with today's company names. No Claude call.
   - New notes for a named company, person or program: Claude reads the saved answer, the notes it cited and only the new notes, and updates it (an estimated 3,000 to 13,000 tokens instead of a full answer's 45,000 to 55,000). At most three updates, and for 30 days, after the last full answer.
   - Anything else gets a full answer: a cited note removed or now credited to another company, a cited company renamed or its membership changed, a note that has aged out of a time window, any change at all to the notes behind a question that names no company, person or program (its ranking may have moved), more than 60 new notes, or a new prompt version.
   - The answer says it came from a saved answer and when, without showing who asked first. **Answer fresh** always asks Claude again. Each saved answer is written to Box as its own file in a **Saved answers** folder inside the Cache folder, with an index file (`partner_intel_saved_answers.json`) the cron keeps current, so a lost app copy is read back from Box. If Box cannot be read, the app does not write an index over the Box copy.
-- **How an answer is built.** Code builds the material first, with no model: an overview of the data, a table of every topic with how many companies raised it, how urgent and how recent, the saved topic summaries, recent meetings, and for each program the question names (PCN, CIAIC, Board Meetings and so on) its meetings, its topic summaries and up to 60 of its newest notes in full. Up to 160 notes go in full: the named programs and companies, notes matching the question's words and related terms, and a spread of recent notes. Then up to 1,200 other notes follow as one-line headlines (date, program, company, kind, topic, title), the named programs' and companies' first, then the newest, so any of them can be cited; the oldest beyond that are covered by the topic table. Estimated dates are marked, and Claude is told not to state them as meeting dates. Every note says which program it came from. "Last 60 days", "past quarter" and "this year" narrow it all to that window; the topic table still compares the window with the same span before it, so "which topics have grown" can see what shrank. A program counts as named when the question uses its folder name; a one-word program in capitals five letters or longer (ADAPT) counts only written in capitals, so "adapt to tariffs" is not the ADAPT program. A company counts as named by its name, the roster's aliases or its own aliases; a name of two or three characters (GE, 3M) only in capitals. A bare citation number copied from an earlier answer is dropped, and earlier answers go back to Claude without their numbers. Claude Sonnet 5.5 reads that and answers; citations to notes it was not shown are dropped. Two calls per question: Claude Haiku for the related search terms, then Sonnet for the answer. The same question on the same day with the same data is answered from the saved result. With about 960 notes on file a question reads roughly 45,000 to 55,000 tokens (measured on a copy of the data, at about four characters a token), about $0.10 to $0.12 at Sonnet 5.5 list prices; it grows with the notes, by roughly 30 tokens a note. The app reads the same notes as the `partner_intel_insights.csv` spreadsheet each scan writes to the Database folder: both are made from the dataset that scan publishes.
+- **How an answer is built.** Code builds the material first, with no model: an overview of the data, a table of every topic with how many companies raised it, how urgent and how recent, the saved topic summaries, recent meetings, and for each program the question names (PCN, the Council, Board Meetings and so on) its meetings, its topic summaries and up to 60 of its newest notes in full. Up to 160 notes go in full: the named programs and companies, notes matching the question's words and related terms, and a spread of recent notes. Then up to 1,200 other notes follow as one-line headlines (date, company, kind, title), grouped under their program and topic, each heading written once rather than on every line (about a quarter fewer headline tokens, an estimate). The named programs' and companies' notes come first, then the newest, so any of them can be cited; the oldest beyond that are covered by the topic table. A follow-up after a partner search is given the partners that search found. Estimated dates are marked, and Claude is told not to state them as meeting dates. Every note says which program it came from. "Last 60 days", "past quarter" and "this year" narrow it all to that window; the topic table still compares the window with the same span before it, so "which topics have grown" can see what shrank. A program counts as named when the question uses its folder name; a one-word program in capitals five letters or longer (ADAPT) counts only written in capitals, so "adapt to tariffs" is not the ADAPT program. A company counts as named by its name, the roster's aliases or its own aliases; a name of two or three characters (GE, 3M) only in capitals. A bare citation number copied from an earlier answer is dropped, and earlier answers go back to Claude without their numbers. Claude Sonnet 5.5 reads that and answers; citations to notes it was not shown are dropped. Two calls per question: Claude Haiku for the related search terms, then Sonnet for the answer. The same question on the same day with the same data is answered from the saved result. With about 960 notes on file a question reads roughly 45,000 to 55,000 tokens (measured on a copy of the data, at about four characters a token), about $0.10 to $0.12 at Sonnet 5.5 list prices; it grows with the notes, by roughly 30 tokens a note. The app reads the same notes as the `partner_intel_insights.csv` spreadsheet each scan writes to the Database folder: both are made from the dataset that scan publishes.
 
 ### Summaries written ahead
 
-When a scan publishes new data, or a topic is renamed or merged, Home (the last 90 days) and the programs **Field Demos**, **CIAIC**, **PCN**, **ITA** and **Board Meetings** are queued. The Worker's five-minute cron writes their missing trending summaries in the background, about 20 seconds of work a tick, so nobody waits for them. A program is found by its folder name, ignoring case, or as the start of a longer folder name; to change the list, edit `AHEAD_PROGRAMS` in `src/partner_intel.js`. Other programs, windows and filters are written when someone opens them, as before.
+When a scan publishes new data, or a topic is renamed or merged, Home (the last 90 days) and the programs **Field Demos**, **Council**, **PCN**, **ITA** and **Board Meetings** are queued. The Worker's five-minute cron writes their missing trending summaries in the background, about 20 seconds of work a tick, so nobody waits for them. A program is found by its folder name, ignoring case, or as the start of a longer folder name; to change the list, edit `AHEAD_PROGRAMS` in `src/partner_intel.js`. Other programs, windows and filters are written when someone opens them, as before.
 
 Nothing is written twice. A summary is saved under exactly what Claude was given for it: each row's company, meeting, date, urgency and text, and the topic's company and meeting counts. So a statement staff move to another company, or a re-link, writes the bullets again rather than leaving them naming the old company. A near match is reused only when 80% of the rows are the same, the companies and counts are the same, and every row a bullet cites is still there under the same company. Every summary, written ahead or on demand, is saved to Box as `partner_intel_summaries.json` in the Cache folder by the next cron tick. If the app's copy is lost (a new deployment, a cleared store), the summaries are read back from that file before any Claude call is made.
 
@@ -1035,7 +1098,7 @@ The Worker serves the data from Workers KV. The durable copy lives in the **Data
 
 - `partner_intel_database.json`: everything the tool serves.
 - `partner_intel_insights.csv`: the same insights as a flat table that opens in Excel (company, member status, industry, source folder, type, topic, urgency, quote, source file and more).
-- `partner_intel_state.json`: which files were read and every saved Claude result. If the Worker's own copy is ever empty, the next scan restores from this file and does not read the notes again.
+- `partner_intel_state.json`: which files were read and every saved Claude result. If the Worker's own copy is ever empty, the next scan restores from this file and does not read the notes again. Past about 8 million characters it is written in parts (`partner_intel_state.a.001.json` and so on, alternating between an "a" and a "b" set), and `partner_intel_state.json` then lists the parts and is written last, so a save that stops halfway never replaces a whole one. The pipeline also sends its state and each new dataset to the Worker in pages of up to 4 MB with a final commit, so neither has to fit in one request; the old one-request routes still work.
 - `partner_intel_results_archive.json`: every Claude result the live state no longer needs (a file edited, removed, or read with a model you tried and dropped). Every scan looks here before paying Claude, so a file put back, restored from Box's trash, or a model you switch back to (under the same prompt version) costs nothing. Written only when something is archived. Capped at 40 MB; past that the oldest results go first.
 
 If no Database folder is chosen the scan still works, and **Last scan** says nothing was saved to Box.
@@ -1049,7 +1112,7 @@ Two more folders are chosen on the control panel:
 
 - Read: `.docx`, `.txt`, `.md`, `.vtt`, `.srt`, `.html` and PDFs that have a text layer.
 - Ignored without comment: images, audio, spreadsheets and anything else.
-- Reported on the control panel, never silently skipped: `.doc` and other formats that need saving as `.docx`; PDFs that are scans (not OCR'd); unreadable or oversize files.
+- Reported on the control panel, never silently skipped: `.doc` and other formats that need saving as `.docx`; PDFs that are scans (not OCR'd); unreadable or oversize files. A file that fails to download, or that the reader fails on unexpectedly, is listed under **Errors** and tried again at the next scan; the rest of the scan carries on.
 - Subfolders are walked. A file Box says has not changed is not downloaded. Moving a file keeps its results; deleting it from Box removes it from the tool at the next full scan.
 
 ### How a note becomes data
@@ -1060,11 +1123,15 @@ Two more folders are chosen on the control panel:
 4. Company and person names are matched to the partner list in code. A name that fits two partners (for example "Toyota") is queued for review, never guessed.
    - **The file name counts.** A call's notes often never say the company's name: "Ben Larson - Evonik.txt" says "Evonik" only in its name, and Ben mentions that Eli Lilly founded the site. When the file name, a partner contact named in it ("30 Minutes with Patrick O'Neill - Jerry Grangier.vtt"), or a folder below the program folder ("Field Demo Visits/Aegis - 10.05.26") points to exactly one partner, Claude is told the file is named for that partner and not to take the company from history mentioned in passing. A name that points to two partners, or to none, adds nothing. A file with company section headings (the Copilot onboarding file) keeps its headings.
    - A row that still names a different partner from the file's is kept as Claude read it (it is often a supplier or customer mentioned in the call) and shows a **Check company** marker on its card.
+   - **A person's first name is not a brand.** "Allison Clay - interview.docx" is about a person, not Allison Transmission: a partner's word followed by a surname, or a contact's or attendee's full name, does not name the partner. The price is that a file named with a partner's word and then another capitalised word that is not a usual title word ("Zoeller Pump Visit") no longer tells Claude which partner the file is for; Claude still reads the notes.
+   - **A person given as the company** ("Chad Smith") never becomes a company of its own. The row takes that person's company when it is known, and is flagged for **Statements to check** either way.
+   - **A partial name is not a match.** "State of Indiana" is not Indiana State University: a mention missing a partner's distinguishing word does not match it. Suffixes (Inc, LLC), "the", aliases and short forms such as "Lucas Oil" still match.
+   - A fix to name matching can change what a few sections are told about their company, so those sections only are read once more at the next scan.
 5. The same date and company in two files (a Word file and a text summary of one meeting) counts as one meeting.
 
 ### Dates
 
-The date in the text comes first (the top of the document, or a line labelled "Date"), then a date in the file name, then a date in the name of the folder the file is in ("CPI Card Group - 10.05.26"), then a month or quarter in the file name ("Q2 2025 CIAIC Notes" is 2025-04-01, "Participant Feedback - Nov 2025" is 2025-11-01, "February ITA Meeting Notes" is the last February before the upload), then the Box upload date. A meeting over several days ("November 18-20, 2025") takes its first day. A date after the upload date is never accepted. Every date records where it came from. A month, a quarter or the upload date is an estimate: those rows show an "estimated date" tag, and **Exact dates only** hides them. A section added to a running file later takes the date it arrived, not the file's first upload date, and keeps it when the section is read again (a new contact list or prompt). When the text or name dates the file, every section takes that date, so a corrected date moves the whole file. A renamed or moved file is read again for its new date and program at no Claude cost.
+The date in the text comes first (the top of the document, or a line labelled "Date"), then a date in the file name, then a date in the name of the folder the file is in ("CPI Card Group - 10.05.26"), then a month or quarter in the file name ("Q2 2025 Council Notes" is 2025-04-01, "Participant Feedback - Nov 2025" is 2025-11-01, "February ITA Meeting Notes" is the last February before the upload), then the Box upload date. For a file read for the first time, that last estimate is the earlier of the upload and the file's own last-edited time, which Box keeps from the uploader's computer (`content_modified_at`), so a batch of old notes uploaded today keeps the dates they were written instead of reading as this week's news. A meeting over several days ("November 18-20, 2025") takes its first day. A date after the upload date is never accepted. Every date records where it came from. A month, a quarter or the upload date is an estimate: those rows show an "estimated date" tag, and **Exact dates only** hides them. A section added to a running file later takes the date it arrived, not the file's first upload date, and keeps it when the section is read again (a new contact list or prompt). When the text or name dates the file, every section takes that date, so a corrected date moves the whole file. A renamed or moved file is read again for its new date and program at no Claude cost.
 
 ### How topics are weighted
 
@@ -1079,7 +1146,7 @@ The totals on the dashboard are still plain counts, because they say what is in 
 
 ### Trending topics and programs
 
-**Home** is the Trending topics page. It ranks topics by how many companies raised them in the last 30, 60 or 90 days, opening on 90 (issues and asks only), across every source folder, and shows the top five with **Show more topics** for the next five. **Members only** and **Exact dates only** narrow it. Each topic is a numbered heading with how many companies and meetings raised it (the companies are named in the examples, not the heading); clicking it opens up to five bullet points written by Claude from the notes behind it, and closes whichever topic was open. The points sit on a light shaded block; the **+** button beside a point, or **See examples** after it, opens the supporting notes with their files and quotes, and turns to **−** and **Hide examples** while they are open. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. Home's default 90 days, and the Field Demos, CIAIC, PCN, ITA and Board Meetings programs, have their bullets written on the back end whenever new data arrives (see **Summaries written ahead** below), so they open complete. Other windows, filters and programs appear at once and the bullets fill in a few seconds later.
+**Home** is the Trending topics page. It ranks topics by how many companies raised them in the last 30, 60 or 90 days, opening on 90 (issues and asks only), across every source folder, and shows the top five with **Show more topics** for the next five. Under the topics it says how many notes in the window have estimated dates (the day the file reached Box, or a month in its name), with **Leave them out** to rank without them. Each topic is a numbered heading with how many companies and meetings raised it (the companies are named in the examples, not the heading); clicking it opens up to five bullet points written by Claude from the notes behind it, and closes whichever topic was open. The points sit on a light shaded block; the **+** button beside a point, or **See examples** after it, opens the supporting notes with their files and quotes, and turns to **−** and **Hide examples** while they are open. A topic with only three distinct points gets three bullets, not five: the summary is told never to pad. Home's default 90 days, and the Field Demos, Council, PCN, ITA and Board Meetings programs, have their bullets written on the back end whenever new data arrives (see **Summaries written ahead** below), so they open complete. Other windows, filters and programs appear at once and the bullets fill in a few seconds later.
 
 **Programs** is a new tab. Each source folder (Board Meetings, PCN, Industry Exchange Workshops and so on) is a program. A program page has its own top topics, built the same way, over 90 days, a year or all time, and a **Recent data** list of its meetings, newest first. A meeting is whatever the notes make it:
 
@@ -1095,7 +1162,9 @@ Summaries cost one Claude call per batch of up to eight topics, and each is save
 
 ### Source folders
 
-The top-level sub-folders under the notes folder (ADAPT, Board Meetings, CIAIC and so on) are each a **source**. The Ask page has a program picker to limit a search to one folder. Home always covers every folder; a program's own page ranks one folder alone. Choosing Board Meetings shows those rows even though board notes are otherwise kept out as Conexus's own business. The CSV has a SourceFolder column.
+The top-level sub-folders under the notes folder (ADAPT, Board Meetings, CIAIC and so on) are each a **source**.
+
+**The Council.** The program the notes and the Box folder call CIAIC is shown everywhere as **Council** (the Council, the Conexus Council): program lists and pages, meeting names, note titles and details, Ask answers, trending summaries and the Excel export. Claude is told never to write CIAIC, and anything it writes is checked on the way out. Two things keep the old name on purpose: a quote, which stays the words of the notes, and a Box file's name, which must still be findable in Box. A question that says CIAIC, the Council or the Conexus Council is about the Council program; "council members" is about membership and is not. Old links naming CIAIC still open the Council's pages. The Ask page has a program picker to limit a search to one folder. Home always covers every folder; a program's own page ranks one folder alone. Choosing Board Meetings shows those rows even though board notes are otherwise kept out as Conexus's own business. The CSV has a SourceFolder column.
 
 ### Keeping the partner list current
 
@@ -1146,12 +1215,12 @@ Each mention counts, so a single long meeting with many notes on one topic can p
 
 - The first scan is the expensive one. Use the trial run first. **Last scan** shows tokens used.
 - **Notes are read through Anthropic's Message Batches API, at half the price of direct calls** ([Anthropic batch processing docs](https://platform.claude.com/docs/en/build-with-claude/batch-processing): "reducing costs by 50%", "most batches finishing in less than 1 hour"). A scan waits up to 60 minutes for its batch (`PARTNER_INTEL_BATCH_WAIT_MINUTES`), then cancels it, keeps what finished, and reads the rest directly at full price. A section whose answer runs out of room is also read directly, because only the direct path can split it. Set `PARTNER_INTEL_BATCH=false` on the workflow to read everything directly (faster, twice the cost).
-- **Claude use** in the control panel totals this month's and last month's calls and tokens by purpose (notes by batch, notes direct, summaries, Ask partner search, Ask answers), and counts answers served from saved results instead. It shows tokens, not dollars: price them against your Anthropic rate card.
+- **Claude use** in the control panel totals this month's and last month's calls and tokens by purpose (notes by batch, notes direct, summaries, Ask partner search, Ask answers), and counts answers served from saved results instead. Every paid attempt counts: an answer that had to be asked again because it skipped the tool, and a request Claude declined or cut off. It shows tokens, not dollars: price them against your Anthropic rate card.
 - A day with no new notes uses no Claude: unchanged files are skipped by Box checksum, and text already read is served from the stored results, keyed by the text, the prompt version and the model, so renaming or moving a file costs nothing.
 - A section too dense for one answer is read in halves and the results merged, so a large section costs a few extra calls, not a failure. **Last scan** counts those.
 - Ask makes two Claude calls per new question. First, Claude Haiku turns the question into related search terms (for "unsure what we can put into AI while doing CMMC": cybersecurity, NIST 800-171, ITAR, data security, sensitive data, AI policy, Copilot and so on), because the notes that answer a question rarely use its words; these are saved per question and shown under the answer as "Also searched for". Then code scores every note that shows a company can help (solutions, offers, wins, equipment, and issues marked resolved), weighting rare words such as "CMMC" far above common ones such as "work". A note needs a rare word or two words from the question or the terms; it does not need most of them (it used to need a third of the question's words, so a long question found nothing). About ten companies go to Claude Sonnet to rank. The ranking is saved under exactly what Claude would read (the question, the shortlist and its evidence). A daily scan that changes nothing relevant to the question reuses it; a new matching row, or a partner's name or status changing, asks again.
 - Below the matches, **Working through the same thing** lists up to five partners whose notes show the same issue, an ask for help with it, or a plan to tackle it: peers to compare notes with. They are found by the same word matching and are not ranked by Claude.
-- Trending summaries are reused across small changes. When a window rolls a day, or a filter adds a row or two, a saved summary is used if at least 80% of the rows it was written from are still the rows behind the topic, and every bullet still has one of its rows to show. The comparison is always with the rows the summary was written from, never with a reuse, so a summary cannot drift one day at a time. The page also waits 0.7 seconds before asking for summaries, so clicking through windows and filters does not start a paid call for every view passed through.
+- Trending summaries are reused across small changes. When a window rolls a day, or a filter adds a row or two, a saved summary is used if at least 80% of the rows it was written from are still the rows behind the topic, the companies and the company and meeting counts are unchanged, and every row each bullet cites is still there under the same company. The comparison is always with the rows the summary was written from, never with a reuse, so a summary cannot drift one day at a time. The page also waits 0.7 seconds before asking for summaries, so clicking through windows and filters does not start a paid call for every view passed through.
 - No Anthropic prompt caching is used. The instructions and schema shared by every call are about 1,700 tokens, input is the smaller part of an extraction's cost (Claude's written answer is most of it), and inside a batch a cache hit is not guaranteed. Low-volume Worker calls are minutes to days apart (see CLAUDE.md).
 - **Models.** Claude Sonnet 5.5 (`claude-sonnet-5-5`) reads the notes, at medium effort, and answers Ask. Claude Haiku 5.5 (`claude-haiku-5-5`) writes the trending summaries, at low effort: they are short, bounded, and every bullet must cite a row it was shown. List prices per million tokens, from Anthropic's model table as of 2026-10-06 (check the live pricing page before budgeting): Sonnet 5.5 $2 in / $10 out, Haiku 5.5 $0.10 / $0.50 for prompts up to 100K tokens; the batch halves both. Both models think before answering, and thinking is billed as output, so the effort level is set on every call. Neither model accepts a forced tool choice, so each prompt asks for the tool call, and an answer without it is asked once more. A section or question Claude declines is recorded as declined, not retried daily; direct Sonnet calls turn on Anthropic's server-side fallback (`fallbacks: "default"`), which the batch does not allow.
 - Changing the extraction prompt or topic list means bumping `PROMPT_VERSION` in `partner_intel/extract.py`. Files already read keep their results; only files that change, or a **Re-read every file**, are read under the new version.
@@ -1206,23 +1275,34 @@ Box holds the notes you point it at, the member list, and the database files des
   Developer section) deletes the stored token pair, and you can revoke the app's access
   from your own Box account settings at any time. Every other mini app's own Box
   connection is the same underlying token, so this disconnects all of them at once.
+  Connecting (`GET /api/box/authorize-url`) and disconnecting both need an overall
+  admin's session, because either one changes Box for every app. Box's return trip
+  (`/api/box/callback`) carries no session, so a one-time `state` value issued by
+  authorize-url proves it belongs to a login an admin started.
 - **Auditable.** Every analysis run is a logged GitHub Actions run showing when it ran,
   who triggered it, and exactly what it extracted, appended, and published.
-- **The admin accounts (`/api/beta/*`) are a separate, lighter-weight system** from
-  Box/GitHub credentials, and now the *only* sign-in system in this app — there is no
-  per-app password anywhere any more. Passwords are hashed (PBKDF2-SHA256, a random
+- **The staff accounts (`/api/beta/*`) are a separate, lighter-weight system** from
+  Box/GitHub credentials, and now the *only* staff sign-in system in this app — there is
+  no per-app password anywhere any more. Passwords are hashed (PBKDF2-SHA256, a random
   salt per account) — never stored or logged in plain text — and session tokens are
   HMAC-signed, not cookies, so there's nothing for a CSRF attack to ride on. The
   iteration count is intentionally lower than a typical server-side recommendation,
   because it has to fit inside a Cloudflare Worker's per-request CPU budget (not
   wall-clock time) rather than a normal server's — see the comment above
-  `PBKDF2_ITERATIONS` in `src/beta_auth.js` for the actual numbers. What it does *not* do
-  is verify email ownership before letting someone set a password (see step 8 above) — a
-  deliberate simplicity trade for a small, trusted admin list, not an oversight.
+  `PBKDF2_ITERATIONS` in `src/beta_auth.js` for the actual numbers. The login rate limit
+  (step 8) is what keeps that low count from being guessed at quickly; it is best effort,
+  because Workers KV is eventually consistent. Every request re-reads the person's role,
+  apps and session version, so removing someone, resetting their password or signing
+  them out everywhere takes effect on their next click, give or take KV's propagation
+  delay of up to about a minute. Every mini app's API checks app access itself
+  (`canUseApp` / `canAdminApp`); the page-side check in `public/access.js` only decides
+  what to show. What it does *not* do is verify email ownership before letting someone
+  set a password (see step 8 above) — a deliberate simplicity trade for a small, trusted
+  staff list, not an oversight.
 - **Per-app visibility (Settings, step 8) is a curation/UI control, not a hard access
-  boundary for static-JSON pages.** "Admin-only" gates the *page* the same way every
-  admin page here already gates itself (a client-side session check redirecting to
-  sign-in), but does not additionally lock the underlying static JSON files
+  boundary for static-JSON pages.** "Staff with access" gates the *page* with a
+  client-side check (sign-in, then whether the person was given that app), but does
+  not additionally lock the underlying static JSON files
   (`council-themes.json`, `quant-dashboard.json`, `/mcm/data.json`, etc.) — those stay
   fetchable directly by anyone who already knows or guesses the exact filename. Nothing
   in any of them is more sensitive than what "Public" already shows by design (see
@@ -1234,8 +1314,8 @@ Box holds the notes you point it at, the member list, and the database files des
   the client for anything that matters: which follow-up to generate (and how many to
   allow) is read from the stored survey, never from the request, and `submit` only
   writes to the one Box folder that survey's admin already configured. The control
-  panel routes (create/edit a survey, trigger analysis) require a signed-in admin
-  account, same as the rest of the platform.
+  panel routes (create/edit a survey, trigger analysis) require a signed-in Consensus
+  admin or overall admin, same as the rest of the platform.
 - **Issue Network Mapper's network view is the one page in this repo that loads an external
   script** (D3, from a CDN) — needed for the force-directed graph layout; every other
   page here is hand-rolled with no third-party JS. It's a static, widely-used
@@ -1246,13 +1326,15 @@ Box holds the notes you point it at, the member list, and the database files des
   about council members or survey respondents — whether it's currently public is set in
   Settings (step 8), same as Council Themes/Quant's own dashboard. Only its control
   panel (`public/mcm/control-panel/index.html`), which *runs* the download/analyze/
-  publish jobs, always requires a signed-in admin account. `SEC_CONTACT_EMAIL` is not
+  publish jobs, always requires a signed-in MCM admin or overall admin. `SEC_CONTACT_EMAIL` is not
   sensitive — it's sent in plain text as part of SEC EDGAR's required fair-access
   request header, the same way any browser's user agent is — it's a repository secret
   only because there's no other per-repo config file for it.
 - **Partner Intelligence holds members' candid statements, so it has no public tier.** Every
-  `/api/partner-intel/*` route except `relay/*` requires a beta-account session, and both pages
-  redirect to sign-in without one, regardless of the app-visibility setting. The relay routes
+  `/api/partner-intel/*` route except `relay/*` requires a session with access to Partner
+  Intelligence (an overall admin, or a user given the app), and its control-panel routes require
+  its admin. Before per-app access, any signed-in account could read it. Both pages redirect to
+  sign-in without a session, regardless of the app-visibility setting. The relay routes
   require the shared `BOX_RELAY_SECRET`. The Box credential never leaves the Worker: the pipeline
   receives folder listings and file bytes through the relay. Notes are fenced as data in every
   prompt, and every extracted row must quote the notes, checked in code.
@@ -1273,8 +1355,10 @@ Box holds the notes you point it at, the member list, and the database files des
 | Update Dashboard says "No new meetings found" | Every meeting in the current Post-Meeting Survey export is already in `data/feedback_log.json` — this is expected if nothing new was uploaded, not a bug. |
 | Run succeeds, page unchanged | Nothing changed, or Cloudflare is still redeploying. Give it a minute. |
 | A tab says "isn't wired up yet" | Its `pageId` is still a placeholder. See step 7. |
-| `/admin/login.html` says "That email isn't on the admin list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
-| "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an existing admin to **Reset** it under Manage admins, then try again. |
+| `/admin/login.html` says "That email isn't on the Connector list" for poneill | `poneill_password` hasn't been set as a repository secret and pushed via **Set Cloudflare secrets** yet, or `BOX_KV` isn't bound. See step 8. |
+| "Set up new account" says the account already has a password, but you've never signed in | Someone else already claimed that email (see the "worth knowing" note in step 8) — ask an admin to **Reset password** for it under Settings → People, then try again. |
+| Sign-in says "Too many wrong passwords" | Five wrong passwords for that account (or about twenty from that network) in 15 minutes. Wait 15 minutes, or have an admin **Reset password** and use the link, which signs you in. See step 8. |
+| A page says "You don't have access to this app" or "...to this app's settings" | You're signed in but not given that app (or not its admin). An admin ticks it under Settings → People → **Change access**; it applies on your next click. |
 | Consensus chat says it can't generate a follow-up question | `consensus_claude_api` hasn't been set as a repository secret and pushed to the Worker via **Set Cloudflare secrets** yet. See step 9. |
 | **Set Cloudflare secrets** reports success but a key/secret still shows as missing on the live site, for every secret at once, not just one | `wrangler.jsonc`'s `"name"` doesn't match the Worker's actual name in the Cloudflare dashboard (Workers & Pages → the one "Workers Builds" deploys to). `wrangler secret put` creates a Worker under whatever name it's given if none exists yet, so a mismatch here silently sends every secret to a separate, never-deployed Worker instead of erroring — this happened once already (see `wrangler.jsonc`'s comment on `"name"`). Fix the name in `wrangler.jsonc` to match the dashboard, commit, then re-run **Set Cloudflare secrets**. |
 | Consensus "Analyze" fails with "No responses have been collected yet" | Nobody has completed the respondent chat for that survey yet -- `responseCount` is still 0. |

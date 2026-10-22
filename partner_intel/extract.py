@@ -49,14 +49,42 @@ MAX_SPLIT_DEPTH = 3
 MIN_SPLIT_WORDS = 200
 
 
-class Refused(Exception):
+class _Spent(Exception):
+    """Mixed into the exceptions below: a failed answer is still billed, so it carries the
+    tokens it used ({"input", "output", "calls"}) for the scan's usage meter."""
+
+    def __init__(self, message: str = "", usage: dict | None = None):
+        super().__init__(message)
+        self.usage = dict(usage or {})
+
+
+class Refused(_Spent):
     """Claude declined the section (stop_reason "refusal"). Not retried: the same request is
     declined the same way. The section is recorded with no rows so it is not paid for daily."""
 
 
-class OutOfRoom(Exception):
+class OutOfRoom(_Spent):
     """The answer did not fit. Deliberately not a RuntimeError: retrying the same request
     would spend the same tokens and fail the same way, so the caller splits the unit instead."""
+
+
+class NoToolCall(_Spent, RuntimeError):
+    """Claude answered without calling the tool. A RuntimeError, so the direct call retries it."""
+
+
+def _usage_of(response) -> dict:
+    u = getattr(response, "usage", None)
+    return {"input": getattr(u, "input_tokens", 0) or 0, "output": getattr(u, "output_tokens", 0) or 0, "calls": 1}
+
+
+def add_usage(total: dict, usage: dict | None) -> dict:
+    """Add one attempt's (or several attempts') usage to a running total. An attempt that
+    reports no usage still counts as one call."""
+    usage = usage or {}
+    total["input"] = total.get("input", 0) + (usage.get("input") or 0)
+    total["output"] = total.get("output", 0) + (usage.get("output") or 0)
+    total["calls"] = total.get("calls", 0) + usage.get("calls", 1)
+    return total
 
 
 KINDS = ["problem", "solution", "win", "offer", "ask", "equipment", "news", "commitment"]
@@ -275,24 +303,29 @@ def parse_response(response) -> tuple[list[dict], dict]:
     """Rows and usage from a finished message, direct or batched."""
     if response.stop_reason == "refusal":
         details = getattr(response, "stop_details", None)
-        raise Refused(f"Claude declined this section ({getattr(details, 'category', None) or 'no category'}).")
+        raise Refused(f"Claude declined this section ({getattr(details, 'category', None) or 'no category'}).",
+                      _usage_of(response))
     if response.stop_reason == "max_tokens":
-        raise OutOfRoom("Claude ran out of room for this section.")
+        raise OutOfRoom("Claude ran out of room for this section.", _usage_of(response))
     for block in response.content:
         if block.type == "tool_use":
             usage = {"input": response.usage.input_tokens, "output": response.usage.output_tokens}
             return block.input.get("insights", []), usage
-    raise RuntimeError(f"Claude did not call {TOOL['name']!r} (stop_reason={response.stop_reason!r})")
+    raise NoToolCall(f"Claude did not call {TOOL['name']!r} (stop_reason={response.stop_reason!r})", _usage_of(response))
 
 
 def call_claude(unit: Unit, event_type: str, staff: list[str], model: str) -> tuple[list[dict], dict]:
     """The single model call. Returns (raw rows, usage).
 
     Raises OutOfRoom when the answer was cut off, and RuntimeError on any other malformed
-    answer. Network and API errors are retried; OutOfRoom is not.
+    answer. Network and API errors are retried; OutOfRoom is not. Every answer received is
+    billed, so usage (and the usage an exception carries) covers every attempt, the retried
+    and the cut-off ones included, with "calls" saying how many there were.
     """
     import anthropic
     from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+    failed = {"input": 0, "output": 0, "calls": 0}
 
     @retry(retry=retry_if_exception_type((anthropic.APIError, RuntimeError)),
            wait=wait_exponential(multiplier=1, min=2, max=30), stop=stop_after_attempt(4), reraise=True)
@@ -300,9 +333,20 @@ def call_claude(unit: Unit, event_type: str, staff: list[str], model: str) -> tu
         with get_client().messages.stream(**request_params(unit, event_type, staff, model),
                                           extra_headers={"anthropic-beta": FALLBACK_BETA},
                                           extra_body={"fallbacks": "default"}) as stream:
-            return parse_response(stream.get_final_message())
+            message = stream.get_final_message()
+        try:
+            return parse_response(message)
+        except _Spent as e:
+            add_usage(failed, e.usage)
+            raise
 
-    return go()
+    try:
+        rows, usage = go()
+    except _Spent as e:
+        e.usage = dict(failed)
+        raise
+    total = add_usage(dict(failed), usage)
+    return rows, total if total["calls"] > 1 else usage
 
 
 def _halves(unit: Unit) -> list[Unit]:
@@ -312,38 +356,63 @@ def _halves(unit: Unit) -> list[Unit]:
     return [dataclasses.replace(unit, text=p, part=i + 1, parts=len(pieces)) for i, p in enumerate(pieces)]
 
 
-def _read(unit: Unit, event_type: str, staff: list[str], model: str, caller, depth: int = 0):
+def _read(unit: Unit, event_type: str, staff: list[str], model: str, caller, spent: dict, depth: int = 0,
+          cut: bool = False):
     """Read a unit, splitting it and reading the pieces if the answer does not fit.
-    Returns (raw rows, usage, number of extra calls caused by splitting)."""
-    try:
-        rows, usage = caller(unit, event_type, staff, model)
-        return rows, dict(usage), 0
-    except OutOfRoom:
-        pieces = _halves(unit) if depth < MAX_SPLIT_DEPTH and words(unit.text) >= MIN_SPLIT_WORDS else []
-        if not pieces:
+    Returns (raw rows, number of extra calls caused by splitting). spent adds up the usage of
+    every attempt, a cut-off or declined one included: each is billed.
+
+    cut says the whole unit has already been tried and cut off (in the batch), so it goes
+    straight to its halves rather than being sent whole a second time at full price. A unit
+    too small to split is still read whole once."""
+    pieces = _halves(unit) if depth < MAX_SPLIT_DEPTH and words(unit.text) >= MIN_SPLIT_WORDS else []
+    if not (cut and pieces):
+        try:
+            rows, usage = caller(unit, event_type, staff, model)
+        except OutOfRoom as e:
+            add_usage(spent, e.usage)
+            if not pieces:
+                raise
+        except Exception as e:
+            add_usage(spent, getattr(e, "usage", None))
             raise
-    rows, usage, extra, seen = [], {"input": 0, "output": 0}, len(pieces) - 1, set()
+        else:
+            add_usage(spent, usage)
+            return rows, 0
+    rows, extra, seen = [], len(pieces) - 1, set()
     for piece in pieces:
-        got, used, more = _read(piece, event_type, staff, model, caller, depth + 1)
+        got, more = _read(piece, event_type, staff, model, caller, spent, depth + 1)
         extra += more
-        usage["input"] += used.get("input", 0)
-        usage["output"] += used.get("output", 0)
         for row in got:  # the pieces overlap, so the same statement can come back twice
             key = normalize(str(row.get("quote", "")))
             if key and key in seen:
                 continue
             seen.add(key)
             rows.append(row)
-    return rows, usage, extra
+    return rows, extra
 
 
-def extract_unit(unit: Unit, event_type: str, staff: list[str], model: str, caller=call_claude) -> dict:
-    """Run one unit and return the cache entry to store. caller is swapped out in tests."""
+def extract_unit(unit: Unit, event_type: str, staff: list[str], model: str, caller=call_claude,
+                 cut: bool = False) -> dict:
+    """Run one unit and return the cache entry to store. caller is swapped out in tests.
+    cut: the batch already tried this unit whole and the answer was cut off (see _read).
+
+    The entry's usage and calls count every attempt. A unit that fails anyway raises with
+    what it spent on the exception's usage, so the scan can still count it."""
+    spent = {"input": 0, "output": 0, "calls": 0}
     try:
-        raw_rows, usage, splits = _read(unit, event_type, staff, model, caller)
+        raw_rows, splits = _read(unit, event_type, staff, model, caller, spent, cut=cut)
     except Refused as e:
-        return {**_entry(unit, event_type, model, [], {"input": 0, "output": 0}, 0), "refused": str(e)}
-    return _entry(unit, event_type, model, raw_rows, usage, splits)
+        entry = _entry(unit, event_type, model, [], {"input": spent["input"], "output": spent["output"]}, 0)
+        return {**entry, "calls": spent["calls"], "refused": str(e)}
+    except Exception as e:
+        try:
+            e.usage = dict(spent)
+        except AttributeError:
+            pass
+        raise
+    entry = _entry(unit, event_type, model, raw_rows, {"input": spent["input"], "output": spent["output"]}, splits)
+    return {**entry, "calls": spent["calls"]}
 
 
 def _entry(unit: Unit, event_type: str, model: str, raw_rows: list, usage: dict, splits: int, batch: bool = False) -> dict:
@@ -370,16 +439,27 @@ BATCH_POLL_SECONDS = 30
 BATCH_CANCEL_GRACE_SECONDS = 600
 
 
+@dataclass
+class BatchOutcome:
+    entries: dict      # cache entries by key, for the units the batch read
+    leftover: list     # keys to read directly
+    note: str
+    cut: set           # leftover keys whose batch answer was cut off: read their halves directly
+    spent: dict        # usage of the batch answers that were not kept (cut off, declined, malformed)
+
+
 def extract_batch(jobs: dict, staff: list[str], model: str, client=None, wait_minutes: float = 60,
-                  sleep=None, clock=None) -> tuple[dict, list[str], str]:
+                  sleep=None, clock=None) -> BatchOutcome:
     """Read many units through the Message Batches API, at half the price of direct calls.
 
-    jobs maps cache key -> (unit, event_type). Returns (entries by key, keys left over, note).
+    jobs maps cache key -> (unit, event_type). Returns a BatchOutcome.
     A scan is never urgent, so the discount is worth the wait; but a scan must also finish.
     If the batch is not done within wait_minutes it is cancelled, whatever finished is kept
     (a cancelled batch still returns its finished results, and the rest are not billed), and
     the leftovers go back to the caller to read directly. So are any that failed or ran out
-    of room: the direct path knows how to split a unit, a batch does not.
+    of room: the direct path knows how to split a unit, a batch does not. A unit that ran out
+    of room is listed in cut, so the direct path reads its halves without first sending it
+    whole again; and every answer not kept is still billed, so its usage is in spent.
     """
     client = client or get_client()
     sleep, clock = sleep or time.sleep, clock or time.monotonic
@@ -395,17 +475,25 @@ def extract_batch(jobs: dict, staff: list[str], model: str, client=None, wait_mi
             cancelled, deadline = True, clock() + BATCH_CANCEL_GRACE_SECONDS
             note = f"The batch was not done after {wait_minutes:g} minutes; the rest were read directly."
         elif cancelled and clock() >= deadline:
-            return {}, list(jobs), "The batch could not be cancelled in time; every section was read directly."
+            return BatchOutcome({}, list(jobs), "The batch could not be cancelled in time; every section was read directly.",
+                                set(), {"input": 0, "output": 0, "calls": 0})
         sleep(BATCH_POLL_SECONDS)
         batch = client.messages.batches.retrieve(batch.id)
     entries: dict = {}
+    cut: set = set()
+    spent = {"input": 0, "output": 0, "calls": 0}
     for item in client.messages.batches.results(batch.id):
         if item.custom_id not in jobs or item.result.type != "succeeded":
             continue
         try:
             rows, usage = parse_response(item.result.message)
-        except (OutOfRoom, RuntimeError, Refused):
-            continue  # read directly: it can split, and it can fall back to another model
+        except OutOfRoom as e:
+            add_usage(spent, e.usage)
+            cut.add(item.custom_id)  # read directly, in halves
+            continue
+        except (RuntimeError, Refused) as e:
+            add_usage(spent, getattr(e, "usage", None))
+            continue  # read directly: it can fall back to another model
         unit, event_type = jobs[item.custom_id]
-        entries[item.custom_id] = _entry(unit, event_type, model, rows, usage, 0, batch=True)
-    return entries, [k for k in jobs if k not in entries], note
+        entries[item.custom_id] = {**_entry(unit, event_type, model, rows, usage, 0, batch=True), "calls": 1}
+    return BatchOutcome(entries, [k for k in jobs if k not in entries], note, cut, spent)

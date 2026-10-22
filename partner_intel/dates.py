@@ -1,6 +1,7 @@
 """Meeting date, in the order the admin chose: the text, then the file name, then the date
-the file was uploaded to Box. Every answer carries its source, so a date that is only an
-estimate (ESTIMATED_SOURCES) can be filtered out later.
+the file was uploaded to Box (for a file read for the first time, the earlier of that and the
+file's own last-modified time: see estimated_written). Every answer carries its source, so a
+date that is only an estimate (ESTIMATED_SOURCES) can be filtered out later.
 
 Two rules keep the text step honest:
   1. Only the top of the document, or a line labelled "Date", counts. A date deep in the
@@ -130,6 +131,33 @@ def month_from_name(name: str, uploaded: date | None) -> date | None:
             year = uploaded.year if month <= uploaded.month else uploaded.year - 1
             return _valid(year, month, 1)
     return None
+
+
+# A file's own timestamp earlier than this is a bad clock, not a date.
+OLDEST_FILE_TIME = datetime(2000, 1, 1)
+
+
+def _stamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return at.replace(tzinfo=None) - (at.utcoffset() or timedelta(0))  # as naive UTC, to compare
+
+
+def estimated_written(created_at: str | None, content_modified_at: str | None) -> str:
+    """The best guess at when an undated file was written, for a file read for the first time:
+    the earlier of the file's own last-modified time (Box content_modified_at, which the
+    uploader's machine supplies and Box keeps) and the time it was uploaded to Box (created_at).
+    A batch of old notes uploaded today keeps the dates they were last edited, instead of all
+    reading as this week's. Returns the chosen timestamp as Box wrote it, or ""."""
+    best, best_at = created_at or "", _stamp(created_at)
+    at = _stamp(content_modified_at)
+    if at and at >= OLDEST_FILE_TIME and (best_at is None or at < best_at):
+        best = content_modified_at or ""
+    return best
 
 
 def resolve_date(name: str, text: str, created_at: str | None, *, text_allowed: bool = True,

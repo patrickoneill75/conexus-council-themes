@@ -9,7 +9,8 @@
  *
  * Admin routes reuse Connector's shared admin accounts (see
  * src/beta_auth.js's requireBetaAuth), same as src/consensus.js -- no separate
- * control-panel password.
+ * control-panel password. The page at /inm/ needs use access to "pcn" for the routes it
+ * reads; everything else needs a pcn app admin or an overall admin.
  *
  * Box: this mini app uses the SAME shared, user-delegated Box connection every other
  * tool in this repo uses (see worker.js's box/authorize-url, box/callback, box/status)
@@ -71,7 +72,7 @@
  * below, since GitHub Actions has no beta-account session.
  */
 
-import { requireBetaAuth } from "./beta_auth.js";
+import { requireBetaAuth, canUseApp, canAdminApp, NO_APP_ACCESS, NO_SETTINGS_ACCESS } from "./beta_auth.js";
 
 const PROJECTS_KEY = "pcn:projects";
 const DEFAULT_PROJECT_ID = "pcn";
@@ -469,6 +470,13 @@ export async function handlePcnApi(route, request, env) {
 
   const auth = await requireBetaAuth(request, env);
   if (!auth) return json({ error: "Not signed in" }, 401);
+  // The Issue Network Mapper page (/inm/) reads the project list, a project, and its network and
+  // timeline: those need use access. Every other route is the control panel's, so it needs a pcn app
+  // admin or an overall admin.
+  const useRoute = method === "GET" && (route === "projects" || /^projects\/[^/]+(?:\/(?:network|timeline))?$/.test(route));
+  if (useRoute ? !canUseApp(auth, "pcn") : !canAdminApp(auth, "pcn")) {
+    return json({ error: useRoute ? NO_APP_ACCESS : NO_SETTINGS_ACCESS }, 403);
+  }
 
   // GET box/folders?id=0 -- same folder-picker copy Consensus's survey builder has,
   // gated by requireBetaAuth like everything else admin-side in this file. Not

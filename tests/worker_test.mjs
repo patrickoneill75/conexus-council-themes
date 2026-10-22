@@ -222,8 +222,12 @@ test("beta_auth: BUG admin Reset looked like it did nothing while KV still serve
   assert.match(used.reason, /expired or was already used/, "a spent link says so");
   const asSession = await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${link}` } }), env);
   assert.equal(asSession.status, 401, "a reset link is never a session");
-  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com" }, token), env);
-  const other = await (await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "other@example.com" }, token), env)).json();
+  // Resetting this admin's own password ended the session that asked for it, so sign in again.
+  const oldSession = await beta("me", req("/api/beta/me", { headers: { authorization: `Bearer ${token}` } }), env);
+  assert.equal(oldSession.status, 401, "a password reset ends the sessions issued before it");
+  const fresh = (await (await beta("login", jsonReq("/api/beta/login", "POST", { identifier: "poneill", password: "brand-new-pass" }), env)).json()).token;
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "other@example.com" }, fresh), env);
+  const other = await (await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "other@example.com" }, fresh), env)).json();
   const wrong = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
     { email, username: "poneill", password: "hijack-pass-1", reset: decodeURIComponent(other.link.split("reset=")[1]) }), env);
   assert.equal(wrong.status, 410, "a link for one admin cannot set another's password");
@@ -255,8 +259,9 @@ test("beta_auth: a new admin is added, claims an account, and cannot be claimed 
 
 test("beta_auth: every admin route refuses an anonymous caller", async () => {
   const env = makeEnv();
-  for (const [route, method] of [["admins", "GET"], ["admins", "POST"],
-                                 ["admins/reset", "POST"], ["app-visibility", "POST"]]) {
+  for (const [route, method] of [["admins", "GET"], ["admins", "POST"], ["admins/reset", "POST"],
+                                 ["admins/update", "POST"], ["admins/remove", "POST"],
+                                 ["sign-out-everywhere", "POST"], ["app-visibility", "POST"]]) {
     const request = method === "GET" ? req(`/api/beta/${route}`) : jsonReq(`/api/beta/${route}`, "POST", {});
     assert.equal((await beta(route, request, env)).status, 401, `${method} ${route}`);
   }
@@ -1286,8 +1291,9 @@ test("worker: the Box OAuth callback rejects an unknown state", async () => {
 });
 
 test("worker: a Box authorize-url issues a single-use state", async () => {
-  const env = makeEnv();
-  const body = await (await workerModule.default.fetch(req("/api/box/authorize-url"), env, {})).json();
+  const { env, token } = await signedInEnv();
+  const body = await (await workerModule.default.fetch(req("/api/box/authorize-url",
+    { headers: { authorization: `Bearer ${token}` } }), env, {})).json();
   const state = new URL(body.url).searchParams.get("state");
   assert.ok(state, "a state parameter must be issued");
   assert.equal(await env.BOX_KV.get(`box:state:${state}`), "1");
@@ -2671,7 +2677,7 @@ test("workforce: junk in the role form cannot become junk in the totals", async 
 
 /* ================================================================== partner_intel */
 const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan, runSummariesAhead, questionWindow, looksLikeMatch,
-  AHEAD_PROGRAMS, SUMMARY_BOX_FILE } = await mod("partner_intel.js");
+  AHEAD_PROGRAMS, SUMMARY_BOX_FILE, councilText, historyFileName } = await mod("partner_intel.js");
 const pi = (route, request, env) => handlePartnerIntelApi(route, request, env);
 const piReq = (route, method, body, token) => jsonReq(`/api/partner-intel/${route}`, method, body, token);
 const piGet = (route, token) => req(`/api/partner-intel/${route}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
@@ -2819,13 +2825,14 @@ test("partner_intel: pipeline state round-trips across several shards and sheds 
   for (let i = 0; i < 5; i++) registry[`f${i}`] = { name: `n${i}`, units: [] };
   assert.equal((await pi("relay/state", relay("state", "POST", { registry, cache }), env)).status, 200);
   const meta = JSON.parse(await env.BOX_KV.get("pi:state:meta"));
-  assert.ok(meta.cacheShards >= 2, `expected several shards, got ${meta.cacheShards}`);
+  assert.ok(meta.pages.cache >= 2, `expected several pages, got ${meta.pages.cache}`);
   const back = await (await pi("relay/state", relay("state", "GET"), env)).json();
   assert.equal(Object.keys(back.cache).length, 700);
   assert.equal(back.cache.k699.rows[0].detail, "x".repeat(4000) + 699);
   await pi("relay/state", relay("state", "POST", { registry, cache: { k0: cache.k0 } }), env);
-  assert.equal(await env.BOX_KV.get(`pi:state:cache:${meta.cacheShards - 1}`), meta.cacheShards - 1 === 0 ? null : null,
-    "shards beyond the new count are deleted");
+  assert.equal(await env.BOX_KV.get(`pi:state:w:${meta.write}:cache:${meta.pages.cache - 1}`), null,
+    "the previous state's pages are deleted once the new one is committed");
+  assert.equal(Object.keys((await (await pi("relay/state", relay("state", "GET"), env)).json()).cache).length, 1);
 });
 
 test("partner_intel: Trending Topics keeps to the window and leaves out Conexus-internal rows", async () => {
@@ -3596,8 +3603,10 @@ test("partner_intel: source folders filter every view, and naming Board Meetings
     ins({ title: "both", source_folders: ["ADAPT", "CIAIC"], sources: [{ id: "f5", name: "x.docx", path: "Raw Notes/ADAPT" }] }),
   ]);
   const titles = async (q) => (await getJson(`insights?${q}`, env, token)).items.map((i) => i.title).sort();
-  assert.deepEqual(await titles("source=CIAIC"), ["both", "ciaic issue"], "derived from the path, and a merged row matches any of its sources");
-  assert.deepEqual(await titles("source=ADAPT%7CCIAIC"), ["adapt issue", "both", "ciaic issue"], "several sources at once");
+  // The CIAIC folder is shown as Council; a link still naming CIAIC finds the same rows.
+  assert.deepEqual(await titles("source=Council"), ["Council issue", "both"], "derived from the path, and a merged row matches any of its sources");
+  assert.deepEqual(await titles("source=CIAIC"), ["Council issue", "both"], "an old link naming CIAIC");
+  assert.deepEqual(await titles("source=ADAPT%7CCouncil"), ["Council issue", "adapt issue", "both"], "several sources at once");
   assert.deepEqual(await titles("source=(root)"), ["loose file"]);
   assert.deepEqual(await titles("source=Board%20Meetings"), ["board issue"], "an explicit source choice includes the internal rows");
   assert.equal((await titles("")).includes("board issue"), false, "and without it they stay out");
@@ -3605,7 +3614,7 @@ test("partner_intel: source folders filter every view, and naming Board Meetings
   assert.equal(home.counts.issues, 2, "Home follows the source choice too; the row from two sources counts under each");
   assert.equal((await getJson("home?days=30&source=CIAIC", env, token)).counts.issues, 2);
   const facets = await getJson("facets", env, token);
-  assert.deepEqual(facets.sources, [{ value: "(root)", count: 1 }, { value: "ADAPT", count: 2 }, { value: "Board Meetings", count: 1 }, { value: "CIAIC", count: 2 }]);
+  assert.deepEqual(facets.sources, [{ value: "(root)", count: 1 }, { value: "ADAPT", count: 2 }, { value: "Board Meetings", count: 1 }, { value: "Council", count: 2 }]);
   assert.equal((await pi("facets", piGet("facets"), env)).status, 401);
 });
 
@@ -4567,7 +4576,7 @@ test("partner_intel: each person's Ask history is theirs alone, kept in Box unde
   assert.equal(r1.saved.box, true);
   assert.deepEqual(created.find((c) => c.name === "Ask history"), { name: "Ask history", parent: { id: "22" } }, "the Ask history folder is made inside the Database folder");
   assert.equal(savedAnswers.length, 1, "the answer is also saved to Box as a saved answer, in its own file");
-  assert.equal(uploads[0].name, "ask-history-poneill@conexusindiana.com.json");
+  assert.match(uploads[0].name, /^ask-history-poneill@conexusindiana\.com-[0-9a-f]{8}\.json$/);
   await withFetch(box, () => pi("assistant", askBox(token, { question: "And quality?", mode: "answer", conversationId: r1.conversation.id }), env));
   assert.equal(created.filter((c) => c.name === "Ask history").length, 1, "the folder is found the second time, not made again");
   assert.match(uploads[1].url, /files\/900\/content$/, "the history file is updated as a new version, not uploaded again (Box would 409)");
@@ -4860,7 +4869,7 @@ test("partner_intel: with a Cache folder chosen, summaries and the scan's caches
 /* ---------------------------------------------------- trending summaries written ahead, kept in Box */
 
 test("partner_intel: new data queues Home and the main programs, and the cron writes their summaries once, then saves them to Box", async () => {
-  assert.deepEqual(AHEAD_PROGRAMS, ["Field Demos", "CIAIC", "PCN", "ITA", "Board Meetings"]);
+  assert.deepEqual(AHEAD_PROGRAMS, ["Field Demos", "Council", "PCN", "ITA", "Board Meetings"]);
   const rows = [
     ...trendingRows(),
     ins({ topic: "quality", company_id: "c-c", title: "CIAIC scrap", sources: [{ id: "f9", name: "c.docx", path: "Notes/CIAIC/c.docx" }], date: isoAgo(200) }),
@@ -5119,6 +5128,714 @@ test("partner_intel: BUG the member file's program column, a 'Former Member' sta
   assert.deepEqual(acme.contacts, ["Ann A", "Al B"]);
   assert.equal(acme.program, "CIAIC; PCN", "the 'Programs & Councils' column is read");
   assert.equal(beta.status, "Inactive", "a former member is not shown as a Council Member");
+});
+
+/* ------------------------------------------------------------- the Council, compact headlines, security, pages */
+
+/** A named function's source from a page or script, braces matched, so a test can run it on its own. */
+function sourceOf(file, name) {
+  const src = fs.readFileSync(file, "utf8");
+  const start = src.search(new RegExp(`function ${name}\\s*\\(`));
+  assert.ok(start >= 0, `function ${name} not found in ${path.basename(file)}`);
+  let depth = 0, i = src.indexOf("{", start);
+  for (; i < src.length; i++) { if (src[i] === "{") depth++; else if (src[i] === "}" && --depth === 0) break; }
+  return src.slice(start, i + 1);
+}
+const PUB_PI = path.join(path.dirname(SRC), "public", "partner-intel");
+const escHtml = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const EVIL = "<img src=x onerror=alert(1)>";
+
+test("partner_intel: BUG the program the notes call CIAIC was shown as CIAIC; staff see Council, and quotes and file names stay as written", async () => {
+  const rows = [ins({ id: "cc1", title: "CIAIC members short on technicians", detail: "At the CIAIC, members said hiring is slow.",
+    quote: "the CIAIC group agreed", meeting_id: "m-cc", meeting_label: "Q2 2025 CIAIC Notes", event_type: "CIAIC Council Meeting",
+    series: "CIAIC Council Meeting", sources: [{ id: "77", name: "Q2 2025 CIAIC Notes.docx", path: "Notes/CIAIC/Q2 2025 CIAIC Notes.docx" }] })];
+  const { env, token } = await piEnv(rows);
+  assert.deepEqual((await getJson("programs", env, token)).programs.map((p) => p.name), ["Council"]);
+  const item = (await getJson("insights?days=30", env, token)).items[0];
+  assert.equal(item.title, "Council members short on technicians");
+  assert.equal(item.detail, "At the Council, members said hiring is slow.");
+  assert.equal(item.eventType, "Council Meeting");
+  assert.equal(item.quote, "the CIAIC group agreed", "a quote keeps the words of the notes");
+  assert.equal(item.sources[0].name, "Q2 2025 CIAIC Notes.docx", "a Box file keeps its name, so it can be found in Box");
+  const program = await getJson("program?name=Council", env, token);
+  assert.equal(program.meetings[0].label, "Q2 2025 Council Notes");
+  assert.equal((await getJson("program?name=CIAIC", env, token)).program.name, "Council", "an old link naming CIAIC still opens it");
+  assert.equal(councilText("an CIAIC meeting with the Conexus Indiana Advanced Industries Council"), "a Council meeting with the Conexus Council");
+  assert.equal(councilText("Southern CIAIC"), "Southern Council");
+});
+
+test("partner_intel: BUG Ask could call the Council 'CIAIC', and a question about 'council members' was taken to be about the Council program", async () => {
+  const rows = [ins({ id: "ca1", title: "Hiring at the council meeting", sources: [{ id: "1", name: "c.docx", path: "Notes/CIAIC/c.docx" }] }),
+    ins({ id: "ca2", title: "PCN point", sources: [{ id: "2", name: "p.docx", path: "Notes/PCN/p.docx" }] })];
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const r = await withFetch(assistantClaude("The CIAIC raised hiring [n1].", ["What did CIAIC say about wages?"], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "What has CIAIC raised?", mode: "answer" }), env)).json());
+  const sent = bodies.find((b) => b.tools[0].name === "write_answer");
+  assert.match(sent.system, /never CIAIC/);
+  assert.ok(sent.messages[0].content.includes('<program name="Council">'), "CIAIC in the question is the Council program");
+  assert.ok(!sent.messages[0].content.includes("CIAIC"), `nothing Claude reads calls it CIAIC: ${(sent.messages[0].content.match(/.{0,80}CIAIC.{0,40}/g) || []).join(" | ")}`);
+  assert.equal(r.turn.answer, "The Council raised hiring [1].", "and an answer that says CIAIC anyway is shown saying Council");
+  assert.deepEqual(r.turn.followUps, ["What did Council say about wages?"]);
+  const members = [];
+  await withFetch(assistantClaude("A [n1].", [], members), () =>
+    pi("assistant", askBox(token, { question: "Which council members raised hiring?", mode: "answer" }), env));
+  assert.ok(!members.find((b) => b.tools[0].name === "write_answer").messages[0].content.includes('<program name="Council">'),
+    "council members means membership, not the Council's meetings");
+});
+
+test("partner_intel: BUG a trending summary could call the Council 'CIAIC'", async () => {
+  const { env, token } = await piEnv([ins({ topic: "quality", company_id: "c-a" }), ins({ topic: "quality", company_id: "c-b" })], { partner_intel_claude_api: "k" });
+  let system = "";
+  const out = await withFetch((url, init) => { system = JSON.parse(init.body).system;
+    return summaryOut(topicsIn(init).payload, (t) => ({ topic_id: t.topic_id, bullets: [{ text: "The CIAIC raised scrap.", evidence_ids: [t.evidence[0].id] }] })); },
+  async () => (await pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env)).json());
+  assert.match(system, /never CIAIC/);
+  assert.equal(out.summaries.quality.bullets[0].text, "The Council raised scrap.");
+});
+
+test("partner_intel: COST Ask headlines sit under their program and topic instead of repeating both on every line, and still cite the right note", async () => {
+  const rows = Array.from({ length: 220 }, (_, k) => ins({ id: `hl${k}`, company_id: k % 2 ? "c-a" : "c-b", topic: k % 3 ? "quality" : "talent_pipeline",
+    title: `Point ${k}`, date: isoAgo(k % 80), meeting_id: `hm${k}`, meeting_label: `M${k}`,
+    sources: [{ id: `s${k}`, name: "x.docx", path: k % 2 ? "Notes/PCN/x.docx" : "Notes/CIAIC/x.docx" }] }));
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const bodies = [];
+  await withFetch(assistantClaude("A [n1].", [], bodies), () => pi("assistant", askBox(token, { question: "What came up?", mode: "answer" }), env));
+  const prompt = bodies.find((b) => b.tools[0].name === "write_answer").messages[0].content;
+  const block = prompt.slice(prompt.indexOf("<all_notes>"), prompt.indexOf("</all_notes>"));
+  const lines = block.split("\n").filter((l) => l.startsWith("[n"));
+  assert.ok(lines.length > 0);
+  assert.ok(lines.every((l) => /^\[n\d+\] \d{4}-\d{2}-\d{2} · (Acme Corp|Beta Works) · Issue · Point \d+$/.test(l)), lines.slice(0, 3).join("\n"));
+  assert.equal(block.split("\n").filter((l) => l === "Program: PCN").length, 1, "each program heading is written once");
+  assert.ok(block.split("\n").filter((l) => l.startsWith("Topic: ")).length <= 4, "and each topic once under it");
+  // The reference a headline carries cites that note.
+  const line = lines[lines.length - 1];
+  const ref = line.slice(1, line.indexOf("]"));
+  const id = `hl${line.match(/Point (\d+)$/)[1]}`;
+  const r = await withFetch(assistantClaude(`About point five [${ref}].`), async () =>
+    (await pi("assistant", askBox(token, { question: "What came up?", mode: "answer", fresh: true }), env)).json());
+  assert.equal(r.turn.sources[0].id, id);
+});
+
+test("partner_intel: BUG numbers in the scan report and usage went into the control panel as HTML, so a crafted report could run script", () => {
+  const file = path.join(PUB_PI, "control-panel", "index.html");
+  const out = {};
+  const el = (id) => (out[id] = out[id] || {});
+  const PI = { fmtStamp: (s) => String(s), esc: escHtml };
+  const report = new Function("el", "PI", "esc", `${sourceOf(file, "num")}\n${sourceOf(file, "renderReport")}\nreturn renderReport;`)(el, PI, escHtml);
+  report({ started_at: "t", mode: "scan", trial_limit: EVIL, files_seen: EVIL, insights: EVIL, tokens_in: EVIL, tokens_out: EVIL,
+    claude_calls_batch: EVIL, claude_calls: EVIL, units_from_archive: EVIL, ignored: { docx: EVIL }, errors: [{ file: EVIL, error: EVIL }] });
+  assert.ok(!out.report.innerHTML.includes("<img"), out.report.innerHTML);
+  const usage = new Function("el", "PI", "esc", "USAGE_ROWS", `${sourceOf(file, "num")}\n${sourceOf(file, "renderUsage")}\nreturn renderUsage;`)(
+    el, PI, escHtml, [["summaries", "Trending topic summaries"]]);
+  usage({ thisMonth: { month: "2026-10", summaries: { calls: EVIL, input: EVIL, output: EVIL, reused: EVIL } }, lastMonth: { month: "2026-09" } });
+  assert.ok(!out.usage.innerHTML.includes("<img"), out.usage.innerHTML);
+});
+
+test("partner_intel: BUG an Ask history file read back from Box went onto the page unchecked", async () => {
+  const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await republish(env, assistantRows(), "vh");
+  await setFolder(env, token, "data", "22", "Database");
+  const me = "poneill@conexusindiana.com";
+  const body = { owner: me, conversations: [{ id: "c1", title: "Mine", turns: [
+    { id: "t1", q: "Q", kind: "answer", answer: "A [1]", memory: { from: "2026-10-01T00:00:00Z", newNotes: EVIL, mode: "reused" },
+      considered: { insights: EVIL, notes: 3 }, sources: [{ ref: EVIL, id: "s1", kind: "problem", title: "T", detail: "D", date: EVIL,
+        company: { id: "c-a", name: "Acme" }, files: [{ name: "f.docx", url: "javascript:alert(1)" }] }] },
+    { id: "t2", q: "Who?", kind: "matches", answer: "s", matches: [{ strength: EVIL, why: "w", company: { id: "c-a", name: "Acme" }, refs: [EVIL, 1] }], sources: [] }] }] };
+  const box = (files) => (url) => {
+    const u = new URL(url);
+    const folders = { 22: [{ type: "folder", id: "50", name: "Ask history" }], 50: Object.keys(files).map((name, k) => ({ type: "file", id: String(900 + k), name })) };
+    const items = u.pathname.match(/\/folders\/(\d+)\/items$/);
+    if (items) return okJson({ total_count: (folders[items[1]] || []).length, entries: folders[items[1]] || [] });
+    const content = u.pathname.match(/\/files\/(\d+)\/content$/);
+    if (content) return new Response(JSON.stringify(Object.values(files)[Number(content[1]) - 900]));
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const conv = (await withFetch(box({ [historyFileName(me)]: body }), () => getJson("assistant/conversation?id=c1", env, token))).conversation;
+  const [t1, t2] = conv.turns;
+  assert.equal(t1.memory.newNotes, 0);
+  assert.equal(t1.considered.insights, undefined);
+  assert.equal(t1.considered.notes, 3);
+  assert.equal(t1.sources[0].ref, 0);
+  assert.equal(t1.sources[0].date, "");
+  assert.equal(t1.sources[0].files[0].url, "", "a link goes only to a Box file");
+  assert.equal(t2.matches[0].strength, "low");
+  assert.deepEqual(t2.matches[0].refs, [1]);
+  // Shown in the page, a stored number cannot become HTML either.
+  const cite = new Function("esc", `${sourceOf(path.join(PUB_PI, "askbox.js"), "num")}\n${sourceOf(path.join(PUB_PI, "askbox.js"), "cite")}\nreturn cite;`)(escHtml);
+  assert.ok(!cite(`"><img src=x onerror=alert(1)>`, "t").includes("<img"));
+});
+
+test("partner_intel: BUG two addresses that differ only in a symbol shared one Ask history file in Box, and either could read the other's", async () => {
+  assert.notEqual(historyFileName("a+b@x.test"), historyFileName("a_b@x.test"));
+  const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await republish(env, assistantRows(), "vl");
+  await setFolder(env, token, "data", "22", "Database");
+  // A file under the old shared name, written for someone else.
+  const theirs = JSON.stringify({ owner: "someone@else.test", conversations: [{ id: "c9", title: "Theirs", turns: [] }] });
+  const box = (url) => {
+    const u = new URL(url);
+    if (/\/folders\/22\/items$/.test(u.pathname)) return okJson({ total_count: 1, entries: [{ type: "folder", id: "50", name: "Ask history" }] });
+    if (/\/folders\/50\/items$/.test(u.pathname)) return okJson({ total_count: 1, entries: [{ type: "file", id: "901", name: "ask-history-poneill@conexusindiana.com.json" }] });
+    if (u.pathname === "/2.0/files/901/content") return new Response(theirs);
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  assert.deepEqual((await withFetch(box, () => getJson("assistant/history", env, token))).conversations, []);
+});
+
+test("partner_intel: BUG the usage meter left out a paid attempt that came back without the tool call, or was declined", async () => {
+  const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
+  let n = 0;
+  await withFetch((url, init) => {
+    if (JSON.parse(init.body).tools[0].name === "search_terms") return termsOut(["x"]);
+    return ++n === 1 ? okJson({ content: [{ type: "text", text: "Here is my answer." }], stop_reason: "end_turn", usage: { input_tokens: 1000, output_tokens: 50 } })
+      : answerOut("A [n1].");
+  }, () => pi("assistant", askBox(token, { question: "What about hiring?", mode: "answer" }), env));
+  const month = () => JSON.parse(env.BOX_KV.store.get(`pi:usage:${new Date().toISOString().slice(0, 7)}`)).assistant;
+  assert.equal(month().calls, 3, "search terms, the attempt with no tool call, and the answer");
+  assert.equal(month().input, 5 + 1000 + 900);
+  await withFetch((url, init) => (JSON.parse(init.body).tools[0].name === "search_terms" ? termsOut(["y"])
+    : okJson({ content: [], stop_reason: "refusal", usage: { input_tokens: 700, output_tokens: 1 } })),
+  () => pi("assistant", askBox(token, { question: "What about quality?", mode: "answer" }), env));
+  assert.equal(month().input, 5 + 1000 + 900 + 5 + 700, "a declined request is paid for too");
+});
+
+test("partner_intel: BUG a follow-up after a partner search could not see which partners it found", async () => {
+  const { env, token } = await piEnv(SOLVERS(), { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const first = await withFetch(assistantClaude("unused", [], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "Who can help with quality inspection?", mode: "match" }), env)).json());
+  await withFetch(assistantClaude("The first one [n1].", [], bodies), () =>
+    pi("assistant", askBox(token, { question: "What else has the first one said?", mode: "answer", conversationId: first.conversation.id }), env));
+  const prompt = bodies.filter((b) => b.tools[0].name === "write_answer").pop().messages[0].content;
+  assert.match(prompt.slice(prompt.indexOf("<earlier_conversation>")), /Partners found: 1\. Acme Corp \(high match\): Did it\./);
+});
+
+test("partner_intel: BUG a meeting page said nine companies but listed eight, and left out files without saying so", async () => {
+  const partners = Array.from({ length: 9 }, (_, k) => ({ id: `c-m${k}`, name: `Maker ${k}`, industry: "Metals", status: "Active", program: "",
+    participationId: `PM${k}`, contacts: [], aliases: [] }));
+  const rows = partners.map((p, k) => ins({ company_id: p.id, meeting_id: "m-big", meeting_label: "Big meeting", meeting_kind: "meeting", date: "2026-10-01",
+    sources: [{ id: String(500 + k), name: `file${k}.docx`, path: "Notes/PCN" }] }));
+  const { env, token } = await piEnv(rows);
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners, aliases: {}, staff: [], updatedAt: "r1" }));
+  const m = (await getJson("program?name=PCN", env, token)).meetings[0];
+  assert.deepEqual([m.companyCount, m.companies.length, m.fileCount, m.files.length], [9, 8, 9, 5]);
+  assert.match(fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8"), /m\.companyCount > m\.companies\.length \? ", and "/);
+});
+
+test("partner_intel: BUG pages: an answer landed in whatever conversation was open, a non-member was saved as a former member, an emptied last page showed nothing, Home hid how many dates are estimates", () => {
+  const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  const page = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  const panel = fs.readFileSync(path.join(PUB_PI, "control-panel", "index.html"), "utf8");
+  assert.match(box, /box\.busyIn = convId/);
+  assert.match(box, /if \(\(box\.conv \? box\.conv\.id : ""\) !== convId\)/, "the Ask box leaves the screen alone when another conversation is open");
+  assert.match(page, /if \(\(askView\.conv \? askView\.conv\.id : ""\) !== askedIn\)/, "and so does the Ask page");
+  assert.match(panel, /<option value="Non-member">/);
+  assert.match(panel, /\["Active", "Inactive", "Non-member"\]\.indexOf\(p\.status\) >= 0 \? p\.status/);
+  assert.match(panel, /!r\.items\.length && r\.total > 0 && checkOffset > 0/);
+  assert.match(page, /data-exact=\\?"1/);
+});
+
+/* ============================================================ roles and app access
+ * Every account is an overall admin or a user; users are given whole apps, and can be made admin of
+ * particular apps. People are put on the list by writing it directly, the way a list written before
+ * roles existed looks in KV, so these tests also run against code that predates roles.
+ */
+const { handlePcnApi } = await mod("pcn.js");
+const ALLOWLIST = "beta:admin-emails";
+const bearerReq = (url, token, init = {}) =>
+  req(url, { ...init, headers: { ...(init.headers || {}), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+
+/** Put someone on the list with these fields, let them set a password, and return their session. */
+async function personSession(env, email, fields = {}) {
+  const list = JSON.parse((await env.BOX_KV.get(ALLOWLIST)) || "[]");
+  list.push({ email, username: null, ...fields });
+  await env.BOX_KV.put(ALLOWLIST, JSON.stringify(list));
+  const res = await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email, username: email.split("@")[0], password: "long-enough-1" }), env);
+  assert.equal(res.status, 200, `${email} should be able to set a password`);
+  return (await res.json()).token;
+}
+const meOf = async (env, token) => beta("me", bearerReq("/api/beta/me", token), env);
+
+/** The login handler waits a flat 300ms on every attempt. Run the many attempts below without it. */
+async function withoutLoginDelay(fn) {
+  const real = globalThis.setTimeout;
+  globalThis.setTimeout = (cb, ms, ...args) => real(cb, 0, ...args);
+  try { return await fn(); } finally { globalThis.setTimeout = real; }
+}
+const loginAs = async (env, identifier, password, ip) => beta("login", req("/api/beta/login", {
+  method: "POST",
+  headers: { "content-type": "application/json", ...(ip ? { "cf-connecting-ip": ip } : {}) },
+  body: JSON.stringify({ identifier, password }),
+}), env);
+
+test("access: an allowlist entry from before roles is an overall admin, so nobody loses access on deploy", async () => {
+  const env = makeEnv();
+  const key = "beta:admin-account:old@example.com";
+  // Set a password through the real flow, then put the list and the account back in the shape the code
+  // before roles wrote them: no role, no apps, no session version.
+  await env.BOX_KV.put(ALLOWLIST, JSON.stringify([{ email: "old@example.com", username: null }]));
+  await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email: "old@example.com", username: "old", password: "long-enough-1" }), env);
+  const { password_hash, password_salt } = JSON.parse(await env.BOX_KV.get(key));
+  await env.BOX_KV.put(ALLOWLIST, JSON.stringify([{ email: "old@example.com", username: "old" }]));
+  await env.BOX_KV.put(key, JSON.stringify({ email: "old@example.com", username: "old", password_hash, password_salt,
+    created_at: "2026-01-01T00:00:00Z" }));
+
+  const login = await loginAs(env, "old", "long-enough-1");
+  assert.equal(login.status, 200);
+  const token = (await login.json()).token;
+  const me = await (await meOf(env, token)).json();
+  assert.equal(me.role, "admin", "no role on file means an overall admin");
+  assert.ok(me.apps.includes("partner-intel") && me.appAdmin.includes("council-data"), "an admin's lists name every app");
+  assert.equal((await beta("admins", bearerReq("/api/beta/admins", token), env)).status, 200, "and can manage people");
+  assert.equal((await handleMcmApi("box/status", bearerReq("/api/mcm/box/status", token), env)).status, 200);
+  assert.notEqual((await pi("status", piGet("status", token), env)).status, 403);
+  // Saving the list once writes the admin role down, and the person keeps it.
+  await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com" }, token), env);
+  assert.deepEqual(JSON.parse(await env.BOX_KV.get(ALLOWLIST)).map((a) => [a.email, a.role]),
+    [["old@example.com", "admin"], ["new@example.com", "user"]]);
+  assert.equal((await meOf(env, token)).status, 200, "the session from before still works");
+});
+
+test("access: a newly added person is a user with no apps, and /me says so", async () => {
+  const { env, token } = await signedInEnv();
+  const add = await beta("admins", jsonReq("/api/beta/admins", "POST", { email: "new@example.com" }, token), env);
+  assert.equal(add.status, 200);
+  assert.deepEqual((await add.json()).person, { email: "new@example.com", username: null, role: "user", apps: [], appAdmin: [] });
+  const t = (await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email: "new@example.com", username: "newbie", password: "long-enough-1" }), env)).json()).token;
+  assert.deepEqual(await (await meOf(env, t)).json(),
+    { email: "new@example.com", username: "newbie", role: "user", apps: [], appAdmin: [] });
+  const people = (await (await beta("admins", bearerReq("/api/beta/admins", token), env)).json()).people;
+  assert.deepEqual(people.map((p) => [p.email, p.role, p.has_password]),
+    [["poneill@conexusindiana.com", "admin", true], ["new@example.com", "user", true]]);
+});
+
+test("access: BUG any signed-in account could read Partner Intelligence, with no way to give it to some people only", async () => {
+  const { env } = await piEnv([ins()]);
+  const plain = await personSession(env, "plain@example.com", { role: "user", apps: [] });
+  const other = await personSession(env, "mcm-user@example.com", { role: "user", apps: ["mcm"] });
+  for (const token of [plain, other]) {
+    for (const route of ["home", "insights", "companies", "company?id=c-a", "programs", "facets", "assistant/history", "recent-questions"]) {
+      const res = await pi(route.split("?")[0], piGet(route, token), env);
+      assert.equal(res.status, 403, `${route} without access`);
+      assert.match((await res.json()).error, /don't have access to this app/);
+    }
+    assert.equal((await pi("ask", piReq("ask", "POST", { question: "x" }, token), env)).status, 403);
+    assert.equal((await pi("assistant", piReq("assistant", "POST", { question: "x" }, token), env)).status, 403);
+  }
+  const user = await personSession(env, "pi-user@example.com", { role: "user", apps: ["partner-intel"] });
+  assert.equal((await pi("home", piGet("home", user), env)).status, 200, "given the app, they can read it");
+  assert.equal((await pi("companies", piGet("companies", user), env)).status, 200);
+});
+
+test("access: BUG a Partner Intelligence user could run its control panel: scans, Box folders, the partner list", async () => {
+  const { env } = await piEnv([ins()]);
+  const user = await personSession(env, "pi-user@example.com", { role: "user", apps: ["partner-intel"] });
+  const gets = ["status", "schedule", "run-status", "roster", "contacts", "attribution/review", "review", "topics", "box/folders"];
+  for (const route of gets) {
+    const res = await pi(route, piGet(route, user), env);
+    assert.equal(res.status, 403, `GET ${route}`);
+    assert.match((await res.json()).error, /settings/);
+  }
+  const posts = ["settings", "schedule", "run", "update/apply", "roster/sync", "roster/import", "roster/partner",
+    "roster/partner/delete", "roster/staff", "roster/alias", "contacts/import", "attribution/decide", "review/add",
+    "review/map", "topics/override"];
+  for (const route of posts) assert.equal((await pi(route, piReq(route, "POST", {}, user), env)).status, 403, `POST ${route}`);
+  const settingsBefore = await env.BOX_KV.get("pi:settings");
+  await pi("settings", piReq("settings", "POST", { which: "notes", folderId: "999", folderName: "Mine" }, user), env);
+  assert.equal(await env.BOX_KV.get("pi:settings"), settingsBefore, "a refused call changes nothing");
+
+  const piAdmin = await personSession(env, "pi-admin@example.com", { role: "user", apps: [], appAdmin: ["partner-intel"] });
+  assert.equal((await pi("status", piGet("status", piAdmin), env)).status, 200, "its app admin runs the control panel");
+  assert.equal((await pi("home", piGet("home", piAdmin), env)).status, 200, "app admin implies use");
+});
+
+test("access: Partner Intelligence's split matches the pages: what the app calls is use, what the control panel calls is admin", async () => {
+  // Read the routes each page actually calls, so a new route on either page lands on the right side.
+  const page = (p) => fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", p), "utf8");
+  const called = (src) => [...src.matchAll(/PI\.(?:api|post)\("([a-z][a-z/-]*)/g)].map((m) => m[1]);
+  // companies is built in a variable on the Companies page; insights and ask are older staff routes.
+  const staff = [...new Set([...called(page("index.html")), ...called(page("askbox.js")), "companies", "insights", "ask"])];
+  const panel = [...new Set(called(page("control-panel/index.html")))];
+  assert.ok(staff.includes("home") && staff.includes("assistant/history"), `staff routes found: ${staff}`);
+  assert.ok(panel.includes("status") && panel.includes("roster/import"), `control panel routes found: ${panel}`);
+  const { env } = await piEnv([ins()]);
+  const user = await personSession(env, "pi-user@example.com", { role: "user", apps: ["partner-intel"] });
+  await withFetch(() => new Response("{}", { status: 500 }), async () => {
+    for (const route of staff) assert.notEqual((await pi(route, piGet(route, user), env)).status, 403, `staff route ${route}`);
+    for (const route of panel) assert.equal((await pi(route, piGet(route, user), env)).status, 403, `control panel route ${route}`);
+  });
+});
+
+test("access: BUG one app's admin could run every app's control panel", async () => {
+  const { env } = await signedInEnv();
+  const brooke = await personSession(env, "brooke@example.com", { role: "user", apps: [], appAdmin: ["council-data"] });
+  const cdUser = await personSession(env, "cd-user@example.com", { role: "user", apps: ["council-data"] });
+  const cd = (route, token) => handleCouncilDataApi(route, bearerReq(`/api/council-data/${route}`, token), env);
+  assert.equal((await cd("box/status", brooke)).status, 200, "Brooke runs the Council Survey tool's control panel");
+  const refused = await cd("box/status", cdUser);
+  assert.equal(refused.status, 403, "use access alone never opens a control panel");
+  assert.equal((await refused.json()).error, "You don't have access to this app's settings. Ask an admin.");
+  const others = [
+    ["mcm", () => handleMcmApi("box/status", bearerReq("/api/mcm/box/status", brooke), env)],
+    ["stars", () => handleStarsApi("status", bearerReq("/api/stars/status", brooke), env)],
+    ["artifacts", () => handleArtifactsApi("catalogue", bearerReq("/api/artifacts/catalogue", brooke), env)],
+    ["consensus", () => handleConsensusApi("surveys", bearerReq("/api/consensus/surveys", brooke), env)],
+    ["job-description", () => handleJobDescriptionApi("status", bearerReq("/api/job-description/status", brooke), env)],
+    ["apprenticeship", () => handleApprenticeshipApi("projects", bearerReq("/api/apprenticeship/projects", brooke), env)],
+    ["pcn", () => handlePcnApi("box/status", bearerReq("/api/pcn/box/status", brooke), env)],
+    ["partner-intel", () => pi("status", piGet("status", brooke), env)],
+  ];
+  await withFetch(() => okJson({}), async () => {
+    for (const [app, call] of others) assert.equal((await call()).status, 403, `${app} control panel`);
+  });
+  // Box is shared by every app: disconnecting it is an overall admin's call, not one app admin's.
+  await env.BOX_KV.put("box:tokens", JSON.stringify({ access_token: "t", refresh_token: "r", obtained_at: 0, expires_in: 3600 }));
+  assert.equal((await handleCouncilDataApi("box/disconnect", jsonReq("/api/council-data/box/disconnect", "POST", {}, brooke), env)).status, 403);
+  assert.ok(await env.BOX_KV.get("box:tokens"), "the shared Box connection stays");
+});
+
+test("access: Issue Network Mapper's page needs use access, its control panel needs pcn admin", async () => {
+  const { env, token } = await signedInEnv();
+  const id = (await (await handlePcnApi("projects", bearerReq("/api/pcn/projects", token), env)).json()).projects[0].id;
+  const user = await personSession(env, "inm@example.com", { role: "user", apps: ["pcn"] });
+  const none = await personSession(env, "none@example.com", { role: "user", apps: [] });
+  const get = (route, t) => handlePcnApi(route, bearerReq(`/api/pcn/${route}`, t), env);
+  for (const route of ["projects", `projects/${id}`, `projects/${id}/network`, `projects/${id}/timeline`]) {
+    assert.notEqual((await get(route, user)).status, 403, `${route} with use access`);
+    assert.equal((await get(route, none)).status, 403, `${route} without it`);
+  }
+  for (const route of ["box/status", `projects/${id}/meetings`, `projects/${id}/run-status`]) {
+    assert.equal((await get(route, user)).status, 403, `${route} is the control panel's`);
+  }
+  assert.equal((await handlePcnApi("projects", jsonReq("/api/pcn/projects", "POST", { name: "Mine" }, user), env)).status, 403);
+});
+
+test("access: BUG any signed-in account could manage people and app visibility", async () => {
+  const { env } = await signedInEnv();
+  const plain = await personSession(env, "plain@example.com", { role: "user", apps: ["partner-intel"] });
+  const brooke = await personSession(env, "brooke@example.com", { role: "user", apps: [], appAdmin: ["council-data"] });
+  for (const token of [plain, brooke]) {
+    assert.equal((await beta("admins", bearerReq("/api/beta/admins", token), env)).status, 403, "list people");
+    for (const [route, body] of [["admins", { email: "x@example.com", role: "admin" }],
+                                 ["admins/update", { email: "plain@example.com", role: "admin" }],
+                                 ["admins/update", { email: "brooke@example.com", appAdmin: ["mcm"] }],
+                                 ["admins/remove", { email: "poneill@conexusindiana.com" }],
+                                 ["admins/reset", { email: "poneill@conexusindiana.com" }],
+                                 ["sign-out-everywhere", { email: "poneill@conexusindiana.com" }],
+                                 ["app-visibility", { id: "partner-intel", tier: "public" }]]) {
+      const res = await beta(route, jsonReq(`/api/beta/${route}`, "POST", body, token), env);
+      assert.equal(res.status, 403, `${route} ${JSON.stringify(body)}`);
+    }
+  }
+  const list = JSON.parse(await env.BOX_KV.get(ALLOWLIST));
+  assert.deepEqual(list.map((a) => a.email), ["poneill@conexusindiana.com", "plain@example.com", "brooke@example.com"]);
+  assert.equal((await (await meOf(env, plain)).json()).role, "user", "nobody promoted themselves");
+  assert.equal(await env.BOX_KV.get("beta:app-visibility"), null, "visibility unchanged");
+  assert.ok(await env.BOX_KV.get("beta:admin-account:poneill@conexusindiana.com"), "the admin's password was not reset");
+});
+
+test("access: an overall admin sets role, apps and app admin, and the change applies without signing out", async () => {
+  const { env, token } = await signedInEnv();
+  const user = await personSession(env, "u@example.com", { role: "user", apps: [] });
+  assert.equal((await pi("home", piGet("home", user), env)).status, 403);
+  const update = (body) => beta("admins/update", jsonReq("/api/beta/admins/update", "POST", { email: "u@example.com", ...body }, token), env);
+  assert.equal((await update({ apps: ["partner-intel"] })).status, 200);
+  assert.notEqual((await pi("home", piGet("home", user), env)).status, 403, "the same session now reads it");
+  assert.equal((await pi("status", piGet("status", user), env)).status, 403);
+  const r = await update({ appAdmin: ["partner-intel"] });
+  assert.deepEqual((await r.json()).person.appAdmin, ["partner-intel"]);
+  assert.notEqual((await pi("status", piGet("status", user), env)).status, 403, "and now runs its control panel");
+  assert.equal((await update({ role: "admin" })).status, 200);
+  assert.equal((await beta("admins", bearerReq("/api/beta/admins", user), env)).status, 200, "an overall admin manages people");
+  assert.equal((await update({ role: "user", apps: [], appAdmin: [] })).status, 200);
+  assert.equal((await pi("home", piGet("home", user), env)).status, 403, "and access comes away just as fast");
+  for (const body of [{ role: "owner" }, { role: "constructor" }, { apps: ["nope"] }, { apps: ["constructor"] },
+                      { appAdmin: ["__proto__"] }, { apps: "partner-intel" }]) {
+    assert.equal((await update(body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal((await beta("admins/update", jsonReq("/api/beta/admins/update", "POST", { email: "nobody@example.com", role: "user" }, token), env)).status, 404);
+});
+
+test("access: BUG anyone could start replacing the shared Box connection", async () => {
+  // GET /api/box/authorize-url had no authentication: anyone could start the Box login, and whoever
+  // finished it pointed every app at their own Box account.
+  const { env, token } = await signedInEnv();
+  const brooke = await personSession(env, "brooke@example.com", { role: "user", apps: [], appAdmin: ["council-data"] });
+  const states = async () => [...env.BOX_KV.store.keys()].filter((k) => k.startsWith("box:state:")).length;
+  const authorize = (t) => workerModule.default.fetch(bearerReq("/api/box/authorize-url", t), env, {});
+  assert.equal((await authorize(null)).status, 401, "anonymous");
+  assert.equal((await authorize("forged.token")).status, 401);
+  assert.equal((await authorize(brooke)).status, 403, "even the Council Survey tool's own admin");
+  assert.equal(await states(), 0, "no login was started");
+  const ok = await authorize(token);
+  assert.equal(ok.status, 200, "an overall admin can");
+  assert.match((await ok.json()).url, /^https:\/\/account\.box\.com\/api\/oauth2\/authorize\?/);
+  assert.equal(await states(), 1);
+});
+
+test("access: BUG unlimited password guesses: the sixth wrong password is refused with 429, even when right", async () => {
+  const { env } = await signedInEnv();
+  await withoutLoginDelay(async () => {
+    // Email and username are the same account, so switching between them buys nothing.
+    for (const id of ["poneill", "poneill@conexusindiana.com", "POneill", "poneill", "poneill@conexusindiana.com"]) {
+      assert.equal((await loginAs(env, id, "wrong-guess")).status, 401, id);
+    }
+    const locked = await loginAs(env, "poneill", "seed-password-123");
+    assert.equal(locked.status, 429, "locked, even for the right password");
+    assert.match((await locked.json()).error, /Too many wrong passwords\. Wait 15 minutes/);
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 16 * 60 * 1000;
+      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200, "the lock lifts after 15 minutes");
+      // A successful sign-in clears the count: four more misses do not lock.
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill", "wrong-guess")).status, 401);
+      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200);
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, "poneill", "wrong-guess")).status, 401);
+      assert.equal((await loginAs(env, "poneill", "seed-password-123")).status, 200, "the count started again after success");
+    } finally { Date.now = realNow; }
+  });
+});
+
+test("access: one client address is limited across accounts, so it cannot spray every account", async () => {
+  const { env } = await signedInEnv();
+  await personSession(env, "a@example.com", { role: "user" });
+  await withoutLoginDelay(async () => {
+    // Four misses each at five accounts: no account reaches its own limit of five.
+    for (const id of ["x1@example.com", "x2@example.com", "x3@example.com", "x4@example.com", "a@example.com"]) {
+      for (let i = 0; i < 4; i++) assert.equal((await loginAs(env, id, "wrong", "203.0.113.9")).status, 401);
+    }
+    assert.equal((await loginAs(env, "a@example.com", "long-enough-1", "203.0.113.9")).status, 429, "twenty from one address lock it");
+    assert.equal((await loginAs(env, "a@example.com", "long-enough-1", "198.51.100.7")).status, 200, "another address is not affected");
+  });
+});
+
+test("access: BUG a session outlived Sign out everywhere, removal and a password reset", async () => {
+  const { env, token } = await signedInEnv();
+  const signIn = async () => (await (await loginAs(env, "u@example.com", "long-enough-1")).json()).token;
+  await personSession(env, "u@example.com", { role: "user", apps: ["partner-intel"] });
+  const [laptop, phone] = [await signIn(), await signIn()];
+  assert.equal((await meOf(env, phone)).status, 200);
+  // Anyone may sign themselves out everywhere.
+  const self = await beta("sign-out-everywhere", jsonReq("/api/beta/sign-out-everywhere", "POST", {}, laptop), env);
+  assert.equal(self.status, 200);
+  assert.equal((await meOf(env, laptop)).status, 401, "this session ends");
+  assert.equal((await meOf(env, phone)).status, 401, "and every other one");
+  const again = await signIn();
+  assert.equal((await meOf(env, again)).status, 200, "signing in again works");
+  // An overall admin may do it to anyone.
+  assert.equal((await beta("sign-out-everywhere", jsonReq("/api/beta/sign-out-everywhere", "POST", { email: "u@example.com" }, token), env)).status, 200);
+  assert.equal((await meOf(env, again)).status, 401);
+  assert.equal((await meOf(env, token)).status, 200, "the admin's own session is untouched");
+  // A password reset ends their sessions too.
+  const beforeReset = await signIn();
+  await beta("admins/reset", jsonReq("/api/beta/admins/reset", "POST", { email: "u@example.com" }, token), env);
+  assert.equal((await meOf(env, beforeReset)).status, 401, "a reset ends the sessions issued before it");
+  assert.equal((await pi("home", piGet("home", beforeReset), env)).status, 401, "in every app, not just /me");
+  // So does removal.
+  await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST", { email: "u@example.com", username: "u", password: "long-enough-2" }), env);
+  const beforeRemoval = (await (await loginAs(env, "u@example.com", "long-enough-2")).json()).token;
+  assert.equal((await meOf(env, beforeRemoval)).status, 200);
+  const removed = await beta("admins/remove", jsonReq("/api/beta/admins/remove", "POST", { email: "u@example.com" }, token), env);
+  assert.equal(removed.status, 200);
+  assert.equal((await meOf(env, beforeRemoval)).status, 401, "removal ends their sessions");
+  assert.equal((await loginAs(env, "u@example.com", "long-enough-2")).status, 401, "and they cannot sign in");
+  assert.equal((await (await beta("setup-check", jsonReq("/api/beta/setup-check", "POST", { email: "u@example.com" }), env)).json()).allowed,
+    false, "or set a new password");
+});
+
+test("access: BUG the last overall admin could be removed or demoted", async () => {
+  const { env, token } = await signedInEnv();
+  const me = "poneill@conexusindiana.com";
+  const post = (route, body, t = token) => beta(route, jsonReq(`/api/beta/${route}`, "POST", body, t), env);
+  const demote = await post("admins/update", { email: me, role: "user" });
+  assert.equal(demote.status, 409);
+  assert.match((await demote.json()).error, /at least one admin/);
+  assert.equal((await post("admins/remove", { email: me })).status, 409);
+  assert.equal((await (await meOf(env, token)).json()).role, "admin", "still an admin");
+  // A user on the list does not count: there is still only one admin.
+  await post("admins", { email: "u@example.com" });
+  assert.equal((await post("admins/remove", { email: me })).status, 409);
+  // With a second admin, either can go.
+  await post("admins", { email: "second@example.com", role: "admin" });
+  assert.equal((await post("admins/update", { email: me, role: "user" })).status, 200);
+  const second = (await (await beta("setup-complete", jsonReq("/api/beta/setup-complete", "POST",
+    { email: "second@example.com", username: "second", password: "long-enough-1" }), env)).json()).token;
+  assert.equal((await post("admins/remove", { email: "second@example.com" }, second)).status, 409, "the remaining admin cannot remove themselves");
+  assert.equal((await post("admins/remove", { email: "u@example.com" }, second)).status, 200, "a user can be removed");
+});
+
+test("access: every control panel page checks that app's admin, and the staff pages check use access", () => {
+  // The page-side check shows "You don't have access" instead of a broken panel. The API refuses
+  // regardless; this keeps a page from forgetting to ask.
+  const root = path.join(path.dirname(SRC), "public");
+  const gate = (file) => {
+    const html = fs.readFileSync(path.join(root, file), "utf8");
+    const m = html.match(/<script src="\/access\.js"(?: data-app="([a-z-]+)")? data-need="([a-z]+)"><\/script>/);
+    assert.ok(m, `${file} loads /access.js`);
+    assert.ok(html.indexOf(m[0]) < html.indexOf("</head>"), `${file} loads it in <head>, before the page shows`);
+    return [m[1] || "", m[2]];
+  };
+  const panels = {
+    "council-data/control-panel/index.html": "council-data", "mcm/control-panel/index.html": "mcm",
+    "inm/control-panel/index.html": "pcn", "consensus/control-panel/index.html": "consensus",
+    "consensus/control-panel/results.html": "consensus", "stars/control-panel/index.html": "stars",
+    "artifacts/control-panel/index.html": "artifacts", "job-description/control-panel/index.html": "job-description",
+    "apprenticeship/control-panel/index.html": "apprenticeship", "apprenticeship/control-panel/responses.html": "apprenticeship",
+    "partner-intel/control-panel/index.html": "partner-intel",
+  };
+  for (const [file, app] of Object.entries(panels)) assert.deepEqual(gate(file), [app, "admin"], file);
+  assert.deepEqual(gate("partner-intel/index.html"), ["partner-intel", "use"]);
+  assert.deepEqual(gate("inm/index.html"), ["pcn", "use"]);
+  assert.deepEqual(gate("admin/settings.html"), ["", "overall"]);
+  // Every app's control panel is covered: none added to apps.js without one here.
+  const apps = fs.readFileSync(path.join(root, "apps.js"), "utf8");
+  for (const [, id] of apps.matchAll(/\bid: "([a-z-]+)"/g)) assert.ok(Object.values(panels).includes(id), `${id} has a gated control panel`);
+});
+
+/* ---------------------------------------------------- partner_intel: QA round 2, the relay */
+const relayGet = (env, route) => pi(`relay/${route.split("?")[0]}`,
+  req(`/api/partner-intel/relay/${route}`, { headers: { "x-pipeline-key": "relay-secret" } }), env);
+const relayPost = (env, route, body) => pi(`relay/${route}`, relay(route, "POST", body), env);
+
+test("partner_intel: BUG the whole scan state travelled in one request; it is saved in pages and switched to at a commit", async () => {
+  // At about 10 KB a section, one body for some 4,500 sections is more than the Worker can parse
+  // and re-split in 128 MB, and a write that died half-way left a mix of old and new shards.
+  const env = makeEnv();
+  const one = "write-one-0001", two = "write-two-0002", three = "write-three-03";
+  assert.equal((await relayPost(env, "state/begin", { write: one })).status, 200);
+  assert.equal((await relayPost(env, "state/page", { write: one, kind: "registry", index: 0, items: [["f1", { name: "a.docx" }]] })).status, 200);
+  assert.equal((await relayPost(env, "state/page", { write: one, kind: "cache", index: 0, items: [["k1", { rows: [1] }]] })).status, 200);
+  assert.equal((await relayPost(env, "state/page", { write: one, kind: "cache", index: 1, items: [["k2", { rows: [2] }]] })).status, 200);
+  assert.equal((await (await relayGet(env, "state/meta")).json()).write, "", "nothing is saved until the commit");
+  const committed = await (await relayPost(env, "state/commit", { write: one, pages: { registry: 1, cache: 2 }, files: 1, units: 2 })).json();
+  assert.deepEqual([committed.files, committed.units], [1, 2]);
+  const meta = await (await relayGet(env, "state/meta")).json();
+  assert.deepEqual([meta.write, meta.pages], [one, { registry: 1, cache: 2 }]);
+  assert.deepEqual((await (await relayGet(env, `state/page?kind=cache&index=1&write=${one}`)).json()).items, [["k2", { rows: [2] }]]);
+
+  // A second write that stops part-way changes nothing a reader sees.
+  await relayPost(env, "state/begin", { write: two });
+  await relayPost(env, "state/page", { write: two, kind: "registry", index: 0, items: [["f9", { name: "z.docx" }]] });
+  assert.equal((await (await relayGet(env, "state/meta")).json()).write, one, "half a write is never the saved state");
+  assert.deepEqual(Object.keys((await (await relayGet(env, "state")).json()).cache), ["k1", "k2"]);
+  const early = await relayPost(env, "state/commit", { write: two, pages: { registry: 1, cache: 1 } });
+  assert.equal(early.status, 503, "a commit naming a page that never arrived is refused, retryably");
+  assert.equal((await (await relayGet(env, "state/meta")).json()).write, one);
+
+  // The next write clears the abandoned one; its commit retires the previous state's pages.
+  await relayPost(env, "state/begin", { write: three });
+  assert.equal(await env.BOX_KV.get(`pi:state:w:${two}:registry:0`), null, "the abandoned write's pages are cleared");
+  await relayPost(env, "state/page", { write: three, kind: "registry", index: 0, items: [["f3", { name: "c.docx" }]] });
+  assert.equal((await relayPost(env, "state/commit", { write: three, pages: { registry: 1, cache: 0 }, files: 2, units: 0 })).status, 409,
+    "counts that do not match the pages are refused");
+  assert.equal((await relayPost(env, "state/commit", { write: three, pages: { registry: 1, cache: 0 }, files: 1, units: 0 })).status, 200);
+  assert.equal(await env.BOX_KV.get(`pi:state:w:${one}:cache:1`), null, "the previous state's pages are deleted");
+  assert.equal((await relayPost(env, "state/commit", { write: three, pages: { registry: 1, cache: 0 } })).status, 200, "a replayed commit");
+  assert.notEqual(await env.BOX_KV.get(`pi:state:w:${three}:registry:0`), null, "a replayed commit deletes nothing it needs");
+  assert.equal((await relayGet(env, `state/page?kind=cache&index=0&write=${one}`)).status, 409, "a read across a commit is refused");
+
+  // Pages are checked.
+  assert.equal((await relayPost(env, "state/page", { write: "write-four-04", kind: "constructor", index: 0, items: [] })).status, 400);
+  assert.equal((await relayPost(env, "state/page", { write: "write-four-04", kind: "cache", index: 0, items: [["k", "text"]] })).status, 400);
+  assert.equal((await relayPost(env, "state/page", { write: "../../x", kind: "cache", index: 0, items: [] })).status, 400);
+  assert.equal((await relayPost(env, "state/page", { write: three, kind: "cache", index: 0, items: [] })).status, 409,
+    "the saved state is never changed in place");
+  assert.equal((await relayGet(env, "state/page?kind=__proto__&index=0")).status, 400);
+  assert.equal((await pi("relay/state/meta", relay("state/meta", "GET", undefined, "wrong"), env)).status, 401);
+});
+
+test("partner_intel: state saved before pages is still read, and replaced by the next commit", async () => {
+  const env = makeEnv();
+  await env.BOX_KV.put("pi:state:meta", JSON.stringify({ registryShards: 1, cacheShards: 2, updatedAt: "x" }));
+  await env.BOX_KV.put("pi:state:registry:0", JSON.stringify([["f1", { name: "a.docx" }]]));
+  await env.BOX_KV.put("pi:state:cache:0", JSON.stringify([["k1", { rows: [] }]]));
+  await env.BOX_KV.put("pi:state:cache:1", JSON.stringify([["k2", { rows: [] }]]));
+  const meta = await (await relayGet(env, "state/meta")).json();
+  assert.deepEqual([meta.layout, meta.write, meta.pages], [1, "", { registry: 1, cache: 2 }]);
+  assert.deepEqual((await (await relayGet(env, "state/page?kind=cache&index=1&write=")).json()).items, [["k2", { rows: [] }]]);
+  assert.deepEqual(Object.keys((await (await relayGet(env, "state")).json()).cache), ["k1", "k2"]);
+  await relayPost(env, "state/begin", { write: "write-new-0001" });
+  await relayPost(env, "state/page", { write: "write-new-0001", kind: "cache", index: 0, items: [["k3", { rows: [] }]] });
+  await relayPost(env, "state/commit", { write: "write-new-0001", pages: { registry: 0, cache: 1 } });
+  assert.equal(await env.BOX_KV.get("pi:state:cache:1"), null, "the old shards are deleted once replaced");
+  assert.deepEqual(Object.keys((await (await relayGet(env, "state")).json()).cache), ["k3"]);
+});
+
+test("partner_intel: BUG the Box state file could outgrow one upload; its parts may be saved and read", async () => {
+  const { env, token } = await adminEnv();
+  await setFolder(env, token, "data", "22", "Database");
+  const uploads = [];
+  const handler = boxFake({ 22: [fileItem("701", "partner_intel_state.a.001.json", "2026-01-01T00:00:00Z")] }, { 701: '{"part":1}' }, uploads);
+  const save = (name) => withFetch(handler, () => relayPost(env, "box/save", { name, text: "{}" }));
+  assert.equal((await save("partner_intel_state.a.001.json")).status, 200);
+  assert.equal((await save("partner_intel_state.b.123.json")).status, 200);
+  for (const bad of ["partner_intel_state.c.001.json", "partner_intel_state.a.1.json", "partner_intel_state.a.001.json.exe", "../partner_intel_state.a.001.json"]) {
+    assert.equal((await save(bad)).status, 400, bad);
+  }
+  const load = (name) => withFetch(handler, () => relayGet(env, `box/load?name=${encodeURIComponent(name)}`));
+  assert.equal(await (await load("partner_intel_state.a.001.json")).text(), '{"part":1}');
+  assert.equal((await load("partner_intel_state.b.002.json")).status, 404);
+});
+
+test("partner_intel: BUG undated backfills were dated on upload; the Box listing now carries each file's own times", async () => {
+  const env = makeEnv();
+  await env.BOX_KV.put("box:tokens", JSON.stringify({ access_token: "tok", refresh_token: "r", obtained_at: Math.floor(Date.now() / 1000), expires_in: 3600 }));
+  let asked = "";
+  const listing = await withFetch((url) => {
+    asked = new URL(url).searchParams.get("fields");
+    return okJson({ total_count: 1, entries: [{ type: "file", id: "5", name: "old notes.docx", size: 10, sha1: "s",
+      created_at: "2026-10-20T15:00:00-07:00", modified_at: "2026-10-20T15:00:00-07:00",
+      content_created_at: "2024-03-01T09:00:00-05:00", content_modified_at: "2024-03-05T09:30:00-05:00" }] });
+  }, async () => (await relayGet(env, "box/folder?id=77")).json());
+  assert.ok(asked.split(",").includes("content_modified_at") && asked.split(",").includes("content_created_at"),
+    "a fields list returns only what it names, so the file's own times are asked for");
+  assert.equal(listing.entries[0].content_modified_at, "2024-03-05T09:30:00-05:00");
+  assert.equal(listing.entries[0].content_created_at, "2024-03-01T09:00:00-05:00");
+});
+
+test("partner_intel: BUG the published dataset travelled in one request too; it goes in pages and is swapped in at a commit", async () => {
+  // At about 1.3 KB an insight, a scan of a few thousand sections publishes a body the Worker
+  // cannot parse and re-split in 128 MB, sooner than the state does.
+  const { env, token } = await piEnv([ins({ title: "Old one" })]);
+  const before = await env.BOX_KV.get("pi:data:meta");
+  const up = "upload-one-001";
+  assert.equal((await relayPost(env, "publish/begin", { upload: up })).status, 200);
+  assert.equal((await relayPost(env, "publish/page", { upload: up, index: 0, insights: [ins({ title: "New A" }), ins({ title: "New B" })] })).status, 200);
+  assert.equal((await relayPost(env, "publish/page", { upload: up, index: 1, insights: [ins({ title: "New C" })] })).status, 200);
+  assert.equal(await env.BOX_KV.get("pi:data:meta"), before, "nothing is published before the commit");
+  assert.equal((await relayPost(env, "publish/commit", { upload: up, chunks: 3, insights: 3,
+    dataset: { version: "paged-1", generated_at: "2026-10-22T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [], companies: [], unmatched: [], stats: {}, schema: 2 } })).status,
+  503, "a page that never arrived stops the commit");
+  assert.equal((await relayPost(env, "publish/commit", { upload: up, chunks: 2, insights: 5, dataset: { version: "x" } })).status, 409);
+  const res = await relayPost(env, "publish/commit", { upload: up, chunks: 2, insights: 3,
+    dataset: { version: "paged-1", generated_at: "2026-10-22T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [], companies: [], unmatched: [], stats: {}, schema: 2 } });
+  assert.equal(res.status, 200);
+  const meta = JSON.parse(await env.BOX_KV.get("pi:data:meta"));
+  assert.deepEqual([meta.version, meta.chunks, meta.insightCount, meta.schema], ["paged-1", 2, 3, 2]);
+  const titles = (await getJson("insights?limit=10", env, token)).items.map((i) => i.title).sort();
+  assert.deepEqual(titles, ["New A", "New B", "New C"]);
+  assert.equal(await env.BOX_KV.get(`pi:data:stage:${up}:0`), null, "the staged pages are cleared");
+  // A publish that stops part-way leaves the published dataset as it was, and the next clears it.
+  await relayPost(env, "publish/begin", { upload: "upload-two-002" });
+  await relayPost(env, "publish/page", { upload: "upload-two-002", index: 0, insights: [ins({ title: "Never shown" })] });
+  assert.deepEqual((await getJson("insights?limit=10", env, token)).items.map((i) => i.title).sort(), ["New A", "New B", "New C"]);
+  await relayPost(env, "publish/begin", { upload: "upload-three-3" });
+  assert.equal(await env.BOX_KV.get("pi:data:stage:upload-two-002:0"), null);
+  assert.equal((await relayPost(env, "publish/page", { upload: "upload-three-3", index: 0, insights: ["text"] })).status, 400);
+  assert.equal((await relayPost(env, "publish/page", { upload: "../x", index: 0, insights: [] })).status, 400);
+  assert.equal((await pi("relay/publish/begin", relay("publish/begin", "POST", { upload: "upload-four-04" }, "wrong"), env)).status, 401);
+});
+
+test("partner_intel: BUG a row whose company was a person's name (the pipeline's company_is_person) showed no Check company and never reached Statements to check", async () => {
+  const { env, token } = await piEnv([ins({ id: "cp1", company_id: "c-a", review: ["company_is_person"] }), ins({ id: "cp2", company_id: "c-b" })]);
+  assert.equal((await getJson("insights?days=30", env, token)).items.find((i) => i.id === "cp1").checkCompany, true);
+  assert.deepEqual((await getJson("attribution/review", env, token)).items.map((i) => i.id), ["cp1"]);
 });
 
 let failed = 0;
