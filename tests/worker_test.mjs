@@ -5969,6 +5969,21 @@ test("access: accounts are email and password only, and an admin adding a person
   assert.match(settings, /id="newLast"/);
 });
 
+test("partner_intel: BUG on a phone the Ask pill's prompt ran onto a second line the one-line pill cut in half", () => {
+  const src = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  const block = src.slice(src.indexOf("  A.fitPlaceholder = function"), src.indexOf("  /* ---- the floating box */"));
+  const A = new Function(`var A = {}; ${block}; return A;`)();
+  // A stand-in textarea: one line is 26px, and text wider than the box wraps to two.
+  const box = (width) => ({ value: "", style: { height: "26px" }, clientHeight: 26, placeholder: "",
+    get scrollHeight() { return this.placeholder.length * 8.5 > width ? 51 : 26; } });
+  const phone = box(248), wide = box(400);
+  A.fitPlaceholder(phone, "Ask anything about the partner notes", "Ask about the notes");
+  A.fitPlaceholder(wide, "Ask anything about the partner notes", "Ask about the notes");
+  assert.equal(phone.placeholder, "Ask about the notes");
+  assert.equal(wide.placeholder, "Ask anything about the partner notes");
+  assert.equal(phone.style.height, "26px", "the height is put back");
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {

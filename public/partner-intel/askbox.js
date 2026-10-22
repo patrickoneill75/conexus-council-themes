@@ -243,6 +243,18 @@
     return '<div class="turn pending"><div class="qb">' + esc(q) + '</div><div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>';
   };
 
+  /** The longer prompt when it fits on one line, else the shorter one. On a phone "Ask anything about the
+   * partner notes" ran onto a second line the one-line pill cut in half. Measured at one line's height,
+   * so it works whatever the font and the width. */
+  A.fitPlaceholder = function (t, long, short) {
+    if (t.value) return;
+    var h = t.style.height;
+    t.style.height = "auto";
+    t.placeholder = long;
+    if (t.scrollHeight > t.clientHeight + 2) t.placeholder = short;
+    t.style.height = h;
+  };
+
   /* ---- the floating box */
 
   var EXAMPLES = ["What are the top issues to discuss at the next quarterly meeting?",
@@ -262,6 +274,7 @@
     var w = 820 + (box.rail ? 270 : 0);
     root.style.width = "min(" + w + "px, calc(100vw - 32px))";
   }
+  function fitPrompt() { A.fitPlaceholder(q, "Ask anything about the partner notes", "Ask about the notes"); autosize(); }
   function autosize() {
     q.style.height = "auto";
     q.style.height = Math.min(q.scrollHeight, box.open ? 140 : 40) + "px";
@@ -319,6 +332,7 @@
     setWidth();
     render();
     autosize();
+    setTimeout(fitPrompt, 500); // once the box has grown to its width
   }
   function shrink(instant) {
     if (!box.open) return;
@@ -330,6 +344,7 @@
     document.documentElement.classList.remove("ax-lock");
     setWidth();
     autosize();
+    setTimeout(fitPrompt, 500);
     var done = function () { if (!box.open) root.classList.remove("show"); };
     if (instant) done(); else setTimeout(done, 480);
   }
@@ -470,8 +485,10 @@
       if (t.closest(".ax-hist")) { openBox(); setToggle("rail", true); }
     });
     window.addEventListener("resize", setWidth);
+    window.addEventListener("resize", fitPrompt);
     window.addEventListener("hashchange", place);
     place();
+    fitPrompt();
   }
 
   /** Not on the Ask page, which has its own search. A conversation sent there can come back. */
