@@ -236,7 +236,8 @@
   }
 
   var USAGE_ROWS = [["extractionBatch", "Reading notes (batch, half price)"], ["extraction", "Reading notes (direct)"],
-                    ["summaries", "Trending topic summaries"], ["ask", "Ask"]];
+                    ["summaries", "Trending topic summaries"], ["ask", "Ask: partner search"],
+                    ["assistant", "Ask: answers (Ask box and Ask page)"]];
   function renderUsage(u) {
     if (!u) return;
     var fmt = function (n) { return (n || 0).toLocaleString(); };

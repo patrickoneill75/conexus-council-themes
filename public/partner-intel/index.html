@@ -11,13 +11,12 @@
 <body class="pi-app">
 <header class="appbar">
   <div class="in">
-    <div class="appname">Partner Intelligence</div>
+    <a class="appname" href="#/home">Partner Intelligence</a>
     <nav class="nav" id="nav" aria-label="Main">
       <a href="#/home" data-r="home"><span>Home</span></a>
-      <a href="#/programs" data-r="programs"><span>Programs</span></a>
       <a href="#/companies" data-r="companies"><span>Companies</span></a>
+      <a href="#/programs" data-r="programs"><span>Programs</span></a>
       <a href="#/ask" data-r="ask"><span>Ask</span></a>
-      <a href="#/explore" data-r="explore"><span>Explore</span></a>
     </nav>
     <div class="tools">
       <span id="whoami"></span>
@@ -31,6 +30,7 @@
 </div>
 
 <script src="/partner-intel/pi.js"></script>
+<script src="/partner-intel/askbox.js"></script>
 <script>
 (function () {
   "use strict";
@@ -42,8 +42,8 @@
   el("signOut").addEventListener("click", PI.signOut);
   PI.whoami(el("whoami"));
 
-  var state = { days: 90, programDays: 0, explore: { facets: null }, sourceList: null };
-  var chosen = ""; // the program (source folder) chosen on Ask and Explore; "" is all of them
+  var state = { days: 90, programDays: 0, sourceList: null };
+  var chosen = ""; // the program (source folder) chosen on Ask; "" is all of them
 
   var ARROW = '<svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h11M9 3.5 13.5 8 9 12.5"/></svg>';
   var BACK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 8H3M7 3.5 2.5 8 7 12.5"/></svg>';
@@ -84,7 +84,7 @@
       : PI.api("facets").then(function (r) { state.sourceList = r.sources; return r.sources; });
   }
   function chosenList() { return chosen ? [chosen] : []; }
-  /** The program dropdown on Ask and Explore. */
+  /** The program dropdown on Ask. */
   function sourceSelect(id, label) {
     return '<div><label class="field" for="' + id + '">' + esc(label) + '</label><select id="' + id + '"><option value="">All programs</option>' +
       (state.sourceList || []).map(function (s) {
@@ -125,10 +125,11 @@
     var hl = opts.hl || "h3";
     return '<section class="tp' + (open ? " open" : "") + '"' + (opts.topic ? ' data-topic="' + esc(opts.topic) + '"' : "") + (opts.hidden ? " hidden" : "") + ">" +
       "<" + hl + ' class="thead-h"><button type="button" class="tp-row" aria-expanded="' + (open ? "true" : "false") + '">' +
-      // Number 1 alone pulses twice, a moment after the page arrives, and its arrow springs down: a cue that these open.
-      '<span class="circ' + (n === 1 && !open ? " cue" : "") + '" aria-hidden="true">' + n + "</span>" +
+      '<span class="circ" aria-hidden="true">' + n + "</span>" +
       '<span><span class="tname">' + hlName(name) + (opts.after || "") + '</span><span class="tmeta">' + (metaHtml || "") + "</span></span></button></" + hl + ">" +
-      '<i class="tline' + (n === 1 && !open ? " hint" : "") + '" aria-hidden="true"></i>' +
+      // A chevron under each circle. Number 1 alone has a dotted trail down to it, and the dots run down twice a
+      // moment after the page arrives: a cue that these open.
+      '<i class="tline' + (n === 1 ? " trail" + (open ? "" : " cue") : "") + '" aria-hidden="true">' + (n === 1 ? "<b></b><b></b><b></b>" : "") + "</i>" +
       '<div class="tbody" data-body' + (open ? "" : " hidden") + ">" + body + "</div></section>";
   }
   function animate(node, cls) {
@@ -257,7 +258,7 @@
     var card = btn.closest(".tp");
     var opening = !card.classList.contains("open") || card.classList.contains("closing");
     Array.prototype.forEach.call(card.parentNode.querySelectorAll(":scope > .tp"), function (c) {
-      c.querySelector(".tline").classList.remove("hint");
+      c.querySelector(".tline").classList.remove("cue");
       if (c !== card && c.classList.contains("open") && !c.classList.contains("closing")) setTopic(c, false);
     });
     setTopic(card, opening);
@@ -371,7 +372,7 @@
   function home() {
     var mine = ++seq;
     view.innerHTML = loading("Loading…");
-    // Home covers every source folder and every company. Folders are chosen on Ask and Explore,
+    // Home covers every source folder and every company. Folders are chosen on Ask,
     // and a program's own page ranks that folder alone.
     PI.api("home?days=" + state.days).then(function (d) {
       if (mine !== seq) return;
@@ -481,97 +482,210 @@
     b.parentNode.remove();
   });
 
-  /* ------------------------------------------------------------------ Ask */
+  /* ------------------------------------------------------------------ Ask: search the notes
+     One pill. A question that asks who can help ranks partners; anything else gets a written
+     answer from the notes as a whole. History and Sources are columns either side, off until
+     pressed, as in the Ask box, and both share one history. */
+  var askView = { rail: false, side: false, conv: null, sel: null };
+
   function ask() {
     var mine = ++seq;
-    view.innerHTML = "<h1>Ask</h1>" +
-      '<div class="card" style="margin-top:32px"><label class="field" for="q">What does the partner need?</label>' +
-      '<textarea id="q" rows="3" maxlength="600" placeholder="A partner is looking for something to help them with an AI-powered quality system. Who can we connect them with?"></textarea>' +
-      '<div id="excl"></div><div class="row" style="margin-top:16px;align-items:flex-end;gap:14px 18px"><div id="askSrc" style="width:260px"></div>' +
-      '<button class="primary" id="go">Find matches</button><span id="busy"></span></div></div>' +
-      '<div id="out"></div><div id="recent"></div>';
-    var q = el("q");
+    var AU = PI.AskUI;
+    var pre = PI.askPrefill; PI.askPrefill = null;
+    askView.conv = null; askView.sel = null;
+    view.innerHTML = '<div class="asx' + (askView.rail ? " rail" : "") + (askView.side ? " side" : "") + '" id="asx">' +
+      '<aside class="asx-rail" aria-label="Past questions"><div class="rl-top"><button type="button" class="ax-back" data-off="rail">' + BACK + "Back</button></div>" +
+        '<div class="rl-list" id="asxRail"></div><p class="rl-note" id="asxNote"></p></aside>' +
+      '<div class="asx-main">' +
+        '<h1 class="asx-h1">Search Conexus Notes</h1>' +
+        '<form class="asx-pill" id="asxForm"><span id="asxSrc"></span>' +
+          '<label class="sr-only" for="asxQ">Search Conexus notes</label>' +
+          '<textarea id="asxQ" rows="1" maxlength="1500" placeholder="Search the notes, ask a question, or describe what a partner needs"></textarea>' +
+          '<button type="submit" class="asx-go" aria-label="Search">' + AU.ICON.arrow + "</button></form>" +
+        '<div class="asx-tools"><span id="asxBack"></span><span class="grow"></span>' + AU.toggle("rail", askView.rail) + AU.toggle("side", askView.side) + "</div>" +
+        '<div class="asx-out" id="asxOut"></div><div class="asx-recent" id="asxRecent"></div>' +
+      '</div><aside class="asx-side" aria-label="Sources"><div class="rl-top"><button type="button" class="ax-back" data-off="side">' + BACK + "Back</button></div>" +
+        '<div id="asxSide"></div></aside></div>';
+    var box = el("asx"), q = el("asxQ"), out = el("asxOut");
+    var exclude = null;
+    function autosize() { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 160) + "px"; }
     function drawSources() {
-      el("askSrc").innerHTML = sourceSelect("src", "Search in");
-      el("src").addEventListener("change", function (e) { chosen = e.target.value; });
+      el("asxSrc").innerHTML = '<select id="asxProgram" aria-label="Program"><option value="">All programs</option>' + (state.sourceList || []).map(function (s) {
+        return '<option value="' + esc(s.value) + '"' + (chosen === s.value ? " selected" : "") + ">" + esc(s.value) + "</option>";
+      }).join("") + "</select>";
+      el("asxProgram").addEventListener("change", function (e) { chosen = e.target.value; });
     }
     drawSources();
     loadSources().then(function () { if (mine === seq) drawSources(); }).catch(function () {});
-    var exclude = null;
-    function run() {
-      var question = q.value.trim();
-      if (question.length < 8) { el("out").innerHTML = '<div class="card"><div class="msg err">Ask a full question, such as what the partner needs.</div></div>'; return; }
-      el("go").disabled = true;
-      el("busy").innerHTML = '<span class="spinner"></span>Reading the notes…';
-      PI.post("ask", { question: question, sources: chosenList(), exclude: exclude ? exclude.id : "" }).then(function (a) {
+
+    function selected() {
+      var turns = (askView.conv && askView.conv.turns) || [];
+      for (var i = 0; i < turns.length; i++) if (turns[i].id === askView.sel) return turns[i];
+      return turns[turns.length - 1] || null;
+    }
+    function drawRail() {
+      if (!askView.rail) return;
+      el("asxRail").innerHTML = AU.railHtml(askView.conv && askView.conv.id);
+      el("asxNote").textContent = AU.railNote();
+    }
+    function drawRecent() {
+      var list = (AU.history || []).slice(0, 6);
+      el("asxRecent").innerHTML = askView.conv || !list.length ? "" : '<div class="rl-group">Recent</div><div class="fus">' + list.map(function (c) {
+        return '<button type="button" class="fu" data-conv="' + esc(c.id) + '">' + esc(c.title) + "</button>";
+      }).join("") + "</div>";
+    }
+    function draw() {
+      var turns = (askView.conv && askView.conv.turns) || [];
+      box.classList.toggle("has-out", turns.length > 0);
+      out.innerHTML = turns.map(function (t, i) {
+        return '<div class="turn asx-turn" data-tid="' + esc(t.id) + '">' + (i ? '<h2 class="asx-q">' + esc(t.q) + "</h2>" : "") +
+          (t.kind === "matches" ? matchesHtml(t) : AU.answerHtml(t, { last: i === turns.length - 1, matchLink: true })) + "</div>";
+      }).join("");
+      el("asxSide").innerHTML = AU.sourcesSide(selected());
+      drawRail();
+      drawRecent();
+      autosize(); // the column narrows once there are results, so the question may wrap
+    }
+    function busy(text) {
+      box.classList.add("has-out");
+      var pending = '<div class="turn"><div class="thinking"><span class="spinner"></span>' + esc(text) + "</div></div>";
+      if (askView.conv) out.insertAdjacentHTML("beforeend", pending); else out.innerHTML = pending;
+      el("asxRecent").innerHTML = "";
+    }
+    /** follow continues the open conversation (a suggested next question); otherwise a new search. */
+    function run(question, mode, follow) {
+      question = String(question || "").trim();
+      if (question.length < 3) { out.innerHTML = '<div class="msg err">Type a question first.</div>'; return; }
+      if (!follow) { askView.conv = null; askView.sel = null; q.value = question; autosize(); }
+      busy("Reading the notes…");
+      autosize();
+      PI.post("assistant", { question: question, mode: mode || "auto", sources: chosenList(), exclude: exclude ? exclude.id : "",
+        conversationId: follow && askView.conv ? askView.conv.id : "" }).then(function (r) {
         if (mine !== seq) return;
-        el("out").innerHTML = renderAnswer(a);
-        loadRecent();
-      }).catch(function (err) { if (mine === seq) el("out").innerHTML = emptyState(err); })
-        .then(function () { if (mine === seq) { el("go").disabled = false; el("busy").innerHTML = ""; } });
+        if (!askView.conv || askView.conv.id !== r.conversation.id) askView.conv = { id: r.conversation.id, title: r.conversation.title, turns: [] };
+        askView.conv.turns.push(r.turn);
+        askView.sel = r.turn.id;
+        AU.remember(r.conversation);
+        draw();
+      }).catch(function (err) {
+        if (mine !== seq) return;
+        var pending = out.querySelector(".thinking");
+        if (pending) pending.parentNode.outerHTML = emptyState(err);
+        else out.insertAdjacentHTML("beforeend", emptyState(err));
+      });
     }
-    el("go").addEventListener("click", run);
-    q.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); });
-    // Arrived from "Find solution" on a company's issue: ask at once, leaving that company out.
-    // Editing the question means a new search, so the exclusion is dropped.
-    q.addEventListener("input", function () { if (exclude) { exclude = null; el("excl").innerHTML = ""; } });
-    if (askPrefill) {
-      var pre = askPrefill; askPrefill = null;
-      q.value = pre.question;
+    function openConversation(id) {
+      PI.api("assistant/conversation?id=" + encodeURIComponent(id)).then(function (r) {
+        if (mine !== seq) return;
+        askView.conv = r.conversation; askView.sel = null; exclude = null;
+        el("asxBack").innerHTML = "";
+        q.value = r.conversation.turns.length ? r.conversation.turns[0].q : ""; autosize();
+        draw();
+      }).catch(function (err) { if (mine === seq) out.innerHTML = emptyState(err); });
+    }
+    function setToggle(which, on) {
+      askView[which] = on;
+      box.classList.toggle(which, on);
+      Array.prototype.forEach.call(box.querySelectorAll('[data-tg="' + which + '"]'), function (b) { b.setAttribute("aria-pressed", on ? "true" : "false"); });
+      autosize();
+      if (which === "rail" && on) {
+        drawRail();
+        if (!AU.history) AU.loadHistory().then(function () { if (mine === seq) { drawRail(); drawRecent(); } }).catch(function () {});
+      }
+      if (which === "side") el("asxSide").innerHTML = AU.sourcesSide(selected());
+    }
+
+    el("asxForm").addEventListener("submit", function (e) { e.preventDefault(); run(q.value); });
+    q.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); run(q.value); } });
+    // Editing the question means a new search, so a Find solution exclusion is dropped.
+    q.addEventListener("input", function () { autosize(); if (exclude) { exclude = null; el("asxBack").innerHTML = ""; } });
+    box.addEventListener("click", function (e) {
+      var t = e.target, b;
+      if ((b = t.closest("[data-tg]"))) { setToggle(b.getAttribute("data-tg"), b.getAttribute("aria-pressed") !== "true"); return; }
+      if ((b = t.closest("[data-off]"))) { setToggle(b.getAttribute("data-off"), false); return; }
+      if ((b = t.closest(".cite"))) {
+        var turns = (askView.conv && askView.conv.turns) || [], turn = null;
+        for (var i = 0; i < turns.length; i++) if (turns[i].id === b.getAttribute("data-turn")) turn = turns[i];
+        if (!turn) return;
+        askView.sel = turn.id;
+        if (turn.kind === "matches" && !askView.side) setToggle("side", true);
+        AU.showSource(out, el("asxSide"), askView.side, turn, b.getAttribute("data-ref"));
+        return;
+      }
+      if ((b = t.closest(".fu[data-q]"))) { run(b.getAttribute("data-q"), "answer", true); return; }
+      if ((b = t.closest(".fu[data-match]"))) { run(b.getAttribute("data-match"), "match"); return; }
+      if ((b = t.closest("[data-conv]"))) { openConversation(b.getAttribute("data-conv")); return; }
+      if ((b = t.closest(".rl-del"))) {
+        var id = b.getAttribute("data-del");
+        if (!window.confirm("Delete this conversation from your history?")) return;
+        AU.forget(id).then(function () {
+          if (askView.conv && askView.conv.id === id) { askView.conv = null; q.value = ""; }
+          draw();
+        }).catch(function (err) { window.alert(err.message); });
+        return;
+      }
+      if ((b = t.closest("[data-resume]"))) {
+        e.preventDefault();
+        AU.resume(b.getAttribute("data-resume"));
+        if (history.length > 1) history.back(); else location.hash = "#/home";
+      }
+    });
+
+    AU.loadHistory().then(function () { if (mine === seq) { drawRail(); drawRecent(); } }).catch(function () {});
+    if (askView.rail) drawRail();
+    if (pre) {
       exclude = pre.exclude ? { id: pre.exclude, name: pre.name } : null;
-      el("excl").innerHTML = exclude ? '<p class="secsub" style="margin:8px 0 0">Looking for partners other than ' + esc((exclude.name || "the company with the issue").replace(/\.+$/, "")) + ".</p>" : "";
-      run();
+      if (pre.from) {
+        el("asxBack").innerHTML = '<a href="#" class="back" data-resume="' + esc(pre.from.id) + '">' + BACK + "Back to Ask box: " + esc(pre.from.title) + "</a>";
+      } else if (exclude) {
+        el("asxBack").innerHTML = '<span class="secsub" style="margin:0">Looking for partners other than ' +
+          esc((exclude.name || "the company with the issue").replace(/\.+$/, "")) + ".</span>";
+      }
+      run(pre.question, pre.mode);
+    } else {
+      q.focus();
     }
-    function loadRecent() {
-      PI.api("recent-questions").then(function (r) {
-        if (mine !== seq || !r.items.length) return;
-        el("recent").innerHTML = '<div class="card"><h2>Recent questions</h2><ul class="recent">' + r.items.slice(0, 8).map(function (it) {
-          return '<li><button class="link" data-q="' + esc(it.question) + '">' + esc(it.question) + '</button><span class="small muted">' + esc(PI.fmtStamp(it.at)) + "</span></li>";
-        }).join("") + "</ul></div>";
-        Array.prototype.forEach.call(el("recent").querySelectorAll("button[data-q]"), function (b) {
-          b.addEventListener("click", function () { q.value = b.getAttribute("data-q"); run(); });
-        });
-      }).catch(function () {});
-    }
-    loadRecent();
   }
 
   function companyFacts(c) {
     return [c.industry, PI.memberLabel(c.status)].filter(Boolean).map(esc).join(". ") + ".";
   }
+  /** A kept note as the card the rest of the app shows. */
+  function cardOf(s) {
+    return { id: s.id, kind: s.kind, title: s.title, detail: s.detail, date: s.date, company: s.company, sources: s.files, quote: "" };
+  }
 
-  function renderAnswer(a) {
-    var html = '<div class="card">';
-    if (a.ranking === "keyword") html += '<div class="banner">Ranked by keyword match only. Claude is not set up for this tool yet, so the order and wording are not reviewed.</div>';
-    if (a.summary) html += '<p class="answer">' + esc(a.summary) + "</p>";
-    html += '<p class="secsub" style="margin:8px 0 0">' + (a.cached ? "Saved answer from " + esc(PI.fmtStamp(a.askedAt)) + ". " : "") +
-      "Looked at " + a.considered.insights + " solutions, offers and wins.</p>";
-    if (!a.matches.length) html += '<div class="empty">No partner in the notes clearly does this.' +
-      (a.peers && a.peers.length ? " Partners working through the same thing are listed below." : "") + "</div>";
-    html += '<div class="tlist" style="margin-top:18px;border-top:1px solid var(--rule)">' + a.matches.map(function (m, n) {
+  /** A partner search: who matched and why, each opening onto the notes behind it. */
+  function matchesHtml(t) {
+    var AU = PI.AskUI;
+    var byRef = {};
+    (t.sources || []).forEach(function (s) { byRef[s.ref] = s; });
+    var html = "";
+    if (t.ranking === "keyword") html += '<div class="banner">Ranked by keyword match only. Claude is not set up for this tool yet, so the order and wording are not reviewed.</div>';
+    if (t.answer) html += '<p class="answer">' + esc(t.answer) + "</p>";
+    html += '<p class="secsub" style="margin:8px 0 0">Looked at ' + ((t.considered && t.considered.insights) || 0) + " solutions, offers and wins.</p>";
+    if (!t.matches.length) html += '<div class="empty">No partner in the notes clearly does this.' +
+      (t.peers && t.peers.length ? " Partners working through the same thing are listed below." : "") + "</div>";
+    html += '<div class="tlist" style="margin-top:18px;border-top:1px solid var(--rule)">' + t.matches.map(function (m, n) {
       var c = m.company;
       var strength = m.strength === "high" ? "High match" : m.strength === "medium" ? "Medium match" : "Low match";
-      var body = '<div class="band"><p class="why">' + esc(m.why) + "</p>" +
+      var notes = m.refs.map(function (r) { return byRef[r]; }).filter(Boolean);
+      var body = '<div class="band"><p class="why">' + esc(m.why) + AU.cites(m.refs, t.id) + "</p>" +
         (m.caution ? '<p class="caution"><b>Check first:</b> ' + esc(m.caution) + "</p>" : "") +
         (c.contacts && c.contacts.length ? '<p class="secsub" style="margin-top:10px">Contacts on file: ' + c.contacts.map(esc).join(", ") + "</p>" : "") +
-        '<div style="margin-top:18px">' + pointsHtml(m.evidence.map(function (i) {
-          return { text: "<b>" + esc(i.title) + "</b>", examples: PI.insightCard(i, { company: false }) };
+        '<div style="margin-top:18px">' + pointsHtml(notes.map(function (s) {
+          return { text: "<b>" + esc(s.title) + "</b>", examples: PI.insightCard(cardOf(s), { company: false }) };
         }), "note") + "</div>" +
-        '<p style="margin:16px 0 0"><a class="arrowlink" href="#/company/' + encodeURIComponent(c.id) + '">Open ' + esc(c.name) + ARROW + "</a></p></div>";
+        (c.id ? '<p style="margin:16px 0 0"><a class="arrowlink" href="#/company/' + encodeURIComponent(c.id) + '">Open ' + esc(c.name) + ARROW + "</a></p>" : "") + "</div>";
       return topicRow(n + 1, c.name, esc(strength + ". " + companyFacts(c)), body, false);
     }).join("") + "</div>";
-    if (a.gaps) html += '<p class="secsub" style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rule)"><b style="color:var(--navy)">Not covered:</b> ' + esc(a.gaps) + "</p>";
-    if (a.searchTerms && a.searchTerms.length) {
-      html += '<p class="secsub" style="margin-top:8px">Also searched for: ' + a.searchTerms.map(esc).join(", ") + ".</p>";
-    }
-    html += "</div>";
+    if (t.gaps) html += '<p class="secsub" style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rule)"><b style="color:var(--navy)">Not covered:</b> ' + esc(t.gaps) + "</p>";
+    if (t.searchTerms && t.searchTerms.length) html += '<p class="secsub" style="margin-top:8px">Also searched for: ' + t.searchTerms.map(esc).join(", ") + ".</p>";
     // Companies working through the same thing: a peer to compare notes with, not a solution.
-    if (a.peers && a.peers.length) {
-      html += '<div class="card"><h2>Working through the same thing</h2><p class="desc">Partners whose notes show the same issue, ' +
-        "an ask for help with it, or a plan to tackle it. Found by matching words, not ranked by Claude.</p>" +
-        a.peers.map(function (p) {
-          return p.evidence.map(function (i) { return PI.insightCard(Object.assign({}, i, { company: p.company })); }).join("");
-        }).join("") + "</div>";
+    if (t.peers && t.peers.length) {
+      html += '<div class="card" style="margin-top:28px"><h2>Working through the same thing</h2>' + t.peers.map(function (p) {
+        return p.notes.map(function (s) { return PI.insightCard(Object.assign(cardOf(s), { company: p.company })); }).join("");
+      }).join("") + "</div>";
     }
     return html;
   }
@@ -831,81 +945,13 @@
     show(0);
   }
 
-  // "Find solution": put the issue to Ask, leaving out the company that has it.
-  var askPrefill = null;
+  // "Find solution": put the issue to Ask's partner search, leaving out the company that has it.
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("button[data-find]");
     if (!b) return;
-    askPrefill = { question: b.getAttribute("data-find"), exclude: b.getAttribute("data-co"), name: b.getAttribute("data-co-name") };
+    PI.askPrefill = { question: b.getAttribute("data-find"), mode: "match", exclude: b.getAttribute("data-co"), name: b.getAttribute("data-co-name") };
     location.hash = "#/ask";
   });
-
-  /* ------------------------------------------------------------------ Explore */
-  var KINDS = ["problem", "solution", "win", "offer", "ask", "equipment", "news", "commitment"];
-
-  function explore() {
-    var mine = ++seq;
-    var offset = 0;
-    view.innerHTML = "<h1>Explore</h1>" +
-      '<div class="card" style="margin-top:32px;padding:26px 28px"><div class="fields">' +
-      '<div style="grid-column:span 2"><label class="field" for="eq">Search</label><input id="eq" placeholder="Words in the note or company" style="width:100%"></div>' +
-      '<div id="exSrc">' + sourceSelect("ep", "Program") + "</div>" +
-      '<div><label class="field" for="ek">Type</label><select id="ek"><option value="">All types</option>' + KINDS.map(function (k) { return '<option value="' + k + '">' + PI.kindLabel[k] + "</option>"; }).join("") + "</select></div>" +
-      '<div><label class="field" for="et">Topic</label><select id="et"><option value="">All topics</option></select></div>' +
-      '<div><label class="field" for="ei">Industry</label><select id="ei"><option value="">All industries</option></select></div>' +
-      '<div><label class="field" for="es">Member status</label><select id="es"><option value="">All</option><option value="Active">Council Member</option><option value="' + PI.NOT_COUNCIL + '">Not Council</option></select></div>' +
-      '<div><label class="field" for="ee">Event</label><select id="ee"><option value="">All events</option></select></div>' +
-      '<div><label class="field" for="ed">When</label><select id="ed"><option value="">Any time</option><option value="30">Last 30 days</option><option value="60">Last 60 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select></div>' +
-      '</div><div class="row" style="margin-top:18px;gap:12px 26px"><label class="chk"><input type="checkbox" id="ex"> Exact dates only</label>' +
-      '<label class="chk"><input type="checkbox" id="in"> Include Conexus board and internal notes</label>' +
-      '<button class="link" id="reset" style="margin-left:auto">Reset filters</button></div></div><div id="results"></div>';
-
-    function qs(withOffset) {
-      var p = [];
-      function add(k, v) { if (v) p.push(k + "=" + encodeURIComponent(v)); }
-      add("q", el("eq").value.trim()); add("kind", el("ek").value); add("topic", el("et").value); add("industry", el("ei").value);
-      add("status", el("es").value); add("eventType", el("ee").value); add("days", el("ed").value);
-      if (el("ex").checked) p.push("exact=1");
-      if (el("in").checked) p.push("internal=1");
-      p.push("sort=date");
-      if (chosenList().length) add("source", chosenList().join("|"));
-      p.push("limit=25"); if (withOffset) p.push("offset=" + offset);
-      return p.join("&");
-    }
-    function fillFacets(f) {
-      function opts(id, list, all) {
-        var cur = el(id).value;
-        el(id).innerHTML = '<option value="">' + all + "</option>" + list.map(function (o) {
-          return '<option value="' + esc(o.value) + '">' + esc(o.label) + "</option>";
-        }).join("");
-        el(id).value = cur;
-      }
-      opts("et", f.topic, "All topics"); opts("ei", f.industry, "All industries"); opts("ee", f.eventType, "All events");
-    }
-    function load(append) {
-      if (!append) offset = 0;
-      PI.api("insights?" + qs(true)).then(function (r) {
-        if (mine !== seq) return;
-        if (!state.explore.facets) state.explore.facets = r.facets;
-        if (el("et").options.length === 1) fillFacets(state.explore.facets);
-        if (!append) el("results").innerHTML = '<p class="secsub" style="margin:26px 0 0"><b style="color:var(--navy)" id="count"></b></p><div class="card" style="margin-top:12px" id="rows"></div><div id="moreWrap"></div>';
-        el("count").textContent = r.total + " note" + (r.total === 1 ? "" : "s");
-        var items = r.items.map(function (i) { return PI.insightCard(i, { action: isIssue(i) ? findButton(i, i.company && i.company.id) : "" }); }).join("");
-        el("rows").insertAdjacentHTML("beforeend", items || (append ? "" : '<div class="empty">Nothing matches those filters.</div>'));
-        var hasMore = offset + r.items.length < r.total;
-        el("moreWrap").innerHTML = hasMore ? '<p style="margin:22px 0 0"><button class="more" id="moreBtn">Show more</button></p>' : "";
-        if (hasMore) el("moreBtn").addEventListener("click", function () { offset += 25; load(true); });
-      }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
-    }
-    function wireSource() { el("ep").addEventListener("change", function (e) { chosen = e.target.value; load(false); }); }
-    wireSource();
-    loadSources().then(function () { if (mine === seq) { el("exSrc").innerHTML = sourceSelect("ep", "Program"); wireSource(); } }).catch(function () {});
-    var t;
-    el("eq").addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { load(false); }, 250); });
-    ["ek", "et", "ei", "es", "ee", "ed", "ex", "in"].forEach(function (id) { el(id).addEventListener("change", function () { load(false); }); });
-    el("reset").addEventListener("click", function () { chosen = ""; explore(); });
-    load(false);
-  }
 
   /* ------------------------------------------------------------------ router */
   function route() {
@@ -923,7 +969,6 @@
     else if (name === "ask") ask();
     else if (name === "companies") companies();
     else if (name === "company" && parts[1]) company(decodeURIComponent(parts[1]), parts[2] || "overview");
-    else if (name === "explore") explore();
     else home();
     window.scrollTo(0, 0);
   }

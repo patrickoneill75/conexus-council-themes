@@ -2670,7 +2670,8 @@ test("workforce: junk in the role form cannot become junk in the totals", async 
 });
 
 /* ================================================================== partner_intel */
-const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan } = await mod("partner_intel.js");
+const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan, runSummariesAhead, questionWindow, looksLikeMatch,
+  AHEAD_PROGRAMS, SUMMARY_BOX_FILE } = await mod("partner_intel.js");
 const pi = (route, request, env) => handlePartnerIntelApi(route, request, env);
 const piReq = (route, method, body, token) => jsonReq(`/api/partner-intel/${route}`, method, body, token);
 const piGet = (route, token) => req(`/api/partner-intel/${route}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
@@ -2962,15 +2963,18 @@ test("partner_intel: the Home dashboard counts what the notes hold, and follows 
   assert.equal((await d("&source=Board%20Meetings")).insights, 1, "naming Board Meetings includes its internal row");
 });
 
-test("partner_intel: the tabs run Home, Programs, Companies, Ask, Explore", () => {
+test("partner_intel: the tabs run Home, Companies, Programs, Ask, with no Explore, and the app name goes Home", () => {
   const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "index.html"), "utf8");
   const nav = [...html.slice(html.indexOf('id="nav"'), html.indexOf("</nav>")).matchAll(/data-r="(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(nav, ["home", "programs", "companies", "ask", "explore"]);
+  assert.deepEqual(nav, ["home", "companies", "programs", "ask"]);
+  assert.doesNotMatch(html, /explore/i, "the Explore page and its route are gone");
+  assert.match(html, /<a class="appname" href="#\/home">Partner Intelligence<\/a>/);
+  assert.match(html, /<script src="\/partner-intel\/askbox\.js"><\/script>/, "the Ask box loads on the app's pages");
 });
 
 test("partner_intel: the staff pages show no urgency and say issue, not open issue or problem", () => {
   const dir = path.join(path.dirname(SRC), "public", "partner-intel");
-  for (const file of ["index.html", "pi.js", "pi.css", "control-panel/index.html"]) {
+  for (const file of ["index.html", "pi.js", "askbox.js", "pi.css", "control-panel/index.html"]) {
     const src = fs.readFileSync(path.join(dir, file), "utf8");
     // Only text a person reads: drop comments, then look at string literals and markup.
     const shown = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/<!--[\s\S]*?-->/g, "");
@@ -4402,6 +4406,283 @@ test("partner_intel: a one-time update that could not start is not used up, and 
 });
 
 /* ------------------------------------------------------------------------- runner */
+/* ------------------------------------------------------------- Ask box and Ask page (assistant) */
+
+const answerOut = (answer, followUps = []) => okJson({ content: [{ type: "tool_use", name: "write_answer", input: { answer, follow_ups: followUps } }],
+  usage: { input_tokens: 900, output_tokens: 120 } });
+/** A Claude stub for the assistant: search terms, then the answer. Records every request body. */
+function assistantClaude(answer, followUps, bodies = []) {
+  return (url, init) => {
+    if (!url.includes("api.anthropic.com")) throw new Error(`unexpected fetch ${url}`);
+    const body = JSON.parse(init.body);
+    bodies.push(body);
+    if (body.tools[0].name === "search_terms") return termsOut(["apprenticeship", "skilled trades"]);
+    if (body.tools[0].name === "write_answer") return answerOut(answer, followUps);
+    if (body.tools[0].name === "rank_matches") {
+      const sent = body.messages[0].content;
+      const cands = JSON.parse(sent.slice(sent.indexOf("<candidates>") + 12, sent.indexOf("</candidates>")));
+      return rankOut(cands.slice(0, 2).map((c) => ({ company_id: c.company_id, strength: "high", why: "Did it.", caution: "",
+        evidence_ids: [c.evidence[0].id] })));
+    }
+    throw new Error(`unexpected tool ${body.tools[0].name}`);
+  };
+}
+const assistantRows = () => [
+  ins({ id: "h1", topic: "talent_pipeline", company_id: "c-a", title: "Cannot hire maintenance technicians", detail: "Second shift is empty." }),
+  ins({ id: "h2", topic: "talent_pipeline", company_id: "c-b", title: "Apprentices leave after a year", detail: "Wages elsewhere." }),
+  ins({ id: "w1", kind: "win", urgency: "none", topic: "talent_pipeline", company_id: "c-c", title: "Apprenticeship filled four roles",
+    detail: "Registered apprenticeship with a college.", solves: "Technician hiring" }),
+  ins({ id: "q1", topic: "quality", company_id: "c-b", title: "Inspection backlog", detail: "Manual gauging." }),
+];
+const askBox = (token, body) => piReq("assistant", "POST", body, token);
+
+test("partner_intel: the Ask box answers from the notes, keeps only citations it was shown, and numbers them 1, 2, 3", async () => {
+  const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const res = await withFetch(assistantClaude("Hiring leads [n2]. Two companies raised it [n1][n2] — one fixed it [n999]. Range 3–5.",
+    ["Who solved hiring?"], bodies), () => pi("assistant", askBox(token, { question: "What are the top issues for the next quarterly meeting?", mode: "answer" }), env));
+  assert.equal(res.status, 200);
+  const r = await res.json();
+  assert.equal(r.turn.kind, "answer");
+  assert.equal(r.turn.answer, "Hiring leads [1]. Two companies raised it [2][1], one fixed it . Range 3 to 5.",
+    "renumbered in citation order, an unknown reference dropped, no dashes");
+  assert.equal(r.turn.sources.length, 2);
+  assert.deepEqual(r.turn.sources.map((x) => x.ref), [1, 2]);
+  assert.ok(r.turn.sources.every((x) => x.title && x.company && "files" in x), "each cited note is kept whole enough to show later");
+  assert.deepEqual(r.turn.followUps, ["Who solved hiring?"]);
+  const answerCall = bodies.find((b) => b.tools[0].name === "write_answer");
+  assert.equal(answerCall.model, "claude-sonnet-5-5");
+  assert.equal(answerCall.tools[0].strict, true);
+  assert.deepEqual(answerCall.tool_choice, { type: "auto" }, "Sonnet 5.5 rejects a forced tool choice");
+  assert.equal(answerCall.cache_control, undefined, "no prompt caching on a low-volume flow");
+  const prompt = answerCall.messages[0].content;
+  for (const part of ["<overview>", "<topic_table>", "<notes>", "<question>", "Cannot hire maintenance technicians"]) assert.ok(prompt.includes(part), part);
+  assert.ok(prompt.indexOf("<question>") > prompt.indexOf("<notes>"), "the question comes after the material");
+  assert.ok(!prompt.includes("<topics>"), "the topic table is not mistaken for a summaries prompt");
+  const usage = JSON.parse(await env.BOX_KV.get(`pi:usage:${new Date().toISOString().slice(0, 7)}`));
+  assert.equal(usage.assistant.calls, 2, "the search terms and the answer, two calls");
+});
+
+test("partner_intel: a follow-up in the Ask box reads the earlier answer and joins the same conversation", async () => {
+  const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const first = await withFetch(assistantClaude("Hiring [n1].", [], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "What are members saying about hiring?", mode: "answer" }), env)).json());
+  const second = await withFetch(assistantClaude("Wins too [n1].", [], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "And the wins?", mode: "answer", conversationId: first.conversation.id }), env)).json());
+  assert.equal(second.conversation.id, first.conversation.id);
+  assert.equal(second.conversation.turns, 2);
+  const last = bodies.filter((b) => b.tools[0].name === "write_answer").pop().messages[0].content;
+  assert.match(last, /<earlier_conversation>\nQ: What are members saying about hiring\?\nA: Hiring \[1\]\./);
+  const missing = await pi("assistant", askBox(token, { question: "More?", mode: "answer", conversationId: "nope" }), env);
+  assert.equal(missing.status, 404, "a conversation that is not in the person's history is not continued");
+});
+
+test("partner_intel: on the Ask page a who-can-help question ranks partners, and anything else gets an answer", async () => {
+  assert.equal(looksLikeMatch("Who can help with hiring and keeping skilled technicians?"), true);
+  assert.equal(looksLikeMatch("A partner is looking for help with an AI quality system. Who can we connect them with?"), true);
+  assert.equal(looksLikeMatch("Which companies have solved second-shift staffing?"), true);
+  assert.equal(looksLikeMatch("What are the top issues to discuss at the next quarterly meeting?"), false);
+  assert.equal(looksLikeMatch("Which companies mentioned energy costs this year?"), false);
+  const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
+  const bodies = [];
+  const r = await withFetch(assistantClaude("unused", [], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring for technicians?" }), env)).json());
+  assert.equal(r.turn.kind, "matches");
+  assert.ok(!bodies.some((b) => b.tools[0].name === "write_answer"), "no written answer as well: two calls, not three");
+  assert.ok(r.turn.matches.length >= 1);
+  const refs = new Set(r.turn.sources.map((x) => x.ref));
+  assert.ok(r.turn.matches.every((m) => m.refs.length && m.refs.every((n) => refs.has(n))), "every match points at numbered notes");
+  const forced = await withFetch(assistantClaude("An answer [n1].", [], []), async () =>
+    (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring?", mode: "answer" }), env)).json());
+  assert.equal(forced.turn.kind, "answer", "the Ask box always answers");
+  assert.equal(forced.turn.offerMatch, true, "and offers the partner search for a who-can-help question");
+});
+
+test("partner_intel: each person's Ask history is theirs alone, kept in Box under the Database folder, and restored from Box", async () => {
+  const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await pi("relay/publish", relay("publish", "POST", { version: "vh", generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1",
+    topics: TOPICS, events: [], insights: assistantRows(), companies: [], unmatched: [], stats: {} }), env);
+  await setFolder(env, token, "data", "22", "Database");
+  const folders = { 22: [], 50: [] };
+  const files = {};
+  const uploads = [];
+  const created = [];
+  const box = (url, init = {}) => {
+    if (url.includes("api.anthropic.com")) return assistantClaude("Hiring [n1].")(url, init);
+    const u = new URL(url);
+    if (u.pathname === "/2.0/folders" && init.method === "POST") {
+      created.push(JSON.parse(init.body));
+      folders[22].push({ type: "folder", id: "50", name: "Ask history" });
+      return okJson({ id: "50" });
+    }
+    const items = u.pathname.match(/\/folders\/(\d+)\/items$/);
+    if (items) return okJson({ total_count: (folders[items[1]] || []).length, entries: folders[items[1]] || [] });
+    const content = u.pathname.match(/\/files\/(\d+)\/content$/);
+    if (content && !url.startsWith("https://upload.")) return new Response(files[content[1]]);
+    if (url.startsWith("https://upload.box.com")) {
+      const id = content ? content[1] : "900";
+      const file = init.body.get("file");
+      uploads.push({ url, id, name: file.name });
+      return file.text().then((txt) => {
+        files[id] = txt;
+        if (!content) folders[50].push({ type: "file", id, name: file.name });
+        return okJson({ entries: [{ id }] });
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const r1 = await withFetch(box, async () => (await pi("assistant", askBox(token, { question: "What are members saying about hiring?", mode: "answer" }), env)).json());
+  assert.equal(r1.saved.box, true);
+  assert.deepEqual(created, [{ name: "Ask history", parent: { id: "22" } }], "the Ask history folder is made inside the Database folder");
+  assert.equal(uploads[0].name, "ask-history-poneill@conexusindiana.com.json");
+  await withFetch(box, () => pi("assistant", askBox(token, { question: "And quality?", mode: "answer", conversationId: r1.conversation.id }), env));
+  assert.equal(created.length, 1, "the folder is found the second time, not made again");
+  assert.match(uploads[1].url, /files\/900\/content$/, "the history file is updated as a new version, not uploaded again (Box would 409)");
+  assert.equal(JSON.parse(files["900"]).conversations[0].turns.length, 2);
+
+  // Someone else's history never shows, whatever is stored.
+  await env.BOX_KV.put("pi:asst:history:someone@else.test", JSON.stringify({ conversations: [{ id: "x", title: "Theirs", turns: [] }] }));
+  const mine = await withFetch(box, () => getJson("assistant/history", env, token));
+  assert.deepEqual(mine.conversations.map((c) => c.title), ["What are members saying about hiring?"]);
+  assert.equal((await pi("assistant/conversation", piGet("assistant/conversation?id=x", token), env)).status, 404);
+
+  // The app's copy lost: the history comes back from Box.
+  await env.BOX_KV.delete("pi:asst:history:poneill@conexusindiana.com");
+  const back = await withFetch(box, () => getJson("assistant/history", env, token));
+  assert.equal(back.conversations.length, 1);
+  assert.equal(back.conversations[0].turns, 2);
+
+  const del = await withFetch(box, () => pi("assistant/delete", piReq("assistant/delete", "POST", { id: r1.conversation.id }, token), env));
+  assert.equal(del.status, 200);
+  assert.deepEqual((await withFetch(box, () => getJson("assistant/history", env, token))).conversations, []);
+  assert.deepEqual(JSON.parse(files["900"]).conversations, [], "deleting removes it from the Box copy too");
+});
+
+test("partner_intel: the Ask box and history refuse a caller who is not signed in", async () => {
+  const { env } = await piEnv(assistantRows());
+  assert.equal((await pi("assistant", askBox("", { question: "Top issues?" }), env)).status, 401);
+  assert.equal((await pi("assistant/history", piGet("assistant/history"), env)).status, 401);
+  assert.equal((await pi("assistant/delete", piReq("assistant/delete", "POST", { id: "x" }), env)).status, 401);
+});
+
+test("partner_intel: a question's time window is read from its words", () => {
+  const now = new Date("2026-10-22T12:00:00Z");
+  assert.equal(questionWindow("What came up in the last 60 days?", now), 60);
+  assert.equal(questionWindow("Top issues over the past quarter", now), 91);
+  assert.equal(questionWindow("anything new last week", now), 7);
+  assert.equal(questionWindow("What did members say this year?", now), 295);
+  assert.equal(questionWindow("What are the top issues for the next quarterly meeting?", now), 0, "the next quarter is not a window");
+});
+
+test("partner_intel: a company named in the question, or the page it is asked from, puts that company's notes in front of Claude", async () => {
+  const rows = [...assistantRows(), ...Array.from({ length: 30 }, (_, k) => ins({ id: `g${k}`, company_id: "c-c", topic: "quality",
+    title: `Gamma note ${k}`, date: isoAgo(400 + k) }))];
+  const { env, token } = await piEnv(rows, { partner_intel_claude_api: "k" });
+  const bodies = [];
+  await withFetch(assistantClaude("Gamma [n1].", [], bodies), () => pi("assistant", askBox(token, { question: "What has Gamma Labs said?", mode: "answer" }), env));
+  const prompt = bodies.find((b) => b.tools[0].name === "write_answer").messages[0].content;
+  assert.ok((prompt.match(/Gamma note/g) || []).length >= 20, "old notes from the named company are included");
+  const fromPage = [];
+  await withFetch(assistantClaude("It [n1].", [], fromPage), () => pi("assistant", askBox(token, { question: "Summarize what we have heard.", mode: "answer", companyId: "c-c" }), env));
+  const pagePrompt = fromPage.find((b) => b.tools[0].name === "write_answer").messages[0].content;
+  assert.match(pagePrompt, /<page>The person is on the page for Gamma Labs\./);
+  assert.ok((pagePrompt.match(/Gamma note/g) || []).length >= 20);
+});
+
+/* ---------------------------------------------------- trending summaries written ahead, kept in Box */
+
+test("partner_intel: new data queues Home and the main programs, and the cron writes their summaries once, then saves them to Box", async () => {
+  assert.deepEqual(AHEAD_PROGRAMS, ["Field Demos", "CIAIC", "PCN", "ITA", "Board Meetings"]);
+  const rows = [
+    ...trendingRows(),
+    ins({ topic: "quality", company_id: "c-c", title: "CIAIC scrap", sources: [{ id: "f9", name: "c.docx", path: "Notes/CIAIC/c.docx" }], date: isoAgo(200) }),
+    ins({ topic: "quality", company_id: "c-a", title: "CIAIC gauges", sources: [{ id: "f8", name: "d.docx", path: "Notes/CIAIC/d.docx" }], date: isoAgo(210) }),
+  ];
+  const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await setFolder(env, token, "data", "22", "Database");
+  const publish = () => pi("relay/publish", relay("publish", "POST", { version: "va", generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1",
+    topics: TOPICS, events: [], insights: rows, companies: [], unmatched: [], stats: {} }), env);
+  await publish();
+  assert.equal(JSON.parse(await env.BOX_KV.get("pi:sum:queue")).views.length, 6, "Home and the five programs");
+
+  let claude = 0;
+  const folder = [];
+  const files = {};
+  const box = (url, init = {}) => {
+    if (url.includes("api.anthropic.com")) {
+      claude++;
+      const t = topicsIn(init);
+      return summaryOut(t.payload, (x) => ({ topic_id: x.topic_id, bullets: [{ text: `About ${x.topic}.`, evidence_ids: [x.evidence[0].id] }] }));
+    }
+    const u = new URL(url);
+    if (u.pathname.endsWith("/folders/22/items")) return okJson({ total_count: folder.length, entries: folder });
+    const content = u.pathname.match(/\/files\/(\d+)\/content$/);
+    if (content && !url.startsWith("https://upload.")) return new Response(files[content[1]]);
+    if (url.startsWith("https://upload.box.com")) {
+      const file = init.body.get("file");
+      const id = content ? content[1] : "777";
+      return file.text().then((txt) => { files[id] = txt; if (!content) folder.push({ type: "file", id, name: file.name }); return okJson({ entries: [{ id }] }); });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const run1 = await withFetch(box, () => runSummariesAhead(env));
+  assert.equal(run1.left, 0);
+  assert.ok(claude >= 1);
+  const home = await getJson("home", env, token);
+  assert.ok(home.trending.every((g) => g.summary), "Home opens with every summary already written");
+  const ciaic = await getJson("program?name=CIAIC", env, token);
+  assert.ok(ciaic.trending.length && ciaic.trending.every((g) => g.summary), "and so does CIAIC, which goes back past Home's 90 days");
+  const saved = JSON.parse(files["777"]);
+  assert.equal(folder[0].name, SUMMARY_BOX_FILE);
+  assert.ok(saved.summaries.length >= 2 && saved.summaries.every((e) => /^pi:sum:[0-9a-f]{32}$/.test(e.key) && e.value.bullets.length));
+  assert.equal(await env.BOX_KV.get("pi:sum:dirty"), null);
+
+  // The same data again: nothing to write, no Claude call.
+  const before = claude;
+  await publish();
+  await withFetch(box, () => runSummariesAhead(env));
+  assert.equal(claude, before, "a summary is only written when the rows behind it change");
+
+  // A new deployment with an empty store: the summaries come back from Box, not from Claude.
+  const fresh = await adminEnv({ partner_intel_claude_api: "k" });
+  await fresh.env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await setFolder(fresh.env, fresh.token, "data", "22", "Database");
+  await pi("relay/publish", relay("publish", "POST", { version: "va", generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1",
+    topics: TOPICS, events: [], insights: rows, companies: [], unmatched: [], stats: {} }), fresh.env);
+  files["777"] = JSON.stringify({ ...saved, summaries: [...saved.summaries, { key: "pi:settings", value: { bullets: [] } }] });
+  await withFetch(box, () => runSummariesAhead(fresh.env));
+  assert.equal(claude, before, "restored from Box");
+  assert.ok((await getJson("home", fresh.env, fresh.token)).trending.every((g) => g.summary));
+  assert.equal(JSON.parse(await fresh.env.BOX_KV.get("pi:settings")).dataFolderId, "22", "a key in the Box file that is not a summary key is ignored");
+});
+
+test("partner_intel: summaries written when someone opens a page are saved to Box by the next cron tick", async () => {
+  const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
+  await env.BOX_KV.put("pi:roster", JSON.stringify({ partners: PARTNERS.map((p) => ({ ...p })), aliases: {}, staff: [], updatedAt: "r1" }));
+  await pi("relay/publish", relay("publish", "POST", { version: "vb", generated_at: "2026-10-07T00:00:00+00:00", roster_updated_at: "r1",
+    topics: TOPICS, events: [], insights: trendingRows(), companies: [], unmatched: [], stats: {} }), env);
+  await env.BOX_KV.delete("pi:sum:queue");
+  await setFolder(env, token, "data", "22", "Database");
+  const uploads = [];
+  await withFetch((url, init) => {
+    const t = topicsIn(init);
+    return summaryOut(t.payload, (x) => ({ topic_id: x.topic_id, bullets: [{ text: "P.", evidence_ids: [x.evidence[0].id] }] }));
+  }, () => pi("summarize", piReq("summarize", "POST", { days: 30, topics: ["quality"] }, token), env));
+  assert.equal(await env.BOX_KV.get("pi:sum:dirty"), "1");
+  await withFetch(boxFake({ 22: [] }, {}, uploads), () => runSummariesAhead(env));
+  assert.equal(uploads.length, 1);
+  assert.equal(await env.BOX_KV.get("pi:sum:dirty"), null);
+  assert.deepEqual(await runSummariesAhead(env), { idle: true }, "nothing to do: no Box or Claude call");
+});
+
+test("partner_intel: the cron writes the summaries ahead as well as starting the daily scan", () => {
+  const src = fs.readFileSync(path.join(SRC, "worker.js"), "utf8");
+  assert.match(src, /ctx\.waitUntil\(runSummariesAhead\(env\)\)/);
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {
