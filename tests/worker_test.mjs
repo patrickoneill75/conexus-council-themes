@@ -5334,9 +5334,9 @@ test("partner_intel: BUG pages: an answer landed in whatever conversation was op
   const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
   const page = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
   const panel = fs.readFileSync(path.join(PUB_PI, "control-panel", "index.html"), "utf8");
-  assert.match(box, /box\.busyIn = convId/);
-  assert.match(box, /if \(\(box\.conv \? box\.conv\.id : ""\) !== convId\)/, "the Ask box leaves the screen alone when another conversation is open");
-  assert.match(page, /if \(\(askView\.conv \? askView\.conv\.id : ""\) !== askedIn\)/, "and so does the Ask page");
+  // Each answer joins the conversation it was asked in, not whichever one is open when it comes back.
+  assert.match(box, /conv\.turns\.push\(r\.turn\);[\s\S]{0,400}var shown = A\.sameConv\(box\.conv, conv\)/);
+  assert.match(page, /conv\.turns\.push\(r\.turn\);[\s\S]{0,400}var shown = AU\.sameConv\(askView\.conv, conv\)/);
   assert.match(panel, /<option value="Non-member">/);
   assert.match(panel, /\["Active", "Inactive", "Non-member"\]\.indexOf\(p\.status\) >= 0 \? p\.status/);
   assert.match(panel, /!r\.items\.length && r\.total > 0 && checkOffset > 0/);
@@ -5892,6 +5892,51 @@ test("site: the home page is the sign-in page, and the old sign-in address forwa
   assert.match(home, /--navy:#07214E/, "themed like the admin pages");
   assert.ok(!home.includes("apps.js"), "no public list of apps");
   assert.match(fs.readFileSync(path.join(pub, "admin", "login.html"), "utf8"), /location\.replace\("\/" \+ location\.search \+ location\.hash\)/);
+});
+
+test("partner_intel: BUG two answers finishing at the same moment, from two devices, left only one of them in the person's history", async () => {
+  const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
+  // A slow store, so the two requests' reads and writes interleave the way two devices' do.
+  const kv = env.BOX_KV, get = kv.get.bind(kv), put = kv.put.bind(kv);
+  kv.get = async (...a) => { await new Promise((r) => setTimeout(r, 3)); return get(...a); };
+  kv.put = async (...a) => { await new Promise((r) => setTimeout(r, 3)); return put(...a); };
+  const first = await withFetch(assistantClaude("A [n1]."), async () =>
+    (await pi("assistant", askBox(token, { question: "What about hiring?", mode: "answer" }), env)).json());
+  await withFetch(assistantClaude("B [n1]."), () => Promise.all([
+    pi("assistant", askBox(token, { question: "And on the phone: wages?", mode: "answer", conversationId: first.conversation.id }), env),
+    pi("assistant", askBox(token, { question: "And on the laptop: quality?", mode: "answer", conversationId: first.conversation.id }), env)]));
+  const conv = (await getJson(`assistant/conversation?id=${first.conversation.id}`, env, token)).conversation;
+  assert.deepEqual(conv.turns.map((t) => t.q).sort(), ["And on the laptop: quality?", "And on the phone: wages?", "What about hiring?"]);
+});
+
+test("partner_intel: BUG the Ask box and Ask page took one question at a time, and a second device seemed to be answering another question", () => {
+  const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  const page = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  assert.ok(!/box\.busy|busyIn/.test(box), "no single busy flag in the Ask box");
+  assert.ok(!/\bwaiting\b/.test(page), "nor in the Ask page");
+  assert.match(box, /box\.pending\.push\(item\)/);
+  assert.match(page, /askView\.pending\.push\(item\)/);
+});
+
+test("partner_intel: a follow-up asked before a new conversation's first answer waits for it, so both land in one conversation", async () => {
+  const src = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  const block = src.slice(src.indexOf("  A.send = function"), src.indexOf("  /** Is this pending question"));
+  const sent = [];
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const PI = { post: (route, body) => { sent.push(body.conversationId);
+    return (sent.length === 1 ? gate : Promise.resolve()).then(() => ({ conversation: { id: "c-real", title: "T" }, turn: {} })); } };
+  const A = new Function("PI", `var A = {}; ${block}; return A;`)(PI);
+  const conv = A.newConv("");
+  const one = A.send(conv, { question: "first" });
+  const two = A.send(conv, { question: "second" });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(sent, [""], "the follow-up has not gone yet: it waits for the conversation's id");
+  release();
+  await Promise.all([one, two]);
+  assert.deepEqual(sent, ["", "c-real"]);
+  assert.equal(conv.id, "c-real");
+  assert.equal(conv.temp, false);
 });
 
 let failed = 0;
