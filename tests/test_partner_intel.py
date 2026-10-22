@@ -604,6 +604,7 @@ class FakeApi:
         self.reports = []
         self.downloads = 0
         self.lists = 0
+        self.download_fail = {}  # file id -> exception the download raises
 
     def config(self): return self.settings
     def roster(self): return {"partners": ROSTER.partners, "aliases": {}, "staff": ROSTER.staff, "updatedAt": "t1"}
@@ -615,11 +616,14 @@ class FakeApi:
         folder = folder_id[2:]
         return [{"type": "file", "id": i, "name": f["name"], "size": len(f["data"]),
                  "sha1": hashlib.sha1(f["data"]).hexdigest(), "created_at": f.get("created_at", "2026-01-01T10:00:00Z"),
-                 "modified_at": f.get("modified_at", "2026-01-01T10:00:00Z")}
+                 "modified_at": f.get("modified_at", "2026-01-01T10:00:00Z"),
+                 **({"content_modified_at": f["content_modified_at"]} if "content_modified_at" in f else {})}
                 for i, f in self.files.items() if f["folder"] == folder]
 
     def download(self, file_id):
         self.downloads += 1
+        if file_id in self.download_fail:
+            raise self.download_fail[file_id]
         return self.files[file_id]["data"]
 
     def sync_roster(self):
@@ -1408,7 +1412,7 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         r = rows[0]
         self.assertEqual((r["Company"], r["MemberStatus"], r["Industry"], r["SourceFolder"]),
-                         ("Zoeller Custom Molding", "Council Member", "Plastics Company", "CIAIC"))
+                         ("Zoeller Custom Molding", "Council Member", "Plastics Company", "Council"))
         self.assertTrue(r["Title"].startswith("'="))
         self.assertTrue(r["Detail"].startswith("'+"))
 
@@ -1490,7 +1494,390 @@ class MeetingTests(unittest.TestCase):
         ds = self.build(("1", "CIAIC_Q4_2025_Meeting.docx", "2025-11-12", "text",
                          [row(company="Zoeller", speaker=""), row(company="Lucas Oil", speaker="", title="Another")], "partner"))
         self.assertIn("Meeting", export.COLUMNS)
-        self.assertIn("CIAIC Q4 2025 Meeting", export.insights_csv(ds, ROSTER))
+        self.assertIn("Council Q4 2025 Meeting", export.insights_csv(ds, ROSTER), "named as the app names it: CIAIC is the Council")
+
+
+# ------------------------------------------------------------------------------ QA round 2
+BRANDS = Roster.from_payload({
+    "partners": [
+        {"id": "c-allison", "name": "Allison Transmission", "industry": "Automotive Company", "status": "Active"},
+        {"id": "c-lucas", "name": "Lucas Oil", "industry": "Chemicals", "status": "Active", "contacts": ["Megan Burakiewicz"]},
+        {"id": "c-zoeller", "name": "Zoeller Custom Molding", "industry": "Plastics Company", "status": "Active",
+         "contacts": ["Jerry Grangier"]},
+    ],
+    "staff": ["Patrick O'Neill"], "updatedAt": "t1",
+})
+
+
+class AttributionRound2Tests(unittest.TestCase):
+    def test_bug_a_first_name_that_is_a_partner_brand_credited_the_person_to_the_partner(self):
+        """BUG: Allison Clay (a person) was credited to Allison Transmission, because "Allison",
+        the partner's brand word, appeared in "Allison Clay - interview.docx"."""
+        r = resolve.Resolver(BRANDS)
+        self.assertEqual(run.file_company(r, "Allison Clay - interview.docx"), "", "a first name followed by a surname")
+        self.assertEqual(run.file_company(r, "Allison M. Clay notes.txt"), "", "with a middle initial")
+        self.assertEqual(run.file_company(r, "Allison Transmission visit.docx"), "Allison Transmission")
+        self.assertEqual(run.file_company(r, "Allison - interview.docx"), "Allison Transmission", "the brand alone still counts")
+        self.assertEqual(run.file_company(r, "Allison Interview.docx"), "Allison Transmission", "a title word is not a surname")
+        self.assertEqual(run.file_company(r, "transcript.txt", "Notes/Field Demos/Allison - 10.05.26"), "Allison Transmission")
+        # A known person's full name is a person whatever its case: a contact's, or an attendee's.
+        known = Roster(BRANDS.partners, {}, BRANDS.staff, "t1",
+                       [{"name": "Allison Clay", "account": "Lucas Oil", "title": "", "email": ""}])
+        self.assertEqual(run.file_company(resolve.Resolver(known), "allison clay - interview.txt"), "Lucas Oil",
+                         "the contact's own company, not the brand")
+        self.assertEqual(run.file_company(r, "allison clay interview.txt", people=["Allison Clay"]), "")
+        # A one-word alias of a partner is a brand word too.
+        aliased = resolve.Resolver(Roster.from_payload({"partners": [
+            {"id": "c-allison", "name": "Allison Transmission", "aliases": ["Allison"]}]}))
+        self.assertIsNone(aliased.company("Allison Clay", guess=True).company_id)
+        self.assertEqual(aliased.company("Allison").company_id, "c-allison")
+        # In the notes: "Allison" said by Allison Clay is the person; said of the company, the company.
+        reg, cache = registry_with(("1", "a.docx", "2026-04-24", "text", [
+            row(company="Allison", speaker="Allison Clay", title="Hiring is slow"),
+            row(company="Allison", speaker="Bob Jones", title="Allison is expanding", quote="Allison is adding a new plant")], "partner"))
+        by_title = {i["title"]: i for i in build.build_dataset(reg, cache, BRANDS, "t")["insights"]}
+        person = by_title["Hiring is slow"]
+        self.assertEqual(person["company_id"], "", "not credited to Allison Transmission")
+        self.assertIn("company_is_person", person["review"])
+        self.assertIn("c-allison", [o["id"] for o in person["company_options"]], "the partner is offered, not chosen")
+        self.assertEqual(by_title["Allison is expanding"]["company_id"], "c-allison")
+
+    def test_bug_a_persons_name_became_a_company(self):
+        """BUG: the company "Chad Smith" became the non-member company n-chad-smith. A person is
+        never made a company: their own company is used when known, flagged, else none."""
+        contacts = CONTACTS + [{"name": "Chad Smith", "account": "Lucas Oil", "title": "", "email": ""}]
+        roster = Roster(ROSTER.partners, ROSTER.aliases, ROSTER.staff, ROSTER.updated_at, contacts)
+        reg, cache = registry_with(
+            ("1", "a.docx", "2026-04-01", "text", [row(company="Chad Smith", speaker="Chad Smith", title="Contact as company")], "partner"),
+            ("2", "b.docx", "2026-04-02", "text", [row(company="Dana Whitfield", speaker="Dana Whitfield", title="Speaker as company")], "partner"),
+            ("3", "c.docx", "2026-04-03", "text", [row(company="Patrick O'Neill", speaker="", title="Staff as company")], "partner"),
+            ("4", "d.docx", "2026-04-04", "text", [row(company="Pat Rowe", speaker="", title="Attendee as company")], "partner"),
+            ("5", "e.docx", "2026-04-05", "text", [row(company="", speaker="", title="Heading is a person")], "partner"),
+            ("6", "f.docx", "2026-04-06", "text", [row(company="Hartman Machine", speaker="", title="A real company")], "partner"),
+            ("7", "g.txt", "2026-04-07", "text", [row(company="Lucas", speaker="Lucas Oil", title="A company as speaker")], "partner"))
+        reg["4"]["units"][0]["attendees"] = [["Pat Rowe", "Zoeller Custom Molding"]]
+        reg["5"]["units"][0]["default_company"] = "Chad Smith"
+        ds = build.build_dataset(reg, cache, roster, "t")
+        by_title = {i["title"]: i for i in ds["insights"]}
+        self.assertEqual({c["id"] for c in ds["companies"]}, {"n-hartman-machine"}, "only the real company is made one")
+        self.assertEqual([u["raw"] for u in ds["unmatched"]], ["Hartman Machine"])
+        for title, company in [("Contact as company", "c-lucas"), ("Speaker as company", ""), ("Staff as company", ""),
+                               ("Attendee as company", "c-zoeller"), ("Heading is a person", "c-lucas")]:
+            i = by_title[title]
+            self.assertEqual(i["company_id"], company, title)
+            self.assertIn("company_is_person", i["review"], title)
+            self.assertEqual(i["company_raw"], "", f"{title}: the person's name is not shown as a company")
+            if not company:
+                self.assertIn("no_company", i["review"], title)
+        company_label = by_title["A company as speaker"]
+        self.assertEqual(company_label["company_id"], "c-lucas", "a speaker label that is a partner is not a person")
+        self.assertNotIn("company_is_person", company_label["review"])
+
+    def test_bug_state_of_indiana_matched_indiana_state_university(self):
+        """BUG: "State of Indiana" resolved to Indiana State University: every word of it is in the
+        partner's name, but it lacks the word that says what the partner is. The reverse too."""
+        r = resolve.Resolver(Roster.from_payload({"partners": [
+            {"id": "c-isu", "name": "Indiana State University"}, {"id": "c-iuh", "name": "Indiana University Health"},
+            {"id": "c-lucas", "name": "Lucas Oil Products, Inc."}, {"id": "c-ivy", "name": "Ivy Tech Community College"},
+            {"id": "c-ni", "name": "National Industries Group"}]}))
+        for raw in ("State of Indiana", "the State of Indiana", "Indiana State", "Indiana University"):
+            self.assertIsNone(r.company(raw).company_id, raw)
+        keep = {"Indiana State University": "c-isu", "Indiana University Health": "c-iuh", "Lucas Oil": "c-lucas",
+                "Lucas Oil Products": "c-lucas", "The Lucas Oil Products Company": "c-lucas", "LUCAS OIL PRODUCTS LLC": "c-lucas",
+                "Ivy Tech": "c-ivy", "National Industries": "c-ni"}
+        for raw, want in keep.items():
+            self.assertEqual(r.company(raw).company_id, want, raw)
+        state = resolve.Resolver(Roster.from_payload({"partners": [
+            {"id": "c-soi", "name": "State of Indiana"}, {"id": "c-iu", "name": "Indiana University"}],
+            "aliases": {"IU": "c-iu"}}))
+        self.assertIsNone(state.company("Indiana State University").company_id, "the reverse: an extra word of its own")
+        self.assertIsNone(state.company("Indiana University Health").company_id)
+        self.assertEqual(state.company("The State of Indiana").company_id, "c-soi")
+        self.assertEqual(state.company("IU").company_id, "c-iu", "an alias still matches")
+        self.assertEqual(run.file_company(state, "Indiana State University visit.docx"), "")
+        self.assertEqual(run.file_company(state, "State of Indiana meeting notes 10.05.26.docx"), "State of Indiana",
+                         "a file name's own words and date do not change which organization it names")
+
+
+class ScanRound2Tests(unittest.TestCase):
+    def test_bug_one_failed_download_stopped_the_whole_scan(self):
+        """BUG: an error from Box on one file (other than an unreadable file) ended the scan, so
+        nothing after it was read or published."""
+        import requests
+        api = FakeApi(RunTests().files())
+        api.download_fail["11"] = requests.ConnectionError("Box timed out")
+        report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(report["insights"], 2, "the other file was read and published")
+        self.assertEqual(api.state["registry"]["11"]["status"], "download_failed")
+        self.assertEqual([x["file"] for x in report["download_failed"]], ["Notes/PCN/2026-04-24 Cohort 2 Meeting.txt"])
+        self.assertTrue(any("tried again" in e for e in report["errors"]))
+        del api.download_fail["11"]
+        again = Counter()
+        run.run("scan", api=api, caller=again, model="m")
+        self.assertEqual(len(again.calls), 1, "retried on the next scan")
+        self.assertEqual(api.state["registry"]["11"]["status"], "done")
+        # A file read before keeps its insights while its new version cannot be downloaded.
+        api.files["11"]["data"] += b" More notes."
+        api.download_fail["11"] = RuntimeError("Box download failed (502)")
+        report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(report["insights"], 3)
+        self.assertEqual(api.state["registry"]["11"]["status"], "download_failed")
+        # A reader fault on one file is the same: recorded, retried, and the scan goes on.
+        api.download_fail.clear()
+        real = text.to_document
+        with mock.patch.object(run.text_mod, "to_document",
+                               side_effect=lambda name, data: (_ for _ in ()).throw(KeyError("word/document.xml")) if name.endswith(".txt") else real(name, data)):
+            report = run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(api.state["registry"]["11"]["status"], "read_failed")
+        self.assertEqual(len(report["read_failed"]), 1)
+
+    def test_bug_a_section_cut_off_in_the_batch_was_sent_whole_again_and_its_tokens_went_uncounted(self):
+        """BUG: a batch answer cut off at max_tokens sent the section whole again at full price
+        before splitting it, and the tokens of the cut-off attempt, billed all the same, were never
+        counted for the usage meter. Declined attempts were not counted either."""
+        lines = "\n".join(f"Point {i}: the plant reported a staffing change on line {i} and asked for help with training." for i in range(40))
+        body = "Zoeller:\nGenerated by AI. Be sure to check for accuracy.\nMeeting notes:\n" + lines
+        files = {"60": {"name": "Copilot Onboarding Notes.txt", "folder": "Onboarding", "data": body.encode()}}
+        probe = FakeBatches()
+        run.run("scan", api=FakeApi(files), caller=Counter(), model="m", batch_client=batch_client(probe))
+        cut = probe.requests[0]["custom_id"]
+        whole = len(probe.requests[0]["params"]["messages"][0]["content"].split("<notes>\n", 1)[1].split())
+        sizes = []
+
+        def direct(unit, event_type, staff, model):
+            sizes.append(len(unit.text.split()))
+            line = [l for l in unit.text.split("\n") if len(l.split()) > 8][0]
+            return [row(company="Zoeller", speaker="", quote=line[:80], title=f"Part {len(sizes)}", detail=line)], {"input": 1000, "output": 50}
+        report = run.run("scan", api=FakeApi(files), caller=direct, model="m", batch_client=batch_client(FakeBatches(out_of_room={cut})))
+        self.assertGreaterEqual(len(sizes), 2, "read in pieces")
+        self.assertLess(max(sizes), whole - 50, "never sent whole a second time")
+        self.assertEqual((report["claude_calls_batch"], report["tokens_in_batch"], report["tokens_out_batch"]), (1, 100, 20),
+                         "the cut-off batch answer is billed, so it is counted")
+        n = len(sizes)
+        self.assertEqual((report["claude_calls_sync"], report["tokens_in_sync"], report["tokens_out_sync"]), (n, 1000 * n, 50 * n))
+        self.assertEqual(report["claude_calls"], n + 1)
+        # Read directly: the cut-off attempt's tokens count in the entry and the call count.
+        unit = shape.Unit(text=lines, default_company="Zoeller")
+
+        def tight(unit, event_type, staff, model):
+            if len(unit.text.split()) > 400:
+                raise extract.OutOfRoom("cut off", {"input": 900, "output": 32000})
+            return [row(quote=unit.text.split("\n")[0][:80])], {"input": 500, "output": 100}
+        entry = extract.extract_unit(unit, "x", [], "m", caller=tight)
+        pieces = len(extract._halves(unit))
+        self.assertEqual((entry["usage"], entry["calls"]), ({"input": 900 + 500 * pieces, "output": 32000 + 100 * pieces}, 1 + pieces))
+
+        def refuse(unit, event_type, staff, model):
+            raise extract.Refused("Claude declined this section (cyber).", {"input": 700, "output": 3})
+        declined = extract.extract_unit(unit, "x", [], "m", caller=refuse)
+        self.assertEqual((declined["usage"], declined["calls"]), ({"input": 700, "output": 3}, 1))
+        # The real call puts a cut-off answer's usage on the exception it raises.
+        message = SimpleNamespace(stop_reason="max_tokens", content=[], usage=SimpleNamespace(input_tokens=11, output_tokens=22))
+        client, _ = RoomTests().fake_client(message)
+        with mock.patch.object(extract, "get_client", return_value=client):
+            with self.assertRaises(extract.OutOfRoom) as caught:
+                extract.call_claude(shape.Unit(text="x"), "x", [], "m")
+        self.assertEqual(caught.exception.usage, {"input": 11, "output": 22, "calls": 1})
+
+    def test_bug_an_undated_backfill_was_dated_the_day_it_was_uploaded(self):
+        """BUG: a file with no date in its text or name took its Box upload date, so a batch of
+        old notes uploaded today ranked as this week's news on Home. A file read for the first
+        time now takes the earlier of its own last-modified time and its upload time."""
+        recap = lambda *sections: "".join(f"{n}:\nGenerated by AI. Be sure to check for accuracy.\nMeeting notes:\n{b}\n" for n, b in sections).encode()
+        files = {"70": {"name": "Copilot Onboarding Notes.txt", "folder": "Onboarding", "data": recap(("Zoeller", SEC_A)),
+                        "created_at": "2026-10-20T15:00:00Z", "modified_at": "2026-10-20T15:00:00Z",
+                        "content_modified_at": "2024-03-05T09:30:00-05:00"}}
+        api = FakeApi(files)
+        run.run("scan", api=api, caller=Counter(), model="m")
+        first = api.published["insights"][0]
+        self.assertEqual((first["date"], first["date_source"]), ("2024-03-05", "box_upload"))
+        self.assertIn("estimated_date", first["review"], "still marked as an estimate")
+        self.assertEqual(api.published["events"][0]["date"], "2024-03-05")
+        # A section added later to the running file is dated when it arrived; the first keeps its date.
+        api.files["70"]["data"] = recap(("Zoeller", SEC_A), ("Lucas Oil", SEC_B))
+        api.files["70"]["modified_at"] = "2026-11-02T08:00:00Z"
+        api.files["70"]["content_modified_at"] = "2026-11-02T07:55:00Z"
+        run.run("scan", api=api, caller=Counter(), model="m")
+        dates_by_company = {i["company_raw"]: i["date"] for i in api.published["insights"]}
+        self.assertEqual(dates_by_company, {"Zoeller": "2024-03-05", "Lucas Oil": "2026-11-02"})
+        self.assertEqual(api.published["events"][0]["date"], "2024-03-05", "the file's date does not move")
+        # A file's own time later than its upload, or a bad clock, is not used.
+        self.assertEqual(dates.estimated_written("2026-10-20T15:00:00Z", "2026-10-21T00:00:00Z"), "2026-10-20T15:00:00Z")
+        self.assertEqual(dates.estimated_written("2026-10-20T15:00:00Z", "1980-01-01T00:00:00Z"), "2026-10-20T15:00:00Z")
+        self.assertEqual(dates.estimated_written("2026-10-20T15:00:00Z", ""), "2026-10-20T15:00:00Z")
+
+    def test_bug_the_csv_showed_the_old_ciaic_program_name(self):
+        """BUG: the CIAIC program is now the Council, and the Excel export still said CIAIC in its
+        program columns. Quotes and file names keep what they say; the database keeps raw names."""
+        from partner_intel import export
+        import csv as csvmod
+        reg, cache = registry_with(("1", "CIAIC_Q4_2025_Meeting.docx", "2025-11-12", "text", [
+            row(company="Zoeller", speaker="", quote="The CIAIC members said the pump business slows in the fourth quarter"),
+            row(company="Lucas Oil", speaker="", title="Another point at the CIAIC", detail="An CIAIC member asked.")], "partner"))
+        reg["1"]["path"] = "Notes/CIAIC/2025"
+        reg["1"]["event"]["type"] = reg["1"]["event"]["series"] = "CIAIC Council Meeting"
+        ds = build.build_dataset(reg, cache, ROSTER, "t")
+        rows = list(csvmod.DictReader(io.StringIO(export.insights_csv(ds, ROSTER).lstrip("﻿"))))
+        zoeller = [r for r in rows if r["Company"] == "Zoeller Custom Molding"][0]
+        self.assertEqual((zoeller["SourceFolder"], zoeller["EventType"], zoeller["Series"]), ("Council", "Council Meeting", "Council Meeting"))
+        self.assertEqual(zoeller["Meeting"], "Council Q4 2025 Meeting", "a meeting named for its file is named as the app names it")
+        lucas = [r for r in rows if r["Company"] == "Lucas Oil"][0]
+        self.assertEqual((lucas["Title"], lucas["Detail"]), ("Another point at the Council", "A Council member asked."),
+                         "titles and details say Council too; only quotes and file names keep CIAIC")
+        self.assertEqual(zoeller["SourceFiles"], "CIAIC_Q4_2025_Meeting.docx")
+        self.assertIn("The CIAIC members said", zoeller["Quote"])
+        database = json.loads(export.database_json(ds))
+        self.assertEqual({i["source_folder"] for i in database["insights"]}, {"CIAIC"}, "the database keeps raw folder names")
+        self.assertEqual(export.program_name("Cohort 3"), "Cohort 3")
+
+
+class FakeWorkerRelay:
+    """The Worker's paged state routes, in memory, standing in for requests.get and .post.
+    fail_page: (kind, index) answered 400, as a page the Worker refuses."""
+
+    def __init__(self):
+        self.meta = {"layout": 0, "write": "", "pages": {"registry": 0, "cache": 0}}
+        self.pages, self.calls, self.fail_page, self.published = {}, [], None, None
+
+    @staticmethod
+    def _answer(status, body):
+        import requests
+        r = requests.Response()
+        r.status_code, r._content, r.url = status, json.dumps(body).encode(), "https://w.test"
+        return r
+
+    def get(self, url, headers=None, timeout=None, **kw):
+        from urllib.parse import parse_qs, urlsplit
+        parts = urlsplit(url)
+        path = parts.path.split("/relay/", 1)[1]
+        self.calls.append(("GET", path))
+        if path == "state/meta":
+            return self._answer(200, self.meta)
+        if path == "state/page":
+            q = {k: v[0] for k, v in parse_qs(parts.query, keep_blank_values=True).items()}
+            if q.get("write") != self.meta["write"]:
+                return self._answer(409, {"error": "changed"})
+            return self._answer(200, {"items": self.pages[(q["write"], q["kind"], int(q["index"]))]})
+        return self._answer(404, {"error": "Not found"})
+
+    def post(self, url, headers=None, data=None, json=None, timeout=None, **kw):
+        import json as jsonmod
+        path = url.split("/relay/", 1)[1]
+        body = json if json is not None else jsonmod.loads(data)
+        self.calls.append(("POST", path, len(data if data is not None else jsonmod.dumps(body))))
+        if path == "state/begin":
+            return self._answer(200, {"ok": True})
+        if path == "state/page":
+            if (body["kind"], body["index"]) == self.fail_page:
+                return self._answer(400, {"error": "refused"})
+            self.pages[(body["write"], body["kind"], body["index"])] = body["items"]
+            return self._answer(200, {"ok": True})
+        if path == "state/commit":
+            for kind in ("registry", "cache"):
+                for i in range(body["pages"][kind]):
+                    if (body["write"], kind, i) not in self.pages:
+                        return self._answer(503, {"error": "missing"})
+            self.meta = {"layout": 2, "write": body["write"], "pages": body["pages"]}
+            return self._answer(200, {"ok": True})
+        if path in ("state", "publish"):  # the whole of it in one body, as before pages
+            self.published = body if path == "publish" else self.published
+            return self._answer(200, {"ok": True})
+        if path == "publish/begin":
+            return self._answer(200, {"ok": True})
+        if path == "publish/page":
+            self.pages[("publish", body["upload"], body["index"])] = body["insights"]
+            return self._answer(200, {"ok": True})
+        if path == "publish/commit":
+            insights = [i for n in range(body["chunks"]) for i in self.pages[("publish", body["upload"], n)]]
+            self.published = {**body["dataset"], "insights": insights}
+            return self._answer(200, {"ok": True})
+        return self._answer(404, {"error": "Not found"})
+
+
+class StateSizeTests(unittest.TestCase):
+    def state(self, n, tag="x"):
+        cache = {f"k{i}": {"rows": [{"detail": tag * 3000 + str(i)}]} for i in range(n)}
+        registry = {f"f{i}": {"name": f"n{i}.docx", "units": [{"key": f"k{i}"}]} for i in range(n)}
+        return registry, cache
+
+    def test_bug_the_whole_scan_state_travelled_in_one_relay_request(self):
+        """BUG: the whole registry and cache went to the Worker in one POST relay/state. At about
+        10 KB a section, a few thousand sections is a body the Worker cannot parse and re-split
+        in its 128 MB. The state now goes in pages, and the Worker switches to it at a commit,
+        so a write that stops part-way leaves the last saved state whole."""
+        from partner_intel import relay
+        server = FakeWorkerRelay()
+        api = relay.Api("https://w.test", "k")
+        registry, cache = self.state(60)
+        with mock.patch.object(relay, "STATE_PAGE_BYTES", 40_000, create=True), mock.patch.object(relay.requests, "get", server.get), \
+                mock.patch.object(relay.requests, "post", server.post):
+            api.put_state(registry, cache)
+            posts = [c for c in server.calls if c[0] == "POST"]
+            self.assertEqual((posts[0][1], posts[-1][1]), ("state/begin", "state/commit"))
+            pages = [c for c in posts if c[1] == "state/page"]
+            self.assertGreater(len(pages), 3)
+            self.assertTrue(all(size <= 40_000 + 200 for _, _, size in pages), [size for _, _, size in pages])
+            self.assertNotIn("state", [c[1] for c in posts], "never the whole state in one body")
+            self.assertEqual(api.get_state(), {"registry": registry, "cache": cache})
+            # A write that stops part-way is never committed; the saved state is still the last whole one.
+            server.fail_page = ("cache", 2)
+            import requests
+            with self.assertRaises(requests.HTTPError):
+                api.put_state(*self.state(60, "y"))
+            self.assertEqual(api.get_state(), {"registry": registry, "cache": cache})
+
+    def test_bug_the_published_dataset_travelled_in_one_relay_request(self):
+        """BUG: the dataset went to the Worker in one POST relay/publish. At about 1.3 KB an
+        insight it outgrows what the Worker can hold sooner than the state does. It now goes in
+        pages too, and the Worker swaps it in at the commit."""
+        from partner_intel import relay
+        server = FakeWorkerRelay()
+        api = relay.Api("https://w.test", "k")
+        dataset = {"version": "v1", "generated_at": "t", "topics": [], "events": [{"id": "1"}],
+                   "insights": [{"id": f"i{n}", "detail": "x" * 2000} for n in range(80)]}
+        with mock.patch.object(relay, "STATE_PAGE_BYTES", 30_000, create=True), mock.patch.object(relay.requests, "post", server.post):
+            api.publish(dataset)
+        posts = [c for c in server.calls if c[0] == "POST"]
+        self.assertEqual((posts[0][1], posts[-1][1]), ("publish/begin", "publish/commit"))
+        pages = [c for c in posts if c[1] == "publish/page"]
+        self.assertGreater(len(pages), 3)
+        self.assertTrue(all(size <= 30_000 + 200 for _, _, size in pages))
+        self.assertLess(posts[-1][2], 1000, "the commit carries the rest of the dataset, not the insights")
+        self.assertEqual(server.published, dataset)
+
+    def test_bug_the_box_state_file_was_one_file_that_outgrows_a_box_upload(self):
+        """BUG: partner_intel_state.json was one file. Past Box's 50 MB single upload (and the
+        relay's 45 MB cap) the save failed, and with it the restore that saves re-reading every
+        note. A large state is now saved in parts, with the list of them written last."""
+        from partner_intel import export
+        api = FakeApi(RunTests().files(), data_folder_id="55")
+        with mock.patch.object(export, "STATE_PART_CHARS", 3000, create=True):
+            run.run("scan", api=api, caller=Counter(), model="m")
+            listing = json.loads(api.box[export.STATE_FILE])
+            self.assertEqual(listing["set"], "a")
+            self.assertGreater(len(listing["parts"]), 1)
+            for name in listing["parts"]:
+                self.assertLessEqual(len(api.box[name]), 3000, name)
+            # The Worker's copy lost: the parts restore it, and nothing is read again.
+            api.state = {"registry": {}, "cache": {}}
+            again = Counter()
+            report = run.run("scan", api=api, caller=again, model="m")
+            self.assertTrue(report["restored_from_box"])
+            self.assertEqual(again.calls, [])
+            self.assertEqual(json.loads(api.box[export.STATE_FILE])["set"], "b", "saves alternate between two sets")
+            # A save that stops part-way leaves the list naming the last complete save.
+            api.box_fail = {"partner_intel_state.a.002.json"}
+            report = run.run("scan", api=api, caller=Counter(), model="m")
+            self.assertEqual(json.loads(api.box[export.STATE_FILE])["set"], "b")
+            self.assertTrue(any("not updated" in e for e in report["box_errors"]))
+            registry, cache = export.read_state(api.box[export.STATE_FILE], api.box.get)
+            self.assertEqual((len(registry), len(cache)), (2, 3))
+            # A part from another save is never mixed in.
+            api.box["partner_intel_state.b.001.json"] = api.box["partner_intel_state.a.001.json"]
+            self.assertIsNone(export.read_state(api.box[export.STATE_FILE], api.box.get))
+            # The single file every earlier save wrote is still read.
+            single = export.state_json({"f": {"name": "x"}}, {"k": {"rows": []}}, "t")
+            self.assertEqual(export.read_state(single, api.box.get), ({"f": {"name": "x"}}, {"k": {"rows": []}}))
 
 
 if __name__ == "__main__":

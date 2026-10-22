@@ -26,8 +26,9 @@
  *   pi:settings        { folderId, folderName }
  *   pi:roster          { partners, aliases, staff, updatedAt }   the admin's partner list
  *   pi:topics          { overrides: { topicId: { label?, mergeInto? } } }
- *   pi:state:meta + pi:state:registry:<n> + pi:state:cache:<n>   pipeline state: which files
- *                      were read, and every stored Claude result (the cache)
+ *   pi:state:meta + pi:state:w:<write>:<kind>:<n>                 pipeline state: which files
+ *                      were read, and every stored Claude result (the cache), saved in pages
+ *                      and switched to at a commit (see the state routes in handleRelay)
  *   pi:data:meta + pi:data:extra + pi:data:chunk:<n>              the published dataset
  *   pi:report          the last scan's report
  *   pi:ask:<hash>      a cached answer to a question, keyed on question + dataset version
@@ -55,7 +56,8 @@ const CONTACTS_KEY = "pi:contacts";       // the uploaded contact list: people a
 const ATTRIBUTION_KEY = "pi:attribution"; // staff decisions on which company said a statement
 // Flags the build sets when the company a statement is credited to is in doubt. A statement with
 // one shows "Check company" and is listed on the control panel until someone decides.
-const ATTRIBUTION_FLAGS = ["speaker_company_conflict", "company_differs_from_file", "speaker_ambiguous"];
+// company_is_person: the name given as the company was a person's (the pipeline credits their company, if known).
+const ATTRIBUTION_FLAGS = ["speaker_company_conflict", "company_differs_from_file", "speaker_ambiguous", "company_is_person"];
 const SUMMARY_PROMPT_VERSION = "pi-sum-4"; // 4: CIAIC is the Council; 3: asks for the tool call (no forced tool choice)
 const MAX_SUMMARY_TOPICS = 8;     // topics written in one Claude call
 const EVIDENCE_PER_TOPIC = 25;    // rows the model reads per topic
@@ -179,12 +181,16 @@ async function boxItems(token, folderId) {
   const headers = { authorization: `Bearer ${token}` };
   const entries = [];
   for (let offset = 0; offset < 20000; offset += 1000) {
-    const res = await fetch(`${BOX_API}/folders/${folderId}/items?fields=type,id,name,size,sha1,created_at,modified_at&limit=1000&offset=${offset}`, { headers });
+    // content_created_at and content_modified_at are the file's own times from the uploader's
+    // machine, which can be long before it reached Box. A fields list returns only what it
+    // names, so they are asked for by name.
+    const res = await fetch(`${BOX_API}/folders/${folderId}/items?fields=type,id,name,size,sha1,created_at,modified_at,content_created_at,content_modified_at&limit=1000&offset=${offset}`, { headers });
     if (!res.ok) throw new Error(`Box API error (${res.status})`);
     const page = await res.json();
     for (const e of page.entries || []) {
       entries.push({ type: e.type, id: e.id, name: e.name, size: e.size || 0, sha1: e.sha1 || "",
-        created_at: e.created_at || "", modified_at: e.modified_at || "" });
+        created_at: e.created_at || "", modified_at: e.modified_at || "",
+        content_created_at: e.content_created_at || "", content_modified_at: e.content_modified_at || "" });
     }
     if (offset + 1000 >= (page.total_count || 0)) break;
   }
@@ -795,12 +801,17 @@ async function loadDataset(env) {
 
 async function publishDataset(env, dataset) {
   const insights = Array.isArray(dataset.insights) ? dataset.insights : [];
-  const { insights: _drop, version, generated_at, roster_updated_at, ...extra } = dataset;
   const chunks = await putShards(env, "pi:data:chunk", insights);
+  return writeDatasetMeta(env, dataset, chunks, insights.length);
+}
+
+/** The dataset's other fields, then its meta, once its insights are in pi:data:chunk:<n>. */
+async function writeDatasetMeta(env, dataset, chunks, insightCount) {
+  const { insights: _drop, version, generated_at, roster_updated_at, ...extra } = dataset;
   await env.BOX_KV.put(DATA_EXTRA, JSON.stringify(extra));
   // The meta key is written last: a reader that sees the new version finds every shard.
   const meta = { version: text(version) || String(Date.now()), generated_at, roster_updated_at, chunks,
-    insightCount: insights.length, schema: Number(extra.schema) || 1 };
+    insightCount, schema: Number(extra.schema) || 1 };
   await env.BOX_KV.put(DATA_META, JSON.stringify(meta));
   return meta;
 }
@@ -3189,6 +3200,107 @@ function rosterSummary(roster) {
   return { ...counts, total: roster.partners.length, updatedAt: roster.updatedAt };
 }
 
+/* ---- pipeline state: pages and a commit marker (used by handleRelay only) ----
+ * The pipeline saves its state as begin, pages, commit, never as one body: at about 10 KB a
+ * section, one body for some 4,500 sections is a 40 MB request that a Worker (128 MB) cannot
+ * parse and re-split safely. Pages land under a new write id; pi:state:meta, the commit marker,
+ * names the write readers get and is changed only once every page is there. So a scan that
+ * stops part-way changes nothing, and a reader never gets half a state.
+ *   pi:state:meta                    { write, pages: { registry, cache }, files, units, updatedAt }
+ *   pi:state:w:<write>:<kind>:<n>    a page: a JSON array of [key, value]
+ *   pi:state:w:<write>:<kind>:<n>:n  its item count, written after it; what a commit checks
+ *   pi:state:open                    { write } in progress, cleared by the next one if it died
+ * A meta without a write is the older layout (pi:state:<kind>:<n> shards). It is still read,
+ * and replaced by the first commit. */
+const STATE_KINDS = ["registry", "cache"];
+const STATE_OPEN = "pi:state:open";
+const STATE_WRITE_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const STATE_MAX_PAGES = 5000;
+// The state file in Box, when it is too big for one file, is written in parts (see
+// partner_intel/export.py): partner_intel_state.a.001.json and on.
+const STATE_PART_RE = /^partner_intel_state\.[ab]\.\d{3}\.json$/;
+const isDbFile = (name) => DB_FILES.has(name) || STATE_PART_RE.test(name);
+const statePageKey = (write, kind, i) => (write ? `pi:state:w:${write}:${kind}:${i}` : `pi:state:${kind}:${i}`);
+const stateCountKey = (write, kind, i) => `pi:state:w:${write}:${kind}:${i}:n`;
+
+async function stateMeta(env) {
+  const meta = await readJson(env, STATE_META, null);
+  if (!meta) return { layout: 0, write: "", pages: { registry: 0, cache: 0 } };
+  if (meta.write) return { ...meta, layout: 2, pages: { registry: Number((meta.pages || {}).registry) || 0, cache: Number((meta.pages || {}).cache) || 0 } };
+  return { ...meta, layout: 1, write: "", pages: { registry: Number(meta.registryShards) || 0, cache: Number(meta.cacheShards) || 0 } };
+}
+
+async function deleteStatePages(env, write, pages) {
+  for (const kind of STATE_KINDS) {
+    for (let i = 0; i < (pages[kind] || 0); i++) {
+      await env.BOX_KV.delete(statePageKey(write, kind, i));
+      if (write) await env.BOX_KV.delete(stateCountKey(write, kind, i));
+    }
+  }
+}
+
+/** The pages of a write that never committed, found by their count keys (KV is never listed). */
+async function clearAbandonedWrite(env, write) {
+  for (const kind of STATE_KINDS) {
+    for (let i = 0; i < STATE_MAX_PAGES; i++) {
+      const counted = await env.BOX_KV.get(stateCountKey(write, kind, i));
+      await env.BOX_KV.delete(statePageKey(write, kind, i));
+      if (counted === null) break;
+      await env.BOX_KV.delete(stateCountKey(write, kind, i));
+    }
+  }
+}
+
+async function putStatePage(env, write, kind, index, items) {
+  await env.BOX_KV.put(statePageKey(write, kind, index), JSON.stringify(items));
+  await env.BOX_KV.put(stateCountKey(write, kind, index), String(items.length));
+}
+
+/** Make write the state readers get. Every page must be there first; then the marker moves and
+ * the previous state's pages are deleted. A commit replayed after it succeeded changes nothing. */
+async function commitState(env, write, pages, expected = {}) {
+  const counts = { registry: 0, cache: 0 };
+  for (const kind of STATE_KINDS) {
+    for (let i = 0; i < pages[kind]; i++) {
+      const n = await env.BOX_KV.get(stateCountKey(write, kind, i));
+      // Retryable: a page written a moment ago may not be visible yet.
+      if (n === null) return { status: 503, error: `Page ${i + 1} of the ${kind} is not saved; nothing was changed.` };
+      counts[kind] += Number(n) || 0;
+    }
+  }
+  for (const [kind, field] of [["registry", "files"], ["cache", "units"]]) {
+    if (expected[field] != null && Number(expected[field]) !== counts[kind]) {
+      return { status: 409, error: `The pages hold ${counts[kind]} ${kind} entries, not ${expected[field]}; nothing was changed.` };
+    }
+  }
+  const old = await stateMeta(env);
+  await env.BOX_KV.put(STATE_META, JSON.stringify({ write, pages, files: counts.registry, units: counts.cache,
+    updatedAt: new Date().toISOString() }));
+  // pi:state:open is left naming this write: begin never clears the committed write, and not
+  // touching it here keeps clear of KV's one-write-a-second limit on a key.
+  if (old.write !== write) await deleteStatePages(env, old.write, old.pages);
+  return { files: counts.registry, units: counts.cache };
+}
+
+/* The published dataset arrives the same way: begin, pages of insights, commit with the rest.
+ * Pages wait under pi:data:stage:<upload>:<n> until the commit copies them into place, so a
+ * publish that stops part-way leaves the published dataset as it was. */
+const DATA_OPEN = "pi:data:open";
+const stageKey = (upload, i) => `pi:data:stage:${upload}:${i}`;
+const stageCountKey = (upload, i) => `pi:data:stage:${upload}:${i}:n`;
+
+async function clearStagedUpload(env, upload) {
+  for (let i = 0; i < STATE_MAX_PAGES; i++) {
+    const counted = await env.BOX_KV.get(stageCountKey(upload, i));
+    await env.BOX_KV.delete(stageKey(upload, i));
+    if (counted === null) break;
+    await env.BOX_KV.delete(stageCountKey(upload, i));
+  }
+}
+
+const validStateItems = (items) => Array.isArray(items) && items.every((e) => Array.isArray(e) && e.length === 2
+  && typeof e[0] === "string" && e[1] !== null && typeof e[1] === "object" && !Array.isArray(e[1]));
+
 async function handleRelay(route, request, env) {
   const key = request.headers.get("x-pipeline-key") || "";
   if (!env.BOX_RELAY_SECRET || key !== env.BOX_RELAY_SECRET) return json({ error: "Not authorized" }, 401);
@@ -3218,7 +3330,7 @@ async function handleRelay(route, request, env) {
   if (sub === "box/save" && method === "POST") {
     const body = await readBody(request);
     const name = text(body && body.name);
-    if (!DB_FILES.has(name)) return json({ error: "That file name is not allowed." }, 400);
+    if (!isDbFile(name)) return json({ error: "That file name is not allowed." }, 400);
     const content = typeof (body && body.text) === "string" ? body.text : "";
     if (content.length > 45_000_000) return json({ error: "That file is over Box's 50 MB upload limit." }, 413);
     const settings = await readJson(env, SETTINGS_KEY, {});
@@ -3230,7 +3342,7 @@ async function handleRelay(route, request, env) {
   }
   if (sub === "box/load" && method === "GET") {
     const name = url.searchParams.get("name") || "";
-    if (!DB_FILES.has(name)) return json({ error: "That file name is not allowed." }, 400);
+    if (!isDbFile(name)) return json({ error: "That file name is not allowed." }, 400);
     const settings = await readJson(env, SETTINGS_KEY, {});
     if (!settings.dataFolderId) return json({ error: "No database folder is chosen." }, 409);
     const token = await boxAccessToken(env);
@@ -3257,24 +3369,152 @@ async function handleRelay(route, request, env) {
     if (!res.ok) return json({ error: `Box download failed (${res.status})` }, 502);
     return new Response(res.body, { headers: { "content-type": "application/octet-stream", "cache-control": "no-store" } });
   }
+  // ---- the pipeline's state, in pages (see commitState). The whole-state GET and POST are
+  // kept for a pipeline from before pages; they read and write the same layout.
+  if (sub === "state/meta" && method === "GET") {
+    const meta = await stateMeta(env);
+    return json({ layout: meta.layout, write: meta.write, pages: meta.pages, files: meta.files ?? null,
+      units: meta.units ?? null, updatedAt: meta.updatedAt || "" });
+  }
+  if (sub === "state/page" && method === "GET") {
+    const kind = url.searchParams.get("kind") || "";
+    const index = Number(url.searchParams.get("index"));
+    const asked = url.searchParams.get("write");
+    if (!STATE_KINDS.includes(kind) || !Number.isInteger(index) || index < 0) return json({ error: "A kind and a page number are required." }, 400);
+    const meta = await stateMeta(env);
+    if (asked !== null && asked !== meta.write) {
+      return json({ error: "The saved state changed while it was being read. Start again." }, 409);
+    }
+    if (index >= meta.pages[kind]) return json({ error: "No such page." }, 404);
+    const raw = await env.BOX_KV.get(statePageKey(meta.write, kind, index));
+    if (raw === null) {
+      if (meta.layout === 1) return json({ items: [] });
+      return json({ error: "A page of the saved state is not readable yet." }, 503);
+    }
+    return new Response(`{"items":${raw}}`, { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  }
+  if (sub === "state/begin" && method === "POST") {
+    const body = await readBody(request);
+    const write = text(body && body.write);
+    if (!STATE_WRITE_RE.test(write)) return json({ error: "A write id is required." }, 400);
+    const meta = await stateMeta(env);
+    if (write === meta.write) return json({ error: "That write is already the saved state." }, 409);
+    const open = await readJson(env, STATE_OPEN, null);
+    if (open && STATE_WRITE_RE.test(text(open.write)) && open.write !== write && open.write !== meta.write) {
+      await clearAbandonedWrite(env, open.write);
+    }
+    await env.BOX_KV.put(STATE_OPEN, JSON.stringify({ write, startedAt: new Date().toISOString() }));
+    return json({ ok: true, write });
+  }
+  if (sub === "state/page" && method === "POST") {
+    const body = await readBody(request);
+    const write = text(body && body.write), kind = text(body && body.kind), index = Number(body && body.index);
+    if (!STATE_WRITE_RE.test(write) || !STATE_KINDS.includes(kind) || !Number.isInteger(index) || index < 0 || index >= STATE_MAX_PAGES) {
+      return json({ error: "A write id, a kind and a page number are required." }, 400);
+    }
+    if (!validStateItems(body.items)) return json({ error: "items must be a list of [key, object] pairs." }, 400);
+    if (write === (await stateMeta(env)).write) return json({ error: "That write is already the saved state." }, 409);
+    await putStatePage(env, write, kind, index, body.items);
+    return json({ ok: true, items: body.items.length });
+  }
+  if (sub === "state/commit" && method === "POST") {
+    const body = await readBody(request);
+    const write = text(body && body.write);
+    const pages = { registry: Number(body && body.pages && body.pages.registry), cache: Number(body && body.pages && body.pages.cache) };
+    if (!STATE_WRITE_RE.test(write) || !STATE_KINDS.every((k) => Number.isInteger(pages[k]) && pages[k] >= 0 && pages[k] <= STATE_MAX_PAGES)) {
+      return json({ error: "A write id and its page counts are required." }, 400);
+    }
+    const done = await commitState(env, write, pages, { files: body.files, units: body.units });
+    if (done.error) return json({ error: done.error }, done.status);
+    return json({ ok: true, ...done });
+  }
   if (sub === "state" && method === "GET") {
-    const meta = await readJson(env, STATE_META, { registryShards: 0, cacheShards: 0 });
-    const [registry, cache] = await Promise.all([
-      getShards(env, "pi:state:registry", meta.registryShards), getShards(env, "pi:state:cache", meta.cacheShards)]);
-    return json({ registry: Object.fromEntries(registry), cache: Object.fromEntries(cache) });
+    const meta = await stateMeta(env);
+    const out = { registry: [], cache: [] };
+    for (const kind of STATE_KINDS) {
+      for (let i = 0; i < meta.pages[kind]; i++) {
+        const raw = await env.BOX_KV.get(statePageKey(meta.write, kind, i));
+        if (raw === null && meta.layout === 2) return json({ error: "A page of the saved state is not readable yet." }, 503);
+        if (raw !== null) out[kind].push(...JSON.parse(raw));
+      }
+    }
+    return json({ registry: Object.fromEntries(out.registry), cache: Object.fromEntries(out.cache) });
   }
   if (sub === "state" && method === "POST") {
     const body = await readBody(request);
-    if (!body || typeof body.registry !== "object" || typeof body.cache !== "object") {
+    if (!body || !body.registry || typeof body.registry !== "object" || !body.cache || typeof body.cache !== "object") {
       return json({ error: "registry and cache are required." }, 400);
     }
-    const old = await readJson(env, STATE_META, { registryShards: 0, cacheShards: 0 });
-    const registryShards = await putShards(env, "pi:state:registry", Object.entries(body.registry));
-    const cacheShards = await putShards(env, "pi:state:cache", Object.entries(body.cache));
-    await env.BOX_KV.put(STATE_META, JSON.stringify({ registryShards, cacheShards, updatedAt: new Date().toISOString() }));
-    for (let i = registryShards; i < old.registryShards; i++) await env.BOX_KV.delete(`pi:state:registry:${i}`);
-    for (let i = cacheShards; i < old.cacheShards; i++) await env.BOX_KV.delete(`pi:state:cache:${i}`);
-    return json({ ok: true, files: Object.keys(body.registry).length, units: Object.keys(body.cache).length });
+    const write = crypto.randomUUID().replace(/-/g, "");
+    const pages = { registry: 0, cache: 0 };
+    for (const kind of STATE_KINDS) {
+      let page = [], size = 0;
+      for (const entry of Object.entries(body[kind])) {
+        const len = JSON.stringify(entry).length + 1;
+        if (page.length && size + len > SHARD_BYTES) { await putStatePage(env, write, kind, pages[kind]++, page); page = []; size = 0; }
+        page.push(entry);
+        size += len;
+      }
+      if (page.length) await putStatePage(env, write, kind, pages[kind]++, page);
+    }
+    const done = await commitState(env, write, pages);
+    if (done.error) return json({ error: done.error }, done.status);
+    return json({ ok: true, ...done });
+  }
+  if (sub === "publish/begin" && method === "POST") {
+    const body = await readBody(request);
+    const upload = text(body && body.upload);
+    if (!STATE_WRITE_RE.test(upload)) return json({ error: "An upload id is required." }, 400);
+    const open = await readJson(env, DATA_OPEN, null);
+    if (open && STATE_WRITE_RE.test(text(open.upload)) && open.upload !== upload) await clearStagedUpload(env, open.upload);
+    await env.BOX_KV.put(DATA_OPEN, JSON.stringify({ upload, startedAt: new Date().toISOString() }));
+    return json({ ok: true, upload });
+  }
+  if (sub === "publish/page" && method === "POST") {
+    const body = await readBody(request);
+    const upload = text(body && body.upload), index = Number(body && body.index);
+    if (!STATE_WRITE_RE.test(upload) || !Number.isInteger(index) || index < 0 || index >= STATE_MAX_PAGES) {
+      return json({ error: "An upload id and a page number are required." }, 400);
+    }
+    const insights = body.insights;
+    if (!Array.isArray(insights) || !insights.every((i) => i !== null && typeof i === "object" && !Array.isArray(i))) {
+      return json({ error: "insights must be a list of objects." }, 400);
+    }
+    await env.BOX_KV.put(stageKey(upload, index), JSON.stringify(insights));
+    await env.BOX_KV.put(stageCountKey(upload, index), String(insights.length));
+    return json({ ok: true, insights: insights.length });
+  }
+  if (sub === "publish/commit" && method === "POST") {
+    const body = await readBody(request);
+    const upload = text(body && body.upload), chunks = Number(body && body.chunks);
+    const dataset = body && body.dataset;
+    if (!STATE_WRITE_RE.test(upload) || !Number.isInteger(chunks) || chunks < 0 || chunks > STATE_MAX_PAGES
+        || !dataset || typeof dataset !== "object" || Array.isArray(dataset)) {
+      return json({ error: "An upload id, its page count and the dataset are required." }, 400);
+    }
+    let insightCount = 0;
+    for (let i = 0; i < chunks; i++) {
+      const n = await env.BOX_KV.get(stageCountKey(upload, i));
+      if (n === null) return json({ error: `Page ${i + 1} of the insights is not saved; nothing was published.` }, 503);
+      insightCount += Number(n) || 0;
+    }
+    if (body.insights != null && Number(body.insights) !== insightCount) {
+      return json({ error: `The pages hold ${insightCount} insights, not ${body.insights}; nothing was published.` }, 409);
+    }
+    // Into place one page at a time (never the whole dataset in memory), then the meta, last.
+    for (let i = 0; i < chunks; i++) {
+      const raw = await env.BOX_KV.get(stageKey(upload, i));
+      if (raw === null) return json({ error: `Page ${i + 1} of the insights is not readable yet; nothing was published.` }, 503);
+      await env.BOX_KV.put(`pi:data:chunk:${i}`, raw);
+    }
+    const meta = await writeDatasetMeta(env, dataset, chunks, insightCount);
+    for (let i = 0; i < chunks; i++) {
+      await env.BOX_KV.delete(stageKey(upload, i));
+      await env.BOX_KV.delete(stageCountKey(upload, i));
+    }
+    datasetMemo = null;
+    await queueAhead(env, "publish");
+    return json({ ok: true, ...meta });
   }
   if (sub === "publish" && method === "POST") {
     const body = await readBody(request);

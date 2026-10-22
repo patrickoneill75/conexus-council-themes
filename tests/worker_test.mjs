@@ -2825,13 +2825,14 @@ test("partner_intel: pipeline state round-trips across several shards and sheds 
   for (let i = 0; i < 5; i++) registry[`f${i}`] = { name: `n${i}`, units: [] };
   assert.equal((await pi("relay/state", relay("state", "POST", { registry, cache }), env)).status, 200);
   const meta = JSON.parse(await env.BOX_KV.get("pi:state:meta"));
-  assert.ok(meta.cacheShards >= 2, `expected several shards, got ${meta.cacheShards}`);
+  assert.ok(meta.pages.cache >= 2, `expected several pages, got ${meta.pages.cache}`);
   const back = await (await pi("relay/state", relay("state", "GET"), env)).json();
   assert.equal(Object.keys(back.cache).length, 700);
   assert.equal(back.cache.k699.rows[0].detail, "x".repeat(4000) + 699);
   await pi("relay/state", relay("state", "POST", { registry, cache: { k0: cache.k0 } }), env);
-  assert.equal(await env.BOX_KV.get(`pi:state:cache:${meta.cacheShards - 1}`), meta.cacheShards - 1 === 0 ? null : null,
-    "shards beyond the new count are deleted");
+  assert.equal(await env.BOX_KV.get(`pi:state:w:${meta.write}:cache:${meta.pages.cache - 1}`), null,
+    "the previous state's pages are deleted once the new one is committed");
+  assert.equal(Object.keys((await (await pi("relay/state", relay("state", "GET"), env)).json()).cache).length, 1);
 });
 
 test("partner_intel: Trending Topics keeps to the window and leaves out Conexus-internal rows", async () => {
@@ -5695,6 +5696,146 @@ test("access: every control panel page checks that app's admin, and the staff pa
   // Every app's control panel is covered: none added to apps.js without one here.
   const apps = fs.readFileSync(path.join(root, "apps.js"), "utf8");
   for (const [, id] of apps.matchAll(/\bid: "([a-z-]+)"/g)) assert.ok(Object.values(panels).includes(id), `${id} has a gated control panel`);
+});
+
+/* ---------------------------------------------------- partner_intel: QA round 2, the relay */
+const relayGet = (env, route) => pi(`relay/${route.split("?")[0]}`,
+  req(`/api/partner-intel/relay/${route}`, { headers: { "x-pipeline-key": "relay-secret" } }), env);
+const relayPost = (env, route, body) => pi(`relay/${route}`, relay(route, "POST", body), env);
+
+test("partner_intel: BUG the whole scan state travelled in one request; it is saved in pages and switched to at a commit", async () => {
+  // At about 10 KB a section, one body for some 4,500 sections is more than the Worker can parse
+  // and re-split in 128 MB, and a write that died half-way left a mix of old and new shards.
+  const env = makeEnv();
+  const one = "write-one-0001", two = "write-two-0002", three = "write-three-03";
+  assert.equal((await relayPost(env, "state/begin", { write: one })).status, 200);
+  assert.equal((await relayPost(env, "state/page", { write: one, kind: "registry", index: 0, items: [["f1", { name: "a.docx" }]] })).status, 200);
+  assert.equal((await relayPost(env, "state/page", { write: one, kind: "cache", index: 0, items: [["k1", { rows: [1] }]] })).status, 200);
+  assert.equal((await relayPost(env, "state/page", { write: one, kind: "cache", index: 1, items: [["k2", { rows: [2] }]] })).status, 200);
+  assert.equal((await (await relayGet(env, "state/meta")).json()).write, "", "nothing is saved until the commit");
+  const committed = await (await relayPost(env, "state/commit", { write: one, pages: { registry: 1, cache: 2 }, files: 1, units: 2 })).json();
+  assert.deepEqual([committed.files, committed.units], [1, 2]);
+  const meta = await (await relayGet(env, "state/meta")).json();
+  assert.deepEqual([meta.write, meta.pages], [one, { registry: 1, cache: 2 }]);
+  assert.deepEqual((await (await relayGet(env, `state/page?kind=cache&index=1&write=${one}`)).json()).items, [["k2", { rows: [2] }]]);
+
+  // A second write that stops part-way changes nothing a reader sees.
+  await relayPost(env, "state/begin", { write: two });
+  await relayPost(env, "state/page", { write: two, kind: "registry", index: 0, items: [["f9", { name: "z.docx" }]] });
+  assert.equal((await (await relayGet(env, "state/meta")).json()).write, one, "half a write is never the saved state");
+  assert.deepEqual(Object.keys((await (await relayGet(env, "state")).json()).cache), ["k1", "k2"]);
+  const early = await relayPost(env, "state/commit", { write: two, pages: { registry: 1, cache: 1 } });
+  assert.equal(early.status, 503, "a commit naming a page that never arrived is refused, retryably");
+  assert.equal((await (await relayGet(env, "state/meta")).json()).write, one);
+
+  // The next write clears the abandoned one; its commit retires the previous state's pages.
+  await relayPost(env, "state/begin", { write: three });
+  assert.equal(await env.BOX_KV.get(`pi:state:w:${two}:registry:0`), null, "the abandoned write's pages are cleared");
+  await relayPost(env, "state/page", { write: three, kind: "registry", index: 0, items: [["f3", { name: "c.docx" }]] });
+  assert.equal((await relayPost(env, "state/commit", { write: three, pages: { registry: 1, cache: 0 }, files: 2, units: 0 })).status, 409,
+    "counts that do not match the pages are refused");
+  assert.equal((await relayPost(env, "state/commit", { write: three, pages: { registry: 1, cache: 0 }, files: 1, units: 0 })).status, 200);
+  assert.equal(await env.BOX_KV.get(`pi:state:w:${one}:cache:1`), null, "the previous state's pages are deleted");
+  assert.equal((await relayPost(env, "state/commit", { write: three, pages: { registry: 1, cache: 0 } })).status, 200, "a replayed commit");
+  assert.notEqual(await env.BOX_KV.get(`pi:state:w:${three}:registry:0`), null, "a replayed commit deletes nothing it needs");
+  assert.equal((await relayGet(env, `state/page?kind=cache&index=0&write=${one}`)).status, 409, "a read across a commit is refused");
+
+  // Pages are checked.
+  assert.equal((await relayPost(env, "state/page", { write: "write-four-04", kind: "constructor", index: 0, items: [] })).status, 400);
+  assert.equal((await relayPost(env, "state/page", { write: "write-four-04", kind: "cache", index: 0, items: [["k", "text"]] })).status, 400);
+  assert.equal((await relayPost(env, "state/page", { write: "../../x", kind: "cache", index: 0, items: [] })).status, 400);
+  assert.equal((await relayPost(env, "state/page", { write: three, kind: "cache", index: 0, items: [] })).status, 409,
+    "the saved state is never changed in place");
+  assert.equal((await relayGet(env, "state/page?kind=__proto__&index=0")).status, 400);
+  assert.equal((await pi("relay/state/meta", relay("state/meta", "GET", undefined, "wrong"), env)).status, 401);
+});
+
+test("partner_intel: state saved before pages is still read, and replaced by the next commit", async () => {
+  const env = makeEnv();
+  await env.BOX_KV.put("pi:state:meta", JSON.stringify({ registryShards: 1, cacheShards: 2, updatedAt: "x" }));
+  await env.BOX_KV.put("pi:state:registry:0", JSON.stringify([["f1", { name: "a.docx" }]]));
+  await env.BOX_KV.put("pi:state:cache:0", JSON.stringify([["k1", { rows: [] }]]));
+  await env.BOX_KV.put("pi:state:cache:1", JSON.stringify([["k2", { rows: [] }]]));
+  const meta = await (await relayGet(env, "state/meta")).json();
+  assert.deepEqual([meta.layout, meta.write, meta.pages], [1, "", { registry: 1, cache: 2 }]);
+  assert.deepEqual((await (await relayGet(env, "state/page?kind=cache&index=1&write=")).json()).items, [["k2", { rows: [] }]]);
+  assert.deepEqual(Object.keys((await (await relayGet(env, "state")).json()).cache), ["k1", "k2"]);
+  await relayPost(env, "state/begin", { write: "write-new-0001" });
+  await relayPost(env, "state/page", { write: "write-new-0001", kind: "cache", index: 0, items: [["k3", { rows: [] }]] });
+  await relayPost(env, "state/commit", { write: "write-new-0001", pages: { registry: 0, cache: 1 } });
+  assert.equal(await env.BOX_KV.get("pi:state:cache:1"), null, "the old shards are deleted once replaced");
+  assert.deepEqual(Object.keys((await (await relayGet(env, "state")).json()).cache), ["k3"]);
+});
+
+test("partner_intel: BUG the Box state file could outgrow one upload; its parts may be saved and read", async () => {
+  const { env, token } = await adminEnv();
+  await setFolder(env, token, "data", "22", "Database");
+  const uploads = [];
+  const handler = boxFake({ 22: [fileItem("701", "partner_intel_state.a.001.json", "2026-01-01T00:00:00Z")] }, { 701: '{"part":1}' }, uploads);
+  const save = (name) => withFetch(handler, () => relayPost(env, "box/save", { name, text: "{}" }));
+  assert.equal((await save("partner_intel_state.a.001.json")).status, 200);
+  assert.equal((await save("partner_intel_state.b.123.json")).status, 200);
+  for (const bad of ["partner_intel_state.c.001.json", "partner_intel_state.a.1.json", "partner_intel_state.a.001.json.exe", "../partner_intel_state.a.001.json"]) {
+    assert.equal((await save(bad)).status, 400, bad);
+  }
+  const load = (name) => withFetch(handler, () => relayGet(env, `box/load?name=${encodeURIComponent(name)}`));
+  assert.equal(await (await load("partner_intel_state.a.001.json")).text(), '{"part":1}');
+  assert.equal((await load("partner_intel_state.b.002.json")).status, 404);
+});
+
+test("partner_intel: BUG undated backfills were dated on upload; the Box listing now carries each file's own times", async () => {
+  const env = makeEnv();
+  await env.BOX_KV.put("box:tokens", JSON.stringify({ access_token: "tok", refresh_token: "r", obtained_at: Math.floor(Date.now() / 1000), expires_in: 3600 }));
+  let asked = "";
+  const listing = await withFetch((url) => {
+    asked = new URL(url).searchParams.get("fields");
+    return okJson({ total_count: 1, entries: [{ type: "file", id: "5", name: "old notes.docx", size: 10, sha1: "s",
+      created_at: "2026-10-20T15:00:00-07:00", modified_at: "2026-10-20T15:00:00-07:00",
+      content_created_at: "2024-03-01T09:00:00-05:00", content_modified_at: "2024-03-05T09:30:00-05:00" }] });
+  }, async () => (await relayGet(env, "box/folder?id=77")).json());
+  assert.ok(asked.split(",").includes("content_modified_at") && asked.split(",").includes("content_created_at"),
+    "a fields list returns only what it names, so the file's own times are asked for");
+  assert.equal(listing.entries[0].content_modified_at, "2024-03-05T09:30:00-05:00");
+  assert.equal(listing.entries[0].content_created_at, "2024-03-01T09:00:00-05:00");
+});
+
+test("partner_intel: BUG the published dataset travelled in one request too; it goes in pages and is swapped in at a commit", async () => {
+  // At about 1.3 KB an insight, a scan of a few thousand sections publishes a body the Worker
+  // cannot parse and re-split in 128 MB, sooner than the state does.
+  const { env, token } = await piEnv([ins({ title: "Old one" })]);
+  const before = await env.BOX_KV.get("pi:data:meta");
+  const up = "upload-one-001";
+  assert.equal((await relayPost(env, "publish/begin", { upload: up })).status, 200);
+  assert.equal((await relayPost(env, "publish/page", { upload: up, index: 0, insights: [ins({ title: "New A" }), ins({ title: "New B" })] })).status, 200);
+  assert.equal((await relayPost(env, "publish/page", { upload: up, index: 1, insights: [ins({ title: "New C" })] })).status, 200);
+  assert.equal(await env.BOX_KV.get("pi:data:meta"), before, "nothing is published before the commit");
+  assert.equal((await relayPost(env, "publish/commit", { upload: up, chunks: 3, insights: 3,
+    dataset: { version: "paged-1", generated_at: "2026-10-22T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [], companies: [], unmatched: [], stats: {}, schema: 2 } })).status,
+  503, "a page that never arrived stops the commit");
+  assert.equal((await relayPost(env, "publish/commit", { upload: up, chunks: 2, insights: 5, dataset: { version: "x" } })).status, 409);
+  const res = await relayPost(env, "publish/commit", { upload: up, chunks: 2, insights: 3,
+    dataset: { version: "paged-1", generated_at: "2026-10-22T00:00:00+00:00", roster_updated_at: "r1", topics: TOPICS, events: [], companies: [], unmatched: [], stats: {}, schema: 2 } });
+  assert.equal(res.status, 200);
+  const meta = JSON.parse(await env.BOX_KV.get("pi:data:meta"));
+  assert.deepEqual([meta.version, meta.chunks, meta.insightCount, meta.schema], ["paged-1", 2, 3, 2]);
+  const titles = (await getJson("insights?limit=10", env, token)).items.map((i) => i.title).sort();
+  assert.deepEqual(titles, ["New A", "New B", "New C"]);
+  assert.equal(await env.BOX_KV.get(`pi:data:stage:${up}:0`), null, "the staged pages are cleared");
+  // A publish that stops part-way leaves the published dataset as it was, and the next clears it.
+  await relayPost(env, "publish/begin", { upload: "upload-two-002" });
+  await relayPost(env, "publish/page", { upload: "upload-two-002", index: 0, insights: [ins({ title: "Never shown" })] });
+  assert.deepEqual((await getJson("insights?limit=10", env, token)).items.map((i) => i.title).sort(), ["New A", "New B", "New C"]);
+  await relayPost(env, "publish/begin", { upload: "upload-three-3" });
+  assert.equal(await env.BOX_KV.get("pi:data:stage:upload-two-002:0"), null);
+  assert.equal((await relayPost(env, "publish/page", { upload: "upload-three-3", index: 0, insights: ["text"] })).status, 400);
+  assert.equal((await relayPost(env, "publish/page", { upload: "../x", index: 0, insights: [] })).status, 400);
+  assert.equal((await pi("relay/publish/begin", relay("publish/begin", "POST", { upload: "upload-four-04" }, "wrong"), env)).status, 401);
+});
+
+test("partner_intel: BUG a row whose company was a person's name (the pipeline's company_is_person) showed no Check company and never reached Statements to check", async () => {
+  const { env, token } = await piEnv([ins({ id: "cp1", company_id: "c-a", review: ["company_is_person"] }), ins({ id: "cp2", company_id: "c-b" })]);
+  assert.equal((await getJson("insights?days=30", env, token)).items.find((i) => i.id === "cp1").checkCompany, true);
+  assert.deepEqual((await getJson("attribution/review", env, token)).items.map((i) => i.id), ["cp1"]);
 });
 
 let failed = 0;
