@@ -5998,6 +5998,16 @@ test("access: Settings lists each person as a name link and a role, and the rest
   assert.match(page, /e\.key === "Escape" && openEmail\) closeModal\(\)/);
 });
 
+test("partner_intel: every + bullet has a 'See examples' link after it that opens it, and reads 'Hide examples' while open", () => {
+  const page = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  const points = page.slice(page.indexOf("  function pointsHtml(points, label) {"), page.indexOf("  function bulletsHtml(summary) {"));
+  assert.match(points, /class="link see" data-pt/, "the link toggles the bullet, like the + button");
+  const seeText = new Function(`${sourceOf(path.join(PUB_PI, "index.html"), "seeText")}; return seeText;`)();
+  assert.equal(seeText("examples", false), "See examples");
+  assert.equal(seeText("examples", true), "Hide examples");
+  assert.match(page, /var see = li\.querySelector\("button\.see"\);/, "the link's words follow the bullet, whichever opened it");
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {

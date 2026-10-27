@@ -414,6 +414,10 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app ul.bullets { gap:16px; }
 .pi-app .bpt { grid-template-columns:28px minmax(0,1fr); gap:14px; }
 .pi-app .bpt .txt { font-size:20px; line-height:1.5; }
+/* "See examples" after a point: opens it, like the + beside it. */
+.pi-app .bpt button.see { font-size:14px; font-weight:600; color:var(--accent); white-space:nowrap; vertical-align:baseline; margin-left:4px; }
+.pi-app .bpt button.see:hover { text-decoration:underline; }
+.pi-app .bpt button.see:focus-visible { outline:3px solid var(--amber); outline-offset:2px; border-radius:2px; }
 .pi-app .bpt .examples { margin-top:4px; padding:0; }
 .pi-app .bpt .examples > .item { border-top:1px solid #edf0f5; padding:16px 0; }
 .pi-app .bpt .examples > .item:first-child { border-top:0; padding-top:10px; }
