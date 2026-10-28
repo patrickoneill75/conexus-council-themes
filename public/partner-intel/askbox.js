@@ -230,6 +230,8 @@
   };
   var newIds = 0;
   /** A conversation that exists only on this screen until its first answer gives it an id. */
+  /** A name for a question while it is being answered, so its turn can be found to play the mark's ending. */
+  A.pendingId = function () { return "p" + (++newIds); };
   A.newConv = function (companyId) { return { id: "new-" + (++newIds), temp: true, turns: [], companyId: companyId || "" }; };
   /** Is this pending question (or turn) for the conversation on screen? The same conversation may have been
    * opened again from history since, as another object with the same id. */
@@ -239,8 +241,96 @@
   A.errorHtml = function (t) {
     return '<div class="turn"><div class="qb">' + esc(t.q) + '</div><div class="msg err">' + esc(t.error) + "</div></div>";
   };
-  A.pendingHtml = function (q) {
-    return '<div class="turn pending"><div class="qb">' + esc(q) + '</div><div class="thinking"><span class="spinner"></span>Reading the notes…</div></div>';
+  /* While a question is being answered: the Conexus mark, its amber diamond riding the figure 8, beside a
+   * shop-floor phrase that changes every few seconds. A screen reader hears "Reading the notes" once. */
+  A.PHRASES = [
+    "Chamfering the edges",
+    "Calibrating the gauges",
+    "Aligning the fixtures",
+    "Deburring the details",
+    "Torquing the bolts",
+    "Tempering the steel",
+    "Milling the notes",
+    "Machining the answer",
+    "Welding the seams",
+    "Polishing the surfaces",
+    "Shimming the gaps",
+    "Squaring the corners",
+    "Tapping the threads",
+    "Forging the links",
+    "Checking the tolerances",
+    "Greasing the bearings",
+    "Tightening the specs",
+    "Zeroing the axes",
+    "Soldering the joints",
+    "Wiring the harness",
+    "Kitting the components",
+    "Staging the pallets",
+    "Routing the shipments",
+    "Sequencing the jobs",
+    "Walking the gemba",
+    "Pulling the kanban",
+    "Asking the five whys",
+    "Mapping the value stream",
+    "Cutting the muda",
+    "Mistake-proofing the process",
+    "Finding the next kaizen",
+  ];
+  var MARK_LAP = 2600; // ms for one figure 8 (pm-ride in pi.css); the diamond crosses the center twice a lap
+  var MARK_LOOPS = "M316.1 0C291.6 0 269.4 9.9 253.2 25.9C249.6 29.5 242.5 36.6 242.5 36.6L277.9 72C277.9 72 284.7 65.2 288.2 61.6C295.3 54.5 305.2 50 316.1 50C337.7 50 355.4 67.6 355.4 89.2C355.4 110.8 337.7 128.4 316.1 128.4C305.2 128.4 295.3 123.9 288.2 116.7C284.7 113.2 277.9 106.4 277.9 106.4L242.5 141.7C242.5 141.7 249.6 148.9 253.2 152.5C269.4 168.5 291.6 178.4 316.1 178.4C365.4 178.4 405.4 138.5 405.4 89.2C405.4 39.9 365.4 0 316.1 0ZM137.1 0C161.6 0 183.8 9.9 200 25.9C203.6 29.5 210.7 36.6 210.7 36.6L175.3 72C175.3 72 168.5 65.2 165 61.6C157.8 54.5 148 50 137.1 50C115.4 50 97.8 67.6 97.8 89.2C97.8 110.8 115.4 128.4 137.1 128.4C148 128.4 157.8 123.9 165 116.7C168.5 113.2 175.3 106.4 175.3 106.4L210.7 141.7C210.7 141.7 203.6 148.9 200 152.5C183.8 168.5 161.6 178.4 137.1 178.4C87.8 178.4 47.8 138.5 47.8 89.2C47.8 39.9 87.8 0 137.1 0Z";
+  var markClock = Date.now();
+  var phraseBag = [], phraseNow = "", phraseTimer = 0;
+  /** The next phrase. Every one shows once, in a random order, before any shows again, and none twice running. */
+  A.nextPhrase = function () {
+    if (!phraseBag.length) {
+      phraseBag = A.PHRASES.slice();
+      for (var i = phraseBag.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1)), x = phraseBag[i];
+        phraseBag[i] = phraseBag[j]; phraseBag[j] = x;
+      }
+      if (phraseBag[phraseBag.length - 1] === phraseNow) phraseBag.unshift(phraseBag.pop());
+    }
+    phraseNow = phraseBag.pop();
+    return phraseNow;
+  };
+  function turnPhrase() {
+    // A mark playing its ending keeps the phrase it had; the answer is about to replace both.
+    var shown = document.querySelectorAll(".pi-mark:not(.settled) + .pi-phrase");
+    if (!shown.length) { clearInterval(phraseTimer); phraseTimer = 0; return; }
+    var next = A.nextPhrase() + "…";
+    Array.prototype.forEach.call(shown, function (el) { el.textContent = next; });
+  }
+  /** The mark. Every mark on the page rides in step, and one drawn again carries on from where the last was. */
+  A.markHtml = function () {
+    var at = ((Date.now() - markClock) % MARK_LAP) / 1000;
+    return '<span class="pi-mark" aria-hidden="true"><svg viewBox="46 -1 361 180.4" width="64" height="32"><path d="' + MARK_LOOPS + '"/></svg>' +
+      '<span class="pm-ride" style="animation-delay:-' + at.toFixed(2) + 's"></span></span>';
+  };
+  A.pendingHtml = function (q, id) {
+    if (!phraseNow) A.nextPhrase();
+    if (!phraseTimer) phraseTimer = setInterval(turnPhrase, MARK_LAP);
+    return '<div class="turn pending"' + (id ? ' data-pid="' + esc(id) + '"' : "") + '><div class="qb">' + esc(q) + "</div>" +
+      '<div class="thinking" role="status">' + A.markHtml() + '<span class="pi-phrase" aria-hidden="true">' + esc(phraseNow) + "…</span>" +
+      '<span class="sr-only">Reading the notes…</span></div></div>';
+  };
+  /** The mark's ending, played in pending turn `id` inside `scope` once its answer has come: the diamond runs on
+   * to its next pass through the center and stops there, swells, and the mark fades. Resolves when that is done,
+   * or at once when the turn is not on screen or motion is reduced, so an answer is never held for nothing. */
+  A.settle = function (scope, id) {
+    var mark = scope && id ? scope.querySelector('.turn.pending[data-pid="' + id + '"] .pi-mark') : null;
+    var ride = mark && mark.querySelector(".pm-ride");
+    var anim = ride && ride.getAnimations ? ride.getAnimations()[0] : null;
+    if (!anim || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return Promise.resolve();
+    var at = anim.effect.getComputedTiming();
+    var laps = (at.currentIteration || 0) + (at.progress || 0);
+    var stop = (Math.floor(laps * 2) + 1) / 2; // the next crossing: the center is at each half lap
+    anim.effect.updateTiming({ iterations: stop, fill: "forwards" });
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        mark.classList.add("settled");
+        setTimeout(resolve, 1350); // pm-swell, then pm-fade (pi.css)
+      }, Math.max(0, (stop - laps) * MARK_LAP));
+    });
   };
 
   /** The longer prompt when it fits on one line, else the shorter one. On a phone "Ask anything about the
@@ -304,7 +394,7 @@
       return '<div class="turn" data-tid="' + esc(t.id) + '"><div class="qb">' + esc(t.q) + "</div>" +
         A.answerHtml(t, { last: i === turns.length - 1 && !here.length, matchLink: true }) + "</div>";
     }).join("");
-    html += here.map(function (p) { return A.pendingHtml(p.q); }).join("");
+    html += here.map(function (p) { return A.pendingHtml(p.q, p.id); }).join("");
     if (box.error) {
       html += '<div class="turn"><div class="qb">' + esc(box.error.q) + '</div><div class="msg err">' + esc(box.error.message) + "</div></div>";
     }
@@ -368,7 +458,7 @@
     // A conversation keeps the company it started on: a follow-up, or Answer fresh, asked from another
     // company's page is still about the first company. Answer fresh starts a new conversation.
     if (!box.conv || fresh) box.conv = A.newConv(box.conv ? box.conv.companyId : companyHere());
-    var conv = box.conv, item = { q: text, conv: conv };
+    var conv = box.conv, item = { q: text, conv: conv, id: A.pendingId() };
     box.pending.push(item);
     q.value = "";
     autosize();
@@ -376,6 +466,8 @@
     scrollToLast();
     var done = function () { box.pending = box.pending.filter(function (p) { return p !== item; }); };
     A.send(conv, { question: text, mode: "answer", companyId: conv.companyId || "", fresh: Boolean(fresh) }).then(function (r) {
+      return A.settle(thread, item.id).then(function () { return r; });
+    }).then(function (r) {
       done();
       conv.turns.push(r.turn);
       // The same conversation opened again from history since is another object: it gets the answer too.
