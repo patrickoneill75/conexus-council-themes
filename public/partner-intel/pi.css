@@ -293,13 +293,13 @@ html:has(> body.pi-app)::before { left:38%; bottom:-260px; width:560px; height:5
 .pi-app .appbar { --lift:0px; --fade:1; background:var(--navy); color:#fff; border-bottom:0;
   transform:translateY(calc(-1 * var(--lift))); transition:box-shadow .2s ease, transform .18s cubic-bezier(.25,1,.5,1); }
 .pi-app .appbar .in { max-width:1120px; min-height:64px; gap:0 24px; align-items:stretch; }
-.pi-app .appname { display:flex; align-items:center; font-size:20px; font-weight:700; color:#fff; margin-right:12px; }
+.pi-app .appname { display:flex; align-items:center; font-size:20px; font-weight:600; color:#fff; margin-right:12px; }
 .pi-app a.appname:hover { color:#fff; text-decoration:none; }
 .pi-app .nav { gap:4px; }
 .pi-app .nav a { display:flex; align-items:center; padding:0 12px; border-top:4px solid transparent; border-bottom:4px solid transparent;
-  color:var(--nav-text); font-size:17px; font-weight:500; }
+  color:var(--nav-text); font-size:17px; font-weight:400; }
 .pi-app .nav a:hover { color:#fff; text-decoration:none; }
-.pi-app .nav a.on { color:#fff; font-weight:600; border-bottom-color:var(--hl); }
+.pi-app .nav a.on { color:#fff; font-weight:500; border-bottom-color:var(--hl); }
 .pi-app .nav a.on:hover { color:#fff; }
 .pi-app .appbar .tools { font-size:14px; gap:18px; }
 .pi-app .appbar .tools a, .pi-app .appbar .tools button.link { color:var(--nav-text); font-weight:400; }
@@ -538,8 +538,13 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 /* Each tab is as wide as the widest, so the pill is one tab wide and moves a whole tab per step. */
 .pi-app .ctabs .ctlens { position:absolute; z-index:0; top:6px; bottom:6px; left:6px; width:calc((100% - 12px) / var(--n, 6)); border-radius:999px;
   background:var(--navy); box-shadow:0 2px 6px rgba(7,33,78,.18); transform:translateX(calc(var(--at, 0) * 100%));
-  transition:transform .5s cubic-bezier(.22,1,.36,1); }
-@media (prefers-reduced-motion:reduce) { .pi-app .ctabs .ctlens { transition:none; } }
+  transition:transform .6s cubic-bezier(.22,1,.36,1), scale .45s cubic-bezier(.22,1,.36,1); }
+/* Moving between tabs: the pill stretches as it slides, as the time window's lens does, and the tab's
+ * content fades out and the new content fades in (index.html, switchTab). */
+.pi-app .ctabs .ctlens.moving { scale:1.18 .88; }
+.pi-app #tabBody { transition:opacity .18s ease; }
+.pi-app #tabBody.fading { opacity:0; transition-duration:.14s; }
+@media (prefers-reduced-motion:reduce) { .pi-app .ctabs .ctlens, .pi-app #tabBody { transition:none; } }
 .pi-app .tabpanel { margin-top:20px; background:#fff; border-radius:24px; padding:26px 36px 24px; }
 .pi-app .tabpanel .card { padding:0; margin:0; border-radius:0; }
 .pi-app .toolbar { margin:18px 0 4px; }
@@ -747,18 +752,39 @@ html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px)
  * conversation, and the pill at the bottom of the screen, where it stays as the conversation grows. */
 .asx-tools { order:0; } .asx-h1 { order:1; } .asx-pill { order:2; } .asx-out { order:4; } .asx-recent { order:5; }
 .pi-app .wrap:has(.asx.has-out) { padding-bottom:0; }
-/* The conversation sits on a solid white panel, as the topics do on Home, so the page background
- * never shows behind the answer. */
-.asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:12px; background:#fff; border-radius:24px; padding:28px 36px; }
+.asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:0; padding:0; }
 .asx.has-out .asx-out .turn:last-child { margin-bottom:0; }
 .asx.has-out .asx-pill { order:2; position:sticky; bottom:24px; z-index:5; margin-top:20px; }
+/* After a question the conversation sits on a solid white panel, so the page background never shows
+ * behind the answer, and the pill docks at its foot on a white band: the answer scrolls under the band
+ * instead of showing around the pill. On a wide screen the history panel and the conversation are one
+ * block, with the same top and no gap. */
+.asx.has-out { align-items:stretch; }
+.asx.has-out .asx-main { background:#fff; border-radius:24px; padding:24px 36px 0; }
+.asx.has-out .asx-tools { min-height:0; }
+/* Opening or closing History fades the panel and the conversation into their new places instead of
+ * jumping. Two names for one fade, so the change of class starts it again either way. */
+@keyframes asx-fade-a { from { opacity:0; } to { opacity:1; } }
+@keyframes asx-fade-b { from { opacity:0; } to { opacity:1; } }
+.asx.rail .asx-rail { animation:asx-fade-a .25s ease; }
+.asx.rail.has-out .asx-main { animation:asx-fade-a .25s ease; }
+.asx.has-out:not(.rail) .asx-main { animation:asx-fade-b .25s ease; }
+@media (prefers-reduced-motion:reduce) { .asx .asx-rail, .asx .asx-main { animation:none !important; } }
+@media (min-width:1101px) {
+  .asx.rail.has-out { gap:0; }
+  .asx.rail.has-out .asx-main { max-width:none; margin:0; border:1px solid #dcdfe4; border-left:0; border-radius:0 24px 24px 0; }
+  .asx.rail.has-out .asx-rail { border-radius:24px 0 0 24px; }
+}
+.asx.has-out .asx-pill, .pi-app .asx.has-out .asx-pill { bottom:14px; margin:22px 0 14px; background:var(--wash); border-color:#e1e6ef;
+  box-shadow:0 0 0 14px #fff, 0 -16px 22px -10px rgba(7,33,78,.10); }
+.pi-app .asx.has-out .asx-pill select { background:#fff; }
 .asx-out .turn .qb { font-size:18px; background:#fff; border:1px solid var(--border); }
 .asx-out .turn { margin-bottom:40px; }
 .asx-out .msg.err { font-size:16px; }
 /* The history panel: its own color, so it reads as a panel apart from the conversation, as in Claude. */
 .asx-rail { display:none; flex:none; box-sizing:border-box; position:sticky; top:16px; max-height:calc(125vh - 120px); overflow-y:auto; }
-.asx.rail .asx-rail { display:flex; flex-direction:column; width:300px; min-height:calc(125vh - 160px); background:#e6ecf5;
-  border:1px solid #d3dcea; border-radius:16px; padding:16px 12px; }
+.asx.rail .asx-rail { display:flex; flex-direction:column; width:300px; min-height:calc(125vh - 160px); background:#eef0f3;
+  border:1px solid #dcdfe4; border-radius:16px; padding:16px 12px; }
 .asx .rl-head { display:flex; gap:8px; margin:0 0 14px; }
 .asx.rail .asx-lb { display:none; }
 .asx-lb { display:inline-flex; gap:8px; }
@@ -795,7 +821,6 @@ html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px)
        font:inherit; font-size:15px; font-weight:400; padding:6px 4px; }
 .asx .ax-back svg { width:16px; height:16px; }
 .asx-rail .rl-item { font-size:15px; }
-@media (min-width:761px) { .asx.has-out .asx-pill { bottom:30px; } }
 @media (max-width:1100px) {
   .asx.rail .asx-rail { position:fixed; z-index:950; top:0; bottom:0; max-height:none; min-height:0; width:min(360px, 88vw); border-radius:0;
        box-shadow:0 0 40px rgba(7,33,78,.2); padding:20px; }
@@ -809,5 +834,6 @@ html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px)
   .pi-app .asx-pill textarea { flex:1 1 0; min-height:52px; font-size:16px; }
   .pi-app .asx-pill .asx-go { width:44px; height:44px; }
   .asx-out { padding:0 4px; }
-  .asx.has-out .asx-out { padding:22px 18px; }
+  .asx.has-out .asx-main { padding:16px 16px 0; border-radius:22px; }
+  .asx.has-out .asx-pill, .pi-app .asx.has-out .asx-pill { bottom:10px; margin:18px 0 10px; box-shadow:0 0 0 10px #fff, 0 -14px 20px -10px rgba(7,33,78,.12); }
 }

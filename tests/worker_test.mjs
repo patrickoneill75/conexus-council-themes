@@ -6014,7 +6014,7 @@ test("partner_intel: the top bar is solid navy with the current page underlined 
   const js = fs.readFileSync(path.join(pub, "pi.js"), "utf8");
   assert.match(css, /\.pi-app \.appbar \{ --lift:0px; --fade:1; background:var\(--navy\);/);
   assert.match(css, /transform:translateY\(calc\(-1 \* var\(--lift\)\)\)/);
-  assert.match(css, /\.pi-app \.nav a\.on \{ color:#fff; font-weight:600; border-bottom-color:var\(--hl\); \}/);
+  assert.match(css, /\.pi-app \.nav a\.on \{ color:#fff; font-weight:500; border-bottom-color:var\(--hl\); \}/);
   assert.doesNotMatch(css, /\.pi-app \.nav a\.on span::before/, "the highlighter mark behind the current page is gone");
   assert.match(js, /var lift = Math\.min\(row, Math\.max\(0, Math\.round\(y\)\)\);/, "the row moves pixel for pixel with the scroll, up to its own height");
   assert.match(js, /bar\.style\.setProperty\("--lift", lift \+ "px"\);/);
@@ -6076,8 +6076,8 @@ test("partner_intel: company tabs are pills in a gray track, and the navy pill s
   assert.match(html, /var from = lastTab && lastTab\.id === c\.id \? lastTab\.at : at;/, "it slides only between tabs of the same company");
   assert.match(html, /tabs\.style\.setProperty\("--at", at\);/);
   assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*background:var\(--navy\);[^}]*transform:translateX\(calc\(var\(--at, 0\) \* 100%\)\);/);
-  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*transition:transform \.5s cubic-bezier\(\.22,1,\.36,1\); \}/, "it eases in without overshooting");
-  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-app \.ctabs \.ctlens \{ transition:none; \} \}/);
+  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*transition:transform \.6s cubic-bezier\(\.22,1,\.36,1\), scale \.45s cubic-bezier\(\.22,1,\.36,1\); \}/, "it eases in without overshooting, stretching on the way as the time window's lens does");
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-app \.ctabs \.ctlens, \.pi-app #tabBody \{ transition:none; \} \}/);
   assert.doesNotMatch(css, /\.pi-app \.tabpanel\.first/, "the panel no longer joins a tab");
 });
 
@@ -6089,17 +6089,62 @@ test("partner_intel: Home ends with its topics, with no Note, Source or Dates fo
   assert.match(html, /renderTrending\(el\("trend"\), d\.trending, \{ days: state\.days, source: \[\], status: \[\] \}, mine, "h2"\);/);
 });
 
-test("partner_intel: the time window lens has no drop shadow, and the nav links are lighter (500, current page 600)", () => {
+test("partner_intel: the time window lens has no drop shadow, and the nav links are lighter (400, current page 500, app name 600)", () => {
   const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
   const lens = css.match(/\.pi-app \.seg \.lens \{[^}]*\}/)[0];
   assert.doesNotMatch(lens, /, 0 \d+px \d+px rgba/, "only inset rim lines, no shadow under the lens");
-  assert.match(css, /\.pi-app \.nav a \{[^}]*font-size:17px; font-weight:500; \}/);
+  assert.match(css, /\.pi-app \.nav a \{[^}]*font-size:17px; font-weight:400; \}/);
+  assert.match(css, /\.pi-app \.appname \{ display:flex; align-items:center; font-size:20px; font-weight:600;/);
 });
 
 test("partner_intel: the Ask page conversation sits on a solid white panel, so the page background never shows behind an answer", () => {
   const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
-  assert.match(css, /\.asx\.has-out \.asx-out \{ order:1; flex:1 0 auto; margin-top:12px; background:#fff; border-radius:24px; padding:28px 36px; \}/);
+  assert.match(css, /\.asx\.has-out \.asx-main \{ background:#fff; border-radius:24px; padding:24px 36px 0; \}/);
   assert.match(css, /\.asx\.has-out \.asx-out \.turn:last-child \{ margin-bottom:0; \}/);
+});
+
+test("partner_intel: BUG moving between a company's tabs reloaded the whole page and flashed; now only the tab's content fades over", () => {
+  const file = path.join(PUB_PI, "index.html");
+  const company = sourceOf(file, "company");
+  assert.ok(company.indexOf("if (sameCompany(id)) { switchTab(current, at); return; }") >= 0, "a tab of the company on screen is a tab switch");
+  assert.ok(company.indexOf("sameCompany(id)") < company.indexOf('view.innerHTML = loading("Loading…")'), "decided before anything clears the page");
+  const sw = sourceOf(file, "switchTab");
+  assert.match(sw, /body\.classList\.add\("fading"\);/);
+  assert.match(sw, /body\.classList\.remove\("fading"\);/);
+  assert.match(sw, /lens\.classList\.add\("moving"\);/, "the pill stretches as it slides, as the time window's lens does");
+  assert.doesNotMatch(sw, /PI\.api\("company\?/, "the company itself is not fetched again");
+  assert.match(sourceOf(file, "route"), /if \(!tabMove\) window\.scrollTo\(0, 0\);/, "the page does not jump to the top");
+  assert.match(sourceOf(file, "tabData"), /Object\.create\(null\)/);
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  assert.match(css, /\.pi-app #tabBody\.fading \{ opacity:0;/);
+  assert.match(css, /\.pi-app \.ctabs \.ctlens\.moving \{ scale:1\.18 \.88; \}/);
+});
+
+test("partner_intel: on a wide screen the Ask page's history panel and conversation are one block, the history gray, the pill docked", () => {
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  assert.match(css, /@media \(min-width:1101px\) \{\n  \.asx\.rail\.has-out \{ gap:0; \}/);
+  assert.match(css, /\.asx\.rail\.has-out \.asx-main \{ max-width:none; margin:0; border:1px solid #dcdfe4; border-left:0; border-radius:0 24px 24px 0; \}/);
+  assert.match(css, /\.asx\.rail \.asx-rail \{[^}]*background:#eef0f3;/, "gray, not blue");
+  assert.match(css, /\.pi-app \.asx\.has-out \.asx-pill \{ bottom:14px;[^}]*box-shadow:0 0 0 14px #fff/, "the white band behind the pill");
+});
+
+test("partner_intel: the Ask page opens with History closed, and opening or closing it fades the panel and conversation over", () => {
+  const html = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  assert.match(html, /var askView = \{ rail: false,/);
+  assert.match(sourceOf(path.join(PUB_PI, "index.html"), "ask"), /askView\.conv = null; askView\.sel = null; askView\.rail = false;/, "closed each time the page opens");
+  assert.match(css, /\.asx\.rail\.has-out \.asx-main \{ animation:asx-fade-a \.25s ease; \}/);
+  assert.match(css, /\.asx\.has-out:not\(\.rail\) \.asx-main \{ animation:asx-fade-b \.25s ease; \}/);
+});
+
+test("partner_intel: BUG the router drew Ask, Programs or Companies and then drew Home over it; each address draws one page", () => {
+  const route = sourceOf(path.join(PUB_PI, "index.html"), "route");
+  const calls = route.slice(route.indexOf('if (name === "programs")'), route.indexOf("else home();") + "else home();".length);
+  const lines = calls.split("\n").map((l) => l.trim()).filter(Boolean);
+  assert.equal(lines[0].startsWith('if (name === "programs")'), true);
+  assert.ok(lines.slice(1).every((l) => l.startsWith("else ")), "one if/else chain, so only one page draws:\n" + lines.join("\n"));
+  assert.deepEqual(lines.map((l) => (l.match(/\b(programs|program|meeting|ask|companies|company|home)\(/) || [])[1]),
+    ["programs", "program", "meeting", "ask", "companies", "company", "home"]);
 });
 
 let failed = 0;

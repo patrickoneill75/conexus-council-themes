@@ -423,14 +423,15 @@
      written answer from the notes as a whole. History is a panel on the left, open by default on a
      wide screen (as in Claude), with History and New at its top; the Ask box shares the same history.
      A citation opens its note in the sources listed under the answer. */
-  var askView = { rail: !!(window.matchMedia && window.matchMedia("(min-width: 1101px)").matches), conv: null, sel: null, pending: [] };
+  var askView = { rail: false, conv: null, sel: null, pending: [] };
   var ASK_START = "Search the notes, ask a question, or describe what a partner needs";
 
   function ask() {
     var mine = ++seq;
     var AU = PI.AskUI;
     var pre = PI.askPrefill; PI.askPrefill = null;
-    askView.conv = null; askView.sel = null;
+    // The Ask page opens with History closed; the History button opens it.
+    askView.conv = null; askView.sel = null; askView.rail = false;
     view.innerHTML = '<div class="asx' + (askView.rail ? " rail" : "") + '" id="asx">' +
       '<aside class="asx-rail" aria-label="Past questions"><div class="rl-head">' + AU.toggle(true) + AU.newButton() + "</div>" +
         '<div class="rl-list" id="asxRail"></div><p class="rl-note" id="asxNote"></p></aside>' +
@@ -757,6 +758,17 @@
   ];
   var OLD_TABS = { problems: "issues", notes: "meetings" }; // links saved before tabs were renamed or merged
   var lastTab = null; // the company and tab shown last, so the pill can slide from it to the new tab
+  var coPage = null; // the company page on screen, so moving between its tabs swaps only the tab's content
+  // A company's tab data, kept while its page is open: a tab seen once comes back at once, and the next
+  // tab's data loads while the old content fades out.
+  var tabCache = { id: null, data: Object.create(null) };
+  function tabData(id, path) {
+    if (tabCache.id !== id) tabCache = { id: id, data: Object.create(null) };
+    if (!tabCache.data[path]) tabCache.data[path] = PI.api(path).catch(function (err) { delete tabCache.data[path]; throw err; });
+    return tabCache.data[path];
+  }
+  function topicsPath(id, list) { return "company/topics?id=" + encodeURIComponent(id) + "&list=" + list; }
+  function meetingsPath(id) { return "company/meetings?id=" + encodeURIComponent(id); }
   function tabHref(id, tab) { return "#/company/" + encodeURIComponent(id) + (tab && tab !== "overview" ? "/" + tab : ""); }
 
   /** The question "Find solution" puts to Ask: the issue in its own words, at most 600 characters. */
@@ -776,10 +788,12 @@
   }
 
   function company(id, tab) {
-    var mine = ++seq;
     tab = OLD_TABS[tab] || tab;
     var current = COMPANY_TABS.filter(function (t) { return t.id === tab; })[0] || COMPANY_TABS[0];
     var at = COMPANY_TABS.indexOf(current);
+    if (sameCompany(id)) { switchTab(current, at); return; }
+    var mine = ++seq;
+    tabCache = { id: id, data: Object.create(null) };
     view.innerHTML = loading("Loading…");
     PI.api("company?id=" + encodeURIComponent(id)).then(function (p) {
       if (mine !== seq) return;
@@ -796,8 +810,8 @@
       var html = backLink("#/companies", "All companies") +
         '<h1 class="coname">' + title + "</h1>" +
         (facts.length ? '<p class="lede">' + facts.map(esc).join(". ") + ".</p>" : "") +
-        // Pill tabs: a navy pill sits behind the chosen tab. Moving between tabs of the same company, the
-        // page draws with the pill on the old tab, then slides it to the new one.
+        // Pill tabs: a navy pill sits behind the chosen tab. Drawn afresh after a visit to another tab of the
+        // same company (going back, say), the page starts with the pill on that tab and slides it over.
         '<nav class="ctabs" aria-label="Company sections" style="--n:' + COMPANY_TABS.length + ";--at:" + from + '"><i class="ctlens" aria-hidden="true"></i>' +
         COMPANY_TABS.map(function (t) {
           return '<a href="' + tabHref(c.id, t.id) + '"' + (t.id === current.id ? ' class="on" aria-current="page"' : "") + ">" + esc(t.label) + "</a>";
@@ -812,12 +826,48 @@
         void tabs.offsetWidth; // lay out at the old tab first, so the change below animates
         tabs.style.setProperty("--at", at);
       }
-      var body = el("tabBody");
-      if (current.list) {
-        topicsTab(body, c, current, mine);
-      } else if (current.id === "meetings") {
-        meetingsTab(body, c, mine);
-      } else if (current.id === "contacts") {
+      coPage = { id: c.id, c: c, tabs: tabs };
+      fillTab(el("tabBody"), c, current, mine);
+    }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
+  }
+  function sameCompany(id) { return !!(coPage && coPage.id === id && view.contains(coPage.tabs)); }
+  /* Moving between a company's tabs: the pill slides to the new tab, stretching as it moves (as the time
+   * window's lens does), and the content fades out and the new tab's fades in. The page stays put. */
+  function switchTab(current, at) {
+    var mine = ++seq, tabs = coPage.tabs, c = coPage.c, body = el("tabBody");
+    Array.prototype.forEach.call(tabs.querySelectorAll("a"), function (a, k) {
+      a.classList.toggle("on", k === at);
+      if (k === at) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    if (lastTab && lastTab.at === at) return;
+    lastTab = { id: c.id, at: at };
+    var lens = tabs.querySelector(".ctlens");
+    tabs.style.setProperty("--at", at);
+    var onTab = tabs.querySelector("a.on");
+    if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollTo({ left: onTab.offsetLeft - (tabs.clientWidth - onTab.offsetWidth) / 2, behavior: STILL ? "auto" : "smooth" });
+    if (!STILL) {
+      lens.classList.add("moving");
+      setTimeout(function () { lens.classList.remove("moving"); }, 220);
+    }
+    if (current.list) tabData(c.id, topicsPath(c.id, current.list));
+    else if (current.id === "meetings") tabData(c.id, meetingsPath(c.id));
+    body.classList.add("fading");
+    setTimeout(function () {
+      if (mine !== seq) return;
+      // Hold the panel's height while the new content arrives, so the page below does not jump.
+      body.style.minHeight = body.offsetHeight + "px";
+      Promise.resolve(fillTab(body, c, current, mine)).then(function () {
+        if (mine !== seq) return;
+        body.style.minHeight = "";
+        body.classList.remove("fading");
+      });
+    }, STILL ? 0 : 140);
+  }
+  /** Draws a tab's content. Returns a promise for tabs whose data loads, settled once it is drawn. */
+  function fillTab(body, c, current, mine) {
+    if (current.list) return topicsTab(body, c, current, mine);
+    if (current.id === "meetings") return meetingsTab(body, c, mine);
+    if (current.id === "contacts") {
         var people = c.people || [];
         var source = { upload: "Contacts upload", roster: "Member roster", both: "Roster and contacts upload" };
         body.innerHTML = people.length ? '<table class="tbl" style="margin-top:14px"><thead><tr><th>Name</th><th>Title</th><th>Email</th><th>Source</th></tr></thead><tbody>' +
@@ -826,8 +876,8 @@
               (x.email ? '<a href="mailto:' + esc(x.email) + '">' + esc(x.email) + "</a>" : "") + "</td><td>" + esc(source[x.source] || "") + "</td></tr>";
           }).join("") + "</tbody></table>"
           : '<div class="empty">No contacts on file. Upload the contacts list in the <a href="/partner-intel/control-panel/">control panel</a>.</div>';
-      }
-    }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
+    }
+    return null;
   }
 
   // Overview, Issues, Solutions and Wins: by topic across all the notes, or the latest source's
@@ -835,7 +885,7 @@
   var topicsMode = "topic";
   function topicsTab(body, c, tab, mine) {
     body.innerHTML = '<p class="small muted" style="margin-top:14px"><span class="spinner"></span>Loading…</p>';
-    PI.api("company/topics?id=" + encodeURIComponent(c.id) + "&list=" + tab.list).then(function (r) {
+    return tabData(c.id, topicsPath(c.id, tab.list)).then(function (r) {
       if (mine !== seq) return;
       if (!r.total) { body.innerHTML = '<div class="empty">No ' + (tab.list === "all" ? "issues, solutions or wins" : tab.noun[1]) + " recorded yet.</div>"; return; }
       body.innerHTML = '<div class="row spread toolbar"><div class="seg soft" id="pmode" role="group" aria-label="View">' +
@@ -911,7 +961,7 @@
   var MEETINGS_SHOWN = 10;
   function meetingsTab(body, c, mine) {
     body.innerHTML = '<p class="small muted" style="margin-top:14px"><span class="spinner"></span>Loading…</p>';
-    PI.api("company/meetings?id=" + encodeURIComponent(c.id)).then(function (r) {
+    return tabData(c.id, meetingsPath(c.id)).then(function (r) {
       if (mine !== seq) return;
       if (!r.meetings.length) { body.innerHTML = '<div class="empty">No meetings recorded yet.</div>'; return; }
       body.innerHTML = '<div class="tlist">' + r.meetings.map(function (m, n) {
@@ -964,6 +1014,8 @@
       a.classList.toggle("on", on);
       if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
+    // Moving between a company's tabs keeps the page where it is; anywhere else starts at the top.
+    var tabMove = name === "company" && parts[1] && sameCompany(decodeURIComponent(parts[1]));
     if (name === "programs") programs();
     else if (name === "program" && parts[1]) program(decodeURIComponent(parts[1]));
     else if (name === "meeting" && parts[2]) meeting(decodeURIComponent(parts[1]), decodeURIComponent(parts[2]));
@@ -971,7 +1023,7 @@
     else if (name === "companies") companies();
     else if (name === "company" && parts[1]) company(decodeURIComponent(parts[1]), parts[2] || "overview");
     else home();
-    window.scrollTo(0, 0);
+    if (!tabMove) window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);
   route();
