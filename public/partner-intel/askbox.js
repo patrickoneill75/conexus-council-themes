@@ -308,11 +308,12 @@
   };
   A.pendingHtml = function (q, id) {
     if (!phraseNow) A.nextPhrase();
-    if (!phraseTimer) phraseTimer = setInterval(turnPhrase, MARK_LAP);
+    if (!phraseTimer) phraseTimer = setInterval(turnPhrase, MARK_LAP * 4); // one phrase every four laps, about 10 seconds
     return '<div class="turn pending"' + (id ? ' data-pid="' + esc(id) + '"' : "") + '><div class="qb">' + esc(q) + "</div>" +
       '<div class="thinking" role="status">' + A.markHtml() + '<span class="pi-phrase" aria-hidden="true">' + esc(phraseNow) + "…</span>" +
       '<span class="sr-only">Reading the notes…</span></div></div>';
   };
+  var MARK_SWELL = [{ transform: "rotate(45deg) scale(1)" }, { transform: "rotate(45deg) scale(1.6)", offset: 0.4 }, { transform: "rotate(45deg) scale(1)" }];
   /** The mark's ending, played in pending turn `id` inside `scope` once its answer has come: the diamond runs on
    * to its next pass through the center and stops there, swells, and the mark fades. Resolves when that is done,
    * or at once when the turn is not on screen or motion is reduced, so an answer is never held for nothing. */
@@ -328,7 +329,14 @@
     return new Promise(function (resolve) {
       setTimeout(function () {
         mark.classList.add("settled");
-        setTimeout(resolve, 1350); // pm-swell, then pm-fade (pi.css)
+        // The swell and fade are played from here. Swapping the ride for a CSS swell animation, after its
+        // timing had been changed above, left the swell finished at zero length, so the diamond never swelled.
+        anim.cancel();
+        var swell = ride.animate(MARK_SWELL, { duration: 500, easing: "cubic-bezier(.45,0,.25,1)" });
+        var fade = mark.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 250, delay: 420, easing: "ease-in", fill: "forwards" });
+        // A mark taken off the page mid-ending may never finish, so the answer waits at most a second.
+        Promise.race([Promise.all([swell.finished, fade.finished]), new Promise(function (r) { setTimeout(r, 1000); })])
+          .then(resolve, resolve);
       }, Math.max(0, (stop - laps) * MARK_LAP));
     });
   };

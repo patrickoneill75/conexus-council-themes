@@ -6222,27 +6222,37 @@ test("partner_intel: while an answer is coming the Conexus mark rides beside a s
   assert.match(css, /\.pi-mark \.pm-ride \{[^}]*background:var\(--amber\);[^}]*animation:pm-ride 2\.6s linear infinite; \}/, "the amber diamond rides the loops");
   assert.match(css, /@keyframes pm-ride \{ 0% \{ offset-distance:0%; transform:rotate\(45deg\) scale\(1\); \}[^\n]*50% \{ offset-distance:50%; transform:rotate\(45deg\) scale\(1\); \}/,
     "full size at each pass through the center");
-  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-mark \.pm-ride, \.pi-mark\.settled, \.pi-mark\.settled \.pm-ride \{ animation:none; \} \}/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-mark \.pm-ride \{ animation:none; \} \}/);
 });
 
 test("partner_intel: when the answer comes, the diamond stops at its next pass through the center, swells, and the mark fades before the answer shows", async () => {
   const settle = (laps, reduced = false) => {
     const calls = [], delays = [];
     const timing = { currentIteration: Math.floor(laps), progress: laps - Math.floor(laps) };
-    const anim = { effect: { getComputedTiming: () => timing, updateTiming: (t) => calls.push(t) } };
+    const played = [];
+    const anim = { effect: { getComputedTiming: () => timing, updateTiming: (t) => calls.push(t) }, cancel: () => played.push("ride stopped") };
+    const animate = (who) => (frames, opts) => { played.push({ who, frames, opts }); return { finished: Promise.resolve() }; };
     const classes = new Set();
-    const mark = { classList: { add: (c) => classes.add(c) }, querySelector: () => ({ getAnimations: () => [anim] }) };
+    const ride = { getAnimations: () => [anim], animate: animate("diamond") };
+    const mark = { classList: { add: (c) => classes.add(c) }, querySelector: () => ride, animate: animate("mark") };
     const scope = { querySelector: (sel) => (sel === '.turn.pending[data-pid="p7"] .pi-mark' ? mark : null) };
     const win = { matchMedia: () => ({ matches: reduced }) };
     const timer = (fn, ms) => { delays.push(ms); fn(); };
-    const fn = new Function("window", "setTimeout", "MARK_LAP", "return " + assignedFn(path.join(PUB_PI, "askbox.js"), "A.settle") + ";")(win, timer, 2600);
-    return fn(scope, "p7").then(() => ({ calls, delays, classes }));
+    const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+    const swell = box.slice(box.indexOf("var MARK_SWELL"), box.indexOf("\n", box.indexOf("var MARK_SWELL")));
+    const fn = new Function("window", "setTimeout", "MARK_LAP", swell + "\nreturn " + assignedFn(path.join(PUB_PI, "askbox.js"), "A.settle") + ";")(win, timer, 2600);
+    return fn(scope, "p7").then(() => ({ calls, delays, classes, played }));
   };
   let r = await settle(3.3);
   assert.deepEqual(r.calls, [{ iterations: 3.5, fill: "forwards" }], "past the start of a lap: stops at its middle, the next center");
   assert.ok(Math.abs(r.delays[0] - 520) < 1, "waits out the rest of the ride");
-  assert.equal(r.delays[1], 1350, "then the swell and the fade");
   assert.ok(r.classes.has("settled"));
+  assert.equal(r.played[0], "ride stopped");
+  assert.equal(r.played[1].who, "diamond");
+  assert.deepEqual(r.played[1].frames.map((f) => f.transform), ["rotate(45deg) scale(1)", "rotate(45deg) scale(1.6)", "rotate(45deg) scale(1)"], "the diamond swells");
+  assert.equal(r.played[2].who, "mark");
+  assert.deepEqual([r.played[2].opts.duration, r.played[2].opts.delay], [250, 420], "and the mark fades quickly as the swell ends");
+  assert.equal(r.delays[1], 1000, "an answer waits at most a second for the ending");
   r = await settle(3.6);
   assert.deepEqual(r.calls, [{ iterations: 4, fill: "forwards" }], "past the middle: stops at the lap's end, also the center");
   r = await settle(3.6, true);
@@ -6257,6 +6267,21 @@ test("partner_intel: when the answer comes, the diamond stops at its next pass t
   assert.match(box, /A\.pendingHtml\(p\.q, p\.id\)/);
   assert.match(html, /AU\.pendingHtml\(p\.q, p\.id\)/);
   assert.match(box, /document\.querySelectorAll\("\.pi-mark:not\(\.settled\) \+ \.pi-phrase"\)/, "a mark playing its ending keeps its phrase");
+});
+
+test("partner_intel: BUG the mark's diamond never swelled at the end (the CSS swell ran at zero length); it is now played directly, and phrases change every four laps", () => {
+  const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  const settle = assignedFn(path.join(PUB_PI, "askbox.js"), "A.settle");
+  assert.match(settle, /anim\.cancel\(\);\n\s*var swell = ride\.animate\(MARK_SWELL, \{ duration: 500/);
+  assert.doesNotMatch(css, /\.pi-mark\.settled \.pm-ride \{ animation:/, "no CSS animation swap after the ride's timing is changed");
+  assert.match(box, /setInterval\(turnPhrase, MARK_LAP \* 4\)/, "a phrase holds about 10 seconds, not 2.6");
+  assert.match(css, /\.turn \.thinking \{[^}]*font-size:15px; \}/, "the phrase reads a size larger than before (14px)");
+});
+
+test("partner_intel: the collapsed Ask box has a faint navy rim with a white ring inside it, so it holds its shape on white", () => {
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  assert.match(css, /\.abx:not\(\.open\) \{[^}]*border-color:rgba\(7,33,78,\.24\); box-shadow:inset 0 0 0 1px rgba\(255,255,255,\.7\),/);
 });
 
 let failed = 0;
