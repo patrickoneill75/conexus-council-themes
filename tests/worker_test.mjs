@@ -6033,15 +6033,14 @@ test("partner_intel: opening a topic runs its line down beside the block and sto
   assert.match(sourceOf(path.join(pub, "index.html"), "setTopic"), /animate\(card\.querySelector\("\.tline"\), open \? "grow" : "shrink"\);/);
 });
 
-test("partner_intel: the time window is a glass track whose lens slides to the choice before the page updates", () => {
+test("partner_intel: the time window is a glass track whose lens slides to the choice, stretching as it moves", () => {
   const pub = path.join(path.dirname(SRC), "public", "partner-intel");
   const html = fs.readFileSync(path.join(pub, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
   assert.match(html, /'<div class="seg glass" id="' \+ id \+ '" role="group" aria-label="Time window"><span class="lens" aria-hidden="true"><\/span>'/);
   const pick = sourceOf(path.join(pub, "index.html"), "pickWindow");
   assert.match(pick, /lens\.classList\.add\("moving"\);/, "it stretches while it moves");
-  assert.match(pick, /setTimeout\(then, 420\);/, "the page updates once the lens lands");
-  assert.match(pick, /if \(STILL \|\| !lens\) \{ then\(\); return; \}/, "no wait with reduced motion");
+  assert.match(pick, /placeLens\(seg, STILL\);/, "with reduced motion it still moves, at once");
   assert.match(html, /placeLens\(el\("win"\), true\);/);
   assert.match(html, /placeLens\(el\("pwin"\), true\);/);
   assert.match(css, /\.pi-app \.seg \.lens\.moving \{ transform:scaleX\(1\.18\) scaleY\(\.88\); \}/);
@@ -6071,13 +6070,13 @@ test("partner_intel: company tabs are pills in a gray track, and the navy pill s
   const pub = path.join(path.dirname(SRC), "public", "partner-intel");
   const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
   const html = fs.readFileSync(path.join(pub, "index.html"), "utf8");
-  assert.match(html, /'<nav class="ctabs" aria-label="Company sections" style="--n:' \+ COMPANY_TABS\.length \+ ";--at:" \+ from \+ '"><i class="ctlens" aria-hidden="true"><\/i>'/);
+  assert.match(html, /<nav class="ctabs" aria-label="Company sections" style="--n:' \+ COMPANY_TABS\.length \+ ";--at:" \+ from \+ '"><i class="ctlens" aria-hidden="true"><\/i>'/);
   assert.doesNotMatch(html, /ICONS\[t\.id\]/, "the tabs are text only");
   assert.match(html, /var from = lastTab && lastTab\.id === c\.id \? lastTab\.at : at;/, "it slides only between tabs of the same company");
   assert.match(html, /tabs\.style\.setProperty\("--at", at\);/);
   assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*background:var\(--navy\);[^}]*transform:translateX\(calc\(var\(--at, 0\) \* 100%\)\);/);
   assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*transition:transform \.6s cubic-bezier\(\.22,1,\.36,1\), scale \.45s cubic-bezier\(\.22,1,\.36,1\); \}/, "it eases in without overshooting, stretching on the way as the time window's lens does");
-  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-app \.ctabs \.ctlens, \.pi-app #tabBody \{ transition:none; \} \}/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-app \.ctabs \.ctlens, \.pi-app #tabBody, \.pi-app \.fades \{ transition:none; \} \}/);
   assert.doesNotMatch(css, /\.pi-app \.tabpanel\.first/, "the panel no longer joins a tab");
 });
 
@@ -6116,7 +6115,7 @@ test("partner_intel: BUG moving between a company's tabs reloaded the whole page
   assert.match(sourceOf(file, "route"), /if \(!tabMove\) window\.scrollTo\(0, 0\);/, "the page does not jump to the top");
   assert.match(sourceOf(file, "tabData"), /Object\.create\(null\)/);
   const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
-  assert.match(css, /\.pi-app #tabBody\.fading \{ opacity:0;/);
+  assert.match(css, /\.pi-app #tabBody\.fading, \.pi-app \.fades\.fading \{ opacity:0;/);
   assert.match(css, /\.pi-app \.ctabs \.ctlens\.moving \{ scale:1\.18 \.88; \}/);
 });
 
@@ -6145,6 +6144,31 @@ test("partner_intel: BUG the router drew Ask, Programs or Companies and then dre
   assert.ok(lines.slice(1).every((l) => l.startsWith("else ")), "one if/else chain, so only one page draws:\n" + lines.join("\n"));
   assert.deepEqual(lines.map((l) => (l.match(/\b(programs|program|meeting|ask|companies|company|home)\(/) || [])[1]),
     ["programs", "program", "meeting", "ask", "companies", "company", "home"]);
+});
+
+test("partner_intel: BUG picking 30/60/90 on Home, or a program's time window, reloaded the whole page; now only the topics fade over", () => {
+  const file = path.join(PUB_PI, "index.html");
+  const home = sourceOf(file, "home"), program = sourceOf(file, "program");
+  assert.doesNotMatch(home, /home\(\); \}\)/, "a window no longer calls home() again");
+  assert.doesNotMatch(program, /program\(name\); \}\)/, "nor program() again");
+  assert.match(home, /wireWindow\(el\("win"\), function \(days\) \{ state\.days = days; return PI\.api\("home\?days=" \+ days\); \}, \[el\("trend"\)\], draw\);/);
+  assert.match(program, /\}, \[el\("trend"\), el\("precent"\)\], draw\);/, "the topics and the meetings list fade; the title and buttons stay");
+  const wire = sourceOf(file, "wireWindow");
+  assert.match(wire, /n\.classList\.add\("fading"\)/);
+  assert.match(wire, /Promise\.all\(\[data, faded\]\)/, "the data loads while the old content fades");
+  assert.doesNotMatch(wire, /view\.innerHTML/, "the page itself is never cleared");
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  assert.match(css, /\.pi-app #tabBody\.fading, \.pi-app \.fades\.fading \{ opacity:0;/);
+});
+
+test("partner_intel: on a phone the company tab bar shows an arrow at its end while more tabs lie to the right", () => {
+  const html = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  assert.match(html, /<button type="button" class="ctmore" aria-label="More sections" hidden>/);
+  assert.match(html, /function moreArrow\(\) \{ moreBtn\.hidden = tabs\.scrollWidth <= tabs\.clientWidth \+ 1 \|\| tabs\.scrollLeft \+ tabs\.clientWidth >= tabs\.scrollWidth - 4; \}/,
+    "hidden when the tabs fit, and once scrolled to the end");
+  assert.match(html, /tabs\.scrollBy\(\{ left: tabs\.clientWidth \* \.6/);
+  assert.match(css, /\.pi-app \.ctmore \{ display:none; \}/, "never on a wide screen");
 });
 
 let failed = 0;

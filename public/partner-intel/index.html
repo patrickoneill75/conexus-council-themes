@@ -277,7 +277,8 @@
   }
 
   /* A glass lens sits on the chosen time window. Picking another slides it across, stretched while it
-   * moves, and the page updates once it lands. */
+   * moves. Only what depends on the window is redrawn (wireWindow): it fades out while the new data
+   * loads and fades back in, and the page keeps its place. */
   function placeLens(seg, instant) {
     var lens = seg && seg.querySelector(".lens"), on = seg && seg.querySelector("button.on");
     if (!lens || !on) return;
@@ -287,18 +288,39 @@
     if (instant) { void lens.offsetWidth; lens.style.transition = ""; }
     PI.glassFilter("pi-lens-glass", on.offsetWidth, on.offsetHeight, PI.LENS_GLASS);
   }
-  function pickWindow(seg, b, then) {
-    if (b.classList.contains("on")) return;
+  function pickWindow(seg, b) {
     Array.prototype.forEach.call(seg.querySelectorAll("button"), function (x) {
       x.classList.toggle("on", x === b);
       x.setAttribute("aria-pressed", x === b ? "true" : "false");
     });
     var lens = seg.querySelector(".lens");
-    if (STILL || !lens) { then(); return; }
+    if (!lens) return;
+    placeLens(seg, STILL);
+    if (STILL) return;
     lens.classList.add("moving");
-    placeLens(seg);
     setTimeout(function () { lens.classList.remove("moving"); }, 220);
-    setTimeout(then, 420);
+  }
+  /** Wires a time window. load(days) fetches the data for a window; draw(data, mine) redraws the parts
+   * of the page that depend on it, which are the nodes that fade. */
+  function wireWindow(seg, load, nodes, draw) {
+    Array.prototype.forEach.call(seg.querySelectorAll("button"), function (b) {
+      b.addEventListener("click", function () {
+        if (b.classList.contains("on")) return;
+        var mine = ++seq, data = load(Number(b.getAttribute("data-d")));
+        pickWindow(seg, b);
+        nodes.forEach(function (n) { n.classList.add("fading"); });
+        var faded = new Promise(function (done) { setTimeout(done, STILL ? 0 : 160); });
+        Promise.all([data, faded]).then(function (res) {
+          if (mine !== seq) return;
+          draw(res[0], mine);
+          nodes.forEach(function (n) { n.classList.remove("fading"); });
+        }).catch(function (err) {
+          if (mine !== seq) return;
+          nodes[0].innerHTML = emptyState(err);
+          nodes.forEach(function (n) { n.classList.remove("fading"); });
+        });
+      });
+    });
   }
 
   /* ------------------------------------------------------------------ Home */
@@ -310,12 +332,11 @@
     PI.api("home?days=" + state.days).then(function (d) {
       if (mine !== seq) return;
       view.innerHTML = '<h1>Trending topics</h1>' +
-        '<div style="margin-top:28px">' + windowButtons("win", [[30, "30 days"], [60, "60 days"], [90, "90 days"]], state.days) + '</div><div id="trend"></div>';
-      renderTrending(el("trend"), d.trending, { days: state.days, source: [], status: [] }, mine, "h2");
+        '<div style="margin-top:28px">' + windowButtons("win", [[30, "30 days"], [60, "60 days"], [90, "90 days"]], state.days) + '</div><div id="trend" class="fades"></div>';
+      function draw(d, mine) { renderTrending(el("trend"), d.trending, { days: state.days, source: [], status: [] }, mine, "h2"); }
+      draw(d, mine);
       placeLens(el("win"), true);
-      Array.prototype.forEach.call(view.querySelectorAll("#win button"), function (b) {
-        b.addEventListener("click", function () { pickWindow(el("win"), b, function () { state.days = Number(b.getAttribute("data-d")); home(); }); });
-      });
+      wireWindow(el("win"), function (days) { state.days = days; return PI.api("home?days=" + days); }, [el("trend")], draw);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
 
@@ -356,29 +377,35 @@
     view.innerHTML = loading("Loading…");
     PI.api("program?name=" + encodeURIComponent(name) + "&days=" + state.programDays).then(function (r) {
       if (mine !== seq) return;
-      var p = r.program;
-      view.innerHTML = updateBanner(r.needsUpdate) + backLink("#/programs", "All programs") + "<h1>" + esc(p.name) + "</h1>" +
-        '<p class="lede">' + (p.first ? "Notes from " + esc(PI.fmtDate(p.first)) + " to " + esc(PI.fmtDate(p.last)) + "." : "No dated notes yet.") +
-        (p.internal ? " Conexus internal." : "") + "</p>" +
+      view.innerHTML = updateBanner(r.needsUpdate) + backLink("#/programs", "All programs") + "<h1>" + esc(r.program.name) + "</h1>" +
+        '<p class="lede" id="plede"></p>' +
         '<div style="margin-top:28px">' + windowButtons("pwin", [[90, "Last 90 days"], [365, "Last year"], [0, "All time"]], state.programDays) + "</div>" +
-        '<h2 class="subh">Trending topics</h2><div id="trend"></div>' +
+        '<h2 class="subh">Trending topics</h2><div id="trend" class="fades"></div>' +
         '<h2 class="subh">Recent data</h2>' +
-        '<div class="card" style="padding:8px 36px"><div id="meetings"></div></div><div id="moreM"></div>';
-      renderTrending(el("trend"), r.trending, { days: state.programDays, source: [name] }, mine, "h3");
-      var shown = 0;
-      function more() {
-        var to = Math.min(r.meetings.length, shown + 12);
-        el("meetings").insertAdjacentHTML("beforeend", r.meetings.slice(shown, to).map(function (m) { return meetingRow(name, m); }).join(""));
-        shown = to;
-        el("moreM").innerHTML = shown < r.meetings.length ? '<p style="margin:22px 0 0"><button class="more" id="moreMeet">Show more</button></p>'
-          : "";
-        var b = el("moreMeet"); if (b) b.addEventListener("click", more);
+        '<div id="precent" class="fades"><div class="card" style="padding:8px 36px"><div id="meetings"></div></div><div id="moreM"></div></div>';
+      function draw(r, mine) {
+        var p = r.program;
+        el("plede").textContent = (p.first ? "Notes from " + PI.fmtDate(p.first) + " to " + PI.fmtDate(p.last) + "." : "No dated notes yet.") +
+          (p.internal ? " Conexus internal." : "");
+        renderTrending(el("trend"), r.trending, { days: state.programDays, source: [name] }, mine, "h3");
+        var shown = 0;
+        el("meetings").innerHTML = "";
+        function more() {
+          var to = Math.min(r.meetings.length, shown + 12);
+          el("meetings").insertAdjacentHTML("beforeend", r.meetings.slice(shown, to).map(function (m) { return meetingRow(name, m); }).join(""));
+          shown = to;
+          el("moreM").innerHTML = shown < r.meetings.length ? '<p style="margin:22px 0 0"><button class="more" id="moreMeet">Show more</button></p>'
+            : "";
+          var b = el("moreMeet"); if (b) b.addEventListener("click", more);
+        }
+        if (!r.meetings.length) { el("meetings").innerHTML = '<div class="empty">No data in this program yet.</div>'; el("moreM").innerHTML = ""; } else more();
       }
-      if (!r.meetings.length) el("meetings").innerHTML = '<div class="empty">No data in this program yet.</div>'; else more();
+      draw(r, mine);
       placeLens(el("pwin"), true);
-      Array.prototype.forEach.call(view.querySelectorAll("#pwin button"), function (b) {
-        b.addEventListener("click", function () { pickWindow(el("pwin"), b, function () { state.programDays = Number(b.getAttribute("data-d")); program(name); }); });
-      });
+      wireWindow(el("pwin"), function (days) {
+        state.programDays = days;
+        return PI.api("program?name=" + encodeURIComponent(name) + "&days=" + days);
+      }, [el("trend"), el("precent")], draw);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
 
@@ -812,10 +839,13 @@
         (facts.length ? '<p class="lede">' + facts.map(esc).join(". ") + ".</p>" : "") +
         // Pill tabs: a navy pill sits behind the chosen tab. Drawn afresh after a visit to another tab of the
         // same company (going back, say), the page starts with the pill on that tab and slides it over.
-        '<nav class="ctabs" aria-label="Company sections" style="--n:' + COMPANY_TABS.length + ";--at:" + from + '"><i class="ctlens" aria-hidden="true"></i>' +
+        '<div class="ctwrap"><nav class="ctabs" aria-label="Company sections" style="--n:' + COMPANY_TABS.length + ";--at:" + from + '"><i class="ctlens" aria-hidden="true"></i>' +
         COMPANY_TABS.map(function (t) {
           return '<a href="' + tabHref(c.id, t.id) + '"' + (t.id === current.id ? ' class="on" aria-current="page"' : "") + ">" + esc(t.label) + "</a>";
         }).join("") + "</nav>" +
+        // On a phone the tabs scroll sideways; an arrow at the end shows there are more, and moves along.
+        '<button type="button" class="ctmore" aria-label="More sections" hidden>' +
+        '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>' +
         '<section class="tabpanel"><div id="tabBody"></div></section>';
       view.innerHTML = html;
       lastTab = { id: c.id, at: at };
@@ -827,6 +857,12 @@
         tabs.style.setProperty("--at", at);
       }
       coPage = { id: c.id, c: c, tabs: tabs };
+      var moreBtn = view.querySelector(".ctmore");
+      function moreArrow() { moreBtn.hidden = tabs.scrollWidth <= tabs.clientWidth + 1 || tabs.scrollLeft + tabs.clientWidth >= tabs.scrollWidth - 4; }
+      moreBtn.addEventListener("click", function () { tabs.scrollBy({ left: tabs.clientWidth * .6, behavior: STILL ? "auto" : "smooth" }); });
+      tabs.addEventListener("scroll", moreArrow, { passive: true });
+      window.addEventListener("resize", moreArrow);
+      moreArrow();
       fillTab(el("tabBody"), c, current, mine);
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
