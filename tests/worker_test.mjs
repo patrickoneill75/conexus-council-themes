@@ -6183,6 +6183,82 @@ test("partner_intel: a note opened under a point reads a step below the point, a
   assert.equal(px(/\.pi-app table\.tbl th \{[^}]*font-size:([\d.]+)px;/), 13.5);
 });
 
+/** The text of `name = function (...) { ... }` in a file, for the Ask box pieces assigned to PI.AskUI. */
+function assignedFn(file, name) {
+  const src = fs.readFileSync(file, "utf8");
+  const start = src.indexOf(`${name} = function`);
+  assert.ok(start >= 0, `${name} not found in ${path.basename(file)}`);
+  let depth = 0, i = src.indexOf("{", start);
+  for (; i < src.length; i++) { if (src[i] === "{") depth++; else if (src[i] === "}" && --depth === 0) break; }
+  return src.slice(src.indexOf("function", start), i + 1);
+}
+const askPhrases = () => {
+  const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  return JSON.parse(box.slice(box.indexOf("A.PHRASES = [") + 12, box.indexOf("];", box.indexOf("A.PHRASES = [")) + 1).replace(/,\s*\]$/, "]"));
+};
+
+test("partner_intel: while an answer is coming the Conexus mark rides beside a shop-floor phrase, in place of the spinner and 'Reading the notes'", () => {
+  const phrases = askPhrases();
+  assert.equal(phrases.length, 31);
+  assert.equal(new Set(phrases).size, 31, "no phrase twice");
+  for (const p of ["Chamfering the edges", "Machining the answer", "Walking the gemba", "Finding the next kaizen"]) assert.ok(phrases.includes(p), p);
+  for (const p of ["Running a 5S sweep", "Matching the takt time", "Leveling the load", "Annealing the findings"]) {
+    assert.ok(!phrases.includes(p), `${p} was taken off the list`);
+  }
+  // Every phrase shows once, in a random order, before any shows again, and none shows twice running.
+  const A = { PHRASES: phrases };
+  const next = new Function("A", "var phraseBag = [], phraseNow = ''; return " + assignedFn(path.join(PUB_PI, "askbox.js"), "A.nextPhrase") + ";")(A);
+  const seen = [];
+  for (let k = 0; k < 31 * 40; k++) seen.push(next());
+  for (let round = 0; round < 40; round++) assert.equal(new Set(seen.slice(round * 31, round * 31 + 31)).size, 31, `round ${round} shows all 31`);
+  assert.ok(seen.every((p, k) => k === 0 || p !== seen[k - 1]), "never the same phrase twice running");
+  assert.notDeepEqual(seen.slice(0, 31), seen.slice(31, 62), "a new order each round");
+
+  const pending = assignedFn(path.join(PUB_PI, "askbox.js"), "A.pendingHtml");
+  assert.match(pending, /A\.markHtml\(\) \+ '<span class="pi-phrase" aria-hidden="true">' \+ esc\(phraseNow\) \+ "…<\/span>"/);
+  assert.match(pending, /<span class="sr-only">Reading the notes…<\/span>/, "a screen reader still hears what is happening, once");
+  assert.doesNotMatch(pending, /spinner/);
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  assert.match(css, /\.pi-mark \.pm-ride \{[^}]*background:var\(--amber\);[^}]*animation:pm-ride 2\.6s linear infinite; \}/, "the amber diamond rides the loops");
+  assert.match(css, /@keyframes pm-ride \{ 0% \{ offset-distance:0%; transform:rotate\(45deg\) scale\(1\); \}[^\n]*50% \{ offset-distance:50%; transform:rotate\(45deg\) scale\(1\); \}/,
+    "full size at each pass through the center");
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-mark \.pm-ride, \.pi-mark\.settled, \.pi-mark\.settled \.pm-ride \{ animation:none; \} \}/);
+});
+
+test("partner_intel: when the answer comes, the diamond stops at its next pass through the center, swells, and the mark fades before the answer shows", async () => {
+  const settle = (laps, reduced = false) => {
+    const calls = [], delays = [];
+    const timing = { currentIteration: Math.floor(laps), progress: laps - Math.floor(laps) };
+    const anim = { effect: { getComputedTiming: () => timing, updateTiming: (t) => calls.push(t) } };
+    const classes = new Set();
+    const mark = { classList: { add: (c) => classes.add(c) }, querySelector: () => ({ getAnimations: () => [anim] }) };
+    const scope = { querySelector: (sel) => (sel === '.turn.pending[data-pid="p7"] .pi-mark' ? mark : null) };
+    const win = { matchMedia: () => ({ matches: reduced }) };
+    const timer = (fn, ms) => { delays.push(ms); fn(); };
+    const fn = new Function("window", "setTimeout", "MARK_LAP", "return " + assignedFn(path.join(PUB_PI, "askbox.js"), "A.settle") + ";")(win, timer, 2600);
+    return fn(scope, "p7").then(() => ({ calls, delays, classes }));
+  };
+  let r = await settle(3.3);
+  assert.deepEqual(r.calls, [{ iterations: 3.5, fill: "forwards" }], "past the start of a lap: stops at its middle, the next center");
+  assert.ok(Math.abs(r.delays[0] - 520) < 1, "waits out the rest of the ride");
+  assert.equal(r.delays[1], 1350, "then the swell and the fade");
+  assert.ok(r.classes.has("settled"));
+  r = await settle(3.6);
+  assert.deepEqual(r.calls, [{ iterations: 4, fill: "forwards" }], "past the middle: stops at the lap's end, also the center");
+  r = await settle(3.6, true);
+  assert.deepEqual([r.calls, r.delays], [[], []], "with reduced motion the answer shows at once");
+
+  const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
+  const html = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  assert.match(box, /\.then\(function \(r\) \{\n      return A\.settle\(thread, item\.id\)\.then\(function \(\) \{ return r; \}\);\n    \}\)\.then\(function \(r\) \{\n      done\(\);/,
+    "the Ask box plays the ending, then shows the answer");
+  assert.match(html, /\.then\(function \(r\) \{\n        return AU\.settle\(out, item\.id\)\.then\(function \(\) \{ return r; \}\);\n      \}\)\.then\(function \(r\) \{\n        done\(\);/,
+    "and so does the Ask page");
+  assert.match(box, /A\.pendingHtml\(p\.q, p\.id\)/);
+  assert.match(html, /AU\.pendingHtml\(p\.q, p\.id\)/);
+  assert.match(box, /document\.querySelectorAll\("\.pi-mark:not\(\.settled\) \+ \.pi-phrase"\)/, "a mark playing its ending keeps its phrase");
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {

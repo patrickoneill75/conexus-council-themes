@@ -683,7 +683,21 @@ html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px)
 .turn { display:flex; flex-direction:column; gap:14px; margin:0 0 26px; }
 .turn .qb { align-self:flex-end; max-width:min(520px, 85%); background:var(--wash); border-radius:18px 18px 4px 18px; padding:12px 18px; color:var(--navy);
             white-space:pre-wrap; overflow-wrap:anywhere; }
-.turn .thinking { color:var(--text-secondary); font-size:14px; }
+.turn .thinking { display:flex; align-items:center; gap:12px; color:var(--text-secondary); font-size:14px; }
+/* While an answer is coming: the Conexus mark, its amber diamond riding the figure 8 at a steady speed, small on
+ * the loops and full size each time it crosses the center. When the answer comes it stops in the center (settle
+ * in askbox.js), the diamond swells, and the mark fades. */
+.pi-mark { position:relative; flex:none; width:64px; height:32px; }
+.pi-mark svg { position:absolute; inset:0; overflow:visible; fill:var(--navy); }
+.pi-mark .pm-ride { position:absolute; left:0; top:0; width:11.26px; height:11.26px; background:var(--amber);
+  offset-path:path("M32.02 15.99 L39.84 7.94 A11.38 11.38 0 1 1 39.84 24.04 L24.19 7.94 A11.38 11.38 0 1 0 24.19 24.04 Z");
+  offset-rotate:0deg; offset-anchor:center; transform:rotate(45deg); animation:pm-ride 2.6s linear infinite; }
+@keyframes pm-ride { 0% { offset-distance:0%; transform:rotate(45deg) scale(1); } 9% { offset-distance:9%; transform:rotate(45deg) scale(0.42); } 41% { offset-distance:41%; transform:rotate(45deg) scale(0.42); } 50% { offset-distance:50%; transform:rotate(45deg) scale(1); } 59% { offset-distance:59%; transform:rotate(45deg) scale(0.42); } 91% { offset-distance:91%; transform:rotate(45deg) scale(0.42); } 100% { offset-distance:100%; transform:rotate(45deg) scale(1); } }
+.pi-mark.settled .pm-ride { animation:pm-swell .7s cubic-bezier(.45,0,.25,1) forwards; }
+.pi-mark.settled { animation:pm-fade .6s ease .75s forwards; }
+@keyframes pm-swell { 0% { transform:rotate(45deg) scale(1); } 40% { transform:rotate(45deg) scale(1.32); } 100% { transform:rotate(45deg) scale(1); } }
+@keyframes pm-fade { to { opacity:0; } }
+@media (prefers-reduced-motion:reduce) { .pi-mark .pm-ride, .pi-mark.settled, .pi-mark.settled .pm-ride { animation:none; } }
 .ans { font-size:15px; line-height:1.6; color:var(--text-primary); overflow-wrap:anywhere; }
 .ans p { margin:0 0 10px; }
 .ans ul, .ans ol { margin:0 0 10px; padding-left:22px; }

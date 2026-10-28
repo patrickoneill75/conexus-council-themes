@@ -541,7 +541,7 @@
       // Questions still being answered show in the conversation they were asked in, in the order asked.
       var here = askView.pending.filter(function (p) { return AU.sameConv(p.conv, askView.conv); });
       out.innerHTML = turns.map(function (t, i) { return turnHtml(t, i === turns.length - 1 && !here.length); }).join("") +
-        here.map(function (p) { return AU.pendingHtml(p.q); }).join("");
+        here.map(function (p) { return AU.pendingHtml(p.q, p.id); }).join("");
       toChat(turns.length + here.length > 0);
       drawRail();
       drawRecent();
@@ -555,7 +555,7 @@
       // It belongs to the conversation on screen when it was asked (Answer fresh starts a new one), and
       // its answer joins that conversation wherever the person has gone since.
       if (!askView.conv || fresh) askView.conv = AU.newConv("");
-      var conv = askView.conv, item = { q: question, conv: conv };
+      var conv = askView.conv, item = { q: question, conv: conv, id: AU.pendingId() };
       askView.pending.push(item);
       // A Find solution exclusion goes with the question it came with, and so does its banner.
       var excluded = exclude ? exclude.id : "";
@@ -567,6 +567,8 @@
       scrollToTurn(out.lastElementChild);
       var done = function () { askView.pending = askView.pending.filter(function (p) { return p !== item; }); };
       AU.send(conv, { question: question, mode: mode || "auto", sources: chosenList(), exclude: excluded, fresh: Boolean(fresh) }).then(function (r) {
+        return AU.settle(out, item.id).then(function () { return r; });
+      }).then(function (r) {
         done();
         conv.turns.push(r.turn);
         if (askView.conv && askView.conv !== conv && AU.sameConv(askView.conv, conv)) askView.conv.turns.push(r.turn);
