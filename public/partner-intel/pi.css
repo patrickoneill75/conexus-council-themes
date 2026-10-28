@@ -252,7 +252,33 @@ h4.colhead { margin:0; padding-bottom:8px; border-bottom:1px solid var(--navy); 
 .pi-app { --accent:#07214e; --hl:#f9f871; --soft:#dce6f5; --band:#eaf1fb; --rule:#9db3da; --line:#c9d3e3;
   --spring:linear(0, 0.055, 0.195, 0.383, 0.588, 0.784, 0.953, 1.084, 1.172, 1.221, 1.234, 1.219, 1.185, 1.140, 1.092, 1.047, 1.008, 0.978, 0.958, 0.948, 0.945, 0.949, 0.958, 0.968, 0.979, 0.990, 0.999, 1.006, 1.010, 1.012, 1.013, 1.012, 1.010, 1.007, 1.005, 1.002, 1);
   --spring-soft:linear(0, 0.045, 0.153, 0.291, 0.437, 0.575, 0.697, 0.799, 0.880, 0.940, 0.983, 1.011, 1.028, 1.036, 1.038, 1.037, 1.032, 1.027, 1.021, 1.016, 1.011, 1.008, 1.004, 1.002, 1.001, 1.000, 0.999, 0.999, 0.999, 0.999, 1); }
-body.pi-app { background:var(--wash); font-size:15px; }
+/* The page behind the cards: white fading to a pale navy-blue, with three soft clouds (navy, then
+ * two brand blues) that drift and change shape slowly. They sit behind everything and take no clicks. */
+body.pi-app { background:linear-gradient(165deg, #ffffff 0%, #f2f2f4 45%, #d9dfea 100%) fixed; font-size:15px; }
+body.pi-app::before, body.pi-app::after, html:has(> body.pi-app)::before { content:""; position:fixed; z-index:-1;
+  pointer-events:none; filter:blur(90px); will-change:transform; animation:ease-in-out infinite alternate; }
+body.pi-app::before { left:-180px; top:60px; width:860px; height:640px; background:rgba(7,33,78,0.03);
+  animation-name:pi-morph-a; animation-duration:42s; }
+body.pi-app::after { right:-160px; top:260px; width:720px; height:620px; background:rgba(50,94,174,0.05);
+  animation-name:pi-morph-b; animation-duration:50s; }
+html:has(> body.pi-app)::before { left:38%; bottom:-260px; width:560px; height:520px; background:rgba(50,94,174,0.10);
+  animation-name:pi-morph-c; animation-duration:38s; }
+@keyframes pi-morph-a { 0% { border-radius:42% 58% 63% 37%/41% 44% 56% 59%; transform:translate(0,0) rotate(0deg); }
+  50% { border-radius:60% 40% 35% 65%/55% 62% 38% 45%; transform:translate(70px,40px) rotate(10deg); }
+  100% { border-radius:38% 62% 50% 50%/60% 35% 65% 40%; transform:translate(-30px,90px) rotate(-8deg); } }
+@keyframes pi-morph-b { 0% { border-radius:55% 45% 40% 60%/50% 60% 40% 50%; transform:translate(0,0) rotate(0deg); }
+  50% { border-radius:40% 60% 62% 38%/38% 45% 55% 62%; transform:translate(-80px,-30px) rotate(-12deg); }
+  100% { border-radius:63% 37% 45% 55%/58% 40% 60% 42%; transform:translate(-20px,60px) rotate(6deg); } }
+@keyframes pi-morph-c { 0% { border-radius:50% 50% 38% 62%/44% 58% 42% 56%; transform:translate(0,0) rotate(0deg); }
+  50% { border-radius:62% 38% 55% 45%/60% 40% 60% 40%; transform:translate(50px,-70px) rotate(14deg); }
+  100% { border-radius:40% 60% 60% 40%/50% 45% 55% 50%; transform:translate(-60px,-20px) rotate(-6deg); } }
+@media (max-width:760px) {
+  body.pi-app::before, body.pi-app::after, html:has(> body.pi-app)::before { filter:blur(56px); }
+  body.pi-app::before { left:-120px; top:40px; width:420px; height:360px; }
+  body.pi-app::after { right:-140px; top:360px; width:380px; height:340px; }
+  html:has(> body.pi-app)::before { left:20px; bottom:-120px; width:320px; height:300px; }
+}
+@media (prefers-reduced-motion:reduce) { body.pi-app::before, body.pi-app::after, html:has(> body.pi-app)::before { animation:none; } }
 /* Links share the navy of the text around them, so a link in running text is underlined. */
 .pi-app .wrap a:not([class]), .pi-app .wrap button.link { text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1px; }
 .pi-app .wrap .ctabs a { text-decoration:none; }
