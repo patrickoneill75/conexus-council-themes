@@ -5340,7 +5340,7 @@ test("partner_intel: BUG pages: an answer landed in whatever conversation was op
   assert.match(panel, /<option value="Non-member">/);
   assert.match(panel, /\["Active", "Inactive", "Non-member"\]\.indexOf\(p\.status\) >= 0 \? p\.status/);
   assert.match(panel, /!r\.items\.length && r\.total > 0 && checkOffset > 0/);
-  assert.match(page, /data-exact=\\?"1/);
+  // The estimated-dates line under Home's topics was later removed with the rest of that footer, by the owner's choice.
 });
 
 /* ============================================================ roles and app access
@@ -6014,7 +6014,7 @@ test("partner_intel: the top bar is solid navy with the current page underlined 
   const js = fs.readFileSync(path.join(pub, "pi.js"), "utf8");
   assert.match(css, /\.pi-app \.appbar \{ --lift:0px; --fade:1; background:var\(--navy\);/);
   assert.match(css, /transform:translateY\(calc\(-1 \* var\(--lift\)\)\)/);
-  assert.match(css, /\.pi-app \.nav a\.on \{ color:#fff; font-weight:700; border-bottom-color:var\(--hl\); \}/);
+  assert.match(css, /\.pi-app \.nav a\.on \{ color:#fff; font-weight:600; border-bottom-color:var\(--hl\); \}/);
   assert.doesNotMatch(css, /\.pi-app \.nav a\.on span::before/, "the highlighter mark behind the current page is gone");
   assert.match(js, /var lift = Math\.min\(row, Math\.max\(0, Math\.round\(y\)\)\);/, "the row moves pixel for pixel with the scroll, up to its own height");
   assert.match(js, /bar\.style\.setProperty\("--lift", lift \+ "px"\);/);
@@ -6065,6 +6065,41 @@ test("partner_intel: the staff app's accent is navy, so links in running text ar
   assert.match(css, /\.pi-app \{ --accent:#07214e;/);
   assert.match(css, /\.pi-app \.wrap a:not\(\[class\]\), \.pi-app \.wrap button\.link \{ text-decoration:underline;/);
   assert.match(css, /\.pi-app \.wrap \.ctabs a \{ text-decoration:none; \}/, "the company tabs are not underlined");
+});
+
+test("partner_intel: company tabs are pills in a gray track, and the navy pill slides from the last tab to the new one", () => {
+  const pub = path.join(path.dirname(SRC), "public", "partner-intel");
+  const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
+  const html = fs.readFileSync(path.join(pub, "index.html"), "utf8");
+  assert.match(html, /'<nav class="ctabs" aria-label="Company sections" style="--n:' \+ COMPANY_TABS\.length \+ ";--at:" \+ from \+ '"><i class="ctlens" aria-hidden="true"><\/i>'/);
+  assert.doesNotMatch(html, /ICONS\[t\.id\]/, "the tabs are text only");
+  assert.match(html, /var from = lastTab && lastTab\.id === c\.id \? lastTab\.at : at;/, "it slides only between tabs of the same company");
+  assert.match(html, /tabs\.style\.setProperty\("--at", at\);/);
+  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*background:var\(--navy\);[^}]*transform:translateX\(calc\(var\(--at, 0\) \* 100%\)\);/);
+  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*transition:transform \.5s cubic-bezier\(\.22,1,\.36,1\); \}/, "it eases in without overshooting");
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-app \.ctabs \.ctlens \{ transition:none; \} \}/);
+  assert.doesNotMatch(css, /\.pi-app \.tabpanel\.first/, "the panel no longer joins a tab");
+});
+
+test("partner_intel: Home ends with its topics, with no Note, Source or Dates footer under them", () => {
+  const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
+  assert.doesNotMatch(html, /topicfoot|Topics rank by how many partner companies|data-exact/);
+  assert.doesNotMatch(css, /\.topicfoot/);
+  assert.match(html, /renderTrending\(el\("trend"\), d\.trending, \{ days: state\.days, source: \[\], status: \[\] \}, mine, "h2"\);/);
+});
+
+test("partner_intel: the time window lens has no drop shadow, and the nav links are lighter (500, current page 600)", () => {
+  const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
+  const lens = css.match(/\.pi-app \.seg \.lens \{[^}]*\}/)[0];
+  assert.doesNotMatch(lens, /, 0 \d+px \d+px rgba/, "only inset rim lines, no shadow under the lens");
+  assert.match(css, /\.pi-app \.nav a \{[^}]*font-size:17px; font-weight:500; \}/);
+});
+
+test("partner_intel: the Ask page conversation sits on a solid white panel, so the page background never shows behind an answer", () => {
+  const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
+  assert.match(css, /\.asx\.has-out \.asx-out \{ order:1; flex:1 0 auto; margin-top:12px; background:#fff; border-radius:24px; padding:28px 36px; \}/);
+  assert.match(css, /\.asx\.has-out \.asx-out \.turn:last-child \{ margin-bottom:0; \}/);
 });
 
 let failed = 0;

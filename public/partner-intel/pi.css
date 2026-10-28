@@ -297,9 +297,9 @@ html:has(> body.pi-app)::before { left:38%; bottom:-260px; width:560px; height:5
 .pi-app a.appname:hover { color:#fff; text-decoration:none; }
 .pi-app .nav { gap:4px; }
 .pi-app .nav a { display:flex; align-items:center; padding:0 12px; border-top:4px solid transparent; border-bottom:4px solid transparent;
-  color:var(--nav-text); font-size:17px; font-weight:600; }
+  color:var(--nav-text); font-size:17px; font-weight:500; }
 .pi-app .nav a:hover { color:#fff; text-decoration:none; }
-.pi-app .nav a.on { color:#fff; font-weight:700; border-bottom-color:var(--hl); }
+.pi-app .nav a.on { color:#fff; font-weight:600; border-bottom-color:var(--hl); }
 .pi-app .nav a.on:hover { color:#fff; }
 .pi-app .appbar .tools { font-size:14px; gap:18px; }
 .pi-app .appbar .tools a, .pi-app .appbar .tools button.link { color:var(--nav-text); font-weight:400; }
@@ -363,7 +363,7 @@ html:has(> body.pi-app)::before { left:38%; bottom:-260px; width:560px; height:5
 .pi-app .seg .lens { position:absolute; z-index:2; top:4px; left:4px; width:0; height:38px; box-sizing:border-box; border-radius:999px; pointer-events:none;
   background:rgba(255,255,255,.4); -webkit-backdrop-filter:saturate(170%) brightness(1.06); backdrop-filter:saturate(170%) brightness(1.06);
   border:1px solid rgba(255,255,255,.85);
-  box-shadow:inset 0 1px 1px #fff, inset 0 -1px 1px rgba(7,33,78,.12), inset 1px 0 1px rgba(255,255,255,.6), inset -1px 0 1px rgba(255,255,255,.6), 0 2px 8px rgba(7,33,78,.18);
+  box-shadow:inset 0 1px 1px #fff, inset 0 -1px 1px rgba(7,33,78,.12), inset 1px 0 1px rgba(255,255,255,.6), inset -1px 0 1px rgba(255,255,255,.6);
   transition:left .6s cubic-bezier(.22,1,.36,1), width .6s cubic-bezier(.22,1,.36,1), transform .45s cubic-bezier(.22,1,.36,1); }
 .pi-app .seg .lens.moving { transform:scaleX(1.18) scaleY(.88); }
 html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturate(170%) brightness(1.06); }
@@ -491,9 +491,6 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 @media (prefers-reduced-motion:reduce) {
   .pi-app .circ, .pi-app .tline, .pi-app .tline::after, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i, .pi-app .seg .lens, .pi-app .appbar { animation:none !important; transition:none !important; }
 }
-.pi-app .topicfoot { display:grid; grid-template-columns:72px minmax(0,1fr); gap:6px 16px; margin-top:28px; padding-top:16px;
-  border-top:1px solid var(--line); font-size:13.5px; color:var(--text-secondary); }
-.pi-app .topicfoot b { color:var(--navy); }
 .pi-app .tmore { border-top:1px solid var(--rule); padding-top:22px; }
 
 /* ---- Programs: one card per folder. A program page lists its meetings with a large date. */
@@ -526,26 +523,24 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 .pi-app table.tbl td.cn { font-weight:700; color:var(--navy); }
 .pi-app table.tbl td.num { font-variant-numeric:tabular-nums; }
 
-/* ---- A company: its name with the council member badge, then browser-style tabs whose
- * chosen tab runs straight into the white panel below. */
+/* ---- A company: its name with the council member badge, then pill tabs: the tab names sit in a
+ * light gray track, and a navy pill slides behind the chosen one. The white panel sits below. */
 .pi-app h1.coname { font-size:40px; }
 .pi-app h1.coname .nw { white-space:nowrap; }
 /* From the font's ascender line to its descender line, about two spaces after the name. */
 .pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.5em; overflow:visible; }
-.pi-app .ctabs { display:flex; gap:4px; margin-top:32px; }
-.pi-app .ctabs a { position:relative; flex:1 1 0; display:flex; align-items:center; justify-content:center; gap:10px; height:56px;
-  border-radius:16px 16px 0 0; font-size:16px; font-weight:600; color:var(--text-secondary); white-space:nowrap; transition:background-color .2s, color .2s; }
-.pi-app .ctabs a svg { width:22px; height:22px; color:var(--accent); flex:none; }
-.pi-app .ctabs a:hover { background:#e4e9f2; color:var(--navy); text-decoration:none; }
-.pi-app .ctabs a.on { background:#fff; color:var(--navy); font-weight:700; z-index:1; }
-.pi-app .ctabs a.on svg { color:var(--navy); }
-.pi-app .ctabs a.on::before, .pi-app .ctabs a.on::after { content:""; position:absolute; bottom:0; width:16px; height:16px; pointer-events:none; }
-.pi-app .ctabs a.on::before { left:-16px; background:radial-gradient(circle at 0 0, transparent 15.5px, #fff 16px); }
-.pi-app .ctabs a.on::after { right:-16px; background:radial-gradient(circle at 100% 0, transparent 15.5px, #fff 16px); }
-.pi-app .ctabs a.on:first-child::before, .pi-app .ctabs a.on:last-child::after { display:none; }
-.pi-app .tabpanel { background:#fff; border-radius:24px; padding:26px 36px 24px; }
-.pi-app .tabpanel.first { border-top-left-radius:0; }
-.pi-app .tabpanel.last { border-top-right-radius:0; }
+.pi-app .ctabs { position:relative; display:inline-grid; grid-auto-flow:column; grid-auto-columns:1fr; max-width:100%; box-sizing:border-box;
+  margin-top:32px; padding:6px; border-radius:999px; background:rgba(7,33,78,.07); }
+.pi-app .ctabs a { position:relative; z-index:1; display:flex; align-items:center; justify-content:center; height:52px; padding:0 26px;
+  border-radius:999px; font-size:18px; font-weight:500; color:var(--text-primary); white-space:nowrap; transition:color .3s, background-color .2s; }
+.pi-app .ctabs a:hover { background:rgba(7,33,78,.05); color:var(--navy); text-decoration:none; }
+.pi-app .ctabs a.on, .pi-app .ctabs a.on:hover { background:none; color:#fff; font-weight:600; }
+/* Each tab is as wide as the widest, so the pill is one tab wide and moves a whole tab per step. */
+.pi-app .ctabs .ctlens { position:absolute; z-index:0; top:6px; bottom:6px; left:6px; width:calc((100% - 12px) / var(--n, 6)); border-radius:999px;
+  background:var(--navy); box-shadow:0 2px 6px rgba(7,33,78,.18); transform:translateX(calc(var(--at, 0) * 100%));
+  transition:transform .5s cubic-bezier(.22,1,.36,1); }
+@media (prefers-reduced-motion:reduce) { .pi-app .ctabs .ctlens { transition:none; } }
+.pi-app .tabpanel { margin-top:20px; background:#fff; border-radius:24px; padding:26px 36px 24px; }
 .pi-app .tabpanel .card { padding:0; margin:0; border-radius:0; }
 .pi-app .toolbar { margin:18px 0 4px; }
 .pi-app .cols3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px 40px; }
@@ -575,7 +570,10 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
   .pi-app .pgrid, .pi-app .cols3 { grid-template-columns:minmax(0,1fr); }
   .pi-app .ctabs { overflow-x:auto; }
   .pi-app .fields > * { grid-column:auto !important; }
-  .pi-app .ctabs a { flex:0 0 auto; padding:0 16px; }
+  /* Too narrow for every tab: fixed equal tabs that scroll sideways, the pill one tab wide. */
+  .pi-app .ctabs { grid-auto-columns:108px; }
+  .pi-app .ctabs a { height:46px; padding:0 8px; font-size:16px; }
+  .pi-app .ctabs .ctlens { width:108px; }
 }
 @media (max-width:600px) {
   .pi-app .wrap { padding:28px 16px 64px; }
@@ -749,7 +747,10 @@ html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px)
  * conversation, and the pill at the bottom of the screen, where it stays as the conversation grows. */
 .asx-tools { order:0; } .asx-h1 { order:1; } .asx-pill { order:2; } .asx-out { order:4; } .asx-recent { order:5; }
 .pi-app .wrap:has(.asx.has-out) { padding-bottom:0; }
-.asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:12px; }
+/* The conversation sits on a solid white panel, as the topics do on Home, so the page background
+ * never shows behind the answer. */
+.asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:12px; background:#fff; border-radius:24px; padding:28px 36px; }
+.asx.has-out .asx-out .turn:last-child { margin-bottom:0; }
 .asx.has-out .asx-pill { order:2; position:sticky; bottom:24px; z-index:5; margin-top:20px; }
 .asx-out .turn .qb { font-size:18px; background:#fff; border:1px solid var(--border); }
 .asx-out .turn { margin-bottom:40px; }
@@ -808,4 +809,5 @@ html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px)
   .pi-app .asx-pill textarea { flex:1 1 0; min-height:52px; font-size:16px; }
   .pi-app .asx-pill .asx-go { width:44px; height:44px; }
   .asx-out { padding:0 4px; }
+  .asx.has-out .asx-out { padding:22px 18px; }
 }
