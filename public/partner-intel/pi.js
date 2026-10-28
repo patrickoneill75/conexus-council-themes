@@ -9,13 +9,61 @@
   window.PI = PI; // pages check for it, so none of them runs without a session
   PI.token = token;
 
-  // The link bar floats at the top; a faint shadow shows once the page has scrolled under it.
+  // The link bar floats at the top; a faint shadow shows once the page has scrolled under it. On a phone
+  // its top row (the name and account links) rides up out of view at the rate the page scrolls, and the
+  // page links stay. pi.css eases each step, so the row trails the scroll slightly and settles.
+  var phone = window.matchMedia ? window.matchMedia("(max-width:600px)") : null;
   function raiseBar() {
     var bar = document.querySelector(".appbar");
-    if (bar) bar.classList.toggle("raised", (window.scrollY || document.documentElement.scrollTop) > 2);
+    if (!bar) return;
+    var y = window.scrollY || document.documentElement.scrollTop;
+    bar.classList.toggle("raised", y > 2);
+    var nav = bar.querySelector(".nav");
+    var row = phone && phone.matches && nav ? nav.offsetTop : 0;
+    var lift = Math.min(row, Math.max(0, Math.round(y)));
+    bar.style.setProperty("--lift", lift + "px");
+    bar.style.setProperty("--fade", row ? String(1 - lift / row) : "1");
+    bar.classList.toggle("lifted", !!row && lift >= row);
   }
   window.addEventListener("scroll", raiseBar, { passive: true });
+  window.addEventListener("resize", raiseBar);
   document.addEventListener("DOMContentLoaded", raiseBar);
+
+  /* Liquid glass edge. Chrome and Edge can run an SVG filter on what sits behind an element: this one
+   * bends the backdrop near the element's rim and leaves the middle clear. Other browsers keep the plain
+   * blur in pi.css. One filter per id, rebuilt when the element's size changes. */
+  if (navigator.userAgentData) document.documentElement.classList.add("lg-refract");
+  PI.ASK_GLASS = { freq: "0.011 0.045", octaves: 2, seed: 7, scale: 28, rim: 22, rimY: 13, soft: 8 };
+  PI.LENS_GLASS = { freq: "0.04 0.09", octaves: 1, seed: 4, scale: 12, rim: 12, rimY: 8, soft: 5 };
+  PI.glassFilter = function (id, w, h, o) {
+    w = Math.round(w); h = Math.round(h);
+    if (!w || !h || !document.body) return;
+    var NS = "http://www.w3.org/2000/svg", f = document.getElementById(id);
+    if (f && f.getAttribute("width") === String(w) && f.getAttribute("height") === String(h)) return;
+    var host = document.getElementById("pi-glass-defs");
+    if (!host) {
+      host = document.createElementNS(NS, "svg");
+      host.id = "pi-glass-defs";
+      host.setAttribute("aria-hidden", "true");
+      host.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+      document.body.appendChild(host);
+    }
+    if (f) f.parentNode.removeChild(f);
+    f = document.createElementNS(NS, "filter");
+    function set(node, attrs) { Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); }); return node; }
+    function add(parent, tag, attrs) { return parent.appendChild(set(document.createElementNS(NS, tag), attrs)); }
+    set(f, { id: id, x: 0, y: 0, width: w, height: h, filterUnits: "userSpaceOnUse", primitiveUnits: "userSpaceOnUse", "color-interpolation-filters": "sRGB" });
+    add(f, "feTurbulence", { type: "fractalNoise", baseFrequency: o.freq, numOctaves: o.octaves, seed: o.seed, result: "noise" });
+    add(f, "feDisplacementMap", { in: "SourceGraphic", in2: "noise", scale: o.scale, xChannelSelector: "R", yChannelSelector: "G", result: "warped" });
+    add(f, "feFlood", { x: o.rim, y: o.rimY, width: Math.max(0, w - 2 * o.rim), height: Math.max(0, h - 2 * o.rimY), "flood-color": "#fff", result: "inner" });
+    add(f, "feGaussianBlur", { in: "inner", x: 0, y: 0, width: w, height: h, stdDeviation: o.soft, result: "innerSoft" });
+    add(f, "feComposite", { in: "SourceGraphic", in2: "innerSoft", operator: "in", result: "middle" });
+    add(f, "feComposite", { in: "warped", in2: "innerSoft", operator: "out", result: "rim" });
+    var merge = add(f, "feMerge", {});
+    add(merge, "feMergeNode", { in: "middle" });
+    add(merge, "feMergeNode", { in: "rim" });
+    host.appendChild(f);
+  };
 
   PI.esc = function (s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")

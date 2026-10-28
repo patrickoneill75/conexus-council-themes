@@ -249,29 +249,70 @@ h4.colhead { margin:0; padding-bottom:8px; border-bottom:1px solid var(--navy); 
  * yellow highlight for "current" and "open", and numbered topics that open with a circle
  * and a line running down beside their summary.
  * ===================================================================================== */
-.pi-app { --hl:#f9f871; --soft:#dce6f5; --band:#eaf1fb; --rule:#9db3da; --line:#c9d3e3;
+.pi-app { --accent:#07214e; --hl:#f9f871; --soft:#dce6f5; --band:#eaf1fb; --rule:#9db3da; --line:#c9d3e3;
   --spring:linear(0, 0.055, 0.195, 0.383, 0.588, 0.784, 0.953, 1.084, 1.172, 1.221, 1.234, 1.219, 1.185, 1.140, 1.092, 1.047, 1.008, 0.978, 0.958, 0.948, 0.945, 0.949, 0.958, 0.968, 0.979, 0.990, 0.999, 1.006, 1.010, 1.012, 1.013, 1.012, 1.010, 1.007, 1.005, 1.002, 1);
   --spring-soft:linear(0, 0.045, 0.153, 0.291, 0.437, 0.575, 0.697, 0.799, 0.880, 0.940, 0.983, 1.011, 1.028, 1.036, 1.038, 1.037, 1.032, 1.027, 1.021, 1.016, 1.011, 1.008, 1.004, 1.002, 1.001, 1.000, 0.999, 0.999, 0.999, 0.999, 1); }
-body.pi-app { background:var(--wash); font-size:15px; }
+/* The page behind the cards: white fading to a pale navy-blue, with three soft clouds (navy, then
+ * two brand blues) that drift and change shape slowly. They sit behind everything and take no clicks. */
+body.pi-app { background:linear-gradient(165deg, #ffffff 0%, #f2f2f4 45%, #d9dfea 100%) fixed; font-size:15px; }
+body.pi-app::before, body.pi-app::after, html:has(> body.pi-app)::before { content:""; position:fixed; z-index:-1;
+  pointer-events:none; filter:blur(90px); will-change:transform; animation:ease-in-out infinite alternate; }
+body.pi-app::before { left:-180px; top:60px; width:860px; height:640px; background:rgba(7,33,78,0.03);
+  animation-name:pi-morph-a; animation-duration:42s; }
+body.pi-app::after { right:-160px; top:260px; width:720px; height:620px; background:rgba(50,94,174,0.05);
+  animation-name:pi-morph-b; animation-duration:50s; }
+html:has(> body.pi-app)::before { left:38%; bottom:-260px; width:560px; height:520px; background:rgba(50,94,174,0.10);
+  animation-name:pi-morph-c; animation-duration:38s; }
+@keyframes pi-morph-a { 0% { border-radius:42% 58% 63% 37%/41% 44% 56% 59%; transform:translate(0,0) rotate(0deg); }
+  50% { border-radius:60% 40% 35% 65%/55% 62% 38% 45%; transform:translate(70px,40px) rotate(10deg); }
+  100% { border-radius:38% 62% 50% 50%/60% 35% 65% 40%; transform:translate(-30px,90px) rotate(-8deg); } }
+@keyframes pi-morph-b { 0% { border-radius:55% 45% 40% 60%/50% 60% 40% 50%; transform:translate(0,0) rotate(0deg); }
+  50% { border-radius:40% 60% 62% 38%/38% 45% 55% 62%; transform:translate(-80px,-30px) rotate(-12deg); }
+  100% { border-radius:63% 37% 45% 55%/58% 40% 60% 42%; transform:translate(-20px,60px) rotate(6deg); } }
+@keyframes pi-morph-c { 0% { border-radius:50% 50% 38% 62%/44% 58% 42% 56%; transform:translate(0,0) rotate(0deg); }
+  50% { border-radius:62% 38% 55% 45%/60% 40% 60% 40%; transform:translate(50px,-70px) rotate(14deg); }
+  100% { border-radius:40% 60% 60% 40%/50% 45% 55% 50%; transform:translate(-60px,-20px) rotate(-6deg); } }
+@media (max-width:760px) {
+  body.pi-app::before, body.pi-app::after, html:has(> body.pi-app)::before { filter:blur(56px); }
+  body.pi-app::before { left:-120px; top:40px; width:420px; height:360px; }
+  body.pi-app::after { right:-140px; top:360px; width:380px; height:340px; }
+  html:has(> body.pi-app)::before { left:20px; bottom:-120px; width:320px; height:300px; }
+}
+@media (prefers-reduced-motion:reduce) { body.pi-app::before, body.pi-app::after, html:has(> body.pi-app)::before { animation:none; } }
+/* Links share the navy of the text around them, so a link in running text is underlined. */
+.pi-app .wrap a:not([class]), .pi-app .wrap button.link { text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1px; }
+.pi-app .wrap .ctabs a { text-decoration:none; }
 .pi-app .wrap { max-width:1120px; padding:44px 32px 96px; }
 /* On a desktop the page body is set at 80%, the size it reads best at, while the top bar stays full size.
  * 1400px scaled to 80% is 1120px, so the body still lines up with the bar. */
 @media (min-width:761px) { .pi-app .wrap { zoom:.8; max-width:1400px; padding-left:40px; padding-right:40px; } }
 
-/* Top bar: white, with the current page marked by the highlight. */
-.pi-app .appbar { background:#fff; color:var(--navy); border-bottom:1px solid var(--border); }
-.pi-app .appbar .in { max-width:1120px; min-height:68px; gap:8px 24px; }
-.pi-app .appname { font-size:20px; font-weight:700; color:var(--navy); margin-right:12px; }
-.pi-app a.appname:hover { color:var(--navy); text-decoration:none; }
+/* Top bar: solid navy, with the current page underlined in the highlight yellow. On a phone the
+ * name and account links ride up out of view as the page scrolls, pixel for pixel (pi.js sets
+ * --lift), and the page links stay. */
+.pi-app .appbar { --lift:0px; --fade:1; background:var(--navy); color:#fff; border-bottom:0;
+  transform:translateY(calc(-1 * var(--lift))); transition:box-shadow .2s ease, transform .18s cubic-bezier(.25,1,.5,1); }
+.pi-app .appbar .in { max-width:1120px; min-height:64px; gap:0 24px; align-items:stretch; }
+.pi-app .appname { display:flex; align-items:center; font-size:20px; font-weight:700; color:#fff; margin-right:12px; }
+.pi-app a.appname:hover { color:#fff; text-decoration:none; }
 .pi-app .nav { gap:4px; }
-.pi-app .nav a { padding:8px 14px; border:0; color:var(--navy); font-size:17px; font-weight:600; }
-.pi-app .nav a:hover { color:var(--accent); text-decoration:none; }
-.pi-app .nav a span { position:relative; z-index:0; }
-.pi-app .nav a.on span::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl); }
-.pi-app .nav a.on:hover { color:var(--navy); }
+.pi-app .nav a { display:flex; align-items:center; padding:0 12px; border-top:4px solid transparent; border-bottom:4px solid transparent;
+  color:var(--nav-text); font-size:17px; font-weight:500; }
+.pi-app .nav a:hover { color:#fff; text-decoration:none; }
+.pi-app .nav a.on { color:#fff; font-weight:600; border-bottom-color:var(--hl); }
+.pi-app .nav a.on:hover { color:#fff; }
 .pi-app .appbar .tools { font-size:14px; gap:18px; }
-.pi-app .appbar .tools a, .pi-app .appbar .tools button.link { color:var(--accent); font-weight:400; }
-.pi-app .appbar .tools a:hover, .pi-app .appbar .tools button.link:hover { color:var(--navy); }
+.pi-app .appbar .tools a, .pi-app .appbar .tools button.link { color:var(--nav-text); font-weight:400; }
+.pi-app .appbar .tools a:hover, .pi-app .appbar .tools button.link:hover { color:#fff; }
+@media (max-width:600px) {
+  .pi-app .appbar .in { display:grid; grid-template-columns:minmax(0,1fr) auto; padding:0 12px; }
+  .pi-app .appname, .pi-app .appbar .tools { height:44px; padding:0; opacity:var(--fade); transition:opacity .18s cubic-bezier(.25,1,.5,1); }
+  .pi-app .appname { font-size:17px; }
+  .pi-app .appbar .tools { font-size:12.5px; gap:14px; }
+  .pi-app .appbar.lifted .appname, .pi-app .appbar.lifted .tools { visibility:hidden; }
+  .pi-app .nav { grid-column:1 / -1; grid-row:2; gap:2px; }
+  .pi-app .nav a { padding:6px 10px 4px; font-size:15px; }
+}
 .pi-app #whoami { display:none; }
 
 /* Titles. */
@@ -309,6 +350,23 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .seg { gap:8px; }
 .pi-app .seg button { border-radius:999px; border:1px solid var(--line); padding:9px 20px; }
 .pi-app .seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+/* The time window: a recessed track with a glass lens on the choice. Picking another slides the lens
+ * there; it stretches as it moves and settles with a little give (index.html moves it). */
+.pi-app .seg.glass { position:relative; gap:2px; padding:4px; border-radius:999px; background:rgba(7,33,78,.07);
+  -webkit-backdrop-filter:blur(24px) saturate(180%); backdrop-filter:blur(24px) saturate(180%);
+  border:1px solid rgba(7,33,78,.12); box-shadow:inset 0 1px 2px rgba(7,33,78,.06), 0 1px 0 rgba(255,255,255,.8); }
+.pi-app .seg.glass button, .pi-app .seg.glass button.on { position:relative; z-index:3; height:38px; padding:0 22px; border:0; border-radius:999px;
+  background:transparent; color:var(--navy); font-size:15px; font-weight:600; transition:color .3s; }
+.pi-app .seg.glass button.on { font-weight:700; }
+.pi-app .seg.glass button:hover { background:transparent; }
+.pi-app .seg.glass button:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
+.pi-app .seg .lens { position:absolute; z-index:2; top:4px; left:4px; width:0; height:38px; box-sizing:border-box; border-radius:999px; pointer-events:none;
+  background:rgba(255,255,255,.4); -webkit-backdrop-filter:saturate(170%) brightness(1.06); backdrop-filter:saturate(170%) brightness(1.06);
+  border:1px solid rgba(255,255,255,.85);
+  box-shadow:inset 0 1px 1px #fff, inset 0 -1px 1px rgba(7,33,78,.12), inset 1px 0 1px rgba(255,255,255,.6), inset -1px 0 1px rgba(255,255,255,.6);
+  transition:left .6s cubic-bezier(.22,1,.36,1), width .6s cubic-bezier(.22,1,.36,1), transform .45s cubic-bezier(.22,1,.36,1); }
+.pi-app .seg .lens.moving { transform:scaleX(1.18) scaleY(.88); }
+html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturate(170%) brightness(1.06); }
 .pi-app .seg.soft button.on { background:var(--soft); border-color:var(--soft); color:var(--navy); }
 .pi-app input, .pi-app select { height:46px; border:1.5px solid var(--line); border-radius:12px; padding:0 14px; font-size:15px; }
 .pi-app input[type="checkbox"] { height:17px; width:17px; accent-color:var(--accent); }
@@ -370,7 +428,7 @@ body.pi-app { background:var(--wash); font-size:15px; }
   margin-top:-3px; border:3px solid var(--accent); border-radius:999px; background:#fff; color:var(--accent); font-size:15px; font-weight:700;
   font-variant-numeric:tabular-nums; transform:scale(var(--s)); transition:background-color .2s, color .2s, border-color .2s, transform .65s var(--spring); }
 .pi-app .tp-row:hover .circ { --s:1.1; background:var(--band); border-color:var(--navy); color:var(--navy); }
-.pi-app .tp.open .circ { --s:1; background:var(--accent); border-color:var(--accent); color:#fff; }
+.pi-app .tp.open .circ { --s:1; background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:inset 0 1px 0 rgba(255,255,255,.3), 0 4px 12px rgba(7,33,78,.25); }
 .pi-app .tp.open .tp-row:hover .circ { --s:.9; background:var(--accent); border-color:var(--accent); color:#fff; }
 .pi-app .circ.c-open { animation:circ-pop .6s ease-out; }
 .pi-app .circ.c-close { animation:circ-close .45s ease-in-out; }
@@ -386,36 +444,27 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app .tp:not(.open):has(.tp-row:hover) .tline { --rest:27px; }
 .pi-app .tline.cue::after { animation:chevron-cue 1s ease-in-out 1.2s 2; }
 @keyframes chevron-cue { 0%, 60%, 100% { transform:translateY(0) rotate(45deg); } 25% { transform:translateY(4px) rotate(45deg); } }
-.pi-app .tp.open .tline { width:3px; left:18.5px; height:calc(100% - 61px); background:var(--accent); transition:none; }
-.pi-app .tp.open .tline::after { width:9px; height:9px; margin-left:-4.5px; bottom:-4px; border:0; border-radius:999px; background:var(--accent); transform:none; }
-.pi-app .tline.grow { animation:tline-grow .7s ease-out; }
+.pi-app .tp.open .tline { width:3px; left:18.5px; height:calc(100% - 91px); background:var(--accent); transition:none; }
+.pi-app .tp.open .tline::after { content:none; }
+.pi-app .tline.grow { animation:tline-grow .55s ease-out; }
 .pi-app .tline.shrink { animation:tline-shrink .6s ease-out; }
-@keyframes tline-grow { 0% { height:14px; } 45% { height:calc((100% - 61px) * 1.05); } 70% { height:calc((100% - 61px) * .98); } 100% { height:calc(100% - 61px); } }
+@keyframes tline-grow { 0% { height:14px; } 50% { height:calc((100% - 91px) * 1.07); } 75% { height:calc((100% - 91px) * .99); } 100% { height:calc(100% - 91px); } }
 @keyframes tline-shrink { 0% { height:48px; } 45% { height:calc(var(--rest) - 5px); } 72% { height:calc(var(--rest) + 3px); } 100% { height:var(--rest); } }
 /* The highlight wipes in from the left with a soft overshoot, and wipes back out to the left. */
 .pi-app .hl { position:relative; z-index:0; }
 .pi-app .hl::before { content:""; position:absolute; z-index:-1; left:-.14em; right:-.14em; top:.31em; bottom:.02em; background:var(--hl);
   transform:scaleX(0); transform-origin:0 50%; transition:transform .55s cubic-bezier(.4,0,.2,1); }
 .pi-app .tp.open .hl::before { transform:scaleX(1); transition:transform 1.25s var(--spring-soft) .08s; }
-/* What opens under a topic: no box. The topic line is its left edge and runs along its bottom; the
- * content lines up with the topic name. */
+/* What opens under a topic: no box. The topic line is its left edge; the content lines up with the topic name. */
 .pi-app .tbody { padding:0; }
 .pi-app .band { margin:-6px 0 30px 20px; background:none; border-radius:0; padding:16px 28px 30px 54px; }
-.pi-app svg.trace { position:absolute; left:0; top:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
-.pi-app svg.trace .ln { fill:none; stroke:var(--accent); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
-.pi-app svg.trace .dot { fill:var(--accent); opacity:0; transform:scale(.2); transform-box:fill-box; transform-origin:50% 50%;
-  transition:opacity .25s ease, transform .3s ease-in; }
-.pi-app .tp.open.traced:not(.closing) svg.trace .dot { opacity:1; transform:scale(1); transition:transform .5s cubic-bezier(.3,1.7,.5,1) 1.15s, opacity .12s 1.15s; }
-.pi-app .tp.open.traced:not(.closing) svg.trace.instant .dot { transition:none; }
-.pi-app .tp.traced .tline { opacity:0; }
 .pi-app .tline.shrink { animation:tline-regrow .5s cubic-bezier(.3,1.3,.5,1); }
 @keyframes tline-regrow { from { height:0; } to { height:var(--rest); } }
-.pi-app .tp.closing .hl::before { transform:scaleX(0); transition:transform var(--close, .6s) cubic-bezier(.4,0,.2,1); }
 .pi-app ul.bullets { gap:16px; }
 .pi-app .bpt { grid-template-columns:28px minmax(0,1fr); gap:14px; }
 .pi-app .bpt .txt { font-size:20px; line-height:1.5; }
 /* "See examples" after a point: opens it, like the + beside it. */
-.pi-app .bpt button.see { font-size:14px; font-weight:600; color:var(--accent); white-space:nowrap; vertical-align:baseline; margin-left:4px; }
+.pi-app .bpt button.see { font-size:14px; font-weight:700; color:var(--accent); white-space:nowrap; vertical-align:baseline; margin-left:4px; text-decoration:underline; text-underline-offset:3px; }
 .pi-app .bpt button.see:hover { text-decoration:underline; }
 .pi-app .bpt button.see:focus-visible { outline:3px solid var(--amber); outline-offset:2px; border-radius:2px; }
 .pi-app .bpt .examples { margin-top:4px; padding:0; }
@@ -440,11 +489,8 @@ body.pi-app { background:var(--wash); font-size:15px; }
 @keyframes pm-bar { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
 @keyframes pm-bar-b { 0%, 40% { transform:scaleX(1); } 58% { transform:scaleX(1.12); } 78% { transform:scaleX(.97); } 100% { transform:scaleX(1); } }
 @media (prefers-reduced-motion:reduce) {
-  .pi-app .circ, .pi-app .tline, .pi-app .tline::after, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i, .pi-app svg.trace .dot { animation:none !important; transition:none !important; }
+  .pi-app .circ, .pi-app .tline, .pi-app .tline::after, .pi-app .hl::before, .pi-app button.pm, .pi-app button.pm i, .pi-app .seg .lens, .pi-app .appbar { animation:none !important; transition:none !important; }
 }
-.pi-app .topicfoot { display:grid; grid-template-columns:72px minmax(0,1fr); gap:6px 16px; margin-top:28px; padding-top:16px;
-  border-top:1px solid var(--line); font-size:13.5px; color:var(--text-secondary); }
-.pi-app .topicfoot b { color:var(--navy); }
 .pi-app .tmore { border-top:1px solid var(--rule); padding-top:22px; }
 
 /* ---- Programs: one card per folder. A program page lists its meetings with a large date. */
@@ -477,26 +523,24 @@ body.pi-app { background:var(--wash); font-size:15px; }
 .pi-app table.tbl td.cn { font-weight:700; color:var(--navy); }
 .pi-app table.tbl td.num { font-variant-numeric:tabular-nums; }
 
-/* ---- A company: its name with the council member badge, then browser-style tabs whose
- * chosen tab runs straight into the white panel below. */
+/* ---- A company: its name with the council member badge, then pill tabs: the tab names sit in a
+ * light gray track, and a navy pill slides behind the chosen one. The white panel sits below. */
 .pi-app h1.coname { font-size:40px; }
 .pi-app h1.coname .nw { white-space:nowrap; }
 /* From the font's ascender line to its descender line, about two spaces after the name. */
 .pi-app .cm { display:inline-block; height:1.12em; width:auto; aspect-ratio:96 / 62; vertical-align:-.21em; margin-left:.5em; overflow:visible; }
-.pi-app .ctabs { display:flex; gap:4px; margin-top:32px; }
-.pi-app .ctabs a { position:relative; flex:1 1 0; display:flex; align-items:center; justify-content:center; gap:10px; height:56px;
-  border-radius:16px 16px 0 0; font-size:16px; font-weight:600; color:var(--text-secondary); white-space:nowrap; transition:background-color .2s, color .2s; }
-.pi-app .ctabs a svg { width:22px; height:22px; color:var(--accent); flex:none; }
-.pi-app .ctabs a:hover { background:#e4e9f2; color:var(--navy); text-decoration:none; }
-.pi-app .ctabs a.on { background:#fff; color:var(--navy); font-weight:700; z-index:1; }
-.pi-app .ctabs a.on svg { color:var(--navy); }
-.pi-app .ctabs a.on::before, .pi-app .ctabs a.on::after { content:""; position:absolute; bottom:0; width:16px; height:16px; pointer-events:none; }
-.pi-app .ctabs a.on::before { left:-16px; background:radial-gradient(circle at 0 0, transparent 15.5px, #fff 16px); }
-.pi-app .ctabs a.on::after { right:-16px; background:radial-gradient(circle at 100% 0, transparent 15.5px, #fff 16px); }
-.pi-app .ctabs a.on:first-child::before, .pi-app .ctabs a.on:last-child::after { display:none; }
-.pi-app .tabpanel { background:#fff; border-radius:24px; padding:26px 36px 24px; }
-.pi-app .tabpanel.first { border-top-left-radius:0; }
-.pi-app .tabpanel.last { border-top-right-radius:0; }
+.pi-app .ctabs { position:relative; display:inline-grid; grid-auto-flow:column; grid-auto-columns:1fr; max-width:100%; box-sizing:border-box;
+  margin-top:32px; padding:6px; border-radius:999px; background:rgba(7,33,78,.07); }
+.pi-app .ctabs a { position:relative; z-index:1; display:flex; align-items:center; justify-content:center; height:52px; padding:0 26px;
+  border-radius:999px; font-size:18px; font-weight:500; color:var(--text-primary); white-space:nowrap; transition:color .3s, background-color .2s; }
+.pi-app .ctabs a:hover { background:rgba(7,33,78,.05); color:var(--navy); text-decoration:none; }
+.pi-app .ctabs a.on, .pi-app .ctabs a.on:hover { background:none; color:#fff; font-weight:600; }
+/* Each tab is as wide as the widest, so the pill is one tab wide and moves a whole tab per step. */
+.pi-app .ctabs .ctlens { position:absolute; z-index:0; top:6px; bottom:6px; left:6px; width:calc((100% - 12px) / var(--n, 6)); border-radius:999px;
+  background:var(--navy); box-shadow:0 2px 6px rgba(7,33,78,.18); transform:translateX(calc(var(--at, 0) * 100%));
+  transition:transform .5s cubic-bezier(.22,1,.36,1); }
+@media (prefers-reduced-motion:reduce) { .pi-app .ctabs .ctlens { transition:none; } }
+.pi-app .tabpanel { margin-top:20px; background:#fff; border-radius:24px; padding:26px 36px 24px; }
 .pi-app .tabpanel .card { padding:0; margin:0; border-radius:0; }
 .pi-app .toolbar { margin:18px 0 4px; }
 .pi-app .cols3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px 40px; }
@@ -526,7 +570,10 @@ body.pi-app { background:var(--wash); font-size:15px; }
   .pi-app .pgrid, .pi-app .cols3 { grid-template-columns:minmax(0,1fr); }
   .pi-app .ctabs { overflow-x:auto; }
   .pi-app .fields > * { grid-column:auto !important; }
-  .pi-app .ctabs a { flex:0 0 auto; padding:0 16px; }
+  /* Too narrow for every tab: fixed equal tabs that scroll sideways, the pill one tab wide. */
+  .pi-app .ctabs { grid-auto-columns:108px; }
+  .pi-app .ctabs a { height:46px; padding:0 8px; font-size:16px; }
+  .pi-app .ctabs .ctlens { width:108px; }
 }
 @media (max-width:600px) {
   .pi-app .wrap { padding:28px 16px 64px; }
@@ -565,6 +612,13 @@ html.ax-lock { overflow:hidden; }
        transition:width .42s cubic-bezier(.2,.8,.2,1), height .48s cubic-bezier(.2,.8,.2,1), border-radius .42s, box-shadow .42s; }
 .abx[hidden] { display:none; }
 .abx.open { height:min(692px, calc(100vh - 96px)); border-radius:28px; box-shadow:0 18px 50px rgba(7,33,78,.2); }
+/* Collapsed, the Ask box is clear glass: what scrolls under it shows through, and in Chrome and Edge its
+ * rim bends what is under it (pi.js builds the filter to the bar's size). Open, it is a white panel. */
+.abx:not(.open) { background:rgba(255,255,255,.4); -webkit-backdrop-filter:blur(14px) saturate(180%); backdrop-filter:blur(14px) saturate(180%);
+  border-color:rgba(255,255,255,.75); box-shadow:inset 0 1px 1px rgba(255,255,255,.95), inset 0 -1px 1px rgba(7,33,78,.08), 0 8px 24px rgba(7,33,78,.14); }
+html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px) saturate(170%) brightness(1.05); }
+.abx:not(.open) .ax-hist { background:rgba(255,255,255,.55); box-shadow:inset 0 1px 0 #fff, 0 0 0 1px rgba(7,33,78,.05); color:var(--navy); }
+.abx:not(.open) .ax-send { background:rgba(7,33,78,.9); box-shadow:inset 0 1px 0 rgba(255,255,255,.3), 0 4px 12px rgba(7,33,78,.25); }
 .abx-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; }
 .abx-head, .abx-body, .abx-rail { display:none; opacity:0; transition:opacity .25s ease .14s; }
 .abx.show .abx-head, .abx.show .abx-body { display:flex; }
@@ -693,7 +747,10 @@ html.ax-lock { overflow:hidden; }
  * conversation, and the pill at the bottom of the screen, where it stays as the conversation grows. */
 .asx-tools { order:0; } .asx-h1 { order:1; } .asx-pill { order:2; } .asx-out { order:4; } .asx-recent { order:5; }
 .pi-app .wrap:has(.asx.has-out) { padding-bottom:0; }
-.asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:12px; }
+/* The conversation sits on a solid white panel, as the topics do on Home, so the page background
+ * never shows behind the answer. */
+.asx.has-out .asx-out { order:1; flex:1 0 auto; margin-top:12px; background:#fff; border-radius:24px; padding:28px 36px; }
+.asx.has-out .asx-out .turn:last-child { margin-bottom:0; }
 .asx.has-out .asx-pill { order:2; position:sticky; bottom:24px; z-index:5; margin-top:20px; }
 .asx-out .turn .qb { font-size:18px; background:#fff; border:1px solid var(--border); }
 .asx-out .turn { margin-bottom:40px; }
@@ -752,4 +809,5 @@ html.ax-lock { overflow:hidden; }
   .pi-app .asx-pill textarea { flex:1 1 0; min-height:52px; font-size:16px; }
   .pi-app .asx-pill .asx-go { width:44px; height:44px; }
   .asx-out { padding:0 4px; }
+  .asx.has-out .asx-out { padding:22px 18px; }
 }
