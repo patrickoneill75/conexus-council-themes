@@ -445,6 +445,12 @@
     thread = root.querySelector(".abx-thread");
     railEl = root.querySelector(".rl-list");
     noteEl = root.querySelector(".abx-rail .rl-note");
+    // Collapsed, the bar is clear glass whose rim bends what is under it in Chrome and Edge (pi.css).
+    // The filter is drawn to the bar's size, so it follows the bar as it resizes.
+    function sizeGlass() { if (!root.classList.contains("open")) PI.glassFilter("pi-ask-glass", root.offsetWidth, root.offsetHeight, PI.ASK_GLASS); }
+    sizeGlass();
+    window.addEventListener("resize", sizeGlass);
+    root.addEventListener("transitionend", sizeGlass);
 
     root.querySelector("form").addEventListener("submit", function (e) { e.preventDefault(); submit(q.value); });
     q.addEventListener("keydown", function (e) {

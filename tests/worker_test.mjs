@@ -6008,6 +6008,65 @@ test("partner_intel: every + bullet has a 'See examples' link after it that open
   assert.match(page, /var see = li\.querySelector\("button\.see"\);/, "the link's words follow the bullet, whichever opened it");
 });
 
+test("partner_intel: the top bar is solid navy with the current page underlined in yellow, and on a phone its top row rides up as the page scrolls", () => {
+  const pub = path.join(path.dirname(SRC), "public", "partner-intel");
+  const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
+  const js = fs.readFileSync(path.join(pub, "pi.js"), "utf8");
+  assert.match(css, /\.pi-app \.appbar \{ --lift:0px; --fade:1; background:var\(--navy\);/);
+  assert.match(css, /transform:translateY\(calc\(-1 \* var\(--lift\)\)\)/);
+  assert.match(css, /\.pi-app \.nav a\.on \{ color:#fff; font-weight:700; border-bottom-color:var\(--hl\); \}/);
+  assert.doesNotMatch(css, /\.pi-app \.nav a\.on span::before/, "the highlighter mark behind the current page is gone");
+  assert.match(js, /var lift = Math\.min\(row, Math\.max\(0, Math\.round\(y\)\)\);/, "the row moves pixel for pixel with the scroll, up to its own height");
+  assert.match(js, /bar\.style\.setProperty\("--lift", lift \+ "px"\);/);
+  assert.match(js, /phone\.matches/, "only on a phone");
+});
+
+test("partner_intel: opening a topic runs its line down beside the block and stops; it no longer turns along the bottom", () => {
+  const pub = path.join(path.dirname(SRC), "public", "partner-intel");
+  const html = fs.readFileSync(path.join(pub, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
+  assert.doesNotMatch(html, /svg class="trace"|function retract|function drawLine/);
+  assert.doesNotMatch(css, /svg\.trace|\.traced/);
+  assert.match(css, /\.pi-app \.tp\.open \.tline::after \{ content:none; \}/, "no dot at the end");
+  assert.match(css, /\.pi-app \.tline\.grow \{ animation:tline-grow \.55s ease-out; \}/);
+  assert.match(css, /@keyframes tline-grow \{ 0% \{ height:14px; \} 50% \{ height:calc\(\(100% - 91px\) \* 1\.07\); \}/, "a small overshoot before it settles");
+  assert.match(sourceOf(path.join(pub, "index.html"), "setTopic"), /animate\(card\.querySelector\("\.tline"\), open \? "grow" : "shrink"\);/);
+});
+
+test("partner_intel: the time window is a glass track whose lens slides to the choice before the page updates", () => {
+  const pub = path.join(path.dirname(SRC), "public", "partner-intel");
+  const html = fs.readFileSync(path.join(pub, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
+  assert.match(html, /'<div class="seg glass" id="' \+ id \+ '" role="group" aria-label="Time window"><span class="lens" aria-hidden="true"><\/span>'/);
+  const pick = sourceOf(path.join(pub, "index.html"), "pickWindow");
+  assert.match(pick, /lens\.classList\.add\("moving"\);/, "it stretches while it moves");
+  assert.match(pick, /setTimeout\(then, 420\);/, "the page updates once the lens lands");
+  assert.match(pick, /if \(STILL \|\| !lens\) \{ then\(\); return; \}/, "no wait with reduced motion");
+  assert.match(html, /placeLens\(el\("win"\), true\);/);
+  assert.match(html, /placeLens\(el\("pwin"\), true\);/);
+  assert.match(css, /\.pi-app \.seg \.lens\.moving \{ transform:scaleX\(1\.18\) scaleY\(\.88\); \}/);
+});
+
+test("partner_intel: the collapsed Ask box is clear glass, and in Chrome and Edge its rim bends what is under it", () => {
+  const pub = path.join(path.dirname(SRC), "public", "partner-intel");
+  const css = fs.readFileSync(path.join(pub, "pi.css"), "utf8");
+  const js = fs.readFileSync(path.join(pub, "pi.js"), "utf8");
+  const ask = fs.readFileSync(path.join(pub, "askbox.js"), "utf8");
+  assert.match(css, /\.abx:not\(\.open\) \{ background:rgba\(255,255,255,\.4\);/);
+  assert.match(css, /html\.lg-refract \.abx:not\(\.open\) \{ backdrop-filter:url\(#pi-ask-glass\)/);
+  assert.match(js, /if \(navigator\.userAgentData\) document\.documentElement\.classList\.add\("lg-refract"\);/, "the bend only where the browser can draw it");
+  assert.match(js, /add\(f, "feDisplacementMap"/);
+  assert.match(js, /add\(f, "feComposite", \{ in: "warped", in2: "innerSoft", operator: "out", result: "rim" \}\);/, "the bend is kept to the rim");
+  assert.match(ask, /PI\.glassFilter\("pi-ask-glass", root\.offsetWidth, root\.offsetHeight, PI\.ASK_GLASS\)/);
+});
+
+test("partner_intel: the staff app's accent is navy, so links in running text are underlined", () => {
+  const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
+  assert.match(css, /\.pi-app \{ --accent:#07214e;/);
+  assert.match(css, /\.pi-app \.wrap a:not\(\[class\]\), \.pi-app \.wrap button\.link \{ text-decoration:underline;/);
+  assert.match(css, /\.pi-app \.wrap \.ctabs a \{ text-decoration:none; \}/, "the company tabs are not underlined");
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {

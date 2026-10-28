@@ -141,125 +141,27 @@
   document.addEventListener("animationend", function (e) {
     if (e.target.classList) e.target.classList.remove("c-open", "c-close", "grow", "shrink", "hint", "cue", "a-shrink", "a-expand");
   });
-  /* The topic line. Opening a topic draws one stroke from its number down the left of the block and
-   * along the bottom, then a dot lands on the end. Closing runs it back as one motion: off the bottom
-   * and round the corner, then up to the number while the block folds shut at the same pace, its bottom
-   * edge following the tip of the line. The highlight wipes out over the same time. */
+  /* The topic line. Opening a topic runs the line down from its number beside the block, with a small
+   * overshoot, and stops at the bottom of the block; closing pulls it back up to the chevron. */
   var STILL = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-  var LINE_X = 20, LINE_TOP = 61, CORNER = 20, DRAW = 1200, UP = 380, UP_EASE = "cubic-bezier(.2,.6,.35,1)";
-  function lineShape(card) {
-    var body = card.querySelector("[data-body]"), band = body && body.querySelector(":scope > .band");
-    if (!band || body.hidden) return null;
-    var c = card.getBoundingClientRect(), b = band.getBoundingClientRect(), r = CORNER;
-    // The page body is scaled on desktop (pi.css), and the line is drawn in the card's own unscaled units.
-    var k = c.width / (card.offsetWidth || c.width || 1) || 1;
-    var B = (b.bottom - c.top) / k, R = (b.right - c.left) / k;
-    return { d: "M" + LINE_X + " " + LINE_TOP + "V" + (B - r) + "A" + r + " " + r + " 0 0 0 " + (LINE_X + r) + " " + B + "H" + R,
-      x: R, y: B, up: B - r - LINE_TOP };
-  }
-  function placeLine(card) {
-    var sh = lineShape(card);
-    if (!sh) { card.classList.remove("traced"); return null; }
-    var svg = card.querySelector("svg.trace");
-    if (!svg) {
-      card.insertAdjacentHTML("beforeend", '<svg class="trace" aria-hidden="true" focusable="false"><path class="ln" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"></path><circle class="dot" r="5.5"></circle></svg>');
-      svg = card.querySelector("svg.trace");
-      // Settle the new dot's hidden style before the card is marked traced. Without this the browser has no
-      // earlier style to fade from, so the first time a topic opens the dot shows before the line arrives.
-      void getComputedStyle(svg.querySelector(".dot")).opacity;
-      if (window.ResizeObserver) new ResizeObserver(function () { if (!card.classList.contains("closing") && card.classList.contains("open")) placeLine(card); }).observe(card);
-    }
-    svg.querySelector(".ln").setAttribute("d", sh.d);
-    svg.querySelector(".dot").setAttribute("cx", sh.x);
-    svg.querySelector(".dot").setAttribute("cy", sh.y);
-    card.classList.add("traced");
-    return sh;
-  }
-  function drawLine(card, instant, resume) {
-    if (!placeLine(card)) return;
-    var svg = card.querySelector("svg.trace"), p = svg.querySelector(".ln");
-    instant = instant || STILL;
-    p.style.transition = "none";
-    if (!instant && !resume) { p.style.strokeDashoffset = "1"; void p.getBoundingClientRect(); }
-    p.style.transition = instant ? "none" : "stroke-dashoffset " + DRAW + "ms cubic-bezier(.45,.05,.25,1) 50ms";
-    p.style.strokeDashoffset = "0";
-    svg.classList.toggle("instant", !!instant);
-  }
-  function finishClose(card) {
-    var body = card.querySelector("[data-body]");
-    card.classList.remove("open", "closing", "traced");
-    card.querySelector(".tp-row").setAttribute("aria-expanded", "false");
-    body.hidden = true; body.style.cssText = "";
-    animate(card.querySelector(".circ"), "c-close");
-    animate(card.querySelector(".tline"), "shrink");
-  }
-  function retract(card) {
-    var sh = placeLine(card), svg = card.querySelector("svg.trace"), p = svg.querySelector(".ln"), body = card.querySelector("[data-body]");
-    var total = p.getTotalLength() || 1, up = Math.min(1, Math.max(0, sh.up / total));
-    // The first step keeps the line moving at the same speed whatever its length: about 3.3px a millisecond.
-    // When the block's bottom edge is below the screen that step would run where no one can see it, a pause
-    // before the fold, so the line is pulled off the bottom at once and the fold starts straight away.
-    var band = body.querySelector(":scope > .band");
-    var unseen = band && band.getBoundingClientRect().bottom > window.innerHeight;
-    var along = unseen ? 0 : Math.round(Math.min(650, Math.max(200, total * (1 - up) / 3.3)));
-    // A tall block (points opened to their notes) folds over longer than a short one, so it does not snap shut.
-    var fold = Math.round(Math.min(760, Math.max(UP, body.offsetHeight * .55)));
-    card.style.setProperty("--close", (along + fold) + "ms");
-    card.classList.add("closing");
-    function shut() {
-      p.style.transition = "stroke-dashoffset " + fold + "ms " + UP_EASE;
-      p.style.strokeDashoffset = "1";
-      body.style.height = body.offsetHeight + "px"; body.style.overflow = "hidden"; void body.offsetHeight;
-      body.style.transition = "height " + fold + "ms " + UP_EASE + ", opacity " + Math.round(fold * .6) + "ms ease";
-      body.style.height = "0px"; body.style.opacity = "0";
-      card._t = setTimeout(function () { card._t = null; finishClose(card); }, fold);
-    }
-    if (!along) {
-      p.style.transition = "none";
-      p.style.strokeDashoffset = String(1 - up);
-      void p.getBoundingClientRect();
-      shut();
-      return;
-    }
-    p.style.transition = "stroke-dashoffset " + along + "ms cubic-bezier(.55,0,1,.7)";
-    p.style.strokeDashoffset = String(1 - up);
-    card._t = setTimeout(shut, along);
-  }
   function setTopic(card, open, quiet) {
-    var body = card.querySelector("[data-body]");
-    if (card._t) {
-      // Clicked again while closing: run the line back out from wherever it has got to.
-      clearTimeout(card._t); card._t = null;
-      card.classList.remove("closing"); body.style.cssText = "";
-      if (open) { drawLine(card, false, true); return; }
-    }
     var was = card.classList.contains("open");
-    if (!open && was && !quiet && !STILL && card.classList.contains("traced")) { retract(card); return; }
     card.classList.toggle("open", open);
     card.querySelector(".tp-row").setAttribute("aria-expanded", open ? "true" : "false");
-    body.hidden = !open;
-    if (open) drawLine(card, quiet); else card.classList.remove("traced");
+    card.querySelector("[data-body]").hidden = !open;
     if (quiet || was === open) return;
     animate(card.querySelector(".circ"), open ? "c-open" : "c-close");
     animate(card.querySelector(".tline"), open ? "grow" : "shrink");
   }
-  // A topic that arrives open (the first on a page, or one whose block fills in later) has its line
-  // drawn at once, with no animation.
-  if (window.MutationObserver) {
-    new MutationObserver(function () {
-      Array.prototype.forEach.call(document.querySelectorAll(".tp.open:not(.traced):not(.closing)"), function (c) { drawLine(c, true); });
-    }).observe(document.body, { childList: true, subtree: true });
-  }
-  // Opening a topic closes whichever topic in the same list was open. One still closing counts as
-  // closed, so a click reopens it.
+  // Opening a topic closes whichever topic in the same list was open.
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest(".tp-row");
     if (!btn) return;
     var card = btn.closest(".tp");
-    var opening = !card.classList.contains("open") || card.classList.contains("closing");
+    var opening = !card.classList.contains("open");
     Array.prototype.forEach.call(card.parentNode.querySelectorAll(":scope > .tp"), function (c) {
       c.querySelector(".tline").classList.remove("cue");
-      if (c !== card && c.classList.contains("open") && !c.classList.contains("closing")) setTopic(c, false);
+      if (c !== card && c.classList.contains("open")) setTopic(c, false);
     });
     setTopic(card, opening);
   });
@@ -369,9 +271,34 @@
   }
 
   function windowButtons(id, choices, current) {
-    return '<div class="seg" id="' + id + '" role="group" aria-label="Time window">' + choices.map(function (w) {
+    return '<div class="seg glass" id="' + id + '" role="group" aria-label="Time window"><span class="lens" aria-hidden="true"></span>' + choices.map(function (w) {
       return '<button data-d="' + w[0] + '"' + (current === w[0] ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"') + ">" + w[1] + "</button>";
     }).join("") + "</div>";
+  }
+
+  /* A glass lens sits on the chosen time window. Picking another slides it across, stretched while it
+   * moves, and the page updates once it lands. */
+  function placeLens(seg, instant) {
+    var lens = seg && seg.querySelector(".lens"), on = seg && seg.querySelector("button.on");
+    if (!lens || !on) return;
+    if (instant) lens.style.transition = "none";
+    lens.style.left = on.offsetLeft + "px";
+    lens.style.width = on.offsetWidth + "px";
+    if (instant) { void lens.offsetWidth; lens.style.transition = ""; }
+    PI.glassFilter("pi-lens-glass", on.offsetWidth, on.offsetHeight, PI.LENS_GLASS);
+  }
+  function pickWindow(seg, b, then) {
+    if (b.classList.contains("on")) return;
+    Array.prototype.forEach.call(seg.querySelectorAll("button"), function (x) {
+      x.classList.toggle("on", x === b);
+      x.setAttribute("aria-pressed", x === b ? "true" : "false");
+    });
+    var lens = seg.querySelector(".lens");
+    if (STILL || !lens) { then(); return; }
+    lens.classList.add("moving");
+    placeLens(seg);
+    setTimeout(function () { lens.classList.remove("moving"); }, 220);
+    setTimeout(then, 420);
   }
 
   /* ------------------------------------------------------------------ Home */
@@ -396,8 +323,9 @@
       Array.prototype.forEach.call(view.querySelectorAll("[data-exact]"), function (b) {
         b.addEventListener("click", function () { state.exact = b.getAttribute("data-exact") === "1"; home(); });
       });
+      placeLens(el("win"), true);
       Array.prototype.forEach.call(view.querySelectorAll("#win button"), function (b) {
-        b.addEventListener("click", function () { state.days = Number(b.getAttribute("data-d")); home(); });
+        b.addEventListener("click", function () { pickWindow(el("win"), b, function () { state.days = Number(b.getAttribute("data-d")); home(); }); });
       });
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
@@ -458,8 +386,9 @@
         var b = el("moreMeet"); if (b) b.addEventListener("click", more);
       }
       if (!r.meetings.length) el("meetings").innerHTML = '<div class="empty">No data in this program yet.</div>'; else more();
+      placeLens(el("pwin"), true);
       Array.prototype.forEach.call(view.querySelectorAll("#pwin button"), function (b) {
-        b.addEventListener("click", function () { state.programDays = Number(b.getAttribute("data-d")); program(name); });
+        b.addEventListener("click", function () { pickWindow(el("pwin"), b, function () { state.programDays = Number(b.getAttribute("data-d")); program(name); }); });
       });
     }).catch(function (err) { if (mine === seq) view.innerHTML = emptyState(err); });
   }
