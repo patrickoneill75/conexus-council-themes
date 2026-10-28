@@ -6171,6 +6171,18 @@ test("partner_intel: on a phone the company tab bar shows an arrow at its end wh
   assert.match(css, /\.pi-app \.ctmore \{ display:none; \}/, "never on a wide screen");
 });
 
+test("partner_intel: a note opened under a point reads a step below the point, and the companies table reads a size larger", () => {
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  const px = (re) => Number((css.match(re) || [])[1]);
+  const point = px(/\.pi-app \.bpt \.txt \{ font-size:([\d.]+)px;/);
+  const title = px(/\.pi-app \.bpt \.examples \.item \.title \{ font-size:([\d.]+)px; \}/);
+  const detail = px(/\.pi-app \.bpt \.examples \.item \.detail \{ font-size:([\d.]+)px; \}/);
+  assert.ok(title < point, `the note's title (${title}px) is smaller than the point (${point}px)`);
+  assert.ok(detail < title, "and its detail smaller again");
+  assert.equal(px(/\.pi-app table\.tbl td \{[^}]*font-size:([\d.]+)px; \}/), 16.5);
+  assert.equal(px(/\.pi-app table\.tbl th \{[^}]*font-size:([\d.]+)px;/), 13.5);
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try {

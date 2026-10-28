@@ -470,6 +470,13 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 .pi-app .bpt .examples { margin-top:4px; padding:0; }
 .pi-app .bpt .examples > .item { border-top:1px solid #edf0f5; padding:16px 0; }
 .pi-app .bpt .examples > .item:first-child { border-top:0; padding-top:10px; }
+/* A note opened under a point sits a step below the point itself: its title under the point's text,
+ * its detail and source lines smaller again. */
+.pi-app .bpt .examples .item .kindl { font-size:12.5px; }
+.pi-app .bpt .examples .item .title { font-size:18px; }
+.pi-app .bpt .examples .item .by, .pi-app .bpt .examples .item .by .co { font-size:15px; }
+.pi-app .bpt .examples .item .detail { font-size:16.5px; }
+.pi-app .bpt .examples .item details.src, .pi-app .bpt .examples .item .why { font-size:14.5px; }
 .pi-app .pending { font-size:15px; }
 /* The plus button: a bold navy plus that squeezes and pops into a minus, and back. */
 .pi-app button.pm { position:relative; width:28px; height:28px; border:0; border-radius:4px; background:none; padding:0; color:var(--navy); font-size:0; }
@@ -516,8 +523,8 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 .pi-app .mrow .go-arrow { margin-top:4px; }
 
 /* ---- Companies table. */
-.pi-app table.tbl th { padding:14px 10px 12px; border-bottom:1.5px solid var(--rule); font-size:12.5px; font-weight:700; letter-spacing:.06em; }
-.pi-app table.tbl td { padding:15px 10px; border-bottom:1px solid #e6ebf3; font-size:15px; }
+.pi-app table.tbl th { padding:14px 10px 12px; border-bottom:1.5px solid var(--rule); font-size:13.5px; font-weight:700; letter-spacing:.06em; }
+.pi-app table.tbl td { padding:15px 10px; border-bottom:1px solid #e6ebf3; font-size:16.5px; }
 .pi-app table.tbl tr:last-child td { border-bottom:0; }
 .pi-app table.tbl tr.click:hover td { background:var(--band); }
 .pi-app table.tbl td.cn { font-weight:700; color:var(--navy); }
@@ -603,6 +610,10 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
   .pi-app .item .detail { font-size:16px; }
   .pi-app .item .by, .pi-app .item .by .co { font-size:15px; }
   .pi-app .item details.src { font-size:14.5px; }
+  .pi-app .bpt .examples .item .title { font-size:16px; }
+  .pi-app .bpt .examples .item .detail { font-size:15px; }
+  .pi-app .bpt .examples .item .by, .pi-app .bpt .examples .item .by .co { font-size:14px; }
+  .pi-app .bpt .examples .item details.src, .pi-app .bpt .examples .item .why { font-size:13.5px; }
   .pi-app .band { margin-left:20px; padding:12px 8px 26px 36px; }
   .pi-app .band.notes { padding:6px 8px 26px 36px; }
   .pi-app .mrow { grid-template-columns:64px minmax(0,1fr); gap:14px; }
