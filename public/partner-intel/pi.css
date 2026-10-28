@@ -470,6 +470,13 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 .pi-app .bpt .examples { margin-top:4px; padding:0; }
 .pi-app .bpt .examples > .item { border-top:1px solid #edf0f5; padding:16px 0; }
 .pi-app .bpt .examples > .item:first-child { border-top:0; padding-top:10px; }
+/* A note opened under a point sits a step below the point itself: its title under the point's text,
+ * its detail and source lines smaller again. */
+.pi-app .bpt .examples .item .kindl { font-size:12.5px; }
+.pi-app .bpt .examples .item .title { font-size:18px; }
+.pi-app .bpt .examples .item .by, .pi-app .bpt .examples .item .by .co { font-size:15px; }
+.pi-app .bpt .examples .item .detail { font-size:16.5px; }
+.pi-app .bpt .examples .item details.src, .pi-app .bpt .examples .item .why { font-size:14.5px; }
 .pi-app .pending { font-size:15px; }
 /* The plus button: a bold navy plus that squeezes and pops into a minus, and back. */
 .pi-app button.pm { position:relative; width:28px; height:28px; border:0; border-radius:4px; background:none; padding:0; color:var(--navy); font-size:0; }
@@ -516,8 +523,8 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 .pi-app .mrow .go-arrow { margin-top:4px; }
 
 /* ---- Companies table. */
-.pi-app table.tbl th { padding:14px 10px 12px; border-bottom:1.5px solid var(--rule); font-size:12.5px; font-weight:700; letter-spacing:.06em; }
-.pi-app table.tbl td { padding:15px 10px; border-bottom:1px solid #e6ebf3; font-size:15px; }
+.pi-app table.tbl th { padding:14px 10px 12px; border-bottom:1.5px solid var(--rule); font-size:13.5px; font-weight:700; letter-spacing:.06em; }
+.pi-app table.tbl td { padding:15px 10px; border-bottom:1px solid #e6ebf3; font-size:16.5px; }
 .pi-app table.tbl tr:last-child td { border-bottom:0; }
 .pi-app table.tbl tr.click:hover td { background:var(--band); }
 .pi-app table.tbl td.cn { font-weight:700; color:var(--navy); }
@@ -542,9 +549,13 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 /* Moving between tabs: the pill stretches as it slides, as the time window's lens does, and the tab's
  * content fades out and the new content fades in (index.html, switchTab). */
 .pi-app .ctabs .ctlens.moving { scale:1.18 .88; }
-.pi-app #tabBody { transition:opacity .18s ease; }
-.pi-app #tabBody.fading { opacity:0; transition-duration:.14s; }
-@media (prefers-reduced-motion:reduce) { .pi-app .ctabs .ctlens, .pi-app #tabBody { transition:none; } }
+.pi-app #tabBody, .pi-app .fades { transition:opacity .18s ease; }
+.pi-app #tabBody.fading, .pi-app .fades.fading { opacity:0; transition-duration:.14s; }
+@media (prefers-reduced-motion:reduce) { .pi-app .ctabs .ctlens, .pi-app #tabBody, .pi-app .fades { transition:none; } }
+/* The tab bar and, on a phone, an arrow at its end that shows more tabs lie to the right. */
+.pi-app .ctwrap { position:relative; display:inline-block; max-width:100%; margin-top:32px; vertical-align:top; }
+.pi-app .ctwrap .ctabs { margin-top:0; }
+.pi-app .ctmore { display:none; }
 .pi-app .tabpanel { margin-top:20px; background:#fff; border-radius:24px; padding:26px 36px 24px; }
 .pi-app .tabpanel .card { padding:0; margin:0; border-radius:0; }
 .pi-app .toolbar { margin:18px 0 4px; }
@@ -573,7 +584,11 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 
 @media (max-width:860px) {
   .pi-app .pgrid, .pi-app .cols3 { grid-template-columns:minmax(0,1fr); }
-  .pi-app .ctabs { overflow-x:auto; }
+  .pi-app .ctabs { overflow-x:auto; scrollbar-width:none; background:#e9ecf1; }
+  .pi-app .ctabs::-webkit-scrollbar { display:none; }
+  .pi-app .ctmore:not([hidden]) { display:flex; position:absolute; z-index:2; top:0; right:0; bottom:0; width:52px; align-items:center; justify-content:center;
+    padding:0 6px 0 0; border:0; border-radius:0 999px 999px 0; background:#e9ecf1; color:var(--navy); cursor:pointer; }
+  .pi-app .ctmore svg { width:18px; height:18px; }
   .pi-app .fields > * { grid-column:auto !important; }
   /* Too narrow for every tab: fixed equal tabs that scroll sideways, the pill one tab wide. */
   .pi-app .ctabs { grid-auto-columns:108px; }
@@ -595,6 +610,10 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
   .pi-app .item .detail { font-size:16px; }
   .pi-app .item .by, .pi-app .item .by .co { font-size:15px; }
   .pi-app .item details.src { font-size:14.5px; }
+  .pi-app .bpt .examples .item .title { font-size:16px; }
+  .pi-app .bpt .examples .item .detail { font-size:15px; }
+  .pi-app .bpt .examples .item .by, .pi-app .bpt .examples .item .by .co { font-size:14px; }
+  .pi-app .bpt .examples .item details.src, .pi-app .bpt .examples .item .why { font-size:13.5px; }
   .pi-app .band { margin-left:20px; padding:12px 8px 26px 36px; }
   .pi-app .band.notes { padding:6px 8px 26px 36px; }
   .pi-app .mrow { grid-template-columns:64px minmax(0,1fr); gap:14px; }
