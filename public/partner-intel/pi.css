@@ -637,11 +637,12 @@ html.ax-lock { overflow:hidden; }
 .abx[hidden] { display:none; }
 .abx.open { height:min(692px, calc(100vh - 96px)); border-radius:28px; box-shadow:0 18px 50px rgba(7,33,78,.2); }
 /* Collapsed, the Ask box is clear glass: what scrolls under it shows through, and in Chrome and Edge its
- * rim bends what is under it (pi.js builds the filter to the bar's size). Open, it is a white panel. */
+ * rim bends what is under it (pi.js builds the filter to the bar's size). A faint navy rim with a white ring
+ * just inside it keeps its shape on a white page. Open, it is a white panel. */
 .abx:not(.open) { background:rgba(255,255,255,.4); -webkit-backdrop-filter:blur(14px) saturate(180%); backdrop-filter:blur(14px) saturate(180%);
-  border-color:rgba(255,255,255,.75); box-shadow:inset 0 1px 1px rgba(255,255,255,.95), inset 0 -1px 1px rgba(7,33,78,.08), 0 8px 24px rgba(7,33,78,.14); }
+  border-color:rgba(7,33,78,.24); box-shadow:inset 0 0 0 1px rgba(255,255,255,.7), inset 0 1px 1px rgba(255,255,255,.95), 0 2px 4px rgba(7,33,78,.1), 0 8px 24px rgba(7,33,78,.14); }
 html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px) saturate(170%) brightness(1.05); }
-.abx:not(.open) .ax-hist { background:rgba(255,255,255,.55); box-shadow:inset 0 1px 0 #fff, 0 0 0 1px rgba(7,33,78,.05); color:var(--navy); }
+.abx:not(.open) .ax-hist { background:rgba(255,255,255,.55); box-shadow:inset 0 1px 0 #fff, 0 0 0 1px rgba(7,33,78,.14); color:var(--navy); }
 .abx:not(.open) .ax-send { background:rgba(7,33,78,.9); box-shadow:inset 0 1px 0 rgba(255,255,255,.3), 0 4px 12px rgba(7,33,78,.25); }
 .abx-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; }
 .abx-head, .abx-body, .abx-rail { display:none; opacity:0; transition:opacity .25s ease .14s; }
@@ -683,21 +684,17 @@ html.lg-refract .abx:not(.open) { backdrop-filter:url(#pi-ask-glass) blur(1.5px)
 .turn { display:flex; flex-direction:column; gap:14px; margin:0 0 26px; }
 .turn .qb { align-self:flex-end; max-width:min(520px, 85%); background:var(--wash); border-radius:18px 18px 4px 18px; padding:12px 18px; color:var(--navy);
             white-space:pre-wrap; overflow-wrap:anywhere; }
-.turn .thinking { display:flex; align-items:center; gap:12px; color:var(--text-secondary); font-size:14px; }
+.turn .thinking { display:flex; align-items:center; gap:12px; color:var(--text-secondary); font-size:15px; }
 /* While an answer is coming: the Conexus mark, its amber diamond riding the figure 8 at a steady speed, small on
- * the loops and full size each time it crosses the center. When the answer comes it stops in the center (settle
- * in askbox.js), the diamond swells, and the mark fades. */
+ * the loops and full size each time it crosses the center. When the answer comes it stops in the center, the
+ * diamond swells and the mark fades (settle in askbox.js plays those). */
 .pi-mark { position:relative; flex:none; width:64px; height:32px; }
 .pi-mark svg { position:absolute; inset:0; overflow:visible; fill:var(--navy); }
 .pi-mark .pm-ride { position:absolute; left:0; top:0; width:11.26px; height:11.26px; background:var(--amber);
   offset-path:path("M32.02 15.99 L39.84 7.94 A11.38 11.38 0 1 1 39.84 24.04 L24.19 7.94 A11.38 11.38 0 1 0 24.19 24.04 Z");
   offset-rotate:0deg; offset-anchor:center; transform:rotate(45deg); animation:pm-ride 2.6s linear infinite; }
 @keyframes pm-ride { 0% { offset-distance:0%; transform:rotate(45deg) scale(1); } 9% { offset-distance:9%; transform:rotate(45deg) scale(0.42); } 41% { offset-distance:41%; transform:rotate(45deg) scale(0.42); } 50% { offset-distance:50%; transform:rotate(45deg) scale(1); } 59% { offset-distance:59%; transform:rotate(45deg) scale(0.42); } 91% { offset-distance:91%; transform:rotate(45deg) scale(0.42); } 100% { offset-distance:100%; transform:rotate(45deg) scale(1); } }
-.pi-mark.settled .pm-ride { animation:pm-swell .7s cubic-bezier(.45,0,.25,1) forwards; }
-.pi-mark.settled { animation:pm-fade .6s ease .75s forwards; }
-@keyframes pm-swell { 0% { transform:rotate(45deg) scale(1); } 40% { transform:rotate(45deg) scale(1.32); } 100% { transform:rotate(45deg) scale(1); } }
-@keyframes pm-fade { to { opacity:0; } }
-@media (prefers-reduced-motion:reduce) { .pi-mark .pm-ride, .pi-mark.settled, .pi-mark.settled .pm-ride { animation:none; } }
+@media (prefers-reduced-motion:reduce) { .pi-mark .pm-ride { animation:none; } }
 .ans { font-size:15px; line-height:1.6; color:var(--text-primary); overflow-wrap:anywhere; }
 .ans p { margin:0 0 10px; }
 .ans ul, .ans ol { margin:0 0 10px; padding-left:22px; }
