@@ -293,13 +293,13 @@ html:has(> body.pi-app)::before { left:38%; bottom:-260px; width:560px; height:5
 .pi-app .appbar { --lift:0px; --fade:1; background:var(--navy); color:#fff; border-bottom:0;
   transform:translateY(calc(-1 * var(--lift))); transition:box-shadow .2s ease, transform .18s cubic-bezier(.25,1,.5,1); }
 .pi-app .appbar .in { max-width:1120px; min-height:64px; gap:0 24px; align-items:stretch; }
-.pi-app .appname { display:flex; align-items:center; font-size:20px; font-weight:700; color:#fff; margin-right:12px; }
+.pi-app .appname { display:flex; align-items:center; font-size:20px; font-weight:600; color:#fff; margin-right:12px; }
 .pi-app a.appname:hover { color:#fff; text-decoration:none; }
 .pi-app .nav { gap:4px; }
 .pi-app .nav a { display:flex; align-items:center; padding:0 12px; border-top:4px solid transparent; border-bottom:4px solid transparent;
-  color:var(--nav-text); font-size:17px; font-weight:500; }
+  color:var(--nav-text); font-size:17px; font-weight:400; }
 .pi-app .nav a:hover { color:#fff; text-decoration:none; }
-.pi-app .nav a.on { color:#fff; font-weight:600; border-bottom-color:var(--hl); }
+.pi-app .nav a.on { color:#fff; font-weight:500; border-bottom-color:var(--hl); }
 .pi-app .nav a.on:hover { color:#fff; }
 .pi-app .appbar .tools { font-size:14px; gap:18px; }
 .pi-app .appbar .tools a, .pi-app .appbar .tools button.link { color:var(--nav-text); font-weight:400; }

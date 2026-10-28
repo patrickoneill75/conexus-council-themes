@@ -6014,7 +6014,7 @@ test("partner_intel: the top bar is solid navy with the current page underlined 
   const js = fs.readFileSync(path.join(pub, "pi.js"), "utf8");
   assert.match(css, /\.pi-app \.appbar \{ --lift:0px; --fade:1; background:var\(--navy\);/);
   assert.match(css, /transform:translateY\(calc\(-1 \* var\(--lift\)\)\)/);
-  assert.match(css, /\.pi-app \.nav a\.on \{ color:#fff; font-weight:600; border-bottom-color:var\(--hl\); \}/);
+  assert.match(css, /\.pi-app \.nav a\.on \{ color:#fff; font-weight:500; border-bottom-color:var\(--hl\); \}/);
   assert.doesNotMatch(css, /\.pi-app \.nav a\.on span::before/, "the highlighter mark behind the current page is gone");
   assert.match(js, /var lift = Math\.min\(row, Math\.max\(0, Math\.round\(y\)\)\);/, "the row moves pixel for pixel with the scroll, up to its own height");
   assert.match(js, /bar\.style\.setProperty\("--lift", lift \+ "px"\);/);
@@ -6089,11 +6089,12 @@ test("partner_intel: Home ends with its topics, with no Note, Source or Dates fo
   assert.match(html, /renderTrending\(el\("trend"\), d\.trending, \{ days: state\.days, source: \[\], status: \[\] \}, mine, "h2"\);/);
 });
 
-test("partner_intel: the time window lens has no drop shadow, and the nav links are lighter (500, current page 600)", () => {
+test("partner_intel: the time window lens has no drop shadow, and the nav links are lighter (400, current page 500, app name 600)", () => {
   const css = fs.readFileSync(path.join(path.dirname(SRC), "public", "partner-intel", "pi.css"), "utf8");
   const lens = css.match(/\.pi-app \.seg \.lens \{[^}]*\}/)[0];
   assert.doesNotMatch(lens, /, 0 \d+px \d+px rgba/, "only inset rim lines, no shadow under the lens");
-  assert.match(css, /\.pi-app \.nav a \{[^}]*font-size:17px; font-weight:500; \}/);
+  assert.match(css, /\.pi-app \.nav a \{[^}]*font-size:17px; font-weight:400; \}/);
+  assert.match(css, /\.pi-app \.appname \{ display:flex; align-items:center; font-size:20px; font-weight:600;/);
 });
 
 test("partner_intel: the Ask page conversation sits on a solid white panel, so the page background never shows behind an answer", () => {
