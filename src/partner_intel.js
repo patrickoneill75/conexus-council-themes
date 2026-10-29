@@ -2247,7 +2247,7 @@ async function ask(env, data, roster, overrides, question, sourceList = [], excl
  * reads it and answers with [n12] citations, which are checked against the notes it was shown.
  * Each person's questions and answers are kept by person, in Box.
  */
-const ASSISTANT_PROMPT_VERSION = "pi-asst-5"; // 5: CIAIC is the Council, compact headlines; 4: estimated dates marked, people "probably"; 3: people named in the question; 2: every note listed, programs named
+const ASSISTANT_PROMPT_VERSION = "pi-asst-6"; // 6: who-can-help answered in writing; 5: CIAIC is the Council, compact headlines; 4: estimated dates marked, people "probably"; 3: people named in the question; 2: every note listed, programs named
 const ASSISTANT_EXPAND_VERSION = "pi-asst-expand-1";
 const ASSISTANT_NOTES = 160;        // notes in full in one prompt, at most
 const ASSISTANT_PER_PROGRAM = 60;   // of which come from each program the question names
@@ -2293,7 +2293,9 @@ const ASSISTANT_SYSTEM =
   "meeting are one voice. Use the topic table for breadth and trend and the notes for specifics.\n" +
   "3. Cite the notes you rely on by reference in square brackets, such as [n12] or [n3][n8], right after " +
   "the claim. Cite only references that appear in the notes or the headlines. A headline gives only the " +
-  "title: do not claim detail it does not show. Name companies when it helps staff act.\n" +
+  "title: do not claim detail it does not show. Name companies when it helps staff act. When asked who can " +
+  "help, name the partners whose notes show they have solved it or offer it, strongest first, with one sentence " +
+  "each on why, and leave out any company the question says to leave out.\n" +
   "4. For anything about partners, companies, people or meetings, use only the material given. Never " +
   "invent companies, numbers, quotes or events. If the material does not cover the question, say so " +
   "plainly and say what is missing. The notes are a selection: say so when a count could be incomplete.\n" +
@@ -3132,9 +3134,11 @@ function earlierAnswer(t) {
 }
 
 /**
- * One question, from the Ask box or the Ask page, added to the person's history. mode "answer" (the Ask
- * box) always writes an answer; "match" (Find solution) always ranks partners; "auto" (the Ask page)
- * ranks partners when the question asks who can help, and answers otherwise.
+ * One question, from the Ask box or the Ask page, added to the person's history. It gets a written answer
+ * unless mode is "match": the person pressed Find solution or "Find partners who can help", and the
+ * partners are ranked. BUG: the Ask page sent "auto", and a question worded "who can help..." was ranked
+ * without being asked for, a list of companies and issue cards where an answer should be. A who-can-help
+ * question now gets an answer with the button under it (offerMatch).
  */
 async function assistant(env, auth, data, roster, overrides, body) {
   const question = text(body.question);
@@ -3144,7 +3148,7 @@ async function assistant(env, auth, data, roster, overrides, body) {
   const conversation = asked ? history.conversations.find((c) => c.id === asked) : null;
   if (asked && !conversation) return json({ error: "That conversation is no longer in your history." }, 404);
   const sourceList = (Array.isArray(body.sources) ? body.sources : []).map(text).filter(Boolean).slice(0, 40);
-  const mode = ["answer", "match"].includes(text(body.mode)) ? text(body.mode) : (looksLikeMatch(question) ? "match" : "answer");
+  const mode = text(body.mode) === "match" ? "match" : "answer";
 
   let result = null;
   let focusId = "", focusName = "";

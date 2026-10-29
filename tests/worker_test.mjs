@@ -4511,26 +4511,37 @@ test("partner_intel: a follow-up in the Ask box reads the earlier answer and joi
   assert.equal(missing.status, 404, "a conversation that is not in the person's history is not continued");
 });
 
-test("partner_intel: on the Ask page a who-can-help question ranks partners, and anything else gets an answer", async () => {
+test("partner_intel: BUG a who-can-help question typed on the Ask page came back as a ranked list of partners and issue cards; it gets a written answer, and the ranked list only when asked for", async () => {
   assert.equal(looksLikeMatch("Who can help with hiring and keeping skilled technicians?"), true);
   assert.equal(looksLikeMatch("A partner is looking for help with an AI quality system. Who can we connect them with?"), true);
   assert.equal(looksLikeMatch("Which companies have solved second-shift staffing?"), true);
   assert.equal(looksLikeMatch("What are the top issues to discuss at the next quarterly meeting?"), false);
   assert.equal(looksLikeMatch("Which companies mentioned energy costs this year?"), false);
   const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
+  for (const mode of [undefined, "auto", "answer"]) {
+    const bodies = [];
+    const r = await withFetch(assistantClaude("Two partners have done this [n1].", [], bodies), async () =>
+      (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring for technicians?", ...(mode ? { mode } : {}) }), env)).json());
+    assert.equal(r.turn.kind, "answer", `mode ${mode}: a written answer`);
+    assert.ok(!bodies.some((b) => b.tools[0].name === "rank_matches"), `mode ${mode}: no partners ranked unasked`);
+    assert.equal(r.turn.offerMatch, true, `mode ${mode}: with "Find partners who can help" under it`);
+  }
+  // Pressed: Find solution, or "Find partners who can help".
   const bodies = [];
   const r = await withFetch(assistantClaude("unused", [], bodies), async () =>
-    (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring for technicians?" }), env)).json());
+    (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring for technicians?", mode: "match" }), env)).json());
   assert.equal(r.turn.kind, "matches");
   assert.ok(!bodies.some((b) => b.tools[0].name === "write_answer"), "no written answer as well: two calls, not three");
   assert.ok(r.turn.matches.length >= 1);
   const refs = new Set(r.turn.sources.map((x) => x.ref));
   assert.ok(r.turn.matches.every((m) => m.refs.length && m.refs.every((n) => refs.has(n))), "every match points at numbered notes");
-  const forced = await withFetch(assistantClaude("An answer [n1].", [], []), async () =>
-    (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring?", mode: "answer" }), env)).json());
-  assert.equal(forced.turn.kind, "answer", "the Ask box always answers");
-  assert.equal(forced.turn.offerMatch, true, "and offers the partner search for a who-can-help question");
+  // The Ask page asks for an answer unless the button was pressed.
+  const html = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  assert.match(html, /mode: mode === "match" \? "match" : "answer",/);
+  assert.doesNotMatch(html, /mode \|\| "auto"/);
+  assert.match(html, /\.fu\[data-match\]"\)\)\) \{ run\(b\.getAttribute\("data-match"\), "match"\);/);
 });
+
 
 test("partner_intel: each person's Ask history is theirs alone, kept in Box under the Database folder, and restored from Box", async () => {
   const { env, token } = await adminEnv({ partner_intel_claude_api: "k" });
