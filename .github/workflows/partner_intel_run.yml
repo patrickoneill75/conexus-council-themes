@@ -14,6 +14,9 @@ name: Partner Intelligence -- scan notes
 #        rebuild  no Box, no Claude: re-join stored results with the current partner list.
 #        preview  cut the running documents (the onboarding notes) into meetings and save the
 #                 meeting list to the Database folder. Reads no statements, publishes nothing.
+#        refresh-plan  what the control panel's one-time refresh would do (files, sections Claude
+#                 would read, dates that change), reported to the panel. Reads nothing, publishes nothing.
+#        refresh  the one-time refresh itself: a scan that also takes up files read under older rules.
 #
 # The repository variable PARTNER_INTEL_RUNNING_SPLIT ("on") makes scans cut running documents by
 # meeting. Leave it unset until the meeting list from a preview has been checked.
@@ -26,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "scan, rebuild or preview"
+        description: "scan, rebuild, preview, refresh-plan or refresh"
         required: false
         default: "scan"
         type: string

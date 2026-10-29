@@ -3497,7 +3497,7 @@ test("partner_intel: database files go to the chosen Box folder, as a new versio
   assert.equal(archived.ok, true, "the results archive is a database file too");
   const checked = await withFetch(handler, async () => (await save("partner_intel_duplicate_check.csv", "Check\r\n")).json());
   assert.equal(checked.ok, true, "the duplicate check's report goes to the database folder, not the public Actions log");
-  for (const name of ["partner_intel_meeting_list.csv", "partner_intel_meeting_dates.csv"]) {
+  for (const name of ["partner_intel_meeting_list.csv", "partner_intel_meeting_dates.csv", "partner_intel_file_dates.csv"]) {
     const saved = await withFetch(handler, async () => (await save(name, "MeetingID\r\n")).json());
     assert.equal(saved.ok, true, `${name}: the meeting list and the admin's dates list live in the database folder`);
   }
@@ -4440,6 +4440,68 @@ test("partner_intel: a one-time update that could not start is not used up, and 
   const empty = await signedInEnv();
   assert.equal((await getJson("status", empty.env, empty.token)).oneTimeUpdate, null, "nothing to update before the first scan");
   assert.equal((await pi("update/apply", piReq("update/apply", "POST", { id: "programs-v1" }), env)).status, 401);
+});
+
+const refreshStep = (env, token, step) => pi("refresh", piReq("refresh", "POST", { step }, token), env);
+const refreshReport = (env, body) => pi("relay/report", relay("report", "POST", body), env);
+
+test("partner_intel: the one-time refresh checks first, then runs once, and turns on cutting by meeting for good", async () => {
+  const { env, token } = await piEnv([ins()]);
+  const sent = [];
+  const handler = (url, init) => { sent.push(JSON.parse(init.body).inputs); return new Response(null, { status: 204 }); };
+  assert.equal((await getJson("status", env, token)).refresh.state, "new");
+  assert.equal((await withFetch(handler, () => refreshStep(env, token, "plan"))).status, 400, "no notes folder chosen yet");
+  await pi("settings", piReq("settings", "POST", { folderId: "12345", folderName: "Raw Notes" }, token), env);
+  assert.equal((await withFetch(handler, () => refreshStep(env, token, "run"))).status, 409, "it must be checked first");
+
+  assert.equal((await withFetch(handler, () => refreshStep(env, token, "plan"))).status, 200);
+  assert.deepEqual(sent[0], { mode: "refresh-plan", limit: "0", force: "false" }, "the check reads and publishes nothing");
+  assert.equal((await withFetch(handler, () => refreshStep(env, token, "plan"))).status, 409, "not twice at once");
+  const plan = { files: 12, by_reason: { "estimated date": 10, "running document": 1, "read under older instructions": 1 },
+    sections_to_read: 19, sections_by_reason: { "running document": 18, "read under older instructions": 1 }, words_to_read: 9000, files_redated: 6 };
+  await refreshReport(env, { mode: "refresh-plan", refresh_plan: plan, finished_at: "2026-10-29T19:00:00+00:00" });
+  const planned = (await getJson("status", env, token)).refresh;
+  assert.equal(planned.state, "planned");
+  assert.deepEqual(planned.plan, plan, "the panel shows what the refresh will do before it runs");
+
+  assert.equal((await withFetch(handler, () => refreshStep(env, token, "run"))).status, 200);
+  assert.deepEqual(sent[1], { mode: "refresh", limit: "0", force: "false" });
+  assert.equal(JSON.parse(await env.BOX_KV.get("pi:settings")).runningSplit, true, "daily scans keep cutting by meeting");
+  assert.equal((await withFetch(handler, () => refreshStep(env, token, "run"))).status, 409, "a second click starts nothing");
+  await refreshReport(env, { mode: "refresh", insights: 2500, units_to_read: 19, refresh: { files: 12 }, finished_at: "2026-10-29T20:00:00+00:00" });
+  const done = (await getJson("status", env, token)).refresh;
+  assert.equal(done.state, "done");
+  assert.equal(done.sectionsRead, 19);
+  assert.equal((await withFetch(handler, () => refreshStep(env, token, "plan"))).status, 409, "one time only");
+  assert.equal(sent.length, 2);
+  await refreshReport(env, { mode: "refresh-plan", refresh_plan: plan });
+  assert.equal((await getJson("status", env, token)).refresh.state, "done", "a late report cannot bring it back");
+});
+
+test("partner_intel: a refresh that could not start, failed, or never reported back can be run again", async () => {
+  const { env, token } = await piEnv([ins()]);
+  await pi("settings", piReq("settings", "POST", { folderId: "12345", folderName: "Raw Notes" }, token), env);
+  const ok = () => new Response(null, { status: 204 });
+  await withFetch(ok, () => refreshStep(env, token, "plan"));
+  await refreshReport(env, { mode: "refresh-plan", refresh_plan: { files: 1, sections_to_read: 0 } });
+  const refused = await withFetch(() => new Response("nope", { status: 403 }), () => refreshStep(env, token, "run"));
+  assert.equal(refused.status, 502);
+  assert.equal((await getJson("status", env, token)).refresh.state, "planned", "nothing ran, so the step is given back");
+  assert.equal(JSON.parse(await env.BOX_KV.get("pi:settings")).runningSplit, undefined);
+
+  await withFetch(ok, () => refreshStep(env, token, "run"));
+  await refreshReport(env, { mode: "refresh", error: "No Box folder is set." });
+  const failed = (await getJson("status", env, token)).refresh;
+  assert.equal(failed.state, "planned");
+  assert.match(failed.error, /No Box folder/);
+
+  await withFetch(ok, () => refreshStep(env, token, "run"));
+  const stuck = JSON.parse(await env.BOX_KV.get("pi:refresh"));
+  await env.BOX_KV.put("pi:refresh", JSON.stringify({ ...stuck, startedAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString() }));
+  const back = (await getJson("status", env, token)).refresh;
+  assert.equal(back.state, "planned", "a run that died without reporting is offered again after its time limit");
+  assert.match(back.error, /did not report back/);
+  assert.equal((await withFetch(ok, () => refreshStep(env, token, "run"))).status, 200);
 });
 
 /* ------------------------------------------------------------------------- runner */
@@ -5464,7 +5526,7 @@ test("access: BUG a Partner Intelligence user could run its control panel: scans
     assert.equal(res.status, 403, `GET ${route}`);
     assert.match((await res.json()).error, /settings/);
   }
-  const posts = ["settings", "schedule", "run", "update/apply", "roster/sync", "roster/import", "roster/partner",
+  const posts = ["settings", "schedule", "run", "refresh", "update/apply", "roster/sync", "roster/import", "roster/partner",
     "roster/partner/delete", "roster/staff", "roster/alias", "contacts/import", "attribution/decide", "review/add",
     "review/map", "topics/override"];
   for (const route of posts) assert.equal((await pi(route, piReq(route, "POST", {}, user), env)).status, 403, `POST ${route}`);

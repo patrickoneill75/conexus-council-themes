@@ -35,6 +35,16 @@
     <div class="row"><button class="primary" id="oneoffBtn">Apply the update</button><span class="msg" id="oneoffMsg"></span></div>
   </section>
 
+  <section class="card" id="refreshCard" hidden style="border-color:rgba(251,174,64,.7)">
+    <h2>One-time refresh</h2>
+    <p class="desc">Brings everything read under older rules up to date, once. It cuts the onboarding notes into one entry per
+      meeting, works out estimated dates again with the current rules (file times, folder names), treats the recording and
+      the clean write-up of one call as one meeting, and reads again only the sections read under older instructions.
+      Text that has not changed is never paid for twice. Step 1 shows what it will do and reads nothing.</p>
+    <div id="refreshBody"></div>
+    <div class="row"><button class="primary" id="refreshBtn">Check what it will do</button><span class="msg" id="refreshMsg"></span></div>
+  </section>
+
   <section class="card">
     <h2>Status</h2>
     <div id="status"><span class="spinner"></span>Loading…</div>
@@ -228,6 +238,7 @@
         el("oneoffTitle").textContent = upd.title; el("oneoffBody").textContent = upd.body;
         el("oneoff").setAttribute("data-id", upd.id); el("oneoffBtn").disabled = false; msg("oneoffMsg", "");
       }
+      renderRefresh(s.refresh);
       renderFolders();
       el("syncLast").textContent = s.rosterSync ? "Last applied: " + s.rosterSync.name + ", " + PI.fmtStamp(s.rosterSync.at) +
         " (" + s.rosterSync.counts.added + " added, " + s.rosterSync.counts.reactivated + " returning, " + s.rosterSync.counts.deactivated + " marked Former)." +
@@ -365,6 +376,37 @@
       msg("runMsg", "The update started. It takes about a minute. This page refreshes when it finishes.", "ok");
       pollRuns(true);
     }).catch(function (e) { el("oneoffBtn").disabled = false; msg("oneoffMsg", e.message, "err"); });
+  });
+  /* The one-time refresh: check first (reads nothing), then run. Gone for good once it has finished. */
+  var refreshStep = "plan";
+  function renderRefresh(r) {
+    r = r || { state: "new" };
+    el("refreshCard").hidden = r.state === "done";
+    var body = "", label = "Check what it will do", busy = false;
+    if (r.state === "planning") { body = "Checking. This page updates when it finishes."; busy = true; }
+    else if (r.state === "running") { body = "The refresh is running. It reads in a batch at half price, which can take up to an hour. This page updates when it finishes."; busy = true; }
+    else if (r.state === "planned" && r.plan) {
+      var p = r.plan, why = p.by_reason || {}, cost = p.sections_by_reason || {};
+      body = "<p><b>What the refresh will do</b> (checked " + esc(PI.fmtStamp(r.plannedAt)) + "):</p><ul>" +
+        "<li>" + num(p.files) + " file(s) taken up: " + Object.keys(why).map(function (k) { return esc(k) + " " + num(why[k]); }).join(", ") + "</li>" +
+        "<li>" + num(p.sections_to_read) + " section(s) read by Claude, about " + num(p.words_to_read) + " words" +
+        (Object.keys(cost).length ? " (" + Object.keys(cost).map(function (k) { return esc(k) + " " + num(cost[k]); }).join(", ") + ")" : "") + "</li>" +
+        "<li>" + num(p.files_redated) + " file(s) get a new date</li>" +
+        (p.running_documents ? "<li>" + num(p.meetings) + " meeting(s) in the onboarding notes</li>" : "") + "</ul>";
+      label = "Run the refresh"; refreshStep = "run";
+    }
+    if (r.state !== "planned") refreshStep = "plan";
+    if (r.error) body += '<div class="msg warn">' + esc(r.error) + "</div>";
+    el("refreshBody").innerHTML = body;
+    el("refreshBtn").textContent = label;
+    el("refreshBtn").disabled = busy;
+  }
+  el("refreshBtn").addEventListener("click", function () {
+    if (refreshStep === "run" && !confirm("Run the one-time refresh? Claude reads only the sections listed. It cannot be run a second time.")) return;
+    el("refreshBtn").disabled = true; msg("refreshMsg", "Starting…");
+    PI.post("refresh", { step: refreshStep }).then(function (res) {
+      msg("refreshMsg", ""); renderRefresh(res.refresh); pollRuns(true);
+    }).catch(function (e) { el("refreshBtn").disabled = false; msg("refreshMsg", e.message, "err"); });
   });
   el("relinkBtn").addEventListener("click", function () {
     msg("relinkMsg", "Starting…");

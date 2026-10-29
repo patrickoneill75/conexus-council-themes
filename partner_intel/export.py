@@ -21,6 +21,7 @@ import io
 import json
 import re
 
+from .dates import dates_in
 from .roster import Roster
 
 DATABASE_FILE = "partner_intel_database.json"
@@ -30,6 +31,10 @@ STATE_FILE = "partner_intel_state.json"
 # written only when a result is retired, not after every scan.
 ARCHIVE_FILE = "partner_intel_results_archive.json"
 ARCHIVE_MAX_CHARS = 40_000_000
+# The admin's exact dates for files that have only an estimate (one meeting told in two files, say).
+# Written once, when it does not exist, listing the files paired as one meeting; never overwritten.
+FILE_DATES_FILE = "partner_intel_file_dates.csv"
+FILE_DATES_COLUMNS = ["FileIDs", "Files", "Company", "Date"]
 FILES = (DATABASE_FILE, INSIGHTS_FILE, STATE_FILE)
 # The most one state file holds before the state is written in parts. About 8 MB: an eighth of
 # Box's 50 MB single-upload limit, and small enough for the Worker to relay in its 128 MB.
@@ -181,3 +186,34 @@ def read_state(text: str | None, load) -> tuple[dict, dict] | None:
 def archive_json(results: dict, saved_at: str) -> str:
     return json.dumps({"version": 1, "saved_at": saved_at, "results": results},
                       ensure_ascii=False, separators=(",", ":"))
+
+
+def read_file_dates(text: str | None) -> dict[str, str]:
+    """Box file id -> YYYY-MM-DD from the admin's file dates list. A row may name several files (the
+    two files of one meeting); rows with no readable date are skipped."""
+    out: dict[str, str] = {}
+    if not text:
+        return out
+    for row in csv.DictReader(io.StringIO(text.lstrip("\ufeff"))):
+        raw = str(row.get("Date") or "").strip()
+        found = dates_in(raw) if raw else []  # 9/2/2026, 2026-09-02 and Sep 2, 2026 alike
+        if not found:
+            continue
+        for file_id in re.findall(r"\d+", str(row.get("FileIDs") or "")):
+            out[file_id] = found[0].isoformat()
+    return out
+
+
+def file_dates_csv(groups: list[dict], registry: dict, roster: Roster) -> str:
+    """The admin's file dates list as first written: one row per meeting told in several files."""
+    partners = roster.by_id()
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\r\n")
+    writer.writerow(FILE_DATES_COLUMNS)
+    for g in groups:
+        files = [registry.get(i, {}) for i in g["files"]]
+        writer.writerow([_safe(v) for v in [
+            " ".join(g["files"]),
+            " | ".join(f"{f.get('path', '')}/{f.get('name', '')}".strip("/") for f in files),
+            (partners.get(g["company_id"]) or {}).get("name") or g["company_id"], ""]])
+    return "\ufeff" + out.getvalue()

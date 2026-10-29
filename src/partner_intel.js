@@ -80,7 +80,7 @@ const ONE_TIME_UPDATES = [{
 // The only files the pipeline may write to the database folder in Box.
 const DB_FILES = new Set(["partner_intel_database.json", "partner_intel_insights.csv", "partner_intel_state.json",
   "partner_intel_results_archive.json", "partner_intel_duplicate_check.csv", "partner_intel_meeting_list.csv",
-  "partner_intel_meeting_dates.csv"]);
+  "partner_intel_meeting_dates.csv", "partner_intel_file_dates.csv"]);
 // Caches (what the scan already paid Claude for, written summaries, saved answers) go to the Cache folder
 // when one is chosen on the control panel, and to the Database folder otherwise.
 const CACHE_FILES = new Set(["partner_intel_state.json", "partner_intel_results_archive.json"]);
@@ -1887,6 +1887,30 @@ const STATUS_ORDER = { Active: 0, Inactive: 1, "Non-member": 2 };
 
 /** The one-time update the control panel should offer, or null. It is offered only while the
  * data predates the schema it brings and it has not been used, so it vanishes either way. */
+/* ------------------------------------------------------------------ the one-time refresh
+ * Brings everything read under older rules up to date, once. Two steps, both GitHub runs:
+ *   plan  the pipeline's "refresh-plan": works out what the refresh would do (files, sections Claude
+ *         would read, dates that change) and reports it. Reads no statement, publishes nothing.
+ *   run   the pipeline's "refresh": a scan that also takes up those files. It turns on cutting the
+ *         running document by meeting for good (runningSplit in the settings the pipeline reads).
+ * The pipeline's report moves the state on (handleRelay, "report"). A refresh that finished without an
+ * error is done for good: the card goes and the route refuses. A run that never reported back (the
+ * workflow failed) is offered again after its time limit. */
+const REFRESH_KEY = "pi:refresh";
+const REFRESH_STUCK_MS = { planning: 90 * 60 * 1000, running: 4 * 60 * 60 * 1000 };
+
+async function refreshState(env, now = Date.now()) {
+  const r = await readJson(env, REFRESH_KEY, null) || { state: "new" };
+  const since = Date.parse(r.state === "planning" ? r.planRequestedAt : r.startedAt) || 0;
+  if (REFRESH_STUCK_MS[r.state] && now - since > REFRESH_STUCK_MS[r.state]) {
+    const back = r.state === "running" ? "planned" : "new";
+    return { ...r, state: back, error: r.state === "running"
+      ? "The refresh did not report back. Check the run's log, then run it again."
+      : "The check did not report back. Check the run's log, then try again." };
+  }
+  return r;
+}
+
 async function pendingUpdate(env, schema) {
   for (const u of ONE_TIME_UPDATES) {
     if (schema >= u.schema) continue;
@@ -3577,6 +3601,20 @@ async function handleRelay(route, request, env) {
     const body = await readBody(request);
     if (!body) return json({ error: "A report is required." }, 400);
     await env.BOX_KV.put(REPORT_KEY, JSON.stringify(body));
+    if (body.mode === "refresh-plan" || body.mode === "refresh") {
+      const current = await readJson(env, REFRESH_KEY, null) || { state: "new" };
+      const at = text(body.finished_at) || new Date().toISOString();
+      const error = text(body.error);
+      let next = null;
+      if (current.state !== "done" && body.mode === "refresh-plan") {
+        next = error ? { state: "new", error } : { state: "planned", plan: body.refresh_plan || null, plannedAt: at };
+      } else if (current.state !== "done") {
+        next = error ? { ...current, state: "planned", error }
+          : { state: "done", doneAt: at, plan: current.plan || null, result: body.refresh || null,
+            insights: Number(body.insights) || 0, sectionsRead: Number(body.units_to_read) || 0 };
+      }
+      if (next) await env.BOX_KV.put(REFRESH_KEY, JSON.stringify(next));
+    }
     // The pipeline's Claude use joins the same monthly meter: batch and full price apart,
     // because a batch token costs half.
     const n = (v) => Math.max(0, Number(v) || 0);
@@ -3596,7 +3634,7 @@ async function handleRelay(route, request, env) {
 /* The control panel's routes (public/partner-intel/control-panel/): Partner Intelligence admins, or an
    overall admin. Every other staff route, the ones the app itself and its Ask box call, needs use access
    to "partner-intel". relay/* is the pipeline's, on BOX_RELAY_SECRET, and never reaches this check. */
-const PI_ADMIN_ROUTES = new Set(["status", "settings", "schedule", "run", "run-status", "roster", "contacts",
+const PI_ADMIN_ROUTES = new Set(["status", "settings", "schedule", "run", "refresh", "run-status", "roster", "contacts",
   "contacts/import", "attribution/review", "attribution/decide", "review", "review/add", "review/map", "topics",
   "topics/override", "update/apply", "box/folders"]);
 const piAdminRoute = (route) => PI_ADMIN_ROUTES.has(route) || route.startsWith("roster/");
@@ -3628,7 +3666,7 @@ export async function handlePartnerIntelApi(route, request, env) {
         report, rosterSync, oneTimeUpdate, boxConnected: Boolean(token), githubConfigured: Boolean(env.GITHUB_TOKEN && env.GITHUB_REPO),
         claudeConfigured: Boolean(env.partner_intel_claude_api), usage: await usageView(env),
         contacts: await contactsStatus(env), toCheck: await toCheckCount(env, roster),
-        schedule: scheduleView(await readSchedule(env)),
+        schedule: scheduleView(await readSchedule(env)), refresh: await refreshState(env),
       });
     }
     if (route === "schedule" && method === "GET") return json(scheduleView(await readSchedule(env), new Date(Date.now())));
@@ -3712,6 +3750,37 @@ export async function handlePartnerIntelApi(route, request, env) {
       try { await dispatchRun(env, { mode: "rebuild", limit: "0", force: "false" }); }
       catch (e) { await env.BOX_KV.delete(flag); throw e; }
       return json({ ok: true });
+    }
+    if (route === "refresh" && method === "POST") {
+      if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return json({ error: "GITHUB_TOKEN and GITHUB_REPO are not set on the Worker." }, 500);
+      const body = (await readBody(request)) || {};
+      const step = text(body.step);
+      const current = await refreshState(env);
+      if (current.state === "done") return json({ error: "The refresh has already run. It is a one-time step." }, 409);
+      const settings = await readJson(env, SETTINGS_KEY, { folderId: "" });
+      if (!settings.folderId) return json({ error: "Choose the Box folder first." }, 400);
+      const now = new Date().toISOString();
+      if (step === "plan") {
+        if (current.state === "planning" || current.state === "running") return json({ error: "A refresh step is already running." }, 409);
+        await dispatchRun(env, { mode: "refresh-plan", limit: "0", force: "false" });
+        const next = { state: "planning", planRequestedAt: now, by: auth.email || "" };
+        await env.BOX_KV.put(REFRESH_KEY, JSON.stringify(next));
+        await env.BOX_KV.put(DISPATCH_KEY, JSON.stringify({ at: now, mode: "refresh-plan", limit: 0 }));
+        return json({ ok: true, refresh: next });
+      }
+      if (step === "run") {
+        if (current.state !== "planned") return json({ error: "Check what the refresh will do first." }, 409);
+        // Marked running before it starts, so a second click cannot start a second refresh. A start that
+        // fails gives the step back: nothing ran.
+        const next = { ...current, state: "running", startedAt: now, by: auth.email || "", error: "" };
+        await env.BOX_KV.put(REFRESH_KEY, JSON.stringify(next));
+        try { await dispatchRun(env, { mode: "refresh", limit: "0", force: "false" }); }
+        catch (e) { await env.BOX_KV.put(REFRESH_KEY, JSON.stringify(current)); throw e; }
+        await env.BOX_KV.put(SETTINGS_KEY, JSON.stringify({ ...settings, runningSplit: true, updatedAt: now }));
+        await env.BOX_KV.put(DISPATCH_KEY, JSON.stringify({ at: now, mode: "refresh", limit: 0 }));
+        return json({ ok: true, refresh: next });
+      }
+      return json({ error: "Unknown refresh step." }, 400);
     }
     if (route === "run-status" && method === "GET") {
       if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return json({ runs: [] });
