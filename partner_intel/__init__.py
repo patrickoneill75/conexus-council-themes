@@ -8,6 +8,8 @@ to the Worker only through its relay routes, so no Box credential ever leaves th
 
   text.py     Box file bytes to plain text (docx, txt, md, vtt, srt, text PDF, html).
   shape.py    Recognize the note format and split it into units a model can read whole.
+  meetings.py A running document (the onboarding notes) cut into one piece per meeting: code
+              first, a short Claude pass only for pieces code is unsure of.
   dates.py    Meeting date: text first, then file name, then Box upload date.
   roster.py   Roster rows and alias generation.
   resolve.py  Match company and person names to the roster, in code, before any model.

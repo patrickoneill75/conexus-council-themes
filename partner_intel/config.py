@@ -28,3 +28,7 @@ MAX_FILE_BYTES = 40 * 1024 * 1024
 USE_BATCH = os.environ.get("PARTNER_INTEL_BATCH", "true").lower() != "false"
 # How long a scan waits for its batch before reading the remainder directly.
 BATCH_WAIT_MINUTES = float(os.environ.get("PARTNER_INTEL_BATCH_WAIT_MINUTES") or 60)
+
+# Cut running documents (the onboarding notes) into one piece per meeting (meetings.py). Off until
+# an admin has checked the meeting list from a preview run; a GitHub repository variable turns it on.
+RUNNING_SPLIT = os.environ.get("PARTNER_INTEL_RUNNING_SPLIT", "").lower() in ("on", "true", "1")

@@ -79,7 +79,8 @@ const ONE_TIME_UPDATES = [{
 }];
 // The only files the pipeline may write to the database folder in Box.
 const DB_FILES = new Set(["partner_intel_database.json", "partner_intel_insights.csv", "partner_intel_state.json",
-  "partner_intel_results_archive.json", "partner_intel_duplicate_check.csv"]);
+  "partner_intel_results_archive.json", "partner_intel_duplicate_check.csv", "partner_intel_meeting_list.csv",
+  "partner_intel_meeting_dates.csv"]);
 // Caches (what the scan already paid Claude for, written summaries, saved answers) go to the Cache folder
 // when one is chosen on the control panel, and to the Database folder otherwise.
 const CACHE_FILES = new Set(["partner_intel_state.json", "partner_intel_results_archive.json"]);

@@ -351,7 +351,8 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     review.append("low_confidence")
                 if unit.get("date_source") in ESTIMATED_SOURCES:
                     review.append("estimated_date")
-                date = unit.get("date") or event.get("date") or ""
+                # A meeting in a running document with no known date has none: not the file's upload date.
+                date = "" if unit.get("date_source") == "unknown" else (unit.get("date") or event.get("date") or "")
                 # Rows with no company are one meeting's only within one kind of meeting: a CIAIC
                 # council meeting and a workshop on the same day are two meetings.
                 meeting_key = f"{date}|{company_id or core_key(raw_name) or 'event:' + (event.get('series') or event.get('type') or file_id)}"
