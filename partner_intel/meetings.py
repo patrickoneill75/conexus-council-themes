@@ -42,7 +42,7 @@ from rapidfuzz import fuzz
 from . import config, dates
 from .extract import NoToolCall, Refused, _usage_of, get_client, normalize
 from .resolve import TITLE_FOLLOWERS, Resolver, tokens
-from .shape import RECAP_MARK, _RECAP_HEADER, words
+from .shape import NOT_SPEAKERS, RECAP_MARK, _RECAP_HEADER, words
 
 # Bump when the cutting rules change, so running documents are cut again on the next scan.
 SPLIT_VERSION = "meetings-1"
@@ -71,13 +71,24 @@ TYPED_HINT = ("Notes from one onboarding call, typed by staff. The heading names
               "call was with. Names may be misspelled.")
 
 _DATE_PATTERNS = (dates._MONTH_NAME, dates._ISO, dates._US)
+_WEEKDAY_TIME = re.compile(r"\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\b\d{1,2}:\d{2}\s*([ap]\.?m\.?)?|\b[ap]\.?m\.?\b", re.I)
+
+# One-word labels typed notes use inside a meeting ("Business:", "Growth:", "Team:"). Such a line
+# never starts a meeting, even when a partner's name happens to contain the word: "Business:" in
+# the MPI notes matched another partner.
+GENERIC_LABELS = NOT_SPEAKERS | {
+    "about", "agenda", "attendees", "background", "business", "capabilities", "challenges", "culture",
+    "customers", "employees", "equipment", "future", "growth", "hiring", "history", "intro", "markets",
+    "marketing", "operations", "other", "overview", "people", "priorities", "products", "sales", "segments",
+    "services", "storytelling", "strategy", "tariffs", "team", "technology", "training", "workforce"}
 
 
 @dataclass
 class Meeting:
     text: str
-    company: str = ""        # as the notes write it
+    company: str = ""        # as the notes write it ("Honda" for the line "Honda Kickoff:")
     how: str = ""            # copilot | heading | partner_line | claude | none
+    heading: str = ""        # the line that starts it, as written ("Honda Kickoff")
     start: int = 0           # line in the document where it starts
     written_date: str = ""   # YYYY-MM-DD, stated in the meeting itself
     id: str = ""
@@ -99,9 +110,9 @@ def _strip_dates(text: str) -> str:
 
 
 def partner_line(line: str, resolver: Resolver) -> str:
-    """The company a short line names when it names a partner ("Grote:", "Honda Kickoff:",
-    "Grote 9/12/26:"), as written without the colon, or "". A line must end in a colon, or be
-    exactly a partner's name."""
+    """The company a short line names when it names a partner, or "": "Grote" for "Grote:" and
+    "Grote 9/12/26:", "Honda" for "Honda Kickoff:". A line must end in a colon, or be exactly a
+    partner's name. A one-word label ("Business:") is never a company line."""
     s = line.strip()
     if not s or s[0] in "-*#|>" or len(s.split()) > PARTNER_LINE_WORDS:
         return ""
@@ -113,23 +124,32 @@ def partner_line(line: str, resolver: Resolver) -> str:
     name = " ".join(toks)
     if not name or resolver.is_staff(name) or resolver.person(name):
         return ""
+    if len(toks) == 1 and toks[0].lower() in GENERIC_LABELS:
+        return ""
     hit = resolver.company(name, guess=True)
     if not colon and hit.method not in ("exact", "alias"):
         return ""
     if hit.ok or hit.method == "ambiguous":
-        return s.rstrip(":").strip()
+        return name
     return ""
+
+
+def _date_only(line: str) -> bool:
+    """A line that is nothing but a date, with perhaps a weekday and a time ("Friday, June 6, 2025",
+    "March 4, 2025")."""
+    return bool(dates.dates_in(line)) and not re.sub(r"[\W_]+", "", _WEEKDAY_TIME.sub(" ", _strip_dates(line)))
 
 
 def written_date(lines: list[str], latest: date | None) -> str:
     """A date stated as the meeting's date: in its heading line, a "Date:" line, or a short line
-    that is mostly a date ("Friday, June 6, 2025"), among its first lines. A date inside a sentence
-    is about something else ("replaced Brad Boyd (Retired 12.31.24)"). Never later than latest
-    (plus a day)."""
-    head = [l for l in lines if l.strip()][:DATE_LINES]
-    for n, line in enumerate(head):
-        if n and not dates._LABELLED.match(line) and len(line.split()) > DATE_LINE_WORDS:
-            continue
+    that is mostly a date among its first lines, or a line anywhere in it that is nothing but a date
+    (typed notes put "March 4, 2025" a few lines down). A date inside a sentence is about something
+    else ("replaced Brad Boyd (Retired 12.31.24)"). Never later than latest (plus a day)."""
+    filled = [l for l in lines if l.strip()]
+    candidates = [l for n, l in enumerate(filled[:DATE_LINES])
+                  if not n or dates._LABELLED.match(l) or len(l.split()) <= DATE_LINE_WORDS]
+    candidates += [l for l in filled[DATE_LINES:] if _date_only(l)]
+    for line in candidates:
         for found in dates.dates_in(line):
             if latest and found > latest + timedelta(days=1):
                 continue
@@ -140,7 +160,7 @@ def written_date(lines: list[str], latest: date | None) -> str:
 def cut(text: str, resolver: Resolver, latest: date | None = None) -> list[Meeting]:
     """Layer 1: the cuts code is sure of."""
     lines = text.split("\n")
-    cuts: dict[int, tuple[str, str]] = {}
+    cuts: dict[int, tuple[str, str, str]] = {}  # line -> (heading as written, company, how)
     for i, line in enumerate(lines):
         if RECAP_MARK.search(line):
             j = i - 1
@@ -148,33 +168,34 @@ def cut(text: str, resolver: Resolver, latest: date | None = None) -> list[Meeti
                 j -= 1
             heading = _RECAP_HEADER.match(lines[j].strip()) if j >= 0 else None
             if heading and words(lines[j]) <= 8:
-                cuts[j] = (heading.group("name").strip(), "copilot")
+                name = heading.group("name").strip()
+                cuts[j] = (name, name, "copilot")
             # A tag with no company line above it continues the meeting before it.
         elif re.match(r"^# \S", line):
-            cuts.setdefault(i, (line[2:].strip(), "heading"))
+            cuts.setdefault(i, (line[2:].strip(), line[2:].strip(), "heading"))
         else:
             name = partner_line(line, resolver)
             if name:
-                cuts.setdefault(i, (name, "partner_line"))
+                cuts.setdefault(i, (line.strip().rstrip(":").strip(), name, "partner_line"))
 
     starts = sorted(cuts)
     out: list[Meeting] = []
     if not starts or words("\n".join(lines[:starts[0]])) >= 40:
         end = starts[0] if starts else len(lines)
-        out.append(_meeting(lines, 0, end, "", "none", latest))
-    pending: tuple[str, str] | None = None
+        out.append(_meeting(lines, 0, end, "", "", "none", latest))
+    pending: tuple[str, str, str] | None = None
     for n, start in enumerate(starts):
         end = starts[n + 1] if n + 1 < len(starts) else len(lines)
-        name, how = cuts[start]
-        m = _meeting(lines, start, end, name, how, latest)
+        heading, name, how = cuts[start]
+        m = _meeting(lines, start, end, heading, name, how, latest)
         if m.words < MIN_WORDS:
             # A company line with nothing under it ("D&V:" right above "# D&V Team Meeting
             # Notes") names the meeting that follows.
             if how in ("copilot", "partner_line"):
-                pending = (name, how)
+                pending = (heading, name, how)
             continue
         if pending and (m.how == "heading" or not m.company):
-            m.company, m.how = pending
+            m.heading, m.company, m.how = pending
             if not m.written_date:
                 m.written_date = written_date([pending[0]], latest)
         pending = None
@@ -182,12 +203,12 @@ def cut(text: str, resolver: Resolver, latest: date | None = None) -> list[Meeti
     return [m for m in out if m.words >= MIN_WORDS]
 
 
-def _meeting(lines, start, end, name, how, latest) -> Meeting:
+def _meeting(lines, start, end, heading, name, how, latest) -> Meeting:
     body = "\n".join(l for l in lines[start:end] if not RECAP_MARK.search(l)).strip()
-    if name and how in ("copilot", "partner_line") and body.startswith(name):
+    if heading and how in ("copilot", "partner_line") and body.startswith(heading):
         # The same cleaning the Copilot splitter always did, so a summary's stored result stays valid.
-        body = body[len(name):].lstrip(":\n ")
-    return Meeting(text=body.strip(), company=name, how=how, start=start,
+        body = body[len(heading):].lstrip(":\n ")
+    return Meeting(text=body.strip(), company=name, how=how, heading=heading, start=start,
                    written_date=written_date(lines[start:end], latest))
 
 
@@ -319,6 +340,14 @@ def _date_as_written(value: str, text: str, latest: date | None) -> str:
     return ""
 
 
+READS_AS = "Claude reads this as a meeting with "
+
+
+def _same_partner(resolver: Resolver, a: str, b: str) -> bool:
+    x, y = resolver.company(a, guess=True), resolver.company(_strip_dates(b), guess=True)
+    return x.ok and x.company_id == y.company_id
+
+
 def apply_segments(m: Meeting, found: list[dict], latest: date | None) -> list[Meeting]:
     """Split a piece where Claude says meetings start, using only starts found in the text."""
     lines = m.text.split("\n")
@@ -343,12 +372,12 @@ def apply_segments(m: Meeting, found: list[dict], latest: date | None) -> list[M
         item = starts[0]
         theirs = " ".join(str(item.get("company") or "").split())
         if theirs and normalize(theirs) != normalize(m.company):
-            m.note = f"Claude reads this as a meeting with {theirs}."
+            m.note = f"{READS_AS}{theirs}."
         m.written_date = m.written_date or _date_as_written(str(item.get("date_as_written") or ""), m.text, latest)
         return [m]
     out = []
     if order[0] != 0:
-        out.append(Meeting(text="\n".join(lines[:order[0]]).strip(), company=m.company, how=m.how,
+        out.append(Meeting(text="\n".join(lines[:order[0]]).strip(), company=m.company, how=m.how, heading=m.heading,
                            start=m.start, written_date=m.written_date, sent=m.sent))
     for n, line in enumerate(order):
         end = order[n + 1] if n + 1 < len(order) else len(lines)
@@ -366,8 +395,10 @@ def apply_segments(m: Meeting, found: list[dict], latest: date | None) -> list[M
 # ------------------------------------------------------------------ the whole document
 
 def meeting_id(m: Meeting) -> str:
+    """Stable while a meeting's heading line and opening words stay the same: the admin's dates list
+    is keyed on it."""
     first = " ".join(normalize(m.text).split()[:40])
-    return hashlib.sha1(f"{normalize(m.company)}|{first}".encode()).hexdigest()[:10]
+    return hashlib.sha1(f"{normalize(m.heading or m.company)}|{first}".encode()).hexdigest()[:10]
 
 
 def mark_duplicates(meetings: list[Meeting]) -> None:
@@ -430,7 +461,11 @@ def split(text: str, resolver: Resolver, model: str, cache: dict, archive=None, 
                     spent[k] = spent.get(k, 0) + (usage.get(k) or 0)
             answer = {"kind": "segments", "version": SEGMENT_VERSION, "model": model, "meetings": found}
             cache[key] = answer
-        out.extend(apply_segments(m, answer.get("meetings") or [], latest))
+        pieces_out = apply_segments(m, answer.get("meetings") or [], latest)
+        for piece in pieces_out:
+            if piece.note.startswith(READS_AS) and _same_partner(resolver, piece.note[len(READS_AS):].rstrip("."), piece.company):
+                piece.note = ""  # "Owings Patterns" for "Owings Pattern": the same partner, nothing to check
+        out.extend(pieces_out)
     for m in out:
         m.id = meeting_id(m)
     mark_duplicates([m for m in out if not m.duplicate_of])
@@ -473,7 +508,11 @@ def meeting_date(m: Meeting, record: dict, listed: dict[str, str]) -> tuple[str,
 
 
 def _first_words(text: str, n: int = FIRST_WORDS) -> str:
-    return " ".join(text.split()[:n])
+    """The opening words, for a person to recognise the meeting by: without the "Meeting notes:"
+    every Copilot summary opens with, and without list and heading marks."""
+    plain = re.sub(r"^\s*meeting notes:\s*", "", text, flags=re.I)
+    plain = re.sub(r"(?m)^\s*(?:[-*\u2022]+|#+)\s*", "", plain)
+    return " ".join(plain.split()[:n])
 
 
 LIST_COLUMNS = ["MeetingID", "File", "Order", "Company", "OnPartnerList", "HowFound", "Words", "FirstWords",

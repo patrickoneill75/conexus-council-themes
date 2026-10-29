@@ -1902,6 +1902,10 @@ MEETING_ROSTER = Roster.from_payload({
         {"id": "c-honda", "name": "Honda Manufacturing of Indiana", "industry": "Automotive Company", "status": "Active"},
         {"id": "c-sacoma", "name": "Sacoma International", "industry": "Metals", "status": "Active"},
         {"id": "c-gpc", "name": "GPC", "industry": "Metals", "status": "Active"},
+        {"id": "c-draper", "name": "Draper Business Interiors", "industry": "Furniture", "status": "Active"},
+        {"id": "c-mpi", "name": "MPI Products", "industry": "Metals", "status": "Active"},
+        {"id": "c-owings", "name": "Owings Patterns", "industry": "Metals", "status": "Active"},
+        {"id": "c-koch", "name": "Koch Enterprises", "industry": "Metals", "status": "Active"},
     ],
     "staff": ["Patrick O'Neill", "Jordan Isaacs"], "updatedAt": "t1",
 })
@@ -1961,7 +1965,7 @@ class MeetingSplitTests(unittest.TestCase):
     def test_short_partner_line_inside_a_paragraph_starts_a_meeting(self):
         """Honda Kickoff: sat in one Word paragraph with soft breaks; it must still start a meeting."""
         found, _, _ = self.split(running_doc())
-        self.assertEqual([m.company for m in found], ["Zoeller", "Sacoma", "GPC", "Overton", "Honda Kickoff", "Grote"])
+        self.assertEqual([m.company for m in found], ["Zoeller", "Sacoma", "GPC", "Overton", "Honda", "Grote"])
         self.assertEqual([m.how for m in found][-2:], ["partner_line", "partner_line"])
 
     def test_copy_of_another_meeting_is_flagged_and_not_sent_to_claude(self):
@@ -1980,7 +1984,7 @@ class MeetingSplitTests(unittest.TestCase):
         found, _, _ = self.split(running_doc())
         dates_by = {m.company: m.written_date for m in found}
         self.assertEqual(dates_by["Grote"], "2025-06-06")
-        self.assertEqual(dates_by["Honda Kickoff"], "")
+        self.assertEqual(dates_by["Honda"], "")
 
     def test_copilot_sections_keep_the_results_already_paid_for(self):
         """Cutting by meeting must not change what a Copilot summary is read as: same text, same
@@ -2021,6 +2025,59 @@ class MeetingSplitTests(unittest.TestCase):
         self.split(docx_with_breaks(*dv), caller=segments, cache=cache)
         self.assertEqual(len(segments.calls), 1)
         self.assertTrue(all(k.startswith(meetings.SEGMENT_PREFIX) for k in cache))
+
+    def test_bug_a_one_word_label_inside_a_meeting_started_a_new_meeting(self):
+        """BUG (preview, 29 Oct): "Business:" inside the MPI notes matched a partner whose name holds the
+        word, so MPI's own employee count and sites became a meeting with another company."""
+        mpi = docx_with_breaks("MPI:\nStamping, distribution and heat treat for automotive tier one customers.",
+                               "March 4, 2025", "Tariffs:\n- Don't know what we don't know about the next round",
+                               "Business:\n550-600 Employees / 200M\nSix Sites - US & Mexico\nMetal Stamping and Heat Treating")
+        found, _, _ = self.split(mpi, latest=dates.date(2026, 9, 1))
+        self.assertEqual([m.company for m in found], ["MPI"])
+        self.assertIn("Six Sites", found[0].text)
+
+    def test_a_line_that_is_only_a_date_dates_the_meeting_even_a_few_lines_down(self):
+        """The MPI notes put "March 4, 2025" ten lines in. A line that is nothing but a date is the
+        meeting's date; a date inside a sentence still is not (see the Honda test)."""
+        mpi = docx_with_breaks("MPI:\nRoll in organization is a lot of what happens on the inside.\nProcesses and strategy\n"
+                               "Stamping, Distro, Heat Treat\nMoved MPI in 2011", "March 4, 2025",
+                               "Tariffs:\n- Don't know what we don't know about the next round")
+        found, _, _ = self.split(mpi, latest=dates.date(2026, 9, 1))
+        self.assertEqual(found[0].written_date, "2025-03-04")
+
+    def test_company_line_with_a_title_word_names_the_company_and_keeps_its_meeting_id(self):
+        """"Honda Kickoff:" is a meeting with Honda: the company is "Honda", so it is found on the
+        partner list. Its id is unchanged, so a date the admin entered for it still applies."""
+        from partner_intel import meetings
+        found, _, _ = self.split(running_doc())
+        honda = next(m for m in found if m.heading == "Honda Kickoff")
+        self.assertEqual(honda.company, "Honda")
+        before = meetings.Meeting(text=honda.text, company="Honda Kickoff")
+        self.assertEqual(honda.id, meetings.meeting_id(before))
+        rows = meetings.list_rows("Onboarding/notes.docx", found, resolve.Resolver(MEETING_ROSTER), {})
+        self.assertEqual(next(r for r in rows if r["Company"] == "Honda")["OnPartnerList"], "Honda Manufacturing of Indiana")
+
+    def test_claude_spelling_a_partner_its_own_way_is_not_a_note_but_another_company_is(self):
+        """"Owings Patterns" for "Owings Pattern" is the same partner: nothing to check. "Cook Holding
+        Company" for "Koch" (Copilot mishearing Koch) is worth a person's look."""
+        # Long enough to be checked (typed notes over 1,200 words); Koch's text names another partner, not Koch.
+        owings = ["Owings Pattern:", "Meeting notes:", "Sam Owings described the pattern shop and its foundry customers. " * 150]
+        koch = ["Koch:", TAG, "Meeting notes:", "Glen gave an overview of Cook, a family-owned holding company in Evansville "
+                "that buys from Grote Industries. " * 5]
+        segments = FakeSegments({
+            "Owings Pattern": [{"first_words": "Meeting notes: Sam Owings described the pattern shop", "company": "Owings Patterns", "date_as_written": ""}],
+            "Koch": [{"first_words": "Meeting notes: Glen gave an overview of Cook", "company": "Cook Holding Company", "date_as_written": ""}]})
+        found, _, _ = self.split(docx_with_breaks(*owings, *koch), caller=segments)
+        notes = {m.company: m.note for m in found}
+        self.assertEqual(sorted(segments.calls), ["Koch", "Owings Pattern"])
+        self.assertEqual(notes["Owings Pattern"], "")
+        self.assertIn("Cook Holding Company", notes["Koch"])
+
+    def test_first_words_skip_the_copilot_opening_and_list_marks(self):
+        from partner_intel import meetings
+        self.assertEqual(meetings._first_words("Meeting notes:\n- Zollar Boonville Growth Strategy: Jerry", 4),
+                         "Zollar Boonville Growth Strategy:")
+        self.assertEqual(meetings._first_words("- Introduction to Fine Promotions", 3), "Introduction to Fine")
 
     def test_one_meeting_answer_keeps_the_label(self):
         """Claude spelling the company its own way ("Zollar") must not relabel a meeting: the label is
@@ -2063,7 +2120,7 @@ class RunningDocumentRunTests(unittest.TestCase):
         self.assertEqual(claude.calls, [])
         self.assertIs(api.published, published)
         listing = api.box[meetings.LIST_FILE]
-        for name in ("Zoeller", "Sacoma", "GPC", "Overton", "Honda Kickoff", "Grote"):
+        for name in ("Zoeller", "Sacoma", "GPC", "Overton", "Honda", "Grote"):
             self.assertIn(name, listing)
         self.assertEqual(report["meetings"], 6)
         self.assertEqual(report["meetings_duplicates"], 1)
@@ -2112,7 +2169,7 @@ class RunningDocumentRunTests(unittest.TestCase):
         """Until the admin turns it on, a scan cuts the running document as before."""
         api, claude = self.api(), Counter()
         self.scan(api, on=False, caller=claude)
-        self.assertNotIn("Honda Kickoff", claude.calls)
+        self.assertNotIn("Honda", claude.calls)
         self.assertNotIn("meetings", api.state["registry"]["10"])
 
     def test_turning_the_switch_on_recuts_an_unchanged_file_and_reuses_paid_results(self):
@@ -2120,7 +2177,7 @@ class RunningDocumentRunTests(unittest.TestCase):
         self.scan(api, on=False)
         claude = Counter()
         self.scan(api, on=True, caller=claude)
-        self.assertIn("Honda Kickoff", claude.calls)
+        self.assertIn("Honda", claude.calls)
         self.assertNotIn("Zoeller", claude.calls, "the Zoeller summary keeps its stored result")
         self.assertNotIn("GPC", claude.calls)
 
