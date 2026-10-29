@@ -1880,5 +1880,69 @@ class StateSizeTests(unittest.TestCase):
             self.assertEqual(export.read_state(single, api.box.get), ({"f": {"name": "x"}}, {"k": {"rows": []}}))
 
 
+class DuplicateCheckTests(unittest.TestCase):
+    """partner_intel/check.py: the read-only report on running documents and one meeting in two files."""
+    NOW = "2026-10-29T00:00:00+00:00"
+
+    def test_one_meeting_in_two_files_dated_apart_is_reported(self):
+        """The duplicate the admin asked about: a recording and a clean write-up of one call. One dated
+        from its text, the other only from its upload, so the build kept both copies of each statement."""
+        from partner_intel import check
+        reg, cache = registry_with(("1", "Jerry Grangier.vtt", "2026-08-03", "box_upload", [row()], "partner"),
+                                   ("2", "Zoeller - Clean.docx", "2026-07-28", "text", [row()], "partner"))
+        rows, counts = check.check(reg, cache, ROSTER, self.NOW)
+        pairs = [r for r in rows if r["Check"] == check.TWO_FILES]
+        self.assertEqual(len(pairs), 1)
+        self.assertEqual(pairs[0]["Company"], "Zoeller Custom Molding")
+        self.assertEqual(pairs[0]["DaysApart"], 6)
+        self.assertEqual({pairs[0]["DateSourceA"], pairs[0]["DateSourceB"]}, {"box_upload", "text"})
+        self.assertEqual(counts["statements_counted_twice"], 1)
+
+    def test_files_the_build_already_merged_are_not_reported_as_duplicates(self):
+        from partner_intel import check
+        reg, cache = registry_with(("1", "notes.docx", "2026-04-24", "text", [row()], "partner"),
+                                   ("2", "summary.txt", "2026-04-24", "filename", [row()], "partner"))
+        rows, counts = check.check(reg, cache, ROSTER, self.NOW)
+        self.assertEqual(counts["file_pairs_same_statements_different_dates"], 0)
+        self.assertEqual([r["Check"] for r in rows], [check.MERGED])
+
+    def test_different_statements_on_different_dates_are_not_duplicates(self):
+        from partner_intel import check
+        other = row(title="Hiring machinists for third shift", detail="No machinists apply.", topic="talent_pipeline",
+                    quote="nobody applies for the machinist job")
+        reg, cache = registry_with(("1", "a.docx", "2026-04-24", "text", [row()], "partner"),
+                                   ("2", "b.docx", "2026-07-24", "text", [other], "partner"))
+        self.assertEqual(check.check(reg, cache, ROSTER, self.NOW)[0], [])
+
+    def test_running_document_section_with_no_heading_and_many_companies_is_listed(self):
+        """The Copilot running document: typed notes after the last Copilot summary land in one section
+        with no heading and many companies. The check must show that section."""
+        from partner_intel import check
+        reg, cache = registry_with(("1", "Copilot Onboarding Notes.docx", "2026-09-01", "box_upload",
+                                    [row(company="Grote"), row(company="Hurco"), row(company="DMG")], "partner"))
+        reg["1"]["event"]["shape"] = "copilot_recap"
+        cache[reg["1"]["units"][0]["key"]]["words"] = 5143
+        rows, counts = check.check(reg, cache, ROSTER, self.NOW)
+        running = [r for r in rows if r["Check"] == check.RUNNING]
+        self.assertEqual(running[0]["Company"], "(no heading)")
+        self.assertEqual(running[0]["Count"], 3)
+        self.assertIn("5143 words", running[0]["Detail"])
+        self.assertEqual(counts["running_sections_naming_3_or_more_companies"], 1)
+
+    def test_report_goes_to_box_and_the_public_log_shows_counts_only(self):
+        """The repository and its Actions logs are public: no company or file name may be printed."""
+        from partner_intel import check
+        reg, cache = registry_with(("1", "Jerry Grangier.vtt", "2026-08-03", "box_upload", [row()], "partner"),
+                                   ("2", "Zoeller - Clean.docx", "2026-07-28", "text", [row()], "partner"))
+        api = FakeApi({}, data_folder_id="22")
+        api.state = {"registry": reg, "cache": cache}
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            self.assertEqual(check.main(api), 0)
+        self.assertIn("Zoeller - Clean.docx", api.box[check.CHECK_FILE])
+        self.assertNotIn("Zoeller", out.getvalue())
+        self.assertNotIn("Grangier", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

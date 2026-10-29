@@ -1,0 +1,37 @@
+name: Partner Intelligence -- duplicate check
+
+# Read-only. Joins the saved state with the partner list (no Box notes read, no Claude calls) and
+# saves partner_intel_duplicate_check.csv to the Database folder in Box. It lists:
+#   - each section of a Copilot running document (heading, date, companies named), and
+#   - pairs of files whose statements about one company would have merged as one meeting had
+#     their dates agreed.
+# The log shows counts only: this repository and its Actions logs are public.
+#
+# Needs repository secrets: BOX_RELAY_URL, BOX_RELAY_SECRET.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: partner-intel-run
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/pipelines.txt
+
+      - run: pip install -r requirements/pipelines.txt
+
+      - name: Check and save the report to Box
+        env:
+          BOX_RELAY_URL: ${{ secrets.BOX_RELAY_URL }}
+          BOX_RELAY_SECRET: ${{ secrets.BOX_RELAY_SECRET }}
+        run: python -m partner_intel.check
