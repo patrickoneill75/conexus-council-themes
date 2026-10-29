@@ -3495,6 +3495,8 @@ test("partner_intel: database files go to the chosen Box folder, as a new versio
   assert.equal((await pi("relay/box/save", relay("box/save", "POST", { name: "partner_intel_state.json", text: "x" }, "wrong"), env)).status, 401);
   const archived = await withFetch(handler, async () => (await save("partner_intel_results_archive.json", "{}")).json());
   assert.equal(archived.ok, true, "the results archive is a database file too");
+  const checked = await withFetch(handler, async () => (await save("partner_intel_duplicate_check.csv", "Check\r\n")).json());
+  assert.equal(checked.ok, true, "the duplicate check's report goes to the database folder, not the public Actions log");
   assert.equal((await pi("relay/box/load", relay("box/load", "GET"), env)).status, 400);
 });
 
