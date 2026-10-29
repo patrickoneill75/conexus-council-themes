@@ -534,7 +534,7 @@
     function turnHtml(t, last) {
       if (t.error) return AU.errorHtml(t);
       return '<div class="turn asx-turn" data-tid="' + esc(t.id) + '"><div class="qb">' + esc(t.q) + "</div>" +
-        (t.kind === "matches" ? matchesHtml(t) : AU.answerHtml(t, { last: last, matchLink: true })) + "</div>";
+        (t.kind === "matches" ? matchesHtml(t) : AU.answerHtml(t, { last: last })) + "</div>";
     }
     function draw() {
       var turns = (askView.conv && askView.conv.turns) || [];
@@ -547,8 +547,9 @@
       drawRecent();
     }
     /** One message in the chat. The box clears at once, the question shows in the conversation with
-     * the answer coming under it, and the answer joins the conversation that is open. */
-    function run(question, mode, fresh) {
+     * the answer coming under it, and the answer joins the conversation that is open. Every message gets
+     * a written answer: a who-can-help question once came back as the partner search's ranked list. */
+    function run(question, fresh) {
       question = String(question || "").trim();
       if (question.length < 3) { q.focus(); return; }
       // Each question is answered on its own, so another can be asked while one is still being answered.
@@ -558,7 +559,6 @@
       var conv = askView.conv, item = { q: question, conv: conv, id: AU.pendingId() };
       askView.pending.push(item);
       // A Find solution exclusion goes with the question it came with, and so does its banner.
-      var excluded = exclude ? exclude.id : "";
       if (exclude) { exclude = null; if (!el("asxBack").querySelector("[data-resume]")) el("asxBack").innerHTML = ""; }
       q.value = "";
       autosize();
@@ -566,7 +566,7 @@
       el("asxRecent").innerHTML = "";
       scrollToTurn(out.lastElementChild);
       var done = function () { askView.pending = askView.pending.filter(function (p) { return p !== item; }); };
-      AU.send(conv, { question: question, mode: mode || "auto", sources: chosenList(), exclude: excluded, fresh: Boolean(fresh) }).then(function (r) {
+      AU.send(conv, { question: question, mode: "answer", sources: chosenList(), fresh: Boolean(fresh) }).then(function (r) {
         return AU.settle(out, item.id).then(function () { return r; });
       }).then(function (r) {
         done();
@@ -633,9 +633,8 @@
         return;
       }
       if ((b = t.closest("[data-new]"))) { newChat(); return; }
-      if ((b = t.closest(".fu[data-q]"))) { run(b.getAttribute("data-q"), "answer"); return; }
-      if ((b = t.closest(".fu[data-fresh]"))) { run(b.getAttribute("data-fresh"), "answer", true); return; }
-      if ((b = t.closest(".fu[data-match]"))) { run(b.getAttribute("data-match"), "match"); return; }
+      if ((b = t.closest(".fu[data-q]"))) { run(b.getAttribute("data-q")); return; }
+      if ((b = t.closest(".fu[data-fresh]"))) { run(b.getAttribute("data-fresh"), true); return; }
       if ((b = t.closest("[data-conv]"))) { openConversation(b.getAttribute("data-conv")); return; }
       if ((b = t.closest(".rl-del"))) {
         var id = b.getAttribute("data-del");
@@ -662,7 +661,7 @@
         el("asxBack").innerHTML = '<span class="secsub" style="margin:0">Looking for partners other than ' +
           esc((exclude.name || "the company with the issue").replace(/\.+$/, "")) + ".</span>";
       }
-      run(pre.question, pre.mode);
+      run(pre.question);
     } else {
       q.focus();
     }
@@ -800,9 +799,13 @@
   function meetingsPath(id) { return "company/meetings?id=" + encodeURIComponent(id); }
   function tabHref(id, tab) { return "#/company/" + encodeURIComponent(id) + (tab && tab !== "overview" ? "/" + tab : ""); }
 
-  /** The question "Find solution" puts to Ask: the issue in its own words, at most 600 characters. */
+  /** The question "Find solution" puts to Ask: the issue in its own words, at most 600 characters, with
+   * the company that raised it left out. Ask answers it in writing, naming the partners who could help. */
   function issueQuestion(i) {
-    var q = "Who can help with this: " + (i.title || "") + (i.detail ? ". " + i.detail : "");
+    var co = ((i.company && i.company.name) || "").replace(/\.+$/, "");
+    var issue = (i.title || "") + (i.detail ? ". " + i.detail : "");
+    var ask = "Which partners have solved this, or could help with it?" + (co ? " Leave out " + co + ", which raised it." : "") + " The issue: ";
+    var q = ask + issue;
     return q.length > 600 ? q.slice(0, 597) + "..." : q;
   }
   function findButton(i, companyId) {
@@ -1034,11 +1037,11 @@
     show(0);
   }
 
-  // "Find solution": put the issue to Ask's partner search, leaving out the company that has it.
+  // "Find solution": put the issue to Ask, leaving out the company that has it.
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("button[data-find]");
     if (!b) return;
-    PI.askPrefill = { question: b.getAttribute("data-find"), mode: "match", exclude: b.getAttribute("data-co"), name: b.getAttribute("data-co-name") };
+    PI.askPrefill = { question: b.getAttribute("data-find"), exclude: b.getAttribute("data-co"), name: b.getAttribute("data-co-name") };
     location.hash = "#/ask";
   });
 

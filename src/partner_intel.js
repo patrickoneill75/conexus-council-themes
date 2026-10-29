@@ -2247,7 +2247,7 @@ async function ask(env, data, roster, overrides, question, sourceList = [], excl
  * reads it and answers with [n12] citations, which are checked against the notes it was shown.
  * Each person's questions and answers are kept by person, in Box.
  */
-const ASSISTANT_PROMPT_VERSION = "pi-asst-5"; // 5: CIAIC is the Council, compact headlines; 4: estimated dates marked, people "probably"; 3: people named in the question; 2: every note listed, programs named
+const ASSISTANT_PROMPT_VERSION = "pi-asst-6"; // 6: who-can-help answered in writing; 5: CIAIC is the Council, compact headlines; 4: estimated dates marked, people "probably"; 3: people named in the question; 2: every note listed, programs named
 const ASSISTANT_EXPAND_VERSION = "pi-asst-expand-1";
 const ASSISTANT_NOTES = 160;        // notes in full in one prompt, at most
 const ASSISTANT_PER_PROGRAM = 60;   // of which come from each program the question names
@@ -2293,7 +2293,9 @@ const ASSISTANT_SYSTEM =
   "meeting are one voice. Use the topic table for breadth and trend and the notes for specifics.\n" +
   "3. Cite the notes you rely on by reference in square brackets, such as [n12] or [n3][n8], right after " +
   "the claim. Cite only references that appear in the notes or the headlines. A headline gives only the " +
-  "title: do not claim detail it does not show. Name companies when it helps staff act.\n" +
+  "title: do not claim detail it does not show. Name companies when it helps staff act. When asked who can " +
+  "help, name the partners whose notes show they have solved it or offer it, strongest first, with one sentence " +
+  "each on why, and leave out any company the question says to leave out.\n" +
   "4. For anything about partners, companies, people or meetings, use only the material given. Never " +
   "invent companies, numbers, quotes or events. If the material does not cover the question, say so " +
   "plainly and say what is missing. The notes are a selection: say so when a count could be incomplete.\n" +
@@ -2699,11 +2701,6 @@ function checkAnswer(raw, refs, index, labels, overrides) {
     sources: order.slice(0, HISTORY_SOURCES).map((ref, k) => sourceSnapshot(k + 1, refs.get(ref), index, labels, overrides)) };
 }
 
-/** A question asking who can help ("who can help with...", "connect them with...") goes to the partner
- * search, which ranks companies. Anything else gets a written answer. */
-const MATCH_QUESTION = /\b(?:who|which (?:partners?|compan(?:y|ies)|members?))\b[^?.]{0,80}\b(?:help|helps|solves?|solved|offers?|provides?|sells?|makes?|does|did|done|built|builds|could|can)\b|\b(?:connect|introduce|refer)\b[^?.]{0,60}\b(?:with|to)\b|\b(?:looking for|needs?|wants?)\s+(?:help|a partner|someone|a vendor|a supplier|support)\b/i;
-export const looksLikeMatch = (question) => MATCH_QUESTION.test(text(question));
-
 /** A shaped note as it is kept with a partner search. */
 function snapshotOf(ref, s) {
   const c = s.company || {};
@@ -2712,20 +2709,6 @@ function snapshotOf(ref, s) {
     files: (s.sources || []).slice(0, 3).map((f) => ({ name: text(f.name).slice(0, 160), url: f.url || "" })) };
 }
 
-/** The partner search's result as a turn: the matches, each pointing at numbered notes, and the notes. */
-function matchesTurn(r) {
-  const sources = [];
-  const refOf = new Map();
-  const refFor = (s) => {
-    if (!refOf.has(s.id)) { refOf.set(s.id, sources.length + 1); sources.push(snapshotOf(sources.length + 1, s)); }
-    return refOf.get(s.id);
-  };
-  const company = (c) => ({ id: c.id, name: c.name, industry: c.industry, status: c.status, contacts: (c.contacts || []).slice(0, 6) });
-  return { kind: "matches", answer: r.summary, gaps: r.gaps, ranking: r.ranking, searchTerms: r.searchTerms, followUps: [],
-    matches: r.matches.map((m) => ({ strength: m.strength, why: m.why, caution: m.caution, company: company(m.company), refs: m.evidence.map(refFor) })),
-    peers: (r.peers || []).map((p) => ({ company: company(p.company), notes: p.evidence.map((e) => snapshotOf(0, e)) })),
-    sources, considered: r.considered };
-}
 
 /* ---- each person's questions and answers, in Box */
 
@@ -3094,7 +3077,7 @@ async function fromMemory(env, saved, added, question, data, index, labels, over
     // Today's company names and statuses, on the same notes in the same order.
     return { kind: "answer", answer: saved.answer, followUps: saved.followUps || [],
       sources: cited.map((i, k) => sourceSnapshot(k + 1, i, index, labels, overrides)), considered: saved.considered || {},
-      offerMatch: looksLikeMatch(question), memory: { ...memory, mode: "reused" } };
+      memory: { ...memory, mode: "reused" } };
   }
   const refs = new Map();
   cited.forEach((i, k) => refs.set(`n${k + 1}`, i));
@@ -3117,7 +3100,7 @@ async function fromMemory(env, saved, added, question, data, index, labels, over
     await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
   }
   return { kind: "answer", ...checkAnswer(raw, refs, index, labels, overrides), considered: saved.considered || {},
-    offerMatch: looksLikeMatch(question), memory: { ...memory, mode: "updated" } };
+    memory: { ...memory, mode: "updated" } };
 }
 
 /** An earlier turn as the model reads it in a follow-up: without citation numbers (they meant that turn's
@@ -3132,9 +3115,10 @@ function earlierAnswer(t) {
 }
 
 /**
- * One question, from the Ask box or the Ask page, added to the person's history. mode "answer" (the Ask
- * box) always writes an answer; "match" (Find solution) always ranks partners; "auto" (the Ask page)
- * ranks partners when the question asks who can help, and answers otherwise.
+ * One question, from the Ask box or the Ask page, added to the person's history. Every question gets a
+ * written answer. BUG: the Ask page once sent a who-can-help question ("auto" mode) to the partner search,
+ * whose ranked list of companies and issue cards read as a report dropped into the chat, not an answer. The
+ * partner search is still at POST ask; a conversation never runs it.
  */
 async function assistant(env, auth, data, roster, overrides, body) {
   const question = text(body.question);
@@ -3144,61 +3128,55 @@ async function assistant(env, auth, data, roster, overrides, body) {
   const conversation = asked ? history.conversations.find((c) => c.id === asked) : null;
   if (asked && !conversation) return json({ error: "That conversation is no longer in your history." }, 404);
   const sourceList = (Array.isArray(body.sources) ? body.sources : []).map(text).filter(Boolean).slice(0, 40);
-  const mode = ["answer", "match"].includes(text(body.mode)) ? text(body.mode) : (looksLikeMatch(question) ? "match" : "answer");
 
   let result = null;
   let focusId = "", focusName = "";
-  if (mode === "match") {
-    result = matchesTurn(await ask(env, data, roster, overrides, question, sourceList, text(body.exclude)));
-  } else {
-    if (!env.partner_intel_claude_api) return json({ error: "Claude is not set up for this tool yet. Ask an admin to add the key." }, 409);
-    const sources = new Set(sourceList);
-    const scoped = sources.size ? { ...data, insights: data.insights.filter((i) => sourcesOf(i).some((x) => sources.has(x))) } : data;
-    const index = companyIndex(roster, data);
-    const labels = topicLabels(data, overrides);
-    // A conversation stays about the company it started on, wherever the person is when they follow up.
-    // An old company id (a bookmark from before a roster re-link) is followed to the company it became.
-    const askedCo = conversation ? text(conversation.companyId) : text(body.companyId);
-    const remapped = hasOwn(data.remap || {}, askedCo) ? text(data.remap[askedCo]) : askedCo;
-    focusId = index.has(remapped) ? remapped : "";
-    focusName = focusId ? index.get(focusId).name : "";
-    const earlier = conversation ? conversation.turns.slice(-ASSISTANT_TURNS_READ) : [];
-    const people = peopleNamed(question, ((await getContacts(env)) || {}).contacts, roster, index);
-    // A standalone question may already have a saved answer (see saveMemory). A follow-up leans on its
-    // conversation, so it is never answered from, or saved as, a standalone answer.
-    const scope = earlier.length ? null : await answerScope(question, scoped, index, roster, focusId, sourceList, people);
-    if (scope && !body.fresh) {
-      const kept = await findMemory(env, scope.signature);
-      const status = kept ? memoryStatus(kept, scope, data, index) : { use: false };
-      if (status.use) {
-        result = await fromMemory(env, kept, status.added, question, data, index, labels, overrides);
-        if (result.memory.mode === "updated") await saveMemory(env, memoryOf(result, question, scope, index, kept));
-      }
+  if (!env.partner_intel_claude_api) return json({ error: "Claude is not set up for this tool yet. Ask an admin to add the key." }, 409);
+  const sources = new Set(sourceList);
+  const scoped = sources.size ? { ...data, insights: data.insights.filter((i) => sourcesOf(i).some((x) => sources.has(x))) } : data;
+  const index = companyIndex(roster, data);
+  const labels = topicLabels(data, overrides);
+  // A conversation stays about the company it started on, wherever the person is when they follow up.
+  // An old company id (a bookmark from before a roster re-link) is followed to the company it became.
+  const askedCo = conversation ? text(conversation.companyId) : text(body.companyId);
+  const remapped = hasOwn(data.remap || {}, askedCo) ? text(data.remap[askedCo]) : askedCo;
+  focusId = index.has(remapped) ? remapped : "";
+  focusName = focusId ? index.get(focusId).name : "";
+  const earlier = conversation ? conversation.turns.slice(-ASSISTANT_TURNS_READ) : [];
+  const people = peopleNamed(question, ((await getContacts(env)) || {}).contacts, roster, index);
+  // A standalone question may already have a saved answer (see saveMemory). A follow-up leans on its
+  // conversation, so it is never answered from, or saved as, a standalone answer.
+  const scope = earlier.length ? null : await answerScope(question, scoped, index, roster, focusId, sourceList, people);
+  if (scope && !body.fresh) {
+    const kept = await findMemory(env, scope.signature);
+    const status = kept ? memoryStatus(kept, scope, data, index) : { use: false };
+    if (status.use) {
+      result = await fromMemory(env, kept, status.added, question, data, index, labels, overrides);
+      if (result.memory.mode === "updated") await saveMemory(env, memoryOf(result, question, scope, index, kept));
     }
-    if (!result) {
-      const terms = await expandQuestion(env, question, { system: ASSISTANT_EXPAND_SYSTEM, version: ASSISTANT_EXPAND_VERSION, usage: "assistant" });
-      // A follow-up ("and the wins?") leans on the question before it for its subject.
-      const searchTerms = earlier.length ? [...terms, earlier[earlier.length - 1].q] : terms;
-      const ctx = await assistantContext(env, scoped, index, roster, overrides, labels, question, searchTerms, { focusId, people });
-      const userText = `${ctx.material}\n\n` +
-        (earlier.length ? `<earlier_conversation>\n${earlier.map((t) => `Q: ${t.q}\nA: ${clip(earlierAnswer(t), 1500)}`).join("\n\n")}\n</earlier_conversation>\n\n` : "") +
-        `<question>\n${councilText(question)}\n</question>`;
-      // Keyed on exactly what Claude would read, so the same question on the same day costs nothing twice.
-      // "Answer fresh" means fresh: it skips this too.
-      const key = `pi:asst:${await sha(`${ASSISTANT_PROMPT_VERSION}|${ASK_MODEL}|${userText}`)}`;
-      let raw = body.fresh ? null : await readJson(env, key, null);
-      if (raw) await addUsage(env, "assistant", null, { reused: 1 });
-      else {
-        const { input, usage } = await callClaudeTool(env, ASSISTANT_SYSTEM, userText, ASSISTANT_TOOL, 8000,
-          { model: ASK_MODEL, effort: ASK_EFFORT, fallback: true, meter: "assistant" });
-        await addUsage(env, "assistant", usage);
-        raw = { answer: text(input.answer), follow_ups: Array.isArray(input.follow_ups) ? input.follow_ups : [] };
-        await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
-      }
-      result = { kind: "answer", ...checkAnswer(raw, ctx.refs, index, labels, overrides), considered: ctx.considered,
-        offerMatch: looksLikeMatch(question) };
-      if (scope) await saveMemory(env, memoryOf(result, question, scope, index));
+  }
+  if (!result) {
+    const terms = await expandQuestion(env, question, { system: ASSISTANT_EXPAND_SYSTEM, version: ASSISTANT_EXPAND_VERSION, usage: "assistant" });
+    // A follow-up ("and the wins?") leans on the question before it for its subject.
+    const searchTerms = earlier.length ? [...terms, earlier[earlier.length - 1].q] : terms;
+    const ctx = await assistantContext(env, scoped, index, roster, overrides, labels, question, searchTerms, { focusId, people });
+    const userText = `${ctx.material}\n\n` +
+      (earlier.length ? `<earlier_conversation>\n${earlier.map((t) => `Q: ${t.q}\nA: ${clip(earlierAnswer(t), 1500)}`).join("\n\n")}\n</earlier_conversation>\n\n` : "") +
+      `<question>\n${councilText(question)}\n</question>`;
+    // Keyed on exactly what Claude would read, so the same question on the same day costs nothing twice.
+    // "Answer fresh" means fresh: it skips this too.
+    const key = `pi:asst:${await sha(`${ASSISTANT_PROMPT_VERSION}|${ASK_MODEL}|${userText}`)}`;
+    let raw = body.fresh ? null : await readJson(env, key, null);
+    if (raw) await addUsage(env, "assistant", null, { reused: 1 });
+    else {
+      const { input, usage } = await callClaudeTool(env, ASSISTANT_SYSTEM, userText, ASSISTANT_TOOL, 8000,
+        { model: ASK_MODEL, effort: ASK_EFFORT, fallback: true, meter: "assistant" });
+      await addUsage(env, "assistant", usage);
+      raw = { answer: text(input.answer), follow_ups: Array.isArray(input.follow_ups) ? input.follow_ups : [] };
+      await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
     }
+    result = { kind: "answer", ...checkAnswer(raw, ctx.refs, index, labels, overrides), considered: ctx.considered };
+    if (scope) await saveMemory(env, memoryOf(result, question, scope, index));
   }
 
   const now = new Date().toISOString();
