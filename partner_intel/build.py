@@ -212,8 +212,61 @@ def unit_context(resolver: Resolver, unit) -> set[str]:
     return ids
 
 
-def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str) -> dict:
+def _file_company_id(resolver: Resolver, entry: dict) -> str | None:
+    """The one partner a whole file is about, from its name ("Zoeller - Clean.docx", or the contact a
+    recording is named for), or None."""
+    names = {u.get("file_company") or "" for u in entry.get("units") or []}
+    if len(names) != 1 or "" in names:
+        return None
+    hit = resolver.company(names.pop())
+    return hit.company_id if hit.ok else None
+
+
+def _estimated(entry: dict) -> tuple[str, str] | None:
+    """(earliest date, its source) when every date in a file is only an estimate, else None."""
+    event = entry.get("event") or {}
+    dated = [((u.get("date") or event.get("date") or ""), u.get("date_source") or event.get("date_source") or "")
+             for u in entry.get("units") or []] or [(event.get("date", ""), event.get("date_source", ""))]
+    if not all(src in ESTIMATED_SOURCES for _, src in dated):
+        return None
+    dated = sorted(d for d in dated if d[0])
+    return dated[0] if dated else None
+
+
+def paired_groups(registry: dict, resolver: Resolver, file_dates: dict | None = None) -> list[dict]:
+    """Files that are one meeting told twice: in the same folder, about the same single partner (by
+    file name), and with no real date, only an estimate. A call's Teams recording and its clean
+    write-up are uploaded days apart, so their estimates differ and the same statements were kept
+    twice. Each group takes its earliest estimate, which keeps it marked as estimated.
+
+    A file with a real date (text, file name, folder), a file the admin dated (file_dates), a running
+    document, and a file about several companies are never paired. Two separate undated calls with the
+    same partner in the same folder would be joined: the admin's file dates list separates them."""
+    file_dates = file_dates or {}
+    by: dict[tuple, list] = defaultdict(list)
+    for file_id, entry in registry.items():
+        if (entry.get("event") or {}).get("shape") == "copilot_recap" or file_id in file_dates or not entry.get("units"):
+            continue
+        cid = _file_company_id(resolver, entry)
+        when = _estimated(entry) if cid else None
+        if when:
+            by[(entry.get("path", ""), cid)].append((when[0], file_id, when[1]))
+    groups = []
+    for (path, cid), items in sorted(by.items()):
+        if len(items) < 2:
+            continue
+        items.sort()
+        groups.append({"path": path, "company_id": cid, "date": items[0][0], "source": items[0][2],
+                       "files": [file_id for _, file_id, _ in items]})
+    return groups
+
+
+def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str, file_dates: dict | None = None) -> dict:
+    """file_dates: Box file id -> YYYY-MM-DD from the admin's file dates list. An exact date: it beats
+    every other source, and such a file is never paired."""
     resolver = Resolver(roster)
+    file_dates = {k: v for k, v in (file_dates or {}).items() if k in registry}
+    paired = {file_id: g for g in paired_groups(registry, resolver, file_dates) for file_id in g["files"]}
     staff_extra: set[str] = set()
 
     # People learned from attendee tables: the only reliable link between a first name in
@@ -349,10 +402,16 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     scope = "internal"
                 if row["confidence"] == "low":
                     review.append("low_confidence")
-                if unit.get("date_source") in ESTIMATED_SOURCES:
+                if file_id in file_dates:
+                    date, date_source = file_dates[file_id], "list"
+                elif file_id in paired:
+                    date, date_source = paired[file_id]["date"], paired[file_id]["source"]
+                else:
+                    # A meeting in a running document with no known date has none: not the file's upload date.
+                    date = "" if unit.get("date_source") == "unknown" else (unit.get("date") or event.get("date") or "")
+                    date_source = unit.get("date_source") or event.get("date_source") or ""
+                if date_source in ESTIMATED_SOURCES:
                     review.append("estimated_date")
-                # A meeting in a running document with no known date has none: not the file's upload date.
-                date = "" if unit.get("date_source") == "unknown" else (unit.get("date") or event.get("date") or "")
                 # Rows with no company are one meeting's only within one kind of meeting: a CIAIC
                 # council meeting and a workshop on the same day are two meetings.
                 meeting_key = f"{date}|{company_id or core_key(raw_name) or 'event:' + (event.get('series') or event.get('type') or file_id)}"
@@ -366,7 +425,7 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
                     "topic": row["topic"], "tags": row["tags"], "urgency": row["urgency"],
                     "urgency_reason": row["urgency_reason"], "status": row["status"],
                     "solves": row["solves"], "confidence": row["confidence"], "scope": scope,
-                    "date": date, "date_source": unit.get("date_source") or event.get("date_source") or "",
+                    "date": date, "date_source": date_source,
                     "event_type": event.get("type", ""), "series": event.get("series", ""),
                     "meeting_key": meeting_key, "review": sorted(set(review)), "company_options": options,
                     "_unit": unit["key"], "_file": file_id,
@@ -392,8 +451,11 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
             r["meeting_label"], r["meeting_kind"] = label, kind
             r["meeting_id"] = hashlib.sha1(f"{r['date']}|{core_key(label) or label.lower()}".encode()).hexdigest()[:10]
         if used_units:
+            event_date = (file_dates[file_id], "list") if file_id in file_dates else (
+                (paired[file_id]["date"], paired[file_id]["source"]) if file_id in paired
+                else (event.get("date", ""), event.get("date_source", "")))
             events.append({"id": file_id, "name": entry.get("name", ""), "path": entry.get("path", ""),
-                           "date": event.get("date", ""), "date_source": event.get("date_source", ""),
+                           "date": event_date[0], "date_source": event_date[1],
                            "type": event.get("type", ""), "series": event.get("series", ""),
                            "scope": event.get("scope", "partner")})
 
@@ -408,6 +470,8 @@ def build_dataset(registry: dict, cache: dict, roster: Roster, generated_at: str
         r.pop("_file", None)
     insights.sort(key=lambda r: (r["date"], r["id"]), reverse=True)
     stats["insights"] = len(insights)
+    stats["paired_files"] = len(paired)
+    stats["files_dated_by_list"] = len(file_dates)
     stats["merged_duplicates"] = len(rows_out) - len(insights)
 
     for info in unmatched.values():

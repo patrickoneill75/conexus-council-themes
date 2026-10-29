@@ -28,9 +28,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from . import config, extract, meetings as meetings_mod, shape as shape_mod, text as text_mod
-from .build import _file_stem, build_dataset, source_folder, unit_context
+from .build import _file_stem, build_dataset, paired_groups, source_folder, unit_context
 from . import export
-from .dates import estimated_written, resolve_date
+from .dates import ESTIMATED_SOURCES, estimated_written, resolve_date
 from .relay import Api
 from .resolve import Resolver
 from .roster import Roster
@@ -108,7 +108,12 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
     config.USE_BATCH is on and the real caller is in use.
 
     mode "preview" cuts the running documents into meetings (meetings.py), saves the meeting list
-    to Box, and stops: no statements are read and nothing is published."""
+    to Box, and stops: no statements are read and nothing is published.
+
+    mode "refresh" is the control panel's one-time refresh: a scan that also takes up every file read
+    under older rules (see _refresh_reason) and cuts running documents by meeting. Only text whose
+    instructions changed is read again. "refresh-plan" works out what it would do and reports the
+    counts, reading nothing and publishing nothing."""
     api = api or Api()
     model = model or config.MODEL
     report: dict = {"mode": mode, "started_at": now_iso(), "model": model,
@@ -132,7 +137,15 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
         api.report(report)
         return report
 
-    if mode == "scan":
+    if mode == "refresh-plan":
+        roster = Roster.from_payload(api.roster())
+        _refresh_plan(api, cfg, registry, cache, roster, caller, model, stats, report, archive, segment_caller)
+        report.update({"finished_at": now_iso(), **{k: v for k, v in stats.items()}})
+        api.report(report)
+        return report
+
+    scanning = mode in ("scan", "refresh")
+    if scanning:
         if not cfg.get("folderId"):
             report.update(finished_at=now_iso(), error="No Box folder is set. Choose one in the control panel.")
             api.report(report)
@@ -145,18 +158,21 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
             report["roster_sync"] = {"error": str(e)[:200]}
     roster = Roster.from_payload(api.roster())
 
-    if mode == "scan":
+    if scanning:
         _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive, batch_client,
-              segment_caller)
+              segment_caller, refresh=mode == "refresh")
 
-    dataset = build_dataset(registry, cache, roster, now_iso())
+    file_dates, file_dates_missing = _file_dates(api, cfg, report)
+    dataset = build_dataset(registry, cache, roster, now_iso(), file_dates)
     api.publish(dataset)
     _save_to_box(api, cfg, dataset, registry, cache, roster, report)
+    _seed_file_dates(api, cfg, registry, roster, file_dates, file_dates_missing, report)
     archive.save(report)
     report.update({
         "finished_at": now_iso(), "insights": dataset["stats"].get("insights", 0),
         "merged_duplicates": dataset["stats"].get("merged_duplicates", 0),
         "events": len(dataset["events"]), "not_on_roster": len(dataset["unmatched"]),
+        "paired_files": dataset["stats"].get("paired_files", 0),
         **{k: v for k, v in stats.items()},
     })
     api.report(report)
@@ -286,14 +302,20 @@ class _Archive:
 
 
 def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive=None, batch_client=None,
-          segment_caller=meetings_mod.call_claude_segments):
+          segment_caller=meetings_mod.call_claude_segments, refresh=False, dry_run=False):
+    """refresh: also take up files read under older rules (_refresh_reason). dry_run: stop before the
+    first statement is read and put what would happen in report["refresh_plan"]; the caller passes
+    copies of registry and cache."""
     seen_ids: set[str] = set()
     pending: list[dict] = []
     ignored: Counter = Counter()
     resolver = Resolver(roster)
     needs_conversion, unreadable, no_text, too_large = [], [], [], []
     failed: list[dict] = []  # files Box would not hand over, or that broke the reader: retried next scan
-    split_on = meetings_mod.enabled()
+    split_on = meetings_mod.enabled(cfg) or refresh
+    reasons: Counter = Counter()  # why the refresh takes up each file
+    file_reason: dict[str, str] = {}
+    redate: set[str] = set()      # files whose estimated date is worked out again
     listed, listed_stamp, dates_missing = _dates_list(api, cfg) if split_on else ({}, "", False)
     running: dict[str, list] = {}  # file id -> its meetings, for the running documents read this scan
 
@@ -314,9 +336,17 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
         if (prior and prior.get("sha1") == f.get("sha1") and prior.get("status") in SETTLED
                 and prior.get("name", f["name"]) == f["name"] and prior.get("path", f["path"]) == f["path"]
                 and all(u.get("key") in cache for u in prior.get("units") or []) and not force
-                and not _running_stale(prior, split_on, listed_stamp)):
+                and not _running_stale(prior, split_on, listed_stamp)
+                and not (refresh and _refresh_reason(prior, cache, model))):
             stats["files_unchanged"] += 1
             continue
+        if refresh and prior:
+            why = ("running document" if _running_stale(prior, split_on, listed_stamp)
+                   else _refresh_reason(prior, cache, model) or "changed in Box")
+            reasons[why] += 1
+            file_reason[f["id"]] = why
+            if _has_estimated_date(prior):
+                redate.add(f["id"])
         pending.append(f)
     report["ignored"] = dict(ignored)
 
@@ -392,6 +422,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
 
     # Dates and unit records, then the list of units that have never been read.
     to_run: dict[str, tuple] = {}
+    run_file: dict[str, str] = {}  # unit key -> the file it is in
     for f, entry, s, (full_text,) in work:
         prior_entry = registry.get(f["id"]) or {}
         prior_list = prior_entry.get("units") or []
@@ -408,13 +439,18 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
         # date in its text or name is dated when it was most likely written, not when it was
         # uploaded: a backfill of old notes must not read as this week's news. A file read
         # before keeps that date, and a section added to it later is dated when it arrived.
-        first_read = not prior_event
+        # A refresh works an estimated date out again as if the file were new: files read before the
+        # file-time and folder rules existed kept the day they were uploaded.
+        first_read = not prior_event or f["id"] in redate
         estimate = estimated_written(f.get("created_at"), f.get("content_modified_at")) if first_read else None
         file_date, file_source = resolve_date(
             f["name"], full_text, f.get("created_at"), text_allowed=s.text_date_allowed, path=f.get("path", ""),
             fallback_at=estimate)
-        if file_source == "box_upload" and prior_event.get("date_source") == "box_upload" and prior_event.get("date"):
+        if (file_source == "box_upload" and prior_event.get("date_source") == "box_upload" and prior_event.get("date")
+                and f["id"] not in redate):
             file_date = prior_event["date"]
+        if f["id"] in redate and (file_date, file_source) != (prior_event.get("date"), prior_event.get("date_source")):
+            stats["files_redated"] += 1
         units = []
         meeting_dates = {}
         if f["id"] in running:
@@ -433,7 +469,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
                 # The text or the name dates the meeting, so every section takes that date, including
                 # sections read before the date in the file was corrected.
                 date, source = file_date, file_source
-            elif prior_unit and prior_unit.get("date_source") == "box_upload":
+            elif prior_unit and prior_unit.get("date_source") == "box_upload" and f["id"] not in redate:
                 # Only an estimate is carried over: in a running file it is when the section arrived.
                 date, source = prior_unit["date"], prior_unit["date_source"]
             else:
@@ -443,6 +479,7 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             units.append(_unit_record(unit, key, date, source))
             if key not in cache:
                 to_run.setdefault(key, (unit, s.event_type, f["name"]))
+                run_file.setdefault(key, f["id"])
             else:
                 stats["units_cached"] += 1
         entry.update(status="done", event={
@@ -458,6 +495,14 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             del to_run[key]
             stats["units_from_archive"] += 1
 
+    if dry_run:
+        report["refresh_plan"] = {
+            "files": sum(reasons.values()), "by_reason": dict(reasons), "sections_to_read": len(to_run),
+            "sections_by_reason": dict(Counter(file_reason.get(run_file.get(k, ""), "new or changed in Box") for k in to_run)),
+            "words_to_read": sum(len(unit.text.split()) for unit, _, _ in to_run.values()),
+            "files_redated": stats["files_redated"], "running_documents": len(running),
+            "meetings": sum(len(m) for m in running.values())}
+        return
     # Phase 2: the only step that costs money. Each unit once, checkpointed.
     stats["units_to_read"] = len(to_run)
     errors: list[str] = []
@@ -561,6 +606,9 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             del cache[stale]
 
     _store(api, registry, cache)
+    if refresh:
+        report["refresh"] = {"files": sum(reasons.values()), "by_reason": dict(reasons),
+                             "files_redated": stats["files_redated"]}
     if running:
         _save_meeting_lists(api, cfg, registry, dates_missing, report)
     # Files not read this time lead the errors, which the control panel shows, and have a list
@@ -709,6 +757,75 @@ def _preview(api, cfg, registry, cache, roster, model, stats, report, archive, s
     _save_meeting_lists(api, cfg, lists, missing, report)
 
 
+# ------------------------------------------------------------------ the one-time refresh
+
+def _has_estimated_date(entry: dict) -> bool:
+    """A file dated only by an estimate (its upload, or a month in its name)."""
+    event = entry.get("event") or {}
+    if (event.get("shape") == "copilot_recap"):
+        return False  # a running document's meetings are dated by meetings.py
+    sources = [u.get("date_source") or event.get("date_source") for u in entry.get("units") or []] or [event.get("date_source")]
+    return any(src in ESTIMATED_SOURCES for src in sources)
+
+
+def _refresh_reason(prior: dict, cache: dict, model: str) -> str:
+    """Why the one-time refresh takes up a file the daily scan would skip, or "".
+
+    Read under older instructions: a section's stored result came from an older prompt or another
+    model. Only these cost Claude calls. Estimated date: the date rules have improved since the file
+    was read (file times, folder names); working it out again is free."""
+    for u in prior.get("units") or []:
+        entry = cache.get(u.get("key")) or {}
+        if entry and (entry.get("prompt_version") != extract.PROMPT_VERSION or entry.get("model") != model):
+            return "read under older instructions"
+    if _has_estimated_date(prior):
+        return "estimated date"
+    return ""
+
+
+def _refresh_plan(api, cfg, registry, cache, roster, caller, model, stats, report, archive, segment_caller) -> None:
+    """What the refresh would do, on copies of the saved state. Layer-2 meeting answers it pays for
+    are kept, so the refresh itself does not pay for them again."""
+    if not cfg.get("folderId"):
+        report["error"] = "No Box folder is set. Choose one in the control panel."
+        return
+    work_registry = json.loads(json.dumps(registry))
+    work_cache = dict(cache)
+    _scan(api, cfg, work_registry, work_cache, roster, caller, model, 0, False, stats, report, archive,
+          segment_caller=segment_caller, refresh=True, dry_run=True)
+    learned = {k: v for k, v in work_cache.items() if k.startswith(meetings_mod.SEGMENT_PREFIX) and k not in cache}
+    if learned:
+        cache.update(learned)
+        _store(api, registry, cache)
+
+
+def _file_dates(api, cfg: dict, report: dict):
+    """The admin's file dates list: (file id -> date, whether the file is missing). A failed read
+    gives no dates and is never taken for a missing file, so the list is not written over."""
+    if not cfg.get("dataFolderId"):
+        return {}, False
+    try:
+        text = api.load_from_box(export.FILE_DATES_FILE)
+    except Exception as e:
+        report.setdefault("box_errors", []).append(f"{export.FILE_DATES_FILE}: {str(e)[:200]}")
+        return {}, False
+    return export.read_file_dates(text), text is None
+
+
+def _seed_file_dates(api, cfg, registry, roster, file_dates, missing, report) -> None:
+    """Write the file dates list once, listing the meetings told in two files, for the admin to date."""
+    if not (missing and cfg.get("dataFolderId")):
+        return
+    groups = paired_groups(registry, Resolver(roster), file_dates)
+    if not groups:
+        return
+    try:
+        api.save_to_box(export.FILE_DATES_FILE, export.file_dates_csv(groups, registry, roster))
+        report.setdefault("meeting_files_saved", []).append(export.FILE_DATES_FILE)
+    except Exception as e:
+        report.setdefault("box_errors", []).append(f"{export.FILE_DATES_FILE}: {str(e)[:200]}")
+
+
 def _not_read(registry: dict, f: dict, entry: dict, status: str, error: str, failed: list) -> None:
     """Record a file that could not be read this scan, in a state the next scan retries. A file
     read before keeps its units (and so its insights) until a new version can be read."""
@@ -728,7 +845,7 @@ def _store(api, registry: dict, cache: dict) -> None:
 
 def main() -> int:
     mode = os.environ.get("PI_MODE", "scan")
-    if mode not in ("scan", "rebuild", "preview"):
+    if mode not in ("scan", "rebuild", "preview", "refresh-plan", "refresh"):
         print(f"Unknown PI_MODE {mode!r}", file=sys.stderr)
         return 2
     limit = int(os.environ.get("PI_LIMIT") or 0)

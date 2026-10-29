@@ -2182,6 +2182,175 @@ class RunningDocumentRunTests(unittest.TestCase):
         self.assertNotIn("GPC", claude.calls)
 
 
+def file_entry(name, path, date, source, rows, file_company="Zoeller", key=None):
+    """A registry entry for one file of one unit, with the file's partner and folder."""
+    key = key or hashlib.sha1((path + name).encode()).hexdigest()
+    entry = {"name": name, "path": path, "status": "done",
+             "event": {"date": date, "date_source": source, "type": "Other", "series": "Other", "scope": "partner"},
+             "units": [{"key": key, "label": "", "default_company": "", "attendees": [], "part": 1, "parts": 1,
+                        "date": date, "date_source": source, "file_company": file_company}]}
+    return entry, key, {"rows": rows}
+
+
+def registry_of(*files):
+    """files: (file id, name, path, date, source, rows[, file_company])."""
+    registry, cache = {}, {}
+    for fid, name, path, date, source, rows, *company in files:
+        entry, key, cached = file_entry(name, path, date, source, rows, *(company or ["Zoeller"]))
+        registry[fid], cache[key] = entry, cached
+    return registry, cache
+
+
+STUDY = "Raw Notes/Other/Training Study"
+TURNOVER = row(company="Zoeller", title="Turnover under 15 percent year to date", detail="Turnover fell from over 50 percent.",
+               quote="turnover is under 15 percent this year", topic="retention_compensation")
+TURNOVER_CLEAN = row(company="Zoeller", title="Turnover reduced to under 15% year to date", detail="Turnover fell to under 15 percent.",
+                     quote="Turnover reduced to under 15% year to date", topic="retention_compensation")
+
+
+class PairedFileTests(unittest.TestCase):
+    """build.paired_groups: a call's recording and its clean write-up are one meeting (goal 2)."""
+    NOW = "2026-10-29T00:00:00+00:00"
+
+    def build(self, registry, cache, file_dates=None):
+        return build.build_dataset(registry, cache, ROSTER, self.NOW, file_dates)
+
+    def test_bug_recording_and_clean_write_up_of_one_call_were_two_meetings(self):
+        """BUG (duplicate check, 29 Oct): the Teams recording and the clean write-up of one Zoeller call
+        were uploaded three days apart, both dated by upload, so every statement was counted twice."""
+        reg, cache = registry_of(("1", "30 Minutes with Patrick O'Neill - Jerry Grangier.vtt", STUDY, "2026-09-18", "box_upload", [TURNOVER]),
+                                 ("2", "Zoeller - Clean.docx", STUDY, "2026-09-21", "box_upload", [TURNOVER_CLEAN]))
+        ds = self.build(reg, cache)
+        self.assertEqual(len(ds["insights"]), 1)
+        self.assertEqual(ds["insights"][0]["date"], "2026-09-18", "the earlier estimate")
+        self.assertIn("estimated_date", ds["insights"][0]["review"], "still an estimate")
+        self.assertEqual(len(ds["insights"][0]["sources"]), 2)
+        self.assertEqual(ds["stats"]["paired_files"], 2)
+
+    def test_files_in_different_folders_or_with_a_real_date_are_not_paired(self):
+        """The Midwest Wire call and its later site visit are two meetings: different folders. A file with a
+        real date keeps it."""
+        reg, cache = registry_of(("1", "Zoeller call.vtt", STUDY, "2026-09-18", "box_upload", [TURNOVER]),
+                                 ("2", "Zoeller - 09.29.26 visit.txt", "Raw Notes/Field Demo Visits/Zoeller", "2026-09-29", "box_upload", [TURNOVER_CLEAN]))
+        self.assertEqual(len(self.build(reg, cache)["insights"]), 2)
+        reg, cache = registry_of(("1", "Zoeller call.vtt", STUDY, "2026-09-18", "box_upload", [TURNOVER]),
+                                 ("2", "Zoeller - Clean.docx", STUDY, "2026-09-02", "text", [TURNOVER_CLEAN]))
+        dates_by_file = {i["sources"][0]["id"]: i["date"] for i in self.build(reg, cache)["insights"]}
+        self.assertEqual(dates_by_file, {"1": "2026-09-18", "2": "2026-09-02"})
+
+    def test_a_file_about_no_single_partner_is_never_paired(self):
+        reg, cache = registry_of(("1", "Cohort notes.docx", STUDY, "2026-09-18", "box_upload", [TURNOVER], ""),
+                                 ("2", "Cohort summary.txt", STUDY, "2026-09-21", "box_upload", [TURNOVER_CLEAN], ""))
+        self.assertEqual(build.paired_groups(reg, resolve.Resolver(ROSTER)), [])
+
+    def test_admin_file_date_is_exact_and_beats_the_estimate(self):
+        """The admin's file dates list gives the real call date, for both files of the call."""
+        reg, cache = registry_of(("1", "Zoeller call.vtt", STUDY, "2026-09-18", "box_upload", [TURNOVER]),
+                                 ("2", "Zoeller - Clean.docx", STUDY, "2026-09-21", "box_upload", [TURNOVER_CLEAN]))
+        ds = self.build(reg, cache, {"1": "2026-09-02", "2": "2026-09-02"})
+        self.assertEqual([(i["date"], i["date_source"]) for i in ds["insights"]], [("2026-09-02", "list")])
+        self.assertNotIn("estimated_date", ds["insights"][0]["review"])
+
+    def test_file_dates_list_reads_one_row_for_both_files_in_any_date_format(self):
+        from partner_intel import export
+        text_ = "FileIDs,Files,Company,Date\r\n2474907759783 2479925346869,a | b,Zoeller,9/2/2026\r\n111111,c,X,2026-08-14\r\n222222,d,Y,\r\n"
+        self.assertEqual(export.read_file_dates(text_), {"2474907759783": "2026-09-02", "2479925346869": "2026-09-02",
+                                                         "111111": "2026-08-14"})
+
+
+class RefreshTests(unittest.TestCase):
+    """The control panel's one-time refresh: run.py modes "refresh-plan" and "refresh"."""
+
+    def api(self, files=None):
+        vtt = ("WEBVTT\n\n00:00:01.000 --> 00:00:09.000\n<v Jerry Grangier>Turnover is under 15 percent this year and "
+               "pulling trainers off the production floor is hard for us.</v>\n").encode()
+        return FakeApi(files or {
+            "20": {"name": "30 Minutes with Patrick O'Neill - Jerry Grangier.vtt", "folder": "Training Study", "data": vtt,
+                   "created_at": "2026-09-18T17:58:30Z", "modified_at": "2026-09-18T17:58:30Z",
+                   "content_modified_at": "2026-09-04T12:54:36Z"}}, data_folder_id="22")
+
+    def age_dates(self, api, fid="20", day="2026-09-18"):
+        """What a file read before the file-time rule holds: its upload day."""
+        entry = api.state["registry"][fid]
+        entry["event"].update(date=day, date_source="box_upload")
+        for u in entry["units"]:
+            u.update(date=day, date_source="box_upload")
+
+    def test_bug_files_read_before_the_file_time_rule_kept_their_upload_date(self):
+        """BUG: the Frankfort recording was saved from Teams on Sep 4 and uploaded on Sep 18. Read before
+        the file-time rule, it kept Sep 18, so it never met its write-up. The daily scan leaves it; the
+        refresh dates it again, free."""
+        api = self.api()
+        run.run("scan", api=api, caller=Counter(), model="m")
+        self.age_dates(api)
+        run.run("scan", api=api, caller=Counter(), model="m")
+        self.assertEqual(api.published["insights"][0]["date"], "2026-09-18", "the daily scan does not re-date")
+        claude = Counter()
+        report = run.run("refresh", api=api, caller=claude, model="m", segment_caller=FakeSegments())
+        self.assertEqual(claude.calls, [], "re-dating reads nothing again")
+        self.assertEqual(api.published["insights"][0]["date"], "2026-09-04")
+        self.assertEqual(report["files_redated"], 1)
+
+    def test_plan_reports_what_the_refresh_would_do_and_changes_nothing(self):
+        api = self.api()
+        run.run("scan", api=api, caller=Counter(), model="m")
+        self.age_dates(api)
+        before, published = json.dumps(api.state, sort_keys=True), api.published
+        claude = Counter()
+        with mock.patch.object(run.extract, "PROMPT_VERSION", "pi-extract-next"):
+            report = run.run("refresh-plan", api=api, caller=claude, model="m", segment_caller=FakeSegments())
+        self.assertEqual(claude.calls, [])
+        self.assertIs(api.published, published, "nothing published")
+        self.assertEqual(json.dumps(api.state, sort_keys=True), before, "nothing saved")
+        plan = report["refresh_plan"]
+        self.assertEqual(plan["files"], 1)
+        self.assertEqual(plan["by_reason"], {"read under older instructions": 1})
+        self.assertEqual(plan["sections_to_read"], 1)
+        self.assertEqual(plan["files_redated"], 1)
+
+    def test_refresh_reads_again_only_sections_read_under_older_instructions(self):
+        files = {**self.api().files,
+                 "21": {"name": "Lucas Oil - Clean.docx", "folder": "Training Study", "data": make_docx(SEC_B),
+                        "created_at": "2026-09-21T13:15:26Z", "modified_at": "2026-09-21T13:15:26Z"}}
+        api = self.api(files)
+        run.run("scan", api=api, caller=Counter(), model="m")
+        claude = Counter()
+        with mock.patch.object(run.extract, "PROMPT_VERSION", "pi-extract-next"):
+            report = run.run("refresh", api=api, caller=claude, model="m", segment_caller=FakeSegments())
+        self.assertEqual(len(claude.calls), 2, "both files were read under the older prompt")
+        claude = Counter()
+        with mock.patch.object(run.extract, "PROMPT_VERSION", "pi-extract-next"):
+            run.run("refresh", api=api, caller=claude, model="m", segment_caller=FakeSegments())
+        self.assertEqual(claude.calls, [], "nothing is paid for twice")
+        self.assertEqual(report["refresh"]["by_reason"], {"read under older instructions": 2})
+
+    def test_refresh_turns_on_cutting_the_running_document_by_meeting(self):
+        """The button replaces the repository variable: the refresh cuts by meeting with it unset."""
+        api = RunningDocumentRunTests().api()
+        with mock.patch.object(run.config, "RUNNING_SPLIT", False), mock.patch.object(run.config, "USE_BATCH", False):
+            run.run("scan", api=api, caller=Counter(), model="m")
+            self.assertNotIn("meetings", api.state["registry"]["10"])
+            run.run("refresh", api=api, caller=Counter(), model="m", segment_caller=FakeSegments())
+        self.assertIn("meetings", api.state["registry"]["10"])
+        from partner_intel import meetings
+        self.assertTrue(meetings.enabled({"runningSplit": True}), "the Worker's setting keeps it on for daily scans")
+
+    def test_file_dates_list_is_written_once_for_paired_files_and_never_overwritten(self):
+        from partner_intel import export
+        files = {**self.api().files,
+                 "21": {"name": "Zoeller - Clean.docx", "folder": "Training Study", "data": make_docx(SEC_A),
+                        "created_at": "2026-09-21T14:03:22Z", "modified_at": "2026-09-21T14:03:22Z"}}
+        api = self.api(files)
+        run.run("scan", api=api, caller=Counter(), model="m")
+        seeded = api.box[export.FILE_DATES_FILE]
+        self.assertIn("20 21", seeded)
+        self.assertIn("Zoeller Custom Molding", seeded)
+        api.box[export.FILE_DATES_FILE] = "FileIDs,Files,Company,Date\r\n20 21,x,Zoeller,9/2/2026\r\n"
+        run.run("rebuild", api=api, caller=Counter(), model="m")
+        self.assertEqual(api.box[export.FILE_DATES_FILE], "FileIDs,Files,Company,Date\r\n20 21,x,Zoeller,9/2/2026\r\n")
+        self.assertEqual({i["date"] for i in api.published["insights"]}, {"2026-09-02"}, "Re-link applies the admin's date, free")
+
+
 class DuplicateCheckTests(unittest.TestCase):
     """partner_intel/check.py: the read-only report on running documents and one meeting in two files."""
     NOW = "2026-10-29T00:00:00+00:00"

@@ -133,8 +133,8 @@ def to_csv(rows: list[dict]) -> str:
     return "﻿" + out.getvalue()
 
 
-def check(registry: dict, cache: dict, roster: Roster, now: str) -> tuple[list[dict], dict]:
-    dataset = build.build_dataset(registry, cache, roster, now)
+def check(registry: dict, cache: dict, roster: Roster, now: str, file_dates: dict | None = None) -> tuple[list[dict], dict]:
+    dataset = build.build_dataset(registry, cache, roster, now, file_dates)
     running = running_sections(registry, cache)
     pairs = two_file_pairs(dataset, registry, {p["id"]: p["name"] for p in roster.partners})
     counts = {
@@ -161,7 +161,11 @@ def main(api=None) -> int:
         print("No saved state to check. Run a scan first.", file=sys.stderr)
         return 1
     roster = Roster.from_payload(api.roster())
-    rows, counts = check(registry, cache, roster, datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    try:
+        file_dates = export.read_file_dates(api.load_from_box(export.FILE_DATES_FILE))
+    except Exception:
+        file_dates = {}
+    rows, counts = check(registry, cache, roster, datetime.now(timezone.utc).isoformat(timespec="seconds"), file_dates)
     api.save_to_box(CHECK_FILE, to_csv(rows))
     # Counts only: this log is public.
     print({**counts, "saved": CHECK_FILE})

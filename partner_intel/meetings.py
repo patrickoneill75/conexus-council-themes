@@ -556,5 +556,7 @@ def dates_seed(rows: list[dict]) -> list[dict]:
              "Date": ""} for r in rows if r["DateSource"] == "unknown" and not r["DuplicateOf"]]
 
 
-def enabled() -> bool:
-    return config.RUNNING_SPLIT
+def enabled(cfg: dict | None = None) -> bool:
+    """On when the repository variable says so, or once the control panel's one-time refresh has run
+    (the Worker then sets runningSplit in the settings the pipeline reads)."""
+    return config.RUNNING_SPLIT or bool((cfg or {}).get("runningSplit"))
