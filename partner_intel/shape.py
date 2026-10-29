@@ -63,6 +63,9 @@ class Unit:
     # Contacts named in this text, "Ben Larson (Evonik Industries)", found in code from the
     # uploaded contact list, so the model can tell whose statement is whose.
     known_people: list[str] = field(default_factory=list)
+    # The meeting a piece of a running document belongs to (meetings.py). Not part of the cache
+    # key: it decides the date, not what Claude is asked.
+    meeting_id: str = ""
 
 
 @dataclass

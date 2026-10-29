@@ -9,6 +9,8 @@ trial), PI_FORCE ("true" re-reads every file; cached units are still free).
 
 scan     walk Box, read files whose Box checksum changed, call Claude only for units whose
          text has never been seen, then rebuild and publish.
+preview  cut the running documents into meetings (meetings.py) and save the meeting list to Box.
+         No statements are read and nothing is published.
 rebuild  skip Box and Claude entirely; re-join the stored results with the current roster.
          This is what "Re-link" in the admin panel runs.
 """
@@ -25,7 +27,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-from . import config, extract, shape as shape_mod, text as text_mod
+from . import config, extract, meetings as meetings_mod, shape as shape_mod, text as text_mod
 from .build import _file_stem, build_dataset, source_folder, unit_context
 from . import export
 from .dates import estimated_written, resolve_date
@@ -66,7 +68,8 @@ def text_key(unit) -> str:
 def _unit_record(unit, key: str, date: str, source: str) -> dict:
     return {"key": key, "label": unit.label, "default_company": unit.default_company,
             "attendees": [list(a) for a in unit.attendees], "part": unit.part, "parts": unit.parts,
-            "date": date, "date_source": source, "file_company": unit.file_company, "text_key": text_key(unit)}
+            "date": date, "date_source": source, "file_company": unit.file_company, "text_key": text_key(unit),
+            **({"meeting_id": unit.meeting_id} if unit.meeting_id else {})}
 
 
 def file_company(resolver: Resolver, name: str, path: str = "", people=()) -> str:
@@ -99,9 +102,13 @@ def file_company(resolver: Resolver, name: str, path: str = "", people=()) -> st
 
 
 def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
-        caller=extract.call_claude, model: str | None = None, batch_client=None) -> dict:
-    """batch_client is swapped in by tests. Real scans use the Batches API when config.USE_BATCH
-    is on and the real caller is in use."""
+        caller=extract.call_claude, model: str | None = None, batch_client=None,
+        segment_caller=meetings_mod.call_claude_segments) -> dict:
+    """batch_client and segment_caller are swapped in by tests. Real scans use the Batches API when
+    config.USE_BATCH is on and the real caller is in use.
+
+    mode "preview" cuts the running documents into meetings (meetings.py), saves the meeting list
+    to Box, and stops: no statements are read and nothing is published."""
     api = api or Api()
     model = model or config.MODEL
     report: dict = {"mode": mode, "started_at": now_iso(), "model": model,
@@ -118,6 +125,13 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
     stats = Counter()
     archive = _Archive(api, cfg)
 
+    if mode == "preview":
+        roster = Roster.from_payload(api.roster())
+        _preview(api, cfg, registry, cache, roster, model, stats, report, archive, segment_caller)
+        report.update({"finished_at": now_iso(), **{k: v for k, v in stats.items()}})
+        api.report(report)
+        return report
+
     if mode == "scan":
         if not cfg.get("folderId"):
             report.update(finished_at=now_iso(), error="No Box folder is set. Choose one in the control panel.")
@@ -132,7 +146,8 @@ def run(mode: str = "scan", limit: int = 0, force: bool = False, api=None,
     roster = Roster.from_payload(api.roster())
 
     if mode == "scan":
-        _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive, batch_client)
+        _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive, batch_client,
+              segment_caller)
 
     dataset = build_dataset(registry, cache, roster, now_iso())
     api.publish(dataset)
@@ -270,13 +285,17 @@ class _Archive:
             report.setdefault("box_errors", []).append(f"{export.ARCHIVE_FILE}: {str(e)[:200]}")
 
 
-def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive=None, batch_client=None):
+def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats, report, archive=None, batch_client=None,
+          segment_caller=meetings_mod.call_claude_segments):
     seen_ids: set[str] = set()
     pending: list[dict] = []
     ignored: Counter = Counter()
     resolver = Resolver(roster)
     needs_conversion, unreadable, no_text, too_large = [], [], [], []
     failed: list[dict] = []  # files Box would not hand over, or that broke the reader: retried next scan
+    split_on = meetings_mod.enabled()
+    listed, listed_stamp, dates_missing = _dates_list(api, cfg) if split_on else ({}, "", False)
+    running: dict[str, list] = {}  # file id -> its meetings, for the running documents read this scan
 
     for f in walk(api, cfg["folderId"], cfg.get("folderName") or "Notes"):
         seen_ids.add(f["id"])
@@ -294,7 +313,8 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
         # file is read again for its new date and program; its sections' results are reused.
         if (prior and prior.get("sha1") == f.get("sha1") and prior.get("status") in SETTLED
                 and prior.get("name", f["name"]) == f["name"] and prior.get("path", f["path"]) == f["path"]
-                and all(u.get("key") in cache for u in prior.get("units") or []) and not force):
+                and all(u.get("key") in cache for u in prior.get("units") or []) and not force
+                and not _running_stale(prior, split_on, listed_stamp)):
             stats["files_unchanged"] += 1
             continue
         pending.append(f)
@@ -342,6 +362,17 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             stats["files_read_failed"] += 1
             continue
         s = shape_mod.classify(f["name"], f["path"], doc)
+        if split_on and s.shape == "copilot_recap":
+            # A running document: one piece per meeting (meetings.py), not one per Copilot tag.
+            spent = {"input": 0, "output": 0, "calls": 0}
+            found, seg_keys, seg_errors = meetings_mod.split(
+                doc.text, resolver, model, cache, archive, segment_caller,
+                latest=_day(f.get("modified_at")), spent=spent)
+            _count_sync(stats, spent, "segment")
+            report.setdefault("segment_errors", []).extend(f"{f['name']}: {e}" for e in seg_errors)
+            s.units = _meeting_units(found)
+            entry.update(split=meetings_mod.SPLIT_VERSION, dates_list=listed_stamp, segment_keys=seg_keys)
+            running[f["id"]] = found
         # A file with section headings already names the company of each section.
         if s.units and not any(u.default_company for u in s.units):
             named = file_company(resolver, f["name"], f["path"], people=[n for u in s.units for n, _ in u.attendees])
@@ -385,11 +416,20 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
         if file_source == "box_upload" and prior_event.get("date_source") == "box_upload" and prior_event.get("date"):
             file_date = prior_event["date"]
         units = []
+        meeting_dates = {}
+        if f["id"] in running:
+            meeting_dates = _running_dates(running[f["id"]], prior_entry, listed, _day(f.get("modified_at")))
+            entry["meetings"] = {mid: rec for mid, (_, _, rec) in meeting_dates.items()}
+            entry["meeting_list"] = meetings_mod.list_rows(
+                _path_label(f), running[f["id"]], resolver, {mid: (d, src) for mid, (d, src, _) in meeting_dates.items()})
         for unit in s.units:
             key = extract.cache_key(unit, s.event_type, model)
             prior_unit = (prior_units.get(key) or prior_by_text.get(text_key(unit))
                           or prior_by_label.get((unit.label, unit.part)))
-            if file_source != "box_upload":
+            if unit.meeting_id in meeting_dates:
+                # A meeting in a running document: its own date, the admin's list, or none (meetings.py).
+                date, source = meeting_dates[unit.meeting_id][:2]
+            elif file_source != "box_upload":
                 # The text or the name dates the meeting, so every section takes that date, including
                 # sections read before the date in the file was corrected.
                 date, source = file_date, file_source
@@ -514,12 +554,15 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             del registry[gone]
             stats["files_removed"] += 1
         live = {u["key"] for e in registry.values() for u in e.get("units", [])}
+        live |= {k for e in registry.values() for k in e.get("segment_keys") or []}
         for stale in [k for k in cache if k not in live]:
             if archive is not None:
                 archive.retire(stale, cache[stale])
             del cache[stale]
 
     _store(api, registry, cache)
+    if running:
+        _save_meeting_lists(api, cfg, registry, dates_missing, report)
     # Files not read this time lead the errors, which the control panel shows, and have a list
     # of their own.
     not_read = [f"{x['file']}: {x['error']} It is tried again on the next scan." for x in failed]
@@ -527,6 +570,143 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
                    "too_large": too_large, "errors": (not_read + errors)[:20],
                    "download_failed": [x for x in failed if x["status"] == "download_failed"],
                    "read_failed": [x for x in failed if x["status"] == "read_failed"]})
+
+
+# ------------------------------------------------------------------ running documents (meetings.py)
+
+def _day(value: str | None):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date() if value else None
+    except ValueError:
+        return None
+
+
+def _path_label(f: dict) -> str:
+    return f"{f.get('path', '')}/{f.get('name', '')}".strip("/")
+
+
+def _count_sync(stats: Counter, spent: dict, what: str) -> None:
+    """Layer-2 calls are direct calls: they join the sync totals the Worker's usage meter reads."""
+    calls = spent.get("calls") or 0
+    if not calls:
+        return
+    for prefix in ("claude_calls", "claude_calls_sync", f"claude_calls_{what}"):
+        stats[prefix] += calls
+    for side, k in (("in", "input"), ("out", "output")):
+        n = spent.get(k) or 0
+        stats[f"tokens_{side}"] += n
+        stats[f"tokens_{side}_sync"] += n
+
+
+def _dates_list(api, cfg: dict, report: dict | None = None):
+    """The admin's meeting dates list: (MeetingID -> date, a stamp of its contents, whether the file
+    is missing). When Box cannot be read the stamp is None: nothing is re-dated on a failed read,
+    and the list is not seeded over a file that may exist."""
+    if not cfg.get("dataFolderId"):
+        return {}, "", False
+    try:
+        text = api.load_from_box(meetings_mod.DATES_FILE)
+    except Exception as e:
+        if report is not None:
+            report.setdefault("box_errors", []).append(f"{meetings_mod.DATES_FILE}: {str(e)[:200]}")
+        return {}, None, False
+    listed = meetings_mod.read_dates_list(text)
+    stamp = hashlib.sha1(json.dumps(sorted(listed.items())).encode()).hexdigest()[:12] if listed else ""
+    return listed, stamp, text is None
+
+
+def _running_stale(prior: dict, split_on: bool, listed_stamp) -> bool:
+    """A running document is read again (its stored statements reused) when the way it is cut has
+    changed, or when the admin's dates list has."""
+    if (prior.get("event") or {}).get("shape") != "copilot_recap":
+        return False
+    if not split_on:
+        return bool(prior.get("split"))
+    if prior.get("split") != meetings_mod.SPLIT_VERSION:
+        return True
+    return listed_stamp is not None and prior.get("dates_list", "") != listed_stamp
+
+
+def _meeting_units(found: list) -> list:
+    units = []
+    for m in found:
+        if m.duplicate_of:
+            continue  # a copy is listed, never read
+        hint = meetings_mod.COPILOT_HINT if m.how == "copilot" else meetings_mod.TYPED_HINT
+        # A Word heading was never taken as the company ("D&V Team Meeting Notes"); a company line was.
+        company = "" if m.how in ("heading", "none") else m.company
+        units.extend(shape_mod._units_from(m.text, label=m.company, default_company=company, hint=hint,
+                                           meeting_id=m.id))
+    return units
+
+
+def _running_dates(found: list, prior_entry: dict, listed: dict, today) -> dict:
+    """meeting id -> (date, source, record). A file cut into meetings for the first time has every
+    meeting in it marked as there from the start: they have no date of their own unless the text or
+    the admin's list gives one. A meeting that appears later is dated the day it was first seen."""
+    prior = prior_entry.get("meetings")
+    first = prior is None
+    out = {}
+    for m in found:
+        rec = dict((prior or {}).get(m.id) or {"first_seen": today.isoformat() if today else "", "baseline": first})
+        d, src = meetings_mod.meeting_date(m, rec, listed)
+        out[m.id] = (d, src, rec)
+    return out
+
+
+def _save_meeting_lists(api, cfg: dict, registry: dict, dates_missing: bool, report: dict) -> None:
+    rows = [r for e in registry.values() for r in e.get("meeting_list") or []]
+    report["meetings"] = len(rows)
+    report["meetings_date_unknown"] = sum(1 for r in rows if r["DateSource"] == "unknown")
+    report["meetings_duplicates"] = sum(1 for r in rows if r["DuplicateOf"])
+    report["meetings_sent_to_claude"] = sum(1 for r in rows if r["SentToClaude"])
+    if not cfg.get("dataFolderId"):
+        report["meeting_list_note"] = "No database folder is chosen, so the meeting list was not saved."
+        return
+    saved = report.setdefault("meeting_files_saved", [])
+    files = [(meetings_mod.LIST_FILE, meetings_mod.to_csv(rows, meetings_mod.LIST_COLUMNS))]
+    seed = meetings_mod.dates_seed(rows) if dates_missing else []
+    if seed:  # only ever written when the admin's list does not exist yet
+        files.append((meetings_mod.DATES_FILE, meetings_mod.to_csv(seed, meetings_mod.DATES_COLUMNS)))
+    for name, text in files:
+        try:
+            api.save_to_box(name, text)
+            saved.append(name)
+        except Exception as e:
+            report.setdefault("box_errors", []).append(f"{name}: {str(e)[:200]}")
+
+
+def _preview(api, cfg, registry, cache, roster, model, stats, report, archive, segment_caller) -> None:
+    """Cut the running documents already read into meetings and save the meeting list. The layer-2
+    answers are kept, so the scan that follows does not pay for them again. Nothing else changes."""
+    resolver = Resolver(roster)
+    listed, _, missing = _dates_list(api, cfg, report)
+    lists: dict = {}
+    for fid, entry in registry.items():
+        if (entry.get("event") or {}).get("shape") != "copilot_recap":
+            continue
+        try:
+            doc = text_mod.to_document(entry.get("name", ""), api.download(fid))
+        except Exception as e:
+            report.setdefault("errors", []).append(f"{entry.get('name', fid)}: {str(e)[:200]}")
+            continue
+        if shape_mod.classify(entry.get("name", ""), entry.get("path", ""), doc).shape != "copilot_recap":
+            continue
+        spent = {"input": 0, "output": 0, "calls": 0}
+        latest = _day(entry.get("modified_at"))
+        found, _, errors = meetings_mod.split(doc.text, resolver, model, cache, archive, segment_caller,
+                                              latest=latest, spent=spent)
+        _count_sync(stats, spent, "segment")
+        report.setdefault("segment_errors", []).extend(f"{entry.get('name')}: {e}" for e in errors)
+        dated = _running_dates(found, entry, listed, latest)
+        lists[fid] = {"meeting_list": meetings_mod.list_rows(
+            _path_label(entry), found, resolver, {mid: (d, src) for mid, (d, src, _) in dated.items()})}
+        stats["running_documents"] += 1
+    if not lists:
+        report["meeting_list_note"] = "No running document has been read yet. Run a scan first."
+        return
+    _store(api, registry, cache)
+    _save_meeting_lists(api, cfg, lists, missing, report)
 
 
 def _not_read(registry: dict, f: dict, entry: dict, status: str, error: str, failed: list) -> None:
@@ -548,7 +728,7 @@ def _store(api, registry: dict, cache: dict) -> None:
 
 def main() -> int:
     mode = os.environ.get("PI_MODE", "scan")
-    if mode not in ("scan", "rebuild"):
+    if mode not in ("scan", "rebuild", "preview"):
         print(f"Unknown PI_MODE {mode!r}", file=sys.stderr)
         return 2
     limit = int(os.environ.get("PI_LIMIT") or 0)
