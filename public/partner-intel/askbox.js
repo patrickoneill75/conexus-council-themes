@@ -127,7 +127,7 @@
     return html;
   };
 
-  /** One turn's answer. opts.last adds what to ask next. */
+  /** One turn's answer. opts.last adds what to ask next; opts.matchLink adds "Find partners who can help". */
   A.answerHtml = function (turn, opts) {
     opts = opts || {};
     var html = turn.kind === "matches" ? A.matchesCompact(turn) : '<div class="ans">' + A.md(turn.answer, turn.id) + "</div>";
@@ -143,6 +143,9 @@
     if (opts.last) {
       var chips = (turn.followUps || []).map(function (q) { return '<button type="button" class="fu" data-q="' + esc(q) + '">' + esc(q) + "</button>"; });
       if (turn.memory) chips.push('<button type="button" class="fu" data-fresh="' + esc(turn.q) + '">Answer fresh</button>');
+      if (opts.matchLink && turn.offerMatch) {
+        chips.push('<button type="button" class="fu go" data-match="' + esc(turn.q) + '">Find partners who can help' + ICON.arrow + "</button>");
+      }
       if (chips.length) html += '<div class="fus">' + chips.join("") + "</div>";
     }
     return html;
@@ -397,7 +400,7 @@
     html += turns.map(function (t, i) {
       if (t.error) return A.errorHtml(t);
       return '<div class="turn" data-tid="' + esc(t.id) + '"><div class="qb">' + esc(t.q) + "</div>" +
-        A.answerHtml(t, { last: i === turns.length - 1 && !here.length }) + "</div>";
+        A.answerHtml(t, { last: i === turns.length - 1 && !here.length, matchLink: true }) + "</div>";
     }).join("");
     html += here.map(function (p) { return A.pendingHtml(p.q, p.id); }).join("");
     if (box.error) {
@@ -510,6 +513,13 @@
     q.focus();
   }
 
+  /** "Find partners who can help": the question goes to the Ask page's partner search. */
+  function toAskPage(question) {
+    PI.askPrefill = { question: question, mode: "match", from: box.conv && !box.conv.temp ? { id: box.conv.id, title: box.conv.title } : null };
+    shrink(true);
+    location.hash = "#/ask";
+  }
+
   function mount() {
     document.body.insertAdjacentHTML("beforeend",
       '<div class="ax-veil" aria-hidden="true"></div>' +
@@ -564,6 +574,7 @@
       }
       if ((b = t.closest(".fu[data-q]"))) { submit(b.getAttribute("data-q")); return; }
       if ((b = t.closest(".fu[data-fresh]"))) { submit(b.getAttribute("data-fresh"), true); return; }
+      if ((b = t.closest(".fu[data-match]"))) { toAskPage(b.getAttribute("data-match")); return; }
       if ((b = t.closest(".rl-del"))) {
         var id = b.getAttribute("data-del");
         if (!window.confirm("Delete this conversation from your history?")) return;

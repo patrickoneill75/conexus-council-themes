@@ -2676,7 +2676,7 @@ test("workforce: junk in the role form cannot become junk in the totals", async 
 });
 
 /* ================================================================== partner_intel */
-const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan, runSummariesAhead, questionWindow,
+const { handlePartnerIntelApi, parseCsv, applyRosterCsv, runScheduledScan, runSummariesAhead, questionWindow, looksLikeMatch,
   AHEAD_PROGRAMS, SUMMARY_BOX_FILE, councilText, historyFileName } = await mod("partner_intel.js");
 const pi = (route, request, env) => handlePartnerIntelApi(route, request, env);
 const piReq = (route, method, body, token) => jsonReq(`/api/partner-intel/${route}`, method, body, token);
@@ -4511,25 +4511,35 @@ test("partner_intel: a follow-up in the Ask box reads the earlier answer and joi
   assert.equal(missing.status, 404, "a conversation that is not in the person's history is not continued");
 });
 
-test("partner_intel: BUG on the Ask page a who-can-help question came back as a ranked list of partners and issue cards; every question now gets a written answer", async () => {
+test("partner_intel: BUG a who-can-help question typed on the Ask page came back as a ranked list of partners and issue cards; it gets a written answer, and the ranked list only when asked for", async () => {
+  assert.equal(looksLikeMatch("Who can help with hiring and keeping skilled technicians?"), true);
+  assert.equal(looksLikeMatch("A partner is looking for help with an AI quality system. Who can we connect them with?"), true);
+  assert.equal(looksLikeMatch("Which companies have solved second-shift staffing?"), true);
+  assert.equal(looksLikeMatch("What are the top issues to discuss at the next quarterly meeting?"), false);
+  assert.equal(looksLikeMatch("Which companies mentioned energy costs this year?"), false);
   const { env, token } = await piEnv(assistantRows(), { partner_intel_claude_api: "k" });
-  for (const mode of [undefined, "auto", "match"]) {
+  for (const mode of [undefined, "auto", "answer"]) {
     const bodies = [];
     const r = await withFetch(assistantClaude("Two partners have done this [n1].", [], bodies), async () =>
       (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring for technicians?", ...(mode ? { mode } : {}) }), env)).json());
     assert.equal(r.turn.kind, "answer", `mode ${mode}: a written answer`);
-    assert.ok(!bodies.some((b) => b.tools[0].name === "rank_matches"), `mode ${mode}: the partner search is not run`);
-    assert.equal(r.turn.matches, undefined);
-    assert.equal(r.turn.offerMatch, undefined, "and no button to the partner search under it");
+    assert.ok(!bodies.some((b) => b.tools[0].name === "rank_matches"), `mode ${mode}: no partners ranked unasked`);
+    assert.equal(r.turn.offerMatch, true, `mode ${mode}: with "Find partners who can help" under it`);
   }
+  // Pressed: Find solution, or "Find partners who can help".
+  const bodies = [];
+  const r = await withFetch(assistantClaude("unused", [], bodies), async () =>
+    (await pi("assistant", askBox(token, { question: "Who can help with apprenticeship hiring for technicians?", mode: "match" }), env)).json());
+  assert.equal(r.turn.kind, "matches");
+  assert.ok(!bodies.some((b) => b.tools[0].name === "write_answer"), "no written answer as well: two calls, not three");
+  assert.ok(r.turn.matches.length >= 1);
+  const refs = new Set(r.turn.sources.map((x) => x.ref));
+  assert.ok(r.turn.matches.every((m) => m.refs.length && m.refs.every((n) => refs.has(n))), "every match points at numbered notes");
+  // The Ask page asks for an answer unless the button was pressed.
   const html = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
-  const box = fs.readFileSync(path.join(PUB_PI, "askbox.js"), "utf8");
-  assert.match(html, /AU\.send\(conv, \{ question: question, mode: "answer", sources: chosenList\(\), fresh: Boolean\(fresh\) \}\)/, "the Ask page asks for an answer");
-  assert.doesNotMatch(html + box, /data-match|mode: "match"|Find partners who can help/);
-  // Find solution still works from an issue: it asks in words, leaving out the company that raised it.
-  const issueQuestion = new Function("return " + sourceOf(path.join(PUB_PI, "index.html"), "issueQuestion"))();
-  assert.equal(issueQuestion({ title: "Short on welders", detail: "Two shifts are open.", company: { name: "Acme Corp." } }),
-    "Which partners have solved this, or could help with it? Leave out Acme Corp, which raised it. The issue: Short on welders. Two shifts are open.");
+  assert.match(html, /mode: mode === "match" \? "match" : "answer",/);
+  assert.doesNotMatch(html, /mode \|\| "auto"/);
+  assert.match(html, /\.fu\[data-match\]"\)\)\) \{ run\(b\.getAttribute\("data-match"\), "match"\);/);
 });
 
 
@@ -5312,14 +5322,7 @@ test("partner_intel: BUG a follow-up after a partner search could not see which 
   const { env, token } = await piEnv(SOLVERS(), { partner_intel_claude_api: "k" });
   const bodies = [];
   const first = await withFetch(assistantClaude("unused", [], bodies), async () =>
-    (await pi("assistant", askBox(token, { question: "Who can help with quality inspection?" }), env)).json());
-  // Conversations from before every question was answered in writing can hold a partner search.
-  const key = [...env.BOX_KV.store.keys()].find((k) => k.startsWith("pi:asst:history:"));
-  const kept = JSON.parse(env.BOX_KV.store.get(key));
-  const conv = kept.conversations.find((c) => c.id === first.conversation.id);
-  conv.turns[0] = { ...conv.turns[0], kind: "matches", answer: "",
-    matches: [{ company: { id: "c-a", name: "Acme Corp" }, strength: "high", why: "Did it.", refs: [1] }] };
-  await env.BOX_KV.put(key, JSON.stringify(kept));
+    (await pi("assistant", askBox(token, { question: "Who can help with quality inspection?", mode: "match" }), env)).json());
   await withFetch(assistantClaude("The first one [n1].", [], bodies), () =>
     pi("assistant", askBox(token, { question: "What else has the first one said?", mode: "answer", conversationId: first.conversation.id }), env));
   const prompt = bodies.filter((b) => b.tools[0].name === "write_answer").pop().messages[0].content;

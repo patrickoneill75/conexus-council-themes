@@ -2701,6 +2701,11 @@ function checkAnswer(raw, refs, index, labels, overrides) {
     sources: order.slice(0, HISTORY_SOURCES).map((ref, k) => sourceSnapshot(k + 1, refs.get(ref), index, labels, overrides)) };
 }
 
+/** A question asking who can help ("who can help with...", "connect them with...") goes to the partner
+ * search, which ranks companies. Anything else gets a written answer. */
+const MATCH_QUESTION = /\b(?:who|which (?:partners?|compan(?:y|ies)|members?))\b[^?.]{0,80}\b(?:help|helps|solves?|solved|offers?|provides?|sells?|makes?|does|did|done|built|builds|could|can)\b|\b(?:connect|introduce|refer)\b[^?.]{0,60}\b(?:with|to)\b|\b(?:looking for|needs?|wants?)\s+(?:help|a partner|someone|a vendor|a supplier|support)\b/i;
+export const looksLikeMatch = (question) => MATCH_QUESTION.test(text(question));
+
 /** A shaped note as it is kept with a partner search. */
 function snapshotOf(ref, s) {
   const c = s.company || {};
@@ -2709,6 +2714,20 @@ function snapshotOf(ref, s) {
     files: (s.sources || []).slice(0, 3).map((f) => ({ name: text(f.name).slice(0, 160), url: f.url || "" })) };
 }
 
+/** The partner search's result as a turn: the matches, each pointing at numbered notes, and the notes. */
+function matchesTurn(r) {
+  const sources = [];
+  const refOf = new Map();
+  const refFor = (s) => {
+    if (!refOf.has(s.id)) { refOf.set(s.id, sources.length + 1); sources.push(snapshotOf(sources.length + 1, s)); }
+    return refOf.get(s.id);
+  };
+  const company = (c) => ({ id: c.id, name: c.name, industry: c.industry, status: c.status, contacts: (c.contacts || []).slice(0, 6) });
+  return { kind: "matches", answer: r.summary, gaps: r.gaps, ranking: r.ranking, searchTerms: r.searchTerms, followUps: [],
+    matches: r.matches.map((m) => ({ strength: m.strength, why: m.why, caution: m.caution, company: company(m.company), refs: m.evidence.map(refFor) })),
+    peers: (r.peers || []).map((p) => ({ company: company(p.company), notes: p.evidence.map((e) => snapshotOf(0, e)) })),
+    sources, considered: r.considered };
+}
 
 /* ---- each person's questions and answers, in Box */
 
@@ -3077,7 +3096,7 @@ async function fromMemory(env, saved, added, question, data, index, labels, over
     // Today's company names and statuses, on the same notes in the same order.
     return { kind: "answer", answer: saved.answer, followUps: saved.followUps || [],
       sources: cited.map((i, k) => sourceSnapshot(k + 1, i, index, labels, overrides)), considered: saved.considered || {},
-      memory: { ...memory, mode: "reused" } };
+      offerMatch: looksLikeMatch(question), memory: { ...memory, mode: "reused" } };
   }
   const refs = new Map();
   cited.forEach((i, k) => refs.set(`n${k + 1}`, i));
@@ -3100,7 +3119,7 @@ async function fromMemory(env, saved, added, question, data, index, labels, over
     await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
   }
   return { kind: "answer", ...checkAnswer(raw, refs, index, labels, overrides), considered: saved.considered || {},
-    memory: { ...memory, mode: "updated" } };
+    offerMatch: looksLikeMatch(question), memory: { ...memory, mode: "updated" } };
 }
 
 /** An earlier turn as the model reads it in a follow-up: without citation numbers (they meant that turn's
@@ -3115,10 +3134,11 @@ function earlierAnswer(t) {
 }
 
 /**
- * One question, from the Ask box or the Ask page, added to the person's history. Every question gets a
- * written answer. BUG: the Ask page once sent a who-can-help question ("auto" mode) to the partner search,
- * whose ranked list of companies and issue cards read as a report dropped into the chat, not an answer. The
- * partner search is still at POST ask; a conversation never runs it.
+ * One question, from the Ask box or the Ask page, added to the person's history. It gets a written answer
+ * unless mode is "match": the person pressed Find solution or "Find partners who can help", and the
+ * partners are ranked. BUG: the Ask page sent "auto", and a question worded "who can help..." was ranked
+ * without being asked for, a list of companies and issue cards where an answer should be. A who-can-help
+ * question now gets an answer with the button under it (offerMatch).
  */
 async function assistant(env, auth, data, roster, overrides, body) {
   const question = text(body.question);
@@ -3128,55 +3148,61 @@ async function assistant(env, auth, data, roster, overrides, body) {
   const conversation = asked ? history.conversations.find((c) => c.id === asked) : null;
   if (asked && !conversation) return json({ error: "That conversation is no longer in your history." }, 404);
   const sourceList = (Array.isArray(body.sources) ? body.sources : []).map(text).filter(Boolean).slice(0, 40);
+  const mode = text(body.mode) === "match" ? "match" : "answer";
 
   let result = null;
   let focusId = "", focusName = "";
-  if (!env.partner_intel_claude_api) return json({ error: "Claude is not set up for this tool yet. Ask an admin to add the key." }, 409);
-  const sources = new Set(sourceList);
-  const scoped = sources.size ? { ...data, insights: data.insights.filter((i) => sourcesOf(i).some((x) => sources.has(x))) } : data;
-  const index = companyIndex(roster, data);
-  const labels = topicLabels(data, overrides);
-  // A conversation stays about the company it started on, wherever the person is when they follow up.
-  // An old company id (a bookmark from before a roster re-link) is followed to the company it became.
-  const askedCo = conversation ? text(conversation.companyId) : text(body.companyId);
-  const remapped = hasOwn(data.remap || {}, askedCo) ? text(data.remap[askedCo]) : askedCo;
-  focusId = index.has(remapped) ? remapped : "";
-  focusName = focusId ? index.get(focusId).name : "";
-  const earlier = conversation ? conversation.turns.slice(-ASSISTANT_TURNS_READ) : [];
-  const people = peopleNamed(question, ((await getContacts(env)) || {}).contacts, roster, index);
-  // A standalone question may already have a saved answer (see saveMemory). A follow-up leans on its
-  // conversation, so it is never answered from, or saved as, a standalone answer.
-  const scope = earlier.length ? null : await answerScope(question, scoped, index, roster, focusId, sourceList, people);
-  if (scope && !body.fresh) {
-    const kept = await findMemory(env, scope.signature);
-    const status = kept ? memoryStatus(kept, scope, data, index) : { use: false };
-    if (status.use) {
-      result = await fromMemory(env, kept, status.added, question, data, index, labels, overrides);
-      if (result.memory.mode === "updated") await saveMemory(env, memoryOf(result, question, scope, index, kept));
+  if (mode === "match") {
+    result = matchesTurn(await ask(env, data, roster, overrides, question, sourceList, text(body.exclude)));
+  } else {
+    if (!env.partner_intel_claude_api) return json({ error: "Claude is not set up for this tool yet. Ask an admin to add the key." }, 409);
+    const sources = new Set(sourceList);
+    const scoped = sources.size ? { ...data, insights: data.insights.filter((i) => sourcesOf(i).some((x) => sources.has(x))) } : data;
+    const index = companyIndex(roster, data);
+    const labels = topicLabels(data, overrides);
+    // A conversation stays about the company it started on, wherever the person is when they follow up.
+    // An old company id (a bookmark from before a roster re-link) is followed to the company it became.
+    const askedCo = conversation ? text(conversation.companyId) : text(body.companyId);
+    const remapped = hasOwn(data.remap || {}, askedCo) ? text(data.remap[askedCo]) : askedCo;
+    focusId = index.has(remapped) ? remapped : "";
+    focusName = focusId ? index.get(focusId).name : "";
+    const earlier = conversation ? conversation.turns.slice(-ASSISTANT_TURNS_READ) : [];
+    const people = peopleNamed(question, ((await getContacts(env)) || {}).contacts, roster, index);
+    // A standalone question may already have a saved answer (see saveMemory). A follow-up leans on its
+    // conversation, so it is never answered from, or saved as, a standalone answer.
+    const scope = earlier.length ? null : await answerScope(question, scoped, index, roster, focusId, sourceList, people);
+    if (scope && !body.fresh) {
+      const kept = await findMemory(env, scope.signature);
+      const status = kept ? memoryStatus(kept, scope, data, index) : { use: false };
+      if (status.use) {
+        result = await fromMemory(env, kept, status.added, question, data, index, labels, overrides);
+        if (result.memory.mode === "updated") await saveMemory(env, memoryOf(result, question, scope, index, kept));
+      }
     }
-  }
-  if (!result) {
-    const terms = await expandQuestion(env, question, { system: ASSISTANT_EXPAND_SYSTEM, version: ASSISTANT_EXPAND_VERSION, usage: "assistant" });
-    // A follow-up ("and the wins?") leans on the question before it for its subject.
-    const searchTerms = earlier.length ? [...terms, earlier[earlier.length - 1].q] : terms;
-    const ctx = await assistantContext(env, scoped, index, roster, overrides, labels, question, searchTerms, { focusId, people });
-    const userText = `${ctx.material}\n\n` +
-      (earlier.length ? `<earlier_conversation>\n${earlier.map((t) => `Q: ${t.q}\nA: ${clip(earlierAnswer(t), 1500)}`).join("\n\n")}\n</earlier_conversation>\n\n` : "") +
-      `<question>\n${councilText(question)}\n</question>`;
-    // Keyed on exactly what Claude would read, so the same question on the same day costs nothing twice.
-    // "Answer fresh" means fresh: it skips this too.
-    const key = `pi:asst:${await sha(`${ASSISTANT_PROMPT_VERSION}|${ASK_MODEL}|${userText}`)}`;
-    let raw = body.fresh ? null : await readJson(env, key, null);
-    if (raw) await addUsage(env, "assistant", null, { reused: 1 });
-    else {
-      const { input, usage } = await callClaudeTool(env, ASSISTANT_SYSTEM, userText, ASSISTANT_TOOL, 8000,
-        { model: ASK_MODEL, effort: ASK_EFFORT, fallback: true, meter: "assistant" });
-      await addUsage(env, "assistant", usage);
-      raw = { answer: text(input.answer), follow_ups: Array.isArray(input.follow_ups) ? input.follow_ups : [] };
-      await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
+    if (!result) {
+      const terms = await expandQuestion(env, question, { system: ASSISTANT_EXPAND_SYSTEM, version: ASSISTANT_EXPAND_VERSION, usage: "assistant" });
+      // A follow-up ("and the wins?") leans on the question before it for its subject.
+      const searchTerms = earlier.length ? [...terms, earlier[earlier.length - 1].q] : terms;
+      const ctx = await assistantContext(env, scoped, index, roster, overrides, labels, question, searchTerms, { focusId, people });
+      const userText = `${ctx.material}\n\n` +
+        (earlier.length ? `<earlier_conversation>\n${earlier.map((t) => `Q: ${t.q}\nA: ${clip(earlierAnswer(t), 1500)}`).join("\n\n")}\n</earlier_conversation>\n\n` : "") +
+        `<question>\n${councilText(question)}\n</question>`;
+      // Keyed on exactly what Claude would read, so the same question on the same day costs nothing twice.
+      // "Answer fresh" means fresh: it skips this too.
+      const key = `pi:asst:${await sha(`${ASSISTANT_PROMPT_VERSION}|${ASK_MODEL}|${userText}`)}`;
+      let raw = body.fresh ? null : await readJson(env, key, null);
+      if (raw) await addUsage(env, "assistant", null, { reused: 1 });
+      else {
+        const { input, usage } = await callClaudeTool(env, ASSISTANT_SYSTEM, userText, ASSISTANT_TOOL, 8000,
+          { model: ASK_MODEL, effort: ASK_EFFORT, fallback: true, meter: "assistant" });
+        await addUsage(env, "assistant", usage);
+        raw = { answer: text(input.answer), follow_ups: Array.isArray(input.follow_ups) ? input.follow_ups : [] };
+        await env.BOX_KV.put(key, JSON.stringify(raw), { expirationTtl: 7 * 86400 });
+      }
+      result = { kind: "answer", ...checkAnswer(raw, ctx.refs, index, labels, overrides), considered: ctx.considered,
+        offerMatch: looksLikeMatch(question) };
+      if (scope) await saveMemory(env, memoryOf(result, question, scope, index));
     }
-    result = { kind: "answer", ...checkAnswer(raw, ctx.refs, index, labels, overrides), considered: ctx.considered };
-    if (scope) await saveMemory(env, memoryOf(result, question, scope, index));
   }
 
   const now = new Date().toISOString();
