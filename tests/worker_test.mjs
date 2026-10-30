@@ -6682,6 +6682,23 @@ test("salary_allocation: a schedule arranged by dragging is saved with the month
   assert.equal((await me(t.env, t.jlee, "2026-10")).body.saved.plan, null, "going back to the possible schedule clears it");
 });
 
+test("salary_allocation: a position no one holds can be marked open, which puts an open position on the report", async () => {
+  const t = await saEnv();
+  let d = (await t.post("admin/position", { title: "VP, Industry Partnerships", open: true })).body.data;
+  const vp = d.positions.find((p) => p.title === "VP, Industry Partnerships").id;
+  const open = d.people.filter((p) => p.positionId === vp);
+  assert.equal(open.length, 1);
+  assert.deepEqual([open[0].first, open[0].last, open[0].email], ["", "", ""], "held by no one by name");
+  assert.equal((await t.post("admin/allocation", { personId: open[0].id, from: "2026-11", lines: [{ projectId: t.lei, pct: 100 }] })).status, 200, "and can be planned for");
+  d = (await t.post("admin/position", { id: vp, title: "VP, Industry Partnerships", open: true })).body.data;
+  assert.equal(d.people.filter((p) => p.positionId === vp).length, 1, "ticking it again adds no second one");
+  d = (await t.post("admin/position", { id: vp, title: "VP, Industry Partnerships", open: false })).body.data;
+  assert.equal(d.people.filter((p) => p.positionId === vp).length, 0, "closing it takes the open position away");
+  d = (await t.post("admin/position", { id: t.pos, title: "Director, Operations", open: false })).body.data;
+  assert.equal(d.people.filter((p) => p.positionId === t.pos).length, 2, "a role someone is in is left alone");
+  assert.equal((await t.post("admin/position", { title: "Analyst", active: false, open: true })).status, 400, "an inactive title can't be open");
+});
+
 test("salary_allocation: dragging a card on the org chart changes only who that person reports to", async () => {
   const t = await saEnv();
   let r = await t.post("admin/reports-to", { id: t.brooke, managerId: t.jill });

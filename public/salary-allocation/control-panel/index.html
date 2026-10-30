@@ -630,17 +630,24 @@
   function openPosition(id) {
     var x = id ? position(id) : null;
     var held = x ? D.people.filter(function (p) { return p.positionId === x.id; }) : [];
+    var named = held.filter(function (p) { return p.first || p.last; }), blank = held.filter(function (p) { return !p.first && !p.last; });
     show(head(x ? "Edit position" : "Add a position") +
       '<div class="gap"><label class="field" for="dTitle">Title</label><input class="in-box" id="dTitle" value="' + esc(x ? x.title : "") + '"></div>' +
       '<label class="check"><input type="checkbox" id="dActive"' + (!x || x.active !== false ? " checked" : "") + '> Active, offered when adding or editing a person</label>' +
-      (x ? '<p style="margin:14px 0 0;color:var(--muted)">' + (held.length ? "Held by " + held.map(function (p) { return '<button type="button" class="linkish" data-holder="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>"; }).join(", ") +
-        ". Renaming the title renames it for them. To remove it, give them another title first." : "No one holds this title.") + "</p>" : "") +
+      // Open only means something while no one is in the role.
+      (named.length ? "" : '<label class="check"><input type="checkbox" id="dOpen"' + (blank.length ? " checked" : "") + "> Open, being filled. It shows on the Allocations report as an open position and can be given an allocation.</label>") +
+      (x ? '<p style="margin:14px 0 0;color:var(--muted)">' + (named.length ? "Held by " + named.map(function (p) { return '<button type="button" class="linkish" data-holder="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>"; }).join(", ") +
+        ". Renaming the title renames it for them. To remove it, give them another title first." : blank.length ? "No one is in this role yet." : "No one holds this title.") + "</p>" : "") +
       foot(x && !held.length ? "Remove this position" : ""));
     handlers = {
       click: function (b) {
         if (b.hasAttribute("data-holder")) { close(); location.hash = "#people"; openPerson(b.getAttribute("data-holder"), false); return; }
         if (b.hasAttribute("data-remove")) { SA.post("admin/position/delete", { id: x.id }).then(done).catch(fail); return; }
-        if (b.hasAttribute("data-save")) SA.post("admin/position", { id: x ? x.id : "", title: $("dTitle").value, active: $("dActive").checked }).then(done).catch(fail);
+        if (!b.hasAttribute("data-save")) return;
+        var open = $("dOpen") ? $("dOpen").checked : undefined;
+        var planned = blank.some(function (p) { return (p.allocations || []).length; });
+        if (open === false && planned && !confirm("Closing this position removes the open position and its allocation from every month. Close it?")) return;
+        SA.post("admin/position", { id: x ? x.id : "", title: $("dTitle").value, active: $("dActive").checked, open: open }).then(done).catch(fail);
       },
     };
   }

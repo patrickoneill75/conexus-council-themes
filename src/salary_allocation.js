@@ -135,6 +135,13 @@ export function holidaysInMonth(holidays, month) {
 export const STARTING_TEAMS = ["Talent", "Tech Adoption", "Thought Leadership", "Operations"];
 const startingTeams = () => STARTING_TEAMS.map((name) => ({ id: newId(), name }));
 
+/** Takes someone off the list. Whoever reported to them now reports to their manager. */
+function removePerson(data, id) {
+  const gone = data.people.find((p) => p.id === id);
+  data.people = data.people.filter((p) => p.id !== id);
+  for (const p of data.people) if (p.managerId === id) p.managerId = gone ? gone.managerId || "" : "";
+}
+
 /** Why someone can't report to managerId, or "" when they can. Nobody reports to themselves, or to someone
  * who reports up to them. */
 function managerProblem(data, id, managerId) {
@@ -396,7 +403,17 @@ export async function handleSalaryAllocationApi(route, request, env) {
     if (data.positions.some((p) => p.id !== id && p.title.toLowerCase() === title.toLowerCase())) return json({ error: "That title is already on the list." }, 409);
     const p = id ? find(data.positions) : null;
     if (id && !p) return json({ error: "That position is no longer on the list." }, 404);
-    if (p) Object.assign(p, { title, active }); else data.positions.push({ id: newId(), title, active });
+    const pos = p || { id: newId(), title, active };
+    // Open: no one has the title yet but it is being filled. It is held by a person with no name, so it can
+    // be given an allocation and shows on the report. Only asked when no named person holds it.
+    const holders = data.people.filter((x) => x.positionId === pos.id), named = holders.some((x) => x.first || x.last);
+    const blank = holders.filter((x) => !x.first && !x.last);
+    if (typeof body.open === "boolean" && !named) {
+      if (body.open && !active) return json({ error: "An inactive position can't be open. Make it active first." }, 400);
+      if (body.open && !blank.length) data.people.push({ id: newId(), first: "", last: "", email: "", positionId: pos.id, teamId: "", managerId: "", allocations: [] });
+      if (!body.open) for (const gone of blank) removePerson(data, gone.id);
+    }
+    if (p) Object.assign(p, { title, active }); else data.positions.push(pos);
     return done();
   }
   if (route === "admin/position/delete") {
@@ -435,10 +452,7 @@ export async function handleSalaryAllocationApi(route, request, env) {
     return done();
   }
   if (route === "admin/person/delete") {
-    const gone = data.people.find((p) => p.id === id);
-    data.people = data.people.filter((p) => p.id !== id);
-    // Whoever reported to them now reports to their manager.
-    for (const p of data.people) if (p.managerId === id) p.managerId = gone ? gone.managerId || "" : "";
+    removePerson(data, id);
     return done();
   }
   if (route === "admin/allocation") {

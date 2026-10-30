@@ -212,7 +212,8 @@ dialog.sa-dlg::backdrop { background:rgba(7,33,78,.38); }
 .sa .seg button, .sa-dlg .seg button { min-width:64px; min-height:38px; padding:0 16px; border-radius:999px; border:0; background:transparent; color:var(--muted); font:inherit; cursor:pointer; }
 .sa .seg button[aria-pressed="true"], .sa-dlg .seg button[aria-pressed="true"] { background:var(--navy); color:#fff; font-weight:600; }
 .sa-dlg .check { display:flex; align-items:center; gap:10px; margin-top:16px; }
-.sa-dlg .check input { width:20px; height:20px; }
+.sa-dlg .check { align-items:flex-start; }
+.sa-dlg .check input { flex:none; width:20px; height:20px; margin:1px 0 0; }
 
 @media (max-width:760px) {
   .sa .cards4 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
