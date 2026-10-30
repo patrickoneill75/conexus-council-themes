@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salary Allocation control panel — Connector</title>
+<script src="/access.js" data-app="salary-allocation" data-need="admin"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214e'/%3E%3Crect x='7' y='9' width='18' height='3' rx='1.5' fill='white'/%3E%3Crect x='7' y='15' width='11' height='3' rx='1.5' fill='%23fbae40'/%3E%3Crect x='7' y='21' width='14' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/salary-allocation/sa.css">
+<script src="/salary-allocation/sa.js"></script>
+</head>
+<body class="sa">
+<header class="sa-bar">
+  <div class="in">
+    <a class="name" href="/salary-allocation/">Salary Allocation</a>
+    <span class="sub">Control panel</span>
+    <div class="tools">
+      <a href="/salary-allocation/">My month</a>
+      <a href="/admin/">Admin hub</a>
+      <button type="button" id="signOut">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="sa-wrap wide">
+  <nav class="tabs" aria-label="Control panel" id="tabs">
+    <a href="#allocations" data-tab="allocations">Allocations</a>
+    <a href="#people" data-tab="people">People</a>
+    <a href="#positions" data-tab="positions">Positions</a>
+    <a href="#projects" data-tab="projects">Projects</a>
+    <a href="#holidays" data-tab="holidays">Holidays</a>
+  </nav>
+  <p class="warn" id="loadErr" role="alert" hidden style="margin-top:20px"></p>
+  <div id="view"></div>
+</main>
+
+<dialog class="sa-dlg" id="dlg" aria-labelledby="dlgTitle"></dialog>
+<input type="file" id="importFile" accept=".xlsx,.csv" hidden>
+
+<script>
+(function () {
+  "use strict";
+  if (!window.SA) return;
+  var esc = SA.esc, $ = function (id) { return document.getElementById(id); };
+  var D = null;                                   // the lists, as the server holds them
+  var S = { tab: "allocations", month: SA.thisMonth(), q: "", year: String(new Date().getFullYear()) };
+  var X = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+  var LEFT = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>';
+  var RIGHT = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
+  $("signOut").addEventListener("click", SA.signOut);
+
+  /* ---- reading the lists */
+  function addMonths(m, by) { var d = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + by, 1)); return d.toISOString().slice(0, 7); }
+  function allocationFor(p, month) {
+    var best = null;
+    (p.allocations || []).forEach(function (a) { if (a.from <= month && (!best || a.from > best.from)) best = a; });
+    return best;
+  }
+  function linesFor(p, month) { var a = allocationFor(p, month); return a ? a.lines : []; }
+  function project(id) { return D.projects.filter(function (p) { return p.id === id; })[0]; }
+  function position(id) { return D.positions.filter(function (p) { return p.id === id; })[0]; }
+  function nameOf(p) { return (p.first + " " + p.last).trim() || "Open position"; }
+  function titleOf(p) { var x = position(p.positionId); return x ? x.title : ""; }
+  function people() { return D.people.slice().sort(function (a, b) { return (a.last || "~").localeCompare(b.last || "~") || a.first.localeCompare(b.first); }); }
+  function byFunding(list) { return list.slice().sort(function (a, b) { return (a.type === b.type ? 0 : a.type === "c6" ? -1 : 1) || a.name.localeCompare(b.name); }); }
+  function guess(first, last) {
+    var f = first.toLowerCase().replace(/[^a-z]/g, ""), l = last.toLowerCase().replace(/[^a-z]/g, "");
+    return f && l ? f[0] + l + "@conexusindiana.com" : "";
+  }
+  function count(n, one, many) { return n + " " + (n === 1 ? one : many); }
+  function monthNav(id, month) {
+    return '<div class="monthnav"><button type="button" class="round" data-mnav="' + id + '" data-by="-1" aria-label="Previous month">' + LEFT + "</button>" +
+      "<b aria-live=\"polite\">" + esc(SA.monthName(month)) + '</b><button type="button" class="round" data-mnav="' + id + '" data-by="1" aria-label="Next month">' + RIGHT + "</button></div>";
+  }
+
+  function load() {
+    return SA.api("admin/data").then(function (r) { D = r.data; render(); })
+      .catch(function (err) { $("loadErr").hidden = false; $("loadErr").textContent = err.message; });
+  }
+  function render() {
+    var tab = (location.hash || "#allocations").slice(1);
+    S.tab = ["allocations", "people", "positions", "projects", "holidays"].indexOf(tab) >= 0 ? tab : "allocations";
+    Array.prototype.forEach.call(document.querySelectorAll("#tabs a"), function (a) {
+      if (a.getAttribute("data-tab") === S.tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    if (!D) return;
+    $("view").innerHTML = ({ allocations: allocations, people: peopleTab, positions: positionsTab, projects: projectsTab, holidays: holidaysTab })[S.tab]();
+  }
+  window.addEventListener("hashchange", render);
+
+  /* ---- Allocations: a report, one month at a time */
+  function allocations() {
+    var month = S.month, list = people();
+    var used = {};
+    list.forEach(function (p) { linesFor(p, month).forEach(function (l) { used[l.projectId] = true; }); });
+    var cols = byFunding(D.projects.filter(function (p) { return p.active !== false || used[p.id]; }));
+    var c6 = cols.filter(function (p) { return p.type === "c6"; }).length, c3 = cols.length - c6;
+    var tot = { c6: 0, c3: 0 }, off = [];
+    var rows = list.map(function (p) {
+      var lines = linesFor(p, month), sum = 0;
+      var cells = cols.map(function (c) {
+        var l = lines.filter(function (x) { return x.projectId === c.id; })[0], n = l ? l.pct : 0;
+        sum += n; tot[c.type] += n;
+        return '<td class="pc' + (n ? "" : " zero") + '">' + (n ? SA.r2(n) + "%" : "") + "</td>";
+      }).join("");
+      var ok = Math.abs(sum - 100) < 0.001;
+      if (!ok) off.push(nameOf(p) + " " + SA.r2(sum) + "%");
+      return '<tr><th scope="row" class="stick" style="text-align:left;font-weight:400;padding:10px 16px 10px 24px;border-top:1px solid var(--border)">' +
+        '<button type="button" class="linkish namelink" data-alloc="' + esc(p.id) + '">' + esc(nameOf(p)) + '</button><span class="pos">' + esc(titleOf(p)) + "</span></th>" + cells +
+        '<td class="r" style="white-space:nowrap"><span class="' + (ok ? "" : "pill-warn") + '" style="' + (ok ? "font-weight:700;color:var(--navy)" : "") + '">' + SA.r2(sum) + "%</span></td></tr>";
+    }).join("");
+    var fte = cols.map(function (c) {
+      return '<td class="pc">' + (list.reduce(function (s, p) { var l = linesFor(p, month).filter(function (x) { return x.projectId === c.id; })[0]; return s + (l ? l.pct : 0); }, 0) / 100).toFixed(2) + "</td>";
+    }).join("");
+    var all = tot.c6 + tot.c3, open = list.filter(function (p) { return !p.first && !p.last; }).length;
+    return '<div class="head"><div><h1>Allocations</h1><p class="lede">Click a name to change that person\'s allocation. A change applies from the month you save it in, so step ahead to plan, and earlier months keep their split.</p></div>' +
+      '<div class="acts">' + monthNav("report", month) + '<button type="button" class="btn" id="importBtn">Import spreadsheet</button><button type="button" class="btn" id="csvBtn">Download</button></div></div>' +
+      '<div class="cards4">' +
+      '<div class="stat"><p>Staff time on c6</p><p class="v">' + (tot.c6 / 100).toFixed(2) + ' FTE</p><p>' + (all ? Math.round(tot.c6 / all * 100) : 0) + "% of staff time</p></div>" +
+      '<div class="stat"><p>Staff time on c3</p><p class="v">' + (tot.c3 / 100).toFixed(2) + ' FTE</p><p>' + (all ? Math.round(tot.c3 / all * 100) : 0) + "% of staff time</p></div>" +
+      '<div class="stat"><p>People</p><p class="v">' + list.length + "</p><p>" + (open ? "including " + count(open, "open position", "open positions") : "no open positions") + "</p></div>" +
+      '<div class="stat' + (off.length ? " warn-card" : "") + '"><p>Not at 100%</p><p class="v">' + off.length + "</p><p>" + esc(off.join(", ") || "Everyone adds up") + "</p></div></div>" +
+      (list.length ? '<div class="tbl-box" style="margin-top:20px"><table class="tbl grid" style="min-width:' + (420 + cols.length * 100) + 'px"><thead><tr>' +
+        '<th rowspan="2" class="stick" style="vertical-align:bottom">Person</th>' +
+        (c6 ? '<th colspan="' + c6 + '" class="grp c6" scope="colgroup">c6</th>' : "") + (c3 ? '<th colspan="' + c3 + '" class="grp c3" scope="colgroup">c3</th>' : "") +
+        '<th rowspan="2" class="r" style="vertical-align:bottom">Total</th></tr><tr>' +
+        cols.map(function (c) { return '<th class="pj" scope="col">' + esc(c.name) + "</th>"; }).join("") + "</tr></thead><tbody>" + rows +
+        '<tr class="fte"><th scope="row" class="stick" style="text-align:left;padding:12px 16px 12px 24px;border-top:2px solid var(--strong);color:var(--navy)">Staff time (FTE)</th>' + fte + "<td></td></tr></tbody></table></div>" +
+        '<p class="note" style="margin-top:12px">A blank cell is 0%. To change anyone\'s split, click their name.</p>'
+        : '<div class="card" style="margin-top:20px"><p style="margin:0">No one is on the list yet. Import the allocation spreadsheet (Position, First, Last, Project, Allocation, Funding Type), or add people on the People tab.</p></div>');
+  }
+
+  /* ---- People */
+  function peopleTab() {
+    var q = S.q.trim().toLowerCase();
+    var list = people().filter(function (p) { return !q || (nameOf(p) + " " + titleOf(p)).toLowerCase().indexOf(q) >= 0; });
+    return '<div class="head"><div><h1>People</h1><p class="lede">' + count(D.people.length, "person", "people") + ". Click a name to see or change their details and allocation. Each person signs in with their email and sees only their own split.</p></div>" +
+      '<div class="acts"><label class="sr" for="find">Find a person</label><input class="find" id="find" placeholder="Find a person" value="' + esc(S.q) + '">' +
+      '<button type="button" class="btn primary" data-person="">Add person</button></div></div>' +
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th style="width:36%">Name</th><th>Position</th></tr></thead><tbody>' +
+      (list.map(function (p) {
+        return '<tr><td><button type="button" class="linkish namelink" data-person="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button></td><td>" + esc(titleOf(p)) + "</td></tr>";
+      }).join("") || '<tr><td colspan="2" class="muted">No one matches.</td></tr>') + "</tbody></table></div>";
+  }
+
+  /* ---- Positions */
+  function positionsTab() {
+    var list = D.positions.slice().sort(function (a, b) { return (a.active === false) - (b.active === false) || a.title.localeCompare(b.title); });
+    return '<div class="head"><div><h1>Positions</h1><p class="lede">' + count(D.positions.length, "position", "positions") + ". Click a title to rename it, make it inactive, or remove it. Only active titles are offered for a person.</p></div>" +
+      '<div class="acts"><button type="button" class="btn primary" data-position="">Add position</button></div></div>' +
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th style="width:44%">Title</th><th>Held by</th><th>Status</th></tr></thead><tbody>' +
+      (list.map(function (x) {
+        var held = D.people.filter(function (p) { return p.positionId === x.id; });
+        return '<tr><td><button type="button" class="linkish namelink" data-position="' + esc(x.id) + '">' + esc(x.title) + "</button></td><td>" +
+          (held.map(function (p) { return '<button type="button" class="linkish" data-person="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>"; }).join(", ") || '<span class="muted">No one</span>') +
+          "</td><td>" + (x.active === false ? '<span class="muted">Inactive</span>' : "Active") + "</td></tr>";
+      }).join("") || '<tr><td colspan="3" class="muted">No positions yet.</td></tr>') + "</tbody></table></div>";
+  }
+
+  /* ---- Projects */
+  function projectsTab() {
+    var month = S.month;
+    return '<div class="head"><div><h1>Projects</h1><p class="lede">' + count(D.projects.length, "project", "projects") + ". Click a project to rename it, change its funding, make it inactive, or remove it. Only active projects are offered for a new allocation.</p></div>" +
+      '<div class="acts"><button type="button" class="btn primary" data-project="">Add project</button></div></div>' +
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th>Project</th><th>Funding</th><th>Status</th><th class="r">People in ' + esc(SA.monthOnly(month)) + '</th><th class="r">Staff time (FTE)</th></tr></thead><tbody>' +
+      (byFunding(D.projects).map(function (x) {
+        var on = D.people.map(function (p) { return linesFor(p, month).filter(function (l) { return l.projectId === x.id; })[0]; }).filter(Boolean);
+        return '<tr><td><button type="button" class="linkish namelink" data-project="' + esc(x.id) + '">' + esc(x.name) + "</button></td><td>" + esc(x.type) + "</td><td>" +
+          (x.active === false ? '<span class="muted">Inactive</span>' : "Active") + '</td><td class="r">' + on.length + '</td><td class="r muted">' +
+          (on.reduce(function (s, l) { return s + l.pct; }, 0) / 100).toFixed(2) + "</td></tr>";
+      }).join("") || '<tr><td colspan="5" class="muted">No projects yet.</td></tr>') + "</tbody></table></div>" +
+      '<p class="note" style="margin-top:12px">People and staff time are for ' + esc(SA.monthName(month)) + ", the month shown on the Allocations tab.</p>";
+  }
+
+  /* ---- Holidays */
+  function holidaysTab() {
+    var years = {};
+    years[S.year] = 1; years[String(new Date().getFullYear() + 1)] = 1;
+    D.holidays.forEach(function (h) { years[h.start.slice(0, 4)] = 1; });
+    var list = D.holidays.filter(function (h) { return h.start.slice(0, 4) === S.year; }).sort(function (a, b) { return a.start.localeCompare(b.start); });
+    var workdays = function (h) {
+      var n = 0, end = new Date((h.end || h.start) + "T00:00:00Z");
+      for (var t = new Date(h.start + "T00:00:00Z"); t <= end; t = new Date(t.getTime() + 86400000)) { var w = t.getUTCDay(); if (w > 0 && w < 6) n++; }
+      return n;
+    };
+    return '<div class="head"><div><h1>Holidays, ' + esc(S.year) + '</h1><p class="lede">These start as holidays on everyone\'s calendar and don\'t count toward anyone\'s split. Staff can still change a day they worked. A holiday can span several days.</p></div>' +
+      '<div class="acts"><label class="sr" for="yr">Year</label><select class="find" style="width:auto" id="yr">' +
+      Object.keys(years).sort().map(function (y) { return "<option" + (y === S.year ? " selected" : "") + ">" + y + "</option>"; }).join("") + "</select>" +
+      '<button type="button" class="btn" id="loadFed">Add the federal holidays for ' + esc(S.year) + '</button><button type="button" class="btn primary" data-holiday="">Add holiday</button></div></div>' +
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th>Holiday</th><th>Dates</th><th class="r">Workdays</th></tr></thead><tbody>' +
+      (list.map(function (h) {
+        return '<tr><td><button type="button" class="linkish namelink" data-holiday="' + esc(h.id) + '">' + esc(h.name) + "</button></td><td>" +
+          esc(h.end ? SA.shortDate(h.start) + " to " + SA.shortDate(h.end) : SA.shortDate(h.start)) + '</td><td class="r muted">' + workdays(h) + "</td></tr>";
+      }).join("") || '<tr><td colspan="3" class="muted">No holidays for ' + esc(S.year) + " yet.</td></tr>") + "</tbody></table></div>" +
+      '<p class="note" style="margin-top:12px">The federal list is the days the government observes: a holiday on a Saturday falls on the Friday before, one on a Sunday on the Monday after.</p>';
+  }
+
+  /* ---- clicks on the page */
+  $("view").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    if (b.hasAttribute("data-mnav")) { S.month = addMonths(S.month, Number(b.getAttribute("data-by"))); render(); return; }
+    if (b.hasAttribute("data-alloc")) { openPerson(b.getAttribute("data-alloc"), true); return; }
+    if (b.hasAttribute("data-person")) { openPerson(b.getAttribute("data-person") || null, false); return; }
+    if (b.hasAttribute("data-position")) { openPosition(b.getAttribute("data-position") || null); return; }
+    if (b.hasAttribute("data-project")) { openProject(b.getAttribute("data-project") || null); return; }
+    if (b.hasAttribute("data-holiday")) { openHoliday(b.getAttribute("data-holiday") || null); return; }
+    if (b.id === "importBtn") { $("importFile").value = ""; $("importFile").click(); return; }
+    if (b.id === "csvBtn") { download(); return; }
+    if (b.id === "loadFed") {
+      b.disabled = true;
+      SA.post("admin/holidays/load", { year: Number(S.year) }).then(function (r) { D = r.data; render(); })
+        .catch(function (err) { b.disabled = false; window.alert(err.message); });
+    }
+  });
+  $("view").addEventListener("input", function (e) {
+    if (e.target.id === "find") { S.q = e.target.value; var at = e.target.selectionStart; render(); var f = $("find"); f.focus(); f.setSelectionRange(at, at); }
+  });
+  $("view").addEventListener("change", function (e) { if (e.target.id === "yr") { S.year = e.target.value; render(); } });
+
+  $("importFile").addEventListener("change", function () {
+    var file = this.files[0];
+    if (!file) return;
+    if (D.people.length && !window.confirm("Import " + file.name + "? Everyone in the file gets the split in it, for every month. People not in the file are left as they are.")) return;
+    file.arrayBuffer().then(function (buf) {
+      return SA.api("admin/import?name=" + encodeURIComponent(file.name), { method: "POST", body: buf, headers: { "content-type": "application/octet-stream" } });
+    }).then(function (r) {
+      D = r.data; render();
+      window.alert("Imported " + count(r.counts.people, "person", "people") + ", with " + count(r.counts.projects, "new project", "new projects") + " and " + count(r.counts.positions, "new position", "new positions") + ".");
+    }).catch(function (err) { window.alert(err.message); });
+  });
+
+  /** The month's report as a spreadsheet (CSV), one row a person. */
+  function download() {
+    var cols = byFunding(D.projects), q = function (s) { s = String(s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    var rows = [["Person", "Position"].concat(cols.map(function (c) { return c.name + " (" + c.type + ")"; })).concat(["Total"])];
+    people().forEach(function (p) {
+      var lines = linesFor(p, S.month), sum = 0;
+      rows.push([nameOf(p), titleOf(p)].concat(cols.map(function (c) {
+        var l = lines.filter(function (x) { return x.projectId === c.id; })[0]; if (l) sum += l.pct; return l ? l.pct : "";
+      })).concat([SA.r2(sum)]));
+    });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([rows.map(function (r) { return r.map(q).join(","); }).join("\n")], { type: "text/csv" }));
+    a.download = "salary-allocation-" + S.month + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  /* ---- the pop-ups */
+  var dlg = $("dlg"), close = function () { dlg.close(); };
+  function show(html) { dlg.innerHTML = html; if (!dlg.open) dlg.showModal(); }
+  function head(title, sub) {
+    return '<div class="dh"><div><h2 id="dlgTitle">' + esc(title) + "</h2>" + (sub ? '<p class="note" style="font-size:14px;margin-top:2px">' + esc(sub) + "</p>" : "") + '</div><button type="button" class="x" data-close aria-label="Close">' + X + "</button></div>";
+  }
+  function foot(removeLabel) {
+    return '<p class="err" id="dlgErr" role="alert" hidden></p><div class="foot">' + (removeLabel ? '<button type="button" class="linkish muted" data-remove>' + esc(removeLabel) + "</button>" : "") +
+      '<span class="sp"></span><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn primary" data-save>Save</button></div>';
+  }
+  function fail(err) { var el = $("dlgErr"); if (el) { el.hidden = false; el.textContent = err.message; } }
+  var handlers = {};
+  dlg.addEventListener("click", function (e) {
+    if (e.target === dlg) { close(); return; }
+    var b = e.target.closest("button");
+    if (!b) return;
+    if (b.hasAttribute("data-close")) { close(); return; }
+    if (handlers.click) handlers.click(b);
+  });
+  dlg.addEventListener("input", function (e) { if (handlers.input) handlers.input(e.target); });
+  dlg.addEventListener("change", function (e) { if (handlers.change) handlers.change(e.target); });
+  function done(r) { D = r.data; render(); close(); }
+
+  /** A person: details and their allocation for a month, or the allocation alone (from the report). */
+  function openPerson(id, allocOnly) {
+    var p = id ? D.people.filter(function (x) { return x.id === id; })[0] : null;
+    var st = { month: S.month, first: p ? p.first : "", last: p ? p.last : "", email: p ? p.email : "", touched: p ? p.email !== guess(p.first, p.last) : false,
+      positionId: p ? p.positionId : "", lines: null, adding: false };
+    function load(month) { st.month = month; st.lines = (p ? linesFor(p, month) : []).map(function (l) { return { projectId: l.projectId, pct: String(l.pct) }; }); st.saved = JSON.stringify(st.lines); }
+    load(S.month);
+    function allocHtml() {
+      var total = st.lines.reduce(function (s, l) { return s + (Number(l.pct) || 0); }, 0), ok = Math.abs(total - 100) < 0.001;
+      var later = p ? (p.allocations || []).filter(function (a) { return a.from > st.month; }).map(function (a) { return a.from; })[0] : null;
+      var choices = D.projects.filter(function (x) { return x.active !== false && !st.lines.some(function (l) { return l.projectId === x.id; }); });
+      return '<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:20px' + (allocOnly ? "" : ";padding-top:18px;border-top:1px solid var(--border)") + '">' +
+        '<h3 style="margin:0">Allocation</h3>' + monthNav("dlg", st.month) + "</div>" +
+        '<div style="margin-top:6px">' + st.lines.map(function (l, i) {
+          var x = project(l.projectId) || { name: "(removed project)", type: "" };
+          return '<div class="line"><span class="nm">' + esc(x.name) + ' <span class="note" style="display:inline;font-weight:600">' + esc(x.type) + "</span>" + (x.active === false ? '<span class="status-off">Inactive</span>' : "") + "</span>" +
+            '<input class="pct" inputmode="decimal" data-pct="' + i + '" aria-label="Percent of salary from ' + esc(x.name) + '" value="' + esc(l.pct) + '"><span class="muted">%</span>' +
+            '<button type="button" class="rm" data-rm="' + i + '" aria-label="Remove ' + esc(x.name) + '">' + X + "</button></div>";
+        }).join("") + "</div>" +
+        (st.adding
+          ? '<div class="line"><label class="sr" for="pick">Project</label><select class="in-box" id="pick" style="height:40px;flex:1 1 auto"><option value="">Choose a project</option>' +
+            choices.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name + " (" + x.type + ")") + "</option>"; }).join("") +
+            '</select><button type="button" class="btn small primary" data-addpick>Add</button></div>'
+          : (choices.length ? '<button type="button" class="add" data-adding>+ Add allocation</button>' : "")) +
+        '<div class="tot"><span>Total</span><span class="' + (ok ? "" : "pill-warn") + '">' + SA.r2(total) + "%</span></div>" +
+        (ok || !st.lines.length ? "" : '<p class="warn" style="margin:8px 0 0;font-size:14px">' + (total < 100 ? SA.r2(100 - total) + "% of the salary has no project yet. Add an allocation or raise one to reach 100%." : "This adds up to " + SA.r2(total) + "%. Lower one to reach 100%.") + "</p>") +
+        '<p class="note" style="margin-top:10px">Saving applies from ' + esc(SA.monthName(st.month)) + " on" + (later ? ", until the change already planned for " + esc(SA.monthName(later)) : "") + ". " + esc(SA.monthName(addMonths(st.month, -1))) + " and earlier keep their split.</p>";
+    }
+    function draw() {
+      var positions = D.positions.filter(function (x) { return x.active !== false || x.id === st.positionId; }).sort(function (a, b) { return a.title.localeCompare(b.title); });
+      show(head(p ? nameOf(p) : "Add a person", allocOnly && p ? titleOf(p) : "") +
+        (allocOnly ? "" :
+          '<h3>Details</h3><div class="two"><div><label class="field" for="dFirst">First name</label><input class="in-box" id="dFirst" value="' + esc(st.first) + '"></div>' +
+          '<div><label class="field" for="dLast">Last name</label><input class="in-box" id="dLast" value="' + esc(st.last) + '"></div></div>' +
+          '<div class="gap"><label class="field" for="dEmail">Email</label><input class="in-box" id="dEmail" type="email" value="' + esc(st.email) + '">' +
+          '<p class="note">Their sign-in, the same as Partner Intelligence. Fills in as first initial and last name at conexusindiana.com. Leave the name blank for an open position.</p></div>' +
+          '<div class="gap"><label class="field" for="dPos">Position</label><select class="in-box" id="dPos"><option value="">Choose a position</option>' +
+          positions.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === st.positionId ? " selected" : "") + ">" + esc(x.title) + (x.active === false ? " (inactive)" : "") + "</option>"; }).join("") + "</select></div>") +
+        '<div id="allocBox">' + allocHtml() + "</div>" + foot(p && !allocOnly ? "Remove this person" : ""));
+    }
+    function redrawAlloc() { $("allocBox").innerHTML = allocHtml(); }
+    handlers = {
+      input: function (t) {
+        if (t.id === "dFirst" || t.id === "dLast") {
+          st[t.id === "dFirst" ? "first" : "last"] = t.value;
+          if (!st.touched) { st.email = guess(st.first, st.last); $("dEmail").value = st.email; }
+        } else if (t.id === "dEmail") { st.email = t.value; st.touched = true; }
+        else if (t.hasAttribute("data-pct")) {
+          st.lines[Number(t.getAttribute("data-pct"))].pct = t.value;
+          var at = t.selectionStart, i = t.getAttribute("data-pct"); redrawAlloc();
+          var n = dlg.querySelector('[data-pct="' + i + '"]'); n.focus(); n.setSelectionRange(at, at);
+        }
+      },
+      change: function (t) { if (t.id === "dPos") st.positionId = t.value; },
+      click: function (b) {
+        if (b.hasAttribute("data-mnav")) {
+          if (JSON.stringify(st.lines) !== st.saved && !window.confirm("Leave " + SA.monthName(st.month) + " without saving its allocation?")) return;
+          load(addMonths(st.month, Number(b.getAttribute("data-by")))); st.adding = false; redrawAlloc(); return;
+        }
+        if (b.hasAttribute("data-rm")) { st.lines.splice(Number(b.getAttribute("data-rm")), 1); redrawAlloc(); return; }
+        if (b.hasAttribute("data-adding")) { st.adding = true; redrawAlloc(); var s = $("pick"); if (s) s.focus(); return; }
+        if (b.hasAttribute("data-addpick")) { var v = $("pick").value; if (!v) return; st.lines.push({ projectId: v, pct: "" }); st.adding = false; redrawAlloc(); dlg.querySelector('[data-pct="' + (st.lines.length - 1) + '"]').focus(); return; }
+        if (b.hasAttribute("data-remove")) {
+          if (!window.confirm("Remove " + nameOf(p) + "? Their allocation and saved months go with them.")) return;
+          SA.post("admin/person/delete", { id: p.id }).then(done).catch(fail); return;
+        }
+        if (b.hasAttribute("data-save")) {
+          var lines = st.lines.map(function (l) { return { projectId: l.projectId, pct: Number(l.pct) || 0 }; });
+          var allocChanged = JSON.stringify(st.lines) !== st.saved;
+          var before = D.people.map(function (x) { return x.id; });
+          var step = allocOnly ? Promise.resolve({ data: D })
+            : SA.post("admin/person", { id: p ? p.id : "", first: st.first, last: st.last, email: st.email, positionId: st.positionId });
+          step.then(function (r) {
+            D = r.data;
+            var pid = p ? p.id : (D.people.filter(function (x) { return before.indexOf(x.id) < 0; })[0] || {}).id;
+            return allocChanged && pid ? SA.post("admin/allocation", { personId: pid, from: st.month, lines: lines }) : r;
+          }).then(done).catch(fail);
+        }
+      },
+    };
+    draw();
+  }
+
+  function openPosition(id) {
+    var x = id ? position(id) : null;
+    var held = x ? D.people.filter(function (p) { return p.positionId === x.id; }) : [];
+    show(head(x ? "Edit position" : "Add a position") +
+      '<div class="gap"><label class="field" for="dTitle">Title</label><input class="in-box" id="dTitle" value="' + esc(x ? x.title : "") + '"></div>' +
+      '<label class="check"><input type="checkbox" id="dActive"' + (!x || x.active !== false ? " checked" : "") + '> Active, offered when adding or editing a person</label>' +
+      (x ? '<p style="margin:14px 0 0;color:var(--muted)">' + (held.length ? "Held by " + held.map(function (p) { return '<button type="button" class="linkish" data-holder="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>"; }).join(", ") +
+        ". Renaming the title renames it for them. To remove it, give them another title first." : "No one holds this title.") + "</p>" : "") +
+      foot(x && !held.length ? "Remove this position" : ""));
+    handlers = {
+      click: function (b) {
+        if (b.hasAttribute("data-holder")) { close(); location.hash = "#people"; openPerson(b.getAttribute("data-holder"), false); return; }
+        if (b.hasAttribute("data-remove")) { SA.post("admin/position/delete", { id: x.id }).then(done).catch(fail); return; }
+        if (b.hasAttribute("data-save")) SA.post("admin/position", { id: x ? x.id : "", title: $("dTitle").value, active: $("dActive").checked }).then(done).catch(fail);
+      },
+    };
+  }
+
+  function openProject(id) {
+    var x = id ? project(id) : null, type = x ? x.type : "c3";
+    var users = x ? D.people.filter(function (p) { return (p.allocations || []).some(function (a) { return a.lines.some(function (l) { return l.projectId === x.id; }); }); }) : [];
+    function draw() {
+      show(head(x ? "Edit project" : "Add a project") +
+        '<div class="gap"><label class="field" for="dName">Project</label><input class="in-box" id="dName" placeholder="Code and name, for example 4820 New Grant" value="' + esc(x ? x.name : "") + '"></div>' +
+        '<fieldset style="border:0;margin:16px 0 0;padding:0"><legend class="field" style="padding:0">Funding</legend><div class="seg" role="group">' +
+        '<button type="button" data-type="c3" aria-pressed="' + (type === "c3") + '">c3</button><button type="button" data-type="c6" aria-pressed="' + (type === "c6") + '">c6</button></div></fieldset>' +
+        '<label class="check"><input type="checkbox" id="dActive"' + (!x || x.active !== false ? " checked" : "") + '> Active, offered for a new allocation</label>' +
+        (x ? '<p class="note" style="font-size:14px;margin-top:14px">' + (users.length ? count(users.length, "person has", "people have") + " it in an allocation, now or in an earlier month. Make it inactive to stop offering it; to remove it, take it off their allocations first." : "No one has it in an allocation.") + "</p>" : "") +
+        foot(x && !users.length ? "Remove this project" : ""));
+    }
+    handlers = {
+      click: function (b) {
+        if (b.hasAttribute("data-type")) {
+          type = b.getAttribute("data-type");
+          Array.prototype.forEach.call(dlg.querySelectorAll("[data-type]"), function (n) { n.setAttribute("aria-pressed", String(n.getAttribute("data-type") === type)); });
+          return;
+        }
+        if (b.hasAttribute("data-remove")) { SA.post("admin/project/delete", { id: x.id }).then(done).catch(fail); return; }
+        if (b.hasAttribute("data-save")) SA.post("admin/project", { id: x ? x.id : "", name: $("dName").value, type: type, active: $("dActive").checked }).then(done).catch(fail);
+      },
+    };
+    draw();
+  }
+
+  function openHoliday(id) {
+    var h = id ? D.holidays.filter(function (x) { return x.id === id; })[0] : null;
+    show(head(h ? "Edit holiday" : "Add a holiday") +
+      '<div class="gap"><label class="field" for="dName">Name</label><input class="in-box" id="dName" value="' + esc(h ? h.name : "") + '"></div>' +
+      '<div class="two"><div><label class="field" for="dStart">Date</label><input class="in-box" id="dStart" type="date" value="' + esc(h ? h.start : "") + '"></div>' +
+      '<div><label class="field" for="dEnd">Through (optional)</label><input class="in-box" id="dEnd" type="date" value="' + esc(h ? h.end : "") + '"></div></div>' +
+      '<p class="note">Add a Through date for a holiday that spans days, such as the day after Thanksgiving. Weekends in the range are skipped.</p>' +
+      foot(h ? "Remove this holiday" : ""));
+    handlers = {
+      click: function (b) {
+        if (b.hasAttribute("data-remove")) { SA.post("admin/holiday/delete", { id: h.id }).then(done).catch(fail); return; }
+        if (b.hasAttribute("data-save")) SA.post("admin/holiday", { id: h ? h.id : "", name: $("dName").value, start: $("dStart").value, end: $("dEnd").value }).then(done).catch(fail);
+      },
+    };
+  }
+
+  render();
+  load();
+})();
+</script>
+</body>
+</html>

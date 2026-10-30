@@ -84,4 +84,11 @@ const APPS = [
     baseUrl: "/partner-intel",
     controlPanelUrl: "/partner-intel/control-panel",
   },
+  {
+    id: "salary-allocation",
+    name: "Salary Allocation",
+    description: "Staff only. Each person's salary split across projects, and their hours for the month split to match, with a possible schedule.",
+    baseUrl: "/salary-allocation",
+    controlPanelUrl: "/salary-allocation/control-panel",
+  },
 ];
