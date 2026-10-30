@@ -135,6 +135,13 @@ export function holidaysInMonth(holidays, month) {
 export const STARTING_TEAMS = ["Talent", "Tech Adoption", "Thought Leadership", "Operations"];
 const startingTeams = () => STARTING_TEAMS.map((name) => ({ id: newId(), name }));
 
+/** Takes someone off the list. Whoever reported to them now reports to their manager. */
+function removePerson(data, id) {
+  const gone = data.people.find((p) => p.id === id);
+  data.people = data.people.filter((p) => p.id !== id);
+  for (const p of data.people) if (p.managerId === id) p.managerId = gone ? gone.managerId || "" : "";
+}
+
 /** Why someone can't report to managerId, or "" when they can. Nobody reports to themselves, or to someone
  * who reports up to them. */
 function managerProblem(data, id, managerId) {
@@ -202,6 +209,29 @@ function cleanLines(data, lines, had = new Set()) {
 function setAllocation(person, from, lines) {
   person.allocations = (person.allocations || []).filter((a) => a.from !== from).concat([{ from, lines }])
     .sort((a, b) => a.from.localeCompare(b.from));
+}
+
+/** "YYYY-MM" a month on. */
+const nextMonth = (month) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1)).toISOString().slice(0, 7);
+const sameLines = (a, b) => {
+  const key = (l) => (l || []).map((x) => x.projectId + ":" + x.pct).sort().join(",");
+  return key(a) === key(b);
+};
+
+/**
+ * A change to someone's allocation for a month. scope "month" changes that month alone: the month after keeps
+ * what it had. scope "future" changes that month and every month after, replacing changes planned later.
+ * No scope keeps the older rule: from that month until the next planned change.
+ */
+export function changeAllocation(person, from, lines, scope) {
+  if (scope === "month") {
+    const after = nextMonth(from), before = allocationFor(person, after);
+    if (!(person.allocations || []).some((a) => a.from === after)) setAllocation(person, after, before ? before.lines : []);
+  }
+  if (scope === "future") person.allocations = (person.allocations || []).filter((a) => a.from <= from);
+  setAllocation(person, from, lines);
+  // An entry that repeats the one before it changes nothing; neither does an empty first one.
+  person.allocations = person.allocations.filter((a, i, all) => (i ? !sameLines(a.lines, all[i - 1].lines) : a.lines.length > 0));
 }
 
 /* ---------------------------------------------------------------------------- import */
@@ -396,7 +426,17 @@ export async function handleSalaryAllocationApi(route, request, env) {
     if (data.positions.some((p) => p.id !== id && p.title.toLowerCase() === title.toLowerCase())) return json({ error: "That title is already on the list." }, 409);
     const p = id ? find(data.positions) : null;
     if (id && !p) return json({ error: "That position is no longer on the list." }, 404);
-    if (p) Object.assign(p, { title, active }); else data.positions.push({ id: newId(), title, active });
+    const pos = p || { id: newId(), title, active };
+    // Open: no one has the title yet but it is being filled. It is held by a person with no name, so it can
+    // be given an allocation and shows on the report. Only asked when no named person holds it.
+    const holders = data.people.filter((x) => x.positionId === pos.id), named = holders.some((x) => x.first || x.last);
+    const blank = holders.filter((x) => !x.first && !x.last);
+    if (typeof body.open === "boolean" && !named) {
+      if (body.open && !active) return json({ error: "An inactive position can't be open. Make it active first." }, 400);
+      if (body.open && !blank.length) data.people.push({ id: newId(), first: "", last: "", email: "", positionId: pos.id, teamId: "", managerId: "", allocations: [] });
+      if (!body.open) for (const gone of blank) removePerson(data, gone.id);
+    }
+    if (p) Object.assign(p, { title, active }); else data.positions.push(pos);
     return done();
   }
   if (route === "admin/position/delete") {
@@ -435,10 +475,7 @@ export async function handleSalaryAllocationApi(route, request, env) {
     return done();
   }
   if (route === "admin/person/delete") {
-    const gone = data.people.find((p) => p.id === id);
-    data.people = data.people.filter((p) => p.id !== id);
-    // Whoever reported to them now reports to their manager.
-    for (const p of data.people) if (p.managerId === id) p.managerId = gone ? gone.managerId || "" : "";
+    removePerson(data, id);
     return done();
   }
   if (route === "admin/allocation") {
@@ -449,7 +486,9 @@ export async function handleSalaryAllocationApi(route, request, env) {
     const had = new Set((person.allocations || []).flatMap((a) => a.lines.map((l) => l.projectId)));
     const cleaned = cleanLines(data, body.lines, had);
     if (cleaned.error) return json({ error: cleaned.error }, 400);
-    setAllocation(person, from, cleaned.lines);
+    const scope = text(body.scope);
+    if (scope && scope !== "month" && scope !== "future") return json({ error: "Choose this month only or this month and after." }, 400);
+    changeAllocation(person, from, cleaned.lines, scope);
     return done();
   }
   if (route === "admin/holiday") {
