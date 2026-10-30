@@ -282,7 +282,28 @@ function cleanMonth(month, body, lines) {
       split[l.projectId] = h;
     }
   }
-  return { record: { days, hours: split, savedAt: new Date().toISOString() } };
+  // The schedule as the person arranged it: { <day>: { <projectId>: hours } }. Absent means the page's own.
+  let plan = null;
+  if (body.plan && typeof body.plan === "object") {
+    plan = {};
+    const ids = new Set(lines.map((l) => l.projectId));
+    for (const day of Object.keys(body.plan)) {
+      const d = Number(day), v = body.plan[day];
+      if (!Number.isInteger(d) || d < 1 || d > daysIn(month) || !weekday(month, d)) return { error: "The schedule can only use weekdays in the month." };
+      if (!v || typeof v !== "object") return { error: "The schedule needs whole hours." };
+      const out = {};
+      let sum = 0;
+      for (const id of Object.keys(v)) {
+        if (!ids.has(id)) continue;
+        const h = Number(v[id]);
+        if (!Number.isInteger(h) || h < 1 || h > 24) return { error: "The schedule needs whole hours." };
+        out[id] = h; sum += h;
+      }
+      if (sum > 24) return { error: `Day ${d} is scheduled for more than 24 hours.` };
+      if (sum) plan[String(d)] = out;
+    }
+  }
+  return { record: { days, hours: split, plan, savedAt: new Date().toISOString() } };
 }
 
 function myView(data, person, month, saved, isAdmin) {

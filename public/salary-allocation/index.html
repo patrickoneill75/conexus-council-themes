@@ -60,18 +60,13 @@
           <p class="bigsub" id="sumDays"></p>
           <p class="note" id="sumNot" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:14px"></p>
         </section>
-        <section class="card" id="allocCard">
-          <h2 style="font-size:18px">Your allocation</h2>
-          <p class="note" id="allocNote"></p>
-          <div class="alist" id="alloc" style="margin-top:10px"></div>
-        </section>
       </aside>
     </div>
 
     <section class="card" style="margin-top:24px">
       <div class="top">
         <div>
-          <h2 style="font-size:22px">Your split</h2>
+          <h2 style="font-size:22px">Your allocation</h2>
           <p class="note" style="font-size:14px" id="splitLede"></p>
         </div>
         <button type="button" class="linkish" id="reset" hidden>Go back to the rounded hours</button>
@@ -86,7 +81,10 @@
 
     <section class="card" style="margin-top:20px">
       <h2 style="font-size:22px">Possible schedule</h2>
-      <p class="note" style="font-size:14px">Half days where possible, each project spread evenly through the month.</p>
+      <div class="top">
+        <p class="note" style="font-size:14px;margin:0">Half days where possible, each project spread evenly through the month. Drag a project to another day, or click it and then click a day.</p>
+        <button type="button" class="linkish" id="planReset" hidden>Go back to the possible schedule</button>
+      </div>
       <p id="planWait" class="muted" style="margin:14px 0 0;padding:14px 16px;border-radius:14px;background:var(--wash)" hidden></p>
       <div style="overflow-x:auto;margin-top:16px" id="planBox"><div class="grid5" id="plan"></div></div>
     </section>
@@ -99,7 +97,7 @@
   if (!window.SA) return;
   var C = window.SACalc, esc = SA.esc;
   var $ = function (id) { return document.getElementById(id); };
-  var S = { month: C.defaultMonth(new Date()), me: null, days: {}, names: {}, sel: [], anchor: null, edits: null, timer: 0, dirty: false };
+  var S = { month: C.defaultMonth(new Date()), me: null, days: {}, names: {}, sel: [], anchor: null, edits: null, plan: null, held: null, timer: 0, dirty: false };
   $("signOut").addEventListener("click", SA.signOut);
 
   function load(month) {
@@ -120,6 +118,8 @@
           S.edits = {}; me.allocation.forEach(function (a) { S.edits[a.projectId] = String(me.saved.hours[a.projectId]); });
         }
       }
+      // A schedule arranged by hand: { <day>: { <projectId>: hours } }. Checked against the split when drawn.
+      S.plan = me.saved && me.saved.plan ? me.saved.plan : null; S.held = null;
       $("who").textContent = me.person.email;
       $("cpLink").hidden = !me.isAdmin;
       $("notListed").hidden = true; $("page").hidden = false;
@@ -145,7 +145,7 @@
     var hours = null;
     if (S.edits) { hours = {}; Object.keys(S.edits).forEach(function (k) { hours[k] = Math.max(0, Math.round(Number(S.edits[k]) || 0)); }); }
     var month = S.month;
-    return SA.post("month", { month: month, days: S.days, hours: hours }).then(function (r) {
+    return SA.post("month", { month: month, days: S.days, hours: hours, plan: S.plan }).then(function (r) {
       if (month === S.month) $("saved").textContent = "Saved " + new Date(r.savedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) + ".";
     }).catch(function (err) { $("saved").textContent = "Not saved: " + err.message; S.dirty = true; });
   }
@@ -261,19 +261,13 @@
     setDays(function (x) { x[Number(f)] = n; return x; });
   });
 
-  /* ---- the summary and the allocation */
+  /* ---- the summary */
   function renderSide() {
     var t = totals();
     $("sumTitle").textContent = "Worked in " + SA.monthOnly(S.month);
     $("sumHours").textContent = count(t.w, "Hour", "Hours");
     $("sumDays").textContent = C.daysAndHours(t.w);
     $("sumNot").textContent = "Not counted: " + count(t.p, "hour", "hours") + " of PTO, " + count(t.o, "hour", "hours") + " of holiday or other.";
-    $("allocCard").hidden = S.sel.length > 0;
-    var a = S.me.allocation;
-    $("allocNote").textContent = a.length ? "The split in place in " + SA.monthName(S.month) + ", set by Operations. A later change doesn't alter this month." : "You have no allocation for this month yet. Ask Operations.";
-    $("alloc").innerHTML = a.map(function (x) {
-      return '<div><span class="nm">' + esc(x.name) + '</span><span class="ty">' + esc(x.type) + '</span><span class="pc">' + SA.r2(x.pct) + "%</span></div>";
-    }).join("");
   }
 
   /* ---- the split and the schedule */
@@ -298,7 +292,7 @@
     }
     $("split").innerHTML = '<thead><tr><th>Project</th><th>Funding</th><th class="r">Allocation</th><th class="r">Exact share</th><th class="r">Hours</th><th>In days</th></tr></thead><tbody>' +
       c.a.map(function (x, i) {
-        return '<tr><td style="font-weight:600;color:var(--navy)">' + esc(x.name) + "</td><td>" + esc(x.type) + '</td><td class="r">' + SA.r2(x.pct) + '%</td><td class="r muted">' +
+        return '<tr><td style="font-weight:600;color:var(--navy)"><i class="dot" style="--c:' + colorOf(i) + '"></i>' + esc(x.name) + "</td><td>" + esc(x.type) + '</td><td class="r">' + SA.r2(x.pct) + '%</td><td class="r muted">' +
           (c.t.w * x.pct / 100).toFixed(2) + '</td><td class="r"><input class="hrs" type="number" min="0" step="1" inputmode="numeric" data-i="' + i + '" aria-label="Hours for ' + esc(x.name) + '" value="' +
           (S.edits ? esc(S.edits[x.projectId]) : c.suggested[i]) + '"></td><td class="muted" data-days="' + i + '"></td></tr>';
       }).join("") +
@@ -334,24 +328,122 @@
   });
   $("reset").addEventListener("click", function () { S.edits = null; changed(); renderSplit(); });
 
+  /* ---- the possible schedule: one pill per project per day, in the project's colour. Drag a pill to another
+   * day, or click it and then a day. The arrangement is kept while the split it was made for still holds. */
+  var COLORS = ["#325eae", "#108fc2", "#fbae40", "#f26b43", "#00b0f0", "#07214e"];
+  function colorOf(i) { return COLORS[i % COLORS.length]; }
+  function planFor(c) {
+    var days = Object.keys(S.days).map(Number).sort(function (a, b) { return a - b; });
+    var made = C.schedule(days.map(function (d) { return { day: d, worked: S.days[d][0] }; }), c.hours), auto = {};
+    Object.keys(made).forEach(function (d) { made[d].forEach(function (p) { (auto[d] = auto[d] || {})[c.a[p.i].projectId] = p.h; }); });
+    if (S.plan) {
+      // Kept only while every project still has the hours the split gives it, on days in this month.
+      var have = {}, fits = true;
+      Object.keys(S.plan).forEach(function (d) {
+        if (!S.days[d]) fits = false;
+        Object.keys(S.plan[d]).forEach(function (id) { have[id] = (have[id] || 0) + S.plan[d][id]; });
+      });
+      fits = fits && c.a.every(function (x, i) { return (have[x.projectId] || 0) === c.hours[i]; }) && Object.keys(have).every(function (id) { return c.a.some(function (x) { return x.projectId === id; }); });
+      if (fits) return S.plan;
+      S.plan = null;
+    }
+    return auto;
+  }
   function renderPlan(c, off) {
     var wait = !c.a.length ? "There is nothing to schedule until you have an allocation." : off ? "Balance your hours above to see a schedule." : "";
     $("planWait").hidden = !wait; $("planWait").textContent = wait; $("planBox").hidden = Boolean(wait);
+    $("planReset").hidden = Boolean(wait) || !S.plan;
     if (wait) return;
+    var plan = planFor(c);
+    $("planReset").hidden = !S.plan;
     var days = Object.keys(S.days).map(Number).sort(function (a, b) { return a - b; });
-    var plan = C.schedule(days.map(function (d) { return { day: d, worked: S.days[d][0] }; }), c.hours);
     var html = ["Mon", "Tue", "Wed", "Thu", "Fri"].map(function (d) { return '<div class="dow">' + d + "</div>"; }).join("");
     var lead = new Date(Date.UTC(Number(S.month.slice(0, 4)), Number(S.month.slice(5, 7)) - 1, days[0])).getUTCDay() - 1;
     for (var k = 0; k < lead; k++) html += "<div></div>";
     days.forEach(function (d) {
-      var v = S.days[d];
-      var lines = (plan[d] || []).map(function (p) { return '<span class="l">' + esc(c.a[p.i].name) + ": " + count(p.h, "hour", "hours") + "</span>"; }).join("");
-      if (v[1]) lines += '<span class="l aside">PTO: ' + count(v[1], "hour", "hours") + "</span>";
-      if (v[2]) lines += '<span class="l aside">' + esc(S.names[d] || "Other") + ": " + count(v[2], "hour", "hours") + "</span>";
-      html += '<div class="plan' + (v[0] ? "" : " off") + '"><span class="n">' + d + "</span>" + lines + "</div>";
+      var v = S.days[d], on = plan[d] || {}, sum = 0;
+      var pills = c.a.map(function (x, i) {
+        var h = on[x.projectId];
+        if (!h) return "";
+        sum += h;
+        var held = S.held && S.held.day === d && S.held.id === x.projectId;
+        return '<button type="button" class="pill" style="--c:' + colorOf(i) + '" data-day="' + d + '" data-pid="' + esc(x.projectId) + '" aria-pressed="' + Boolean(held) + '"' +
+          ' aria-label="' + esc(x.name + ", " + count(h, "hour", "hours") + " on " + SA.monthOnly(S.month) + " " + d + ". Click, then click a day to move it.") + '">' +
+          '<span class="pn">' + esc(x.name) + "</span><b>" + h + "h</b></button>";
+      }).join("");
+      var warn = sum !== v[0] ? '<span class="dwarn" role="note">' + sum + "h scheduled, " + v[0] + "h worked</span>" : "";
+      var aside = "";
+      if (v[1]) aside += '<span class="l aside">PTO: ' + count(v[1], "hour", "hours") + "</span>";
+      if (v[2]) aside += '<span class="l aside">' + esc(S.names[d] || "Other") + ": " + count(v[2], "hour", "hours") + "</span>";
+      html += '<div class="plan' + (v[0] ? "" : " off") + (warn ? " warnday" : "") + (S.held ? " target" : "") + '" data-plan="' + d + '"><span class="n">' + d + "</span>" + warn + pills + aside + "</div>";
     });
     $("plan").innerHTML = html;
   }
+  /** Moves a project's hours on one day to another, joining any it already has there. */
+  function movePill(from, id, to) {
+    if (from === to) return;
+    var c = current(), plan = JSON.parse(JSON.stringify(planFor(c)));
+    var h = (plan[from] || {})[id];
+    if (!h) return;
+    delete plan[from][id];
+    if (!Object.keys(plan[from]).length) delete plan[from];
+    (plan[to] = plan[to] || {})[id] = (plan[to][id] || 0) + h;
+    S.plan = plan; S.held = null;
+    changed(); renderPlan(c, false);
+  }
+  $("planReset").addEventListener("click", function () { S.plan = null; S.held = null; changed(); derived(); });
+
+  var pdrag = null;
+  $("plan").addEventListener("pointerdown", function (e) {
+    var pill = e.target.closest(".pill");
+    if (!pill || e.button > 0) return;
+    pdrag = { pill: pill, x: e.clientX, y: e.clientY, moved: false };
+  });
+  window.addEventListener("pointermove", function (e) {
+    if (!pdrag) return;
+    if (!pdrag.moved && Math.abs(e.clientX - pdrag.x) + Math.abs(e.clientY - pdrag.y) < 6) return;
+    e.preventDefault();
+    if (!pdrag.moved) {
+      pdrag.moved = true;
+      var r = pdrag.pill.getBoundingClientRect();
+      pdrag.ghost = pdrag.pill.cloneNode(true);
+      pdrag.ghost.className = "pill ghost";
+      pdrag.ghost.style.width = r.width + "px";
+      pdrag.offX = pdrag.x - r.left; pdrag.offY = pdrag.y - r.top;
+      document.body.appendChild(pdrag.ghost);
+      pdrag.pill.classList.add("dragging");
+    }
+    pdrag.ghost.style.left = (e.clientX - pdrag.offX) + "px";
+    pdrag.ghost.style.top = (e.clientY - pdrag.offY) + "px";
+    var el = document.elementFromPoint(e.clientX, e.clientY), cell = el && el.closest("[data-plan]");
+    if (pdrag.over && pdrag.over !== cell) pdrag.over.classList.remove("drop");
+    pdrag.over = cell; if (cell) cell.classList.add("drop");
+  }, { passive: false });
+  function endPill(e, cancel) {
+    var d = pdrag; pdrag = null;
+    if (!d || !d.moved) return;
+    var stop = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
+    window.addEventListener("click", stop, true);
+    setTimeout(function () { window.removeEventListener("click", stop, true); }, 0);
+    d.ghost.remove(); d.pill.classList.remove("dragging");
+    if (d.over) d.over.classList.remove("drop");
+    if (!cancel && d.over) movePill(Number(d.pill.getAttribute("data-day")), d.pill.getAttribute("data-pid"), Number(d.over.getAttribute("data-plan")));
+  }
+  window.addEventListener("pointerup", function (e) { endPill(e, false); });
+  window.addEventListener("pointercancel", function (e) { endPill(e, true); });
+  // Click to pick a pill up, then click a day to put it down. The same pill again, or Escape, puts it back.
+  $("plan").addEventListener("click", function (e) {
+    var pill = e.target.closest(".pill"), cell = e.target.closest("[data-plan]");
+    if (pill && !(S.held && Number(pill.getAttribute("data-day")) !== S.held.day)) {
+      var day = Number(pill.getAttribute("data-day")), id = pill.getAttribute("data-pid");
+      S.held = S.held && S.held.day === day && S.held.id === id ? null : { day: day, id: id };
+      renderPlan(current(), false);
+      var again = document.querySelector('.pill[data-day="' + day + '"][data-pid="' + id + '"]'); if (again) again.focus();
+      return;
+    }
+    if (S.held && cell) movePill(S.held.day, S.held.id, Number(cell.getAttribute("data-plan")));
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && S.held) { S.held = null; renderPlan(current(), false); } });
 
   function renderAll() {
     var today = new Date();

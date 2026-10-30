@@ -6643,6 +6643,45 @@ test("salary_allocation: who reports to whom never loops, and removing a manager
   assert.equal(d.people.find((p) => p.id === t.brooke).managerId, boss, "Brooke now reports to Jillian's manager");
 });
 
+test("salary_allocation: a holiday's Through date opens on the start's month, not today's (bug: Dec 2027 start, Oct 2026 picker)", () => {
+  const file = path.join(path.dirname(SRC), "public", "salary-allocation", "control-panel", "index.html");
+  const el = {}, posted = [];
+  const $ = (id) => (el[id] = el[id] || { id, value: "", min: "" });
+  const SA = { post: (route, body) => { posted.push(body); return { then: () => ({ catch: () => {} }) }; } };
+  const open = new Function("show", "head", "foot", "$", "D", "esc", "SA", "done", "fail",
+    `var handlers; ${sourceOf(file, "openHoliday")}; return function (id) { openHoliday(id); return handlers; };`)(
+    () => {}, () => "", () => "", $, { holidays: [] }, (x) => x, SA, () => {}, () => {});
+  const h = open(null);
+  $("dName").value = "Christmas break";
+  $("dStart").value = "2027-12-20"; h.input($("dStart"));
+  assert.equal($("dEnd").value, "2027-12-20", "a date picker opens on its value, so Through starts on the start date");
+  assert.equal($("dEnd").min, "2027-12-20");
+  $("dStart").value = "2027-12-21"; h.input($("dStart"));
+  assert.equal($("dEnd").value, "2027-12-21", "and follows the start until someone sets it");
+  h.click({ hasAttribute: (a) => a === "data-save" });
+  assert.equal(posted.pop().end, "", "a Through equal to the start saves as a one-day holiday");
+  $("dEnd").value = "2027-12-31"; h.input($("dEnd"));
+  $("dStart").value = "2027-12-22"; h.input($("dStart"));
+  assert.equal($("dEnd").value, "2027-12-31", "a Through someone chose stays put");
+  h.click({ hasAttribute: (a) => a === "data-save" });
+  assert.deepEqual([posted[0].start, posted[0].end], ["2027-12-22", "2027-12-31"]);
+});
+
+test("salary_allocation: a schedule arranged by dragging is saved with the month, weekdays and whole hours only", async () => {
+  const t = await saEnv();
+  const save = (plan) => sa("month", saPost("month", { month: "2026-10", days: {}, plan }, t.jlee), t.env);
+  let r = await save({ 1: { [t.lei]: 4, [t.unrest]: 4 }, 7: { [t.lei]: 12, nope: 3 } });
+  assert.equal(r.status, 200);
+  const saved = (await me(t.env, t.jlee, "2026-10")).body.saved.plan;
+  assert.deepEqual(saved, { 1: { [t.lei]: 4, [t.unrest]: 4 }, 7: { [t.lei]: 12 } }, "kept as arranged, a project not in their allocation dropped");
+  assert.equal((await save({ 3: { [t.lei]: 4 } })).status, 400, "October 3, 2026 is a Saturday");
+  assert.equal((await save({ 1: { [t.lei]: 2.5 } })).status, 400);
+  assert.equal((await save({ 1: { [t.lei]: 20, [t.unrest]: 8 } })).status, 400, "no day over 24 hours");
+  assert.equal((await save({ constructor: { [t.lei]: 4 } })).status, 400);
+  assert.equal((await save(null)).status, 200);
+  assert.equal((await me(t.env, t.jlee, "2026-10")).body.saved.plan, null, "going back to the possible schedule clears it");
+});
+
 test("salary_allocation: dragging a card on the org chart changes only who that person reports to", async () => {
   const t = await saEnv();
   let r = await t.post("admin/reports-to", { id: t.brooke, managerId: t.jill });
