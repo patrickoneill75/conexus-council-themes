@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salary Allocation — Connector</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307214e'/%3E%3Crect x='7' y='9' width='18' height='3' rx='1.5' fill='white'/%3E%3Crect x='7' y='15' width='11' height='3' rx='1.5' fill='%23fbae40'/%3E%3Crect x='7' y='21' width='14' height='3' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/salary-allocation/sa.css">
+<script src="/salary-allocation/sa.js"></script>
+<script src="/salary-allocation/sa-calc.js"></script>
+</head>
+<body class="sa">
+<header class="sa-bar">
+  <div class="in">
+    <a class="name" href="/salary-allocation/">Salary Allocation</a>
+    <div class="tools">
+      <a id="cpLink" href="/salary-allocation/control-panel/" hidden>Control panel</a>
+      <span id="who"></span>
+      <button type="button" id="signOut">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="sa-wrap">
+  <div id="notListed" class="card" hidden>
+    <h1 style="font-size:24px">Salary Allocation</h1>
+    <p class="lede" id="notListedMsg"></p>
+  </div>
+
+  <div id="page" hidden>
+    <div class="top">
+      <div>
+        <h1 id="title"></h1>
+        <p class="lede">Every weekday starts as 8 hours worked. Click a weekday to change it. PTO and holidays don't count toward your split.</p>
+        <p class="note" id="whyMonth"></p>
+        <p class="saved" id="saved" aria-live="polite"></p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="round" id="prev" aria-label="Previous month"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
+        <button type="button" class="round" id="next" aria-label="Next month"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
+      </div>
+    </div>
+
+    <div class="row2">
+      <section class="card cal" aria-label="Calendar">
+        <div class="grid7" id="grid"></div>
+        <div class="legend">
+          <span><i class="sw" style="background:#fff"></i>Worked</span>
+          <span><i class="sw" style="background:var(--pto)"></i>PTO</span>
+          <span><i class="sw" style="background:var(--other);border-color:var(--other-line)"></i>Holiday or other</span>
+          <span><i class="sw" style="background:var(--warn-bg);border-color:var(--warn-line)"></i>Mixed day</span>
+          <span>Shift-click to select a run of days.</span>
+        </div>
+      </section>
+      <aside class="side">
+        <section class="card daypanel" id="dayPanel" aria-label="Change the selected days" hidden></section>
+        <section class="card" aria-label="Hours this month" aria-live="polite">
+          <h2 class="kicker" id="sumTitle"></h2>
+          <p class="big" id="sumHours"></p>
+          <p class="bigsub" id="sumDays"></p>
+          <p class="note" id="sumNot" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:14px"></p>
+        </section>
+        <section class="card" id="allocCard">
+          <h2 style="font-size:18px">Your allocation</h2>
+          <p class="note" id="allocNote"></p>
+          <div class="alist" id="alloc" style="margin-top:10px"></div>
+        </section>
+      </aside>
+    </div>
+
+    <section class="card" style="margin-top:24px">
+      <div class="top">
+        <div>
+          <h2 style="font-size:22px">Your split</h2>
+          <p class="note" style="font-size:14px" id="splitLede"></p>
+        </div>
+        <button type="button" class="linkish" id="reset" hidden>Go back to the rounded hours</button>
+      </div>
+      <p class="warn" id="pctWarn" role="alert" hidden style="margin:14px 0 0"></p>
+      <p class="warn" id="balance" role="alert" hidden style="margin:14px 0 0;font-weight:600"></p>
+      <div style="overflow-x:auto;margin-top:12px">
+        <table class="tbl" id="split" style="min-width:720px"></table>
+      </div>
+      <p class="note">Hours start rounded to whole hours, with the hours left over given to the projects closest to the next hour, so they add up to what you worked. You can change any of them.</p>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2 style="font-size:22px">Possible schedule</h2>
+      <p class="note" style="font-size:14px">Half days where possible, each project spread evenly through the month.</p>
+      <p id="planWait" class="muted" style="margin:14px 0 0;padding:14px 16px;border-radius:14px;background:var(--wash)" hidden></p>
+      <div style="overflow-x:auto;margin-top:16px" id="planBox"><div class="grid5" id="plan"></div></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  if (!window.SA) return;
+  var C = window.SACalc, esc = SA.esc;
+  var $ = function (id) { return document.getElementById(id); };
+  var S = { month: C.defaultMonth(new Date()), me: null, days: {}, names: {}, sel: [], anchor: null, edits: null, timer: 0, dirty: false };
+  $("signOut").addEventListener("click", SA.signOut);
+
+  function load(month) {
+    S.month = month;
+    return SA.api("me?month=" + month).then(function (me) {
+      S.me = me; S.sel = []; S.anchor = null;
+      S.names = {}; me.holidays.forEach(function (h) { S.names[Number(h.date.slice(8))] = h.name; });
+      S.days = {};
+      var saved = me.saved && me.saved.days ? me.saved.days : {};
+      C.weekdays(month).forEach(function (d) {
+        S.days[d] = saved[d] ? saved[d].slice() : (S.names[d] ? [0, 0, 8] : [8, 0, 0]);
+      });
+      S.edits = null;
+      if (me.saved && me.saved.hours) {
+        var keys = Object.keys(me.saved.hours);
+        // Edited hours are kept only while the allocation they were made for still holds.
+        if (keys.length === me.allocation.length && me.allocation.every(function (a) { return keys.indexOf(a.projectId) >= 0; })) {
+          S.edits = {}; me.allocation.forEach(function (a) { S.edits[a.projectId] = String(me.saved.hours[a.projectId]); });
+        }
+      }
+      $("who").textContent = me.person.email;
+      $("cpLink").hidden = !me.isAdmin;
+      $("notListed").hidden = true; $("page").hidden = false;
+      $("saved").textContent = me.saved ? "Saved " + new Date(me.saved.savedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + ". Changes save as you go." : "Changes save as you go.";
+      renderAll();
+    }).catch(function (err) {
+      $("page").hidden = true; $("notListed").hidden = false;
+      $("notListedMsg").innerHTML = esc(err.message) + (err.body && err.body.isAdmin ? ' <a href="/salary-allocation/control-panel/">Open the control panel</a>' : "");
+      $("cpLink").hidden = !(err.body && err.body.isAdmin);
+    });
+  }
+
+  /* ---- saving: a moment after the last change */
+  function changed() {
+    S.dirty = true;
+    $("saved").textContent = "Saving…";
+    clearTimeout(S.timer);
+    S.timer = setTimeout(save, 700);
+  }
+  function save() {
+    if (!S.dirty) return Promise.resolve();
+    S.dirty = false;
+    var hours = null;
+    if (S.edits) { hours = {}; Object.keys(S.edits).forEach(function (k) { hours[k] = Math.max(0, Math.round(Number(S.edits[k]) || 0)); }); }
+    var month = S.month;
+    return SA.post("month", { month: month, days: S.days, hours: hours }).then(function (r) {
+      if (month === S.month) $("saved").textContent = "Saved " + new Date(r.savedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) + ".";
+    }).catch(function (err) { $("saved").textContent = "Not saved: " + err.message; S.dirty = true; });
+  }
+  window.addEventListener("beforeunload", function () { if (S.dirty) save(); });
+  function go(by) { clearTimeout(S.timer); save().then(function () { load(C.addMonths(S.month, by)); }); }
+  $("prev").addEventListener("click", function () { go(-1); });
+  $("next").addEventListener("click", function () { go(1); });
+
+  /* ---- totals */
+  function totals() {
+    var t = { w: 0, p: 0, o: 0 };
+    Object.keys(S.days).forEach(function (d) { t.w += S.days[d][0]; t.p += S.days[d][1]; t.o += S.days[d][2]; });
+    return t;
+  }
+  function count(n, one, many) { return n + " " + (n === 1 ? one : many); }
+
+  /* ---- the calendar */
+  function renderCalendar() {
+    var y = Number(S.month.slice(0, 4)), m = Number(S.month.slice(5, 7)) - 1;
+    var html = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(function (d) { return '<div class="dow">' + d + "</div>"; }).join("");
+    for (var k = 0; k < new Date(Date.UTC(y, m, 1)).getUTCDay(); k++) html += "<div></div>";
+    var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    for (var d = 1; d <= last; d++) {
+      var v = S.days[d];
+      if (!v) { html += '<div class="wkend">' + d + "</div>"; continue; }
+      var kinds = (v[0] ? 1 : 0) + (v[1] ? 1 : 0) + (v[2] ? 1 : 0), name = S.names[d];
+      var cls = kinds > 1 ? "mixed" : v[1] ? "pto" : v[2] ? "other" : "";
+      var lines = "";
+      if (name) lines += '<span class="l hol">' + esc(name) + "</span>";
+      if (v[0]) lines += v[0] === 8 && kinds === 1 ? '<span class="l big">8h</span>' : '<span class="l">' + v[0] + "h worked</span>";
+      if (v[1]) lines += '<span class="l">' + (v[1] === 8 && kinds === 1 ? "PTO" : v[1] + "h PTO") + "</span>";
+      if (v[2] && !(name && kinds === 1 && v[2] === 8)) lines += '<span class="l">' + v[2] + "h " + (name ? "holiday" : "other") + "</span>";
+      if (!kinds) lines += '<span class="l">No hours</span>';
+      var label = SA.monthOnly(S.month) + " " + d + (name ? ", " + name : "") + ": " + count(v[0], "hour", "hours") + " worked" +
+        (v[1] ? ", " + v[1] + " PTO" : "") + (v[2] ? ", " + v[2] + " holiday or other" : "");
+      html += '<button type="button" class="day ' + cls + '" data-day="' + d + '" aria-pressed="' + (S.sel.indexOf(d) >= 0) + '" aria-label="' + esc(label) + '">' +
+        '<span class="n">' + d + '</span><span style="display:flex;flex-direction:column;gap:1px">' + lines + "</span></button>";
+    }
+    $("grid").innerHTML = html;
+  }
+  $("grid").addEventListener("click", function (e) {
+    var b = e.target.closest("button.day");
+    if (!b) return;
+    var d = Number(b.getAttribute("data-day"));
+    if (e.shiftKey && S.anchor) {
+      S.sel = Object.keys(S.days).map(Number).filter(function (k) { return k >= Math.min(S.anchor, d) && k <= Math.max(S.anchor, d); });
+    } else if (e.metaKey || e.ctrlKey) {
+      S.sel = S.sel.indexOf(d) >= 0 ? S.sel.filter(function (x) { return x !== d; }) : S.sel.concat([d]);
+      S.anchor = d;
+    } else { S.sel = [d]; S.anchor = d; }
+    renderCalendar(); renderDayPanel(); renderSide();
+  });
+
+  /* ---- the day menu in the sidebar */
+  var FIELDS = [["0", "Worked", "#fff"], ["1", "PTO", "var(--pto)"], ["2", "Holiday or other", "var(--other)"]];
+  function renderDayPanel() {
+    var panel = $("dayPanel");
+    if (!S.sel.length) { panel.hidden = true; panel.innerHTML = ""; return; }
+    var first = S.days[S.sel[0]];
+    var same = function (i) { return S.sel.every(function (d) { return S.days[d][i] === first[i]; }); };
+    var title = S.sel.length === 1
+      ? new Date(Date.UTC(Number(S.month.slice(0, 4)), Number(S.month.slice(5, 7)) - 1, S.sel[0])).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" })
+      : S.sel.length + " days selected";
+    var html = '<h2 style="font-size:18px">' + esc(title) + "</h2>" +
+      (S.sel.length === 1 && S.names[S.sel[0]] ? '<p class="note">' + esc(S.names[S.sel[0]]) + ", a holiday</p>" : "") +
+      '<div style="margin-top:6px">' + FIELDS.map(function (f) {
+        return '<div class="frow"><i class="sw" style="background:' + f[2] + '"></i><label for="f' + f[0] + '">' + f[1] + "</label>" +
+          '<button type="button" class="step" data-step="' + f[0] + '" data-by="-1" aria-label="One hour less ' + f[1] + '">−</button>' +
+          '<input class="num" id="f' + f[0] + '" data-field="' + f[0] + '" type="number" min="0" max="24" step="1" inputmode="numeric" value="' + (same(Number(f[0])) ? first[f[0]] : "") + '" placeholder="' + (same(Number(f[0])) ? "" : "Mixed") + '">' +
+          '<button type="button" class="step" data-step="' + f[0] + '" data-by="1" aria-label="One hour more ' + f[1] + '">+</button></div>';
+      }).join("") + "</div>" +
+      '<p class="note" id="dayTotal" style="font-size:14px;margin-top:12px"></p>' +
+      '<div class="quick">' +
+      '<button type="button" class="btn small" data-set="8,0,0">All worked</button>' +
+      '<button type="button" class="btn small" data-set="0,8,0">All PTO</button>' +
+      '<button type="button" class="btn small" data-set="4,4,0">Half PTO</button>' +
+      '<button type="button" class="btn small" data-set="0,0,8">Holiday or other</button></div>' +
+      '<button type="button" class="btn primary" id="done" style="width:100%;margin-top:18px">Done</button>';
+    panel.innerHTML = html; panel.hidden = false;
+    dayTotal();
+  }
+  function dayTotal() {
+    var el = $("dayTotal"); if (!el) return;
+    if (S.sel.length !== 1) { el.textContent = "Changes apply to every selected day."; return; }
+    var v = S.days[S.sel[0]];
+    el.textContent = "Day total: " + count(v[0] + v[1] + v[2], "hour", "hours") + ".";
+  }
+  function setDays(fn) {
+    S.sel.forEach(function (d) { S.days[d] = fn(S.days[d].slice()); });
+    S.edits = null;
+    changed();
+    renderCalendar(); renderSide(); renderSplit(); dayTotal();
+  }
+  $("dayPanel").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    if (b.id === "done") { S.sel = []; renderCalendar(); renderDayPanel(); renderSide(); return; }
+    if (b.hasAttribute("data-set")) {
+      var v = b.getAttribute("data-set").split(",").map(Number);
+      setDays(function () { return v.slice(); });
+      renderDayPanel(); return;
+    }
+    if (b.hasAttribute("data-step")) {
+      var i = Number(b.getAttribute("data-step")), by = Number(b.getAttribute("data-by"));
+      setDays(function (x) { x[i] = Math.max(0, Math.min(24, x[i] + by)); return x; });
+      renderDayPanel();
+    }
+  });
+  $("dayPanel").addEventListener("input", function (e) {
+    var f = e.target.getAttribute && e.target.getAttribute("data-field");
+    if (f === null || e.target.value === "") return;
+    var n = Math.max(0, Math.min(24, Math.round(Number(e.target.value) || 0)));
+    setDays(function (x) { x[Number(f)] = n; return x; });
+  });
+
+  /* ---- the summary and the allocation */
+  function renderSide() {
+    var t = totals();
+    $("sumTitle").textContent = "Worked in " + SA.monthOnly(S.month);
+    $("sumHours").textContent = count(t.w, "Hour", "Hours");
+    $("sumDays").textContent = C.daysAndHours(t.w);
+    $("sumNot").textContent = "Not counted: " + count(t.p, "hour", "hours") + " of PTO, " + count(t.o, "hour", "hours") + " of holiday or other.";
+    $("allocCard").hidden = S.sel.length > 0;
+    var a = S.me.allocation;
+    $("allocNote").textContent = a.length ? "The split in place in " + SA.monthName(S.month) + ", set by Operations. A later change doesn't alter this month." : "You have no allocation for this month yet. Ask Operations.";
+    $("alloc").innerHTML = a.map(function (x) {
+      return '<div><span class="nm">' + esc(x.name) + '</span><span class="ty">' + esc(x.type) + '</span><span class="pc">' + SA.r2(x.pct) + "%</span></div>";
+    }).join("");
+  }
+
+  /* ---- the split and the schedule */
+  function current() {
+    var t = totals(), a = S.me.allocation;
+    var suggested = C.split(t.w, a.map(function (x) { return x.pct; }));
+    var hours = S.edits ? a.map(function (x) { return Math.max(0, Math.round(Number(S.edits[x.projectId]) || 0)); }) : suggested;
+    var pctSum = a.reduce(function (s, x) { return s + x.pct; }, 0);
+    var target = suggested.reduce(function (s, x) { return s + x; }, 0);
+    return { t: t, a: a, suggested: suggested, hours: hours, pctSum: pctSum, target: target, sum: hours.reduce(function (s, x) { return s + x; }, 0) };
+  }
+  function renderSplit() {
+    var c = current();
+    $("title").textContent = SA.monthName(S.month);
+    $("splitLede").textContent = count(c.t.w, "hour", "hours") + " worked in " + SA.monthOnly(S.month) + ". PTO (" + c.t.p + "h) and holidays or other (" + c.t.o + "h) are left out.";
+    var pctOff = c.a.length && Math.abs(c.pctSum - 100) > 0.001;
+    $("pctWarn").hidden = !pctOff;
+    $("pctWarn").textContent = pctOff ? "Your allocation adds up to " + SA.r2(c.pctSum) + "%, not 100%, so " + (c.t.w - c.target) + " of your hours have no project. Ask Operations to fix it." : "";
+    if (!c.a.length) {
+      $("split").innerHTML = '<tbody><tr><td class="muted">No allocation for ' + esc(SA.monthName(S.month)) + " yet.</td></tr></tbody>";
+      derived(); return;
+    }
+    $("split").innerHTML = '<thead><tr><th>Project</th><th>Funding</th><th class="r">Allocation</th><th class="r">Exact share</th><th class="r">Hours</th><th>In days</th></tr></thead><tbody>' +
+      c.a.map(function (x, i) {
+        return '<tr><td style="font-weight:600;color:var(--navy)">' + esc(x.name) + "</td><td>" + esc(x.type) + '</td><td class="r">' + SA.r2(x.pct) + '%</td><td class="r muted">' +
+          (c.t.w * x.pct / 100).toFixed(2) + '</td><td class="r"><input class="hrs" type="number" min="0" step="1" inputmode="numeric" data-i="' + i + '" aria-label="Hours for ' + esc(x.name) + '" value="' +
+          (S.edits ? esc(S.edits[x.projectId]) : c.suggested[i]) + '"></td><td class="muted" data-days="' + i + '"></td></tr>';
+      }).join("") +
+      '<tr style="font-weight:600"><td>Total</td><td class="muted" id="fund" style="font-weight:400"></td><td class="r">' + SA.r2(c.pctSum) + '%</td><td class="r muted">' +
+      (c.t.w * c.pctSum / 100).toFixed(2) + '</td><td class="r"><span id="sumH"></span></td><td class="muted" id="sumD" style="font-weight:400"></td></tr></tbody>';
+    derived();
+  }
+  /** What follows from the hours as they stand, without redrawing the inputs being typed in. */
+  function derived() {
+    var c = current();
+    c.a.forEach(function (x, i) {
+      var cell = document.querySelector('[data-days="' + i + '"]'); if (cell) cell.textContent = C.inDays(c.hours[i]);
+      var input = document.querySelector('input.hrs[data-i="' + i + '"]'); if (input) input.classList.toggle("edited", c.hours[i] !== c.suggested[i]);
+    });
+    var c3 = c.a.reduce(function (s, x, i) { return s + (x.type === "c3" ? c.hours[i] : 0); }, 0);
+    if ($("fund")) $("fund").textContent = "c3 " + c3 + "h, c6 " + (c.sum - c3) + "h";
+    if ($("sumH")) { $("sumH").textContent = c.sum + "h"; $("sumH").className = c.sum === c.target ? "" : "pill-warn"; }
+    if ($("sumD")) $("sumD").textContent = C.inDays(c.sum);
+    $("reset").hidden = !S.edits;
+    var off = c.a.length && c.sum !== c.target, diff = c.sum - c.target;
+    $("balance").hidden = !off;
+    $("balance").textContent = off ? "Your project hours add up to " + c.sum + ", " + Math.abs(diff) + (diff > 0 ? " more" : " fewer") + " than the " + c.target + " to split. " +
+      (diff > 0 ? "Take " + diff + " off a project to balance." : "Add " + (-diff) + " to a project to balance.") : "";
+    renderPlan(c, off);
+  }
+  $("split").addEventListener("input", function (e) {
+    var i = e.target.getAttribute && e.target.getAttribute("data-i");
+    if (i === null) return;
+    var c = current();
+    if (!S.edits) { S.edits = {}; c.a.forEach(function (x, k) { S.edits[x.projectId] = String(c.suggested[k]); }); }
+    S.edits[c.a[Number(i)].projectId] = e.target.value;
+    changed(); derived();
+  });
+  $("reset").addEventListener("click", function () { S.edits = null; changed(); renderSplit(); });
+
+  function renderPlan(c, off) {
+    var wait = !c.a.length ? "There is nothing to schedule until you have an allocation." : off ? "Balance your hours above to see a schedule." : "";
+    $("planWait").hidden = !wait; $("planWait").textContent = wait; $("planBox").hidden = Boolean(wait);
+    if (wait) return;
+    var days = Object.keys(S.days).map(Number).sort(function (a, b) { return a - b; });
+    var plan = C.schedule(days.map(function (d) { return { day: d, worked: S.days[d][0] }; }), c.hours);
+    var html = ["Mon", "Tue", "Wed", "Thu", "Fri"].map(function (d) { return '<div class="dow">' + d + "</div>"; }).join("");
+    var lead = new Date(Date.UTC(Number(S.month.slice(0, 4)), Number(S.month.slice(5, 7)) - 1, days[0])).getUTCDay() - 1;
+    for (var k = 0; k < lead; k++) html += "<div></div>";
+    days.forEach(function (d) {
+      var v = S.days[d];
+      var lines = (plan[d] || []).map(function (p) { return '<span class="l">' + esc(c.a[p.i].name) + ": " + count(p.h, "hour", "hours") + "</span>"; }).join("");
+      if (v[1]) lines += '<span class="l aside">PTO: ' + count(v[1], "hour", "hours") + "</span>";
+      if (v[2]) lines += '<span class="l aside">' + esc(S.names[d] || "Other") + ": " + count(v[2], "hour", "hours") + "</span>";
+      html += '<div class="plan' + (v[0] ? "" : " off") + '"><span class="n">' + d + "</span>" + lines + "</div>";
+    });
+    $("plan").innerHTML = html;
+  }
+
+  function renderAll() {
+    var today = new Date();
+    $("whyMonth").textContent = S.month === C.defaultMonth(today)
+      ? (today.getDate() <= 15 ? "Showing " + SA.monthOnly(S.month) + " because it's early in the month. After the 15th, this page opens on the current month."
+        : "Showing " + SA.monthOnly(S.month) + ". Through the 15th, this page opens on the month before.")
+      : "";
+    renderCalendar(); renderDayPanel(); renderSide(); renderSplit();
+  }
+
+  load(S.month);
+})();
+</script>
+</body>
+</html>

@@ -110,7 +110,7 @@ const ROLES = ["admin", "user"];
 // Apps with real, already-public content default to "public"; anything else defaults
 // to "admin-only" until an admin explicitly opens it up from Settings.
 const KNOWN_APP_IDS = ["council-data", "mcm", "pcn", "consensus", "stars", "artifacts", "job-description",
-                       "apprenticeship", "partner-intel"];
+                       "apprenticeship", "partner-intel", "salary-allocation"];
 // App ids arrive in request bodies: a Set, so "constructor" or "__proto__" is just an unknown name.
 const KNOWN_APPS = new Set(KNOWN_APP_IDS);
 const DEFAULT_PUBLIC_APPS = ["council-data", "mcm", "stars"];

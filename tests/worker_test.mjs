@@ -5772,6 +5772,7 @@ test("access: every control panel page checks that app's admin, and the staff pa
     "artifacts/control-panel/index.html": "artifacts", "job-description/control-panel/index.html": "job-description",
     "apprenticeship/control-panel/index.html": "apprenticeship", "apprenticeship/control-panel/responses.html": "apprenticeship",
     "partner-intel/control-panel/index.html": "partner-intel",
+    "salary-allocation/control-panel/index.html": "salary-allocation",
   };
   for (const [file, app] of Object.entries(panels)) assert.deepEqual(gate(file), [app, "admin"], file);
   assert.deepEqual(gate("partner-intel/index.html"), ["partner-intel", "use"]);
@@ -6361,6 +6362,218 @@ test("partner_intel: BUG the mark's diamond never swelled at the end (the CSS sw
 test("partner_intel: the collapsed Ask box has a faint navy rim with a white ring inside it, so it holds its shape on white", () => {
   const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
   assert.match(css, /\.abx:not\(\.open\) \{[^}]*border-color:rgba\(7,33,78,\.24\); box-shadow:inset 0 0 0 1px rgba\(255,255,255,\.7\),/);
+});
+
+/* ------------------------------------------------------------------------- salary_allocation */
+const SA_MOD = await mod("salary_allocation.js");
+const sa = (route, request, env) => SA_MOD.handleSalaryAllocationApi(route, request, env);
+const saGet = (route, token) => req(`/api/salary-allocation/${route}`, { headers: { authorization: `Bearer ${token}` } });
+const saPost = (route, body, token) => jsonReq(`/api/salary-allocation/${route}`, "POST", body, token);
+/** The page arithmetic as it ships (public/salary-allocation/sa-calc.js). */
+const SACALC = (() => { const w = {}; new Function("window", fs.readFileSync(path.join(path.dirname(SRC), "public", "salary-allocation", "sa-calc.js"), "utf8"))(w); return w.SACalc; })();
+
+/** Two projects, a position, an admin of the app and two staff on the list. */
+async function saEnv() {
+  const env = makeEnv({ poneill_password: "seed-password-123" });
+  await beta("me", req("/api/beta/me"), env);
+  const admin = await personSession(env, "ops@conexusindiana.com", { role: "user", apps: [], appAdmin: ["salary-allocation"] });
+  const jlee = await personSession(env, "jlee@conexusindiana.com", { role: "user", apps: [], appAdmin: [] });
+  const other = await personSession(env, "bl@conexusindiana.com", { role: "user", apps: [], appAdmin: [] });
+  const stranger = await personSession(env, "nobody@conexusindiana.com", { role: "user", apps: [], appAdmin: [] });
+  const post = async (route, body, token = admin) => {
+    const r = await sa(route, saPost(route, body, token), env);
+    return { status: r.status, body: await r.json() };
+  };
+  let d = (await post("admin/project", { name: "4170 CX LEI", type: "c6" })).body.data;
+  d = (await post("admin/project", { name: "4100 UnRest.", type: "c3" })).body.data;
+  const [lei, unrest] = d.projects.map((p) => p.id);
+  d = (await post("admin/position", { title: "Director, Operations" })).body.data;
+  const pos = d.positions[0].id;
+  d = (await post("admin/person", { first: "Jillian", last: "Lee", email: "jlee@conexusindiana.com", positionId: pos })).body.data;
+  d = (await post("admin/person", { first: "Brooke", last: "Lambert", email: "bl@conexusindiana.com", positionId: pos })).body.data;
+  const [jill, brooke] = d.people.map((p) => p.id);
+  await post("admin/allocation", { personId: jill, from: "2026-01", lines: [{ projectId: lei, pct: 75 }, { projectId: unrest, pct: 25 }] });
+  await post("admin/allocation", { personId: brooke, from: "2026-01", lines: [{ projectId: lei, pct: 50 }, { projectId: unrest, pct: 50 }] });
+  return { env, admin, jlee, other, stranger, post, lei, unrest, pos, jill, brooke };
+}
+const me = async (env, token, month) => { const r = await sa("me", saGet(`me?month=${month}`, token), env); return { status: r.status, body: await r.json() }; };
+
+test("salary_allocation: worked hours split into whole hours that always add up to the hours worked", () => {
+  assert.deepEqual(SACALC.split(164, [64, 20, 7, 5, 4]), [105, 33, 11, 8, 7], "164 hours: the three hours left over go to the largest remainders");
+  assert.deepEqual(SACALC.split(176, [75, 25]), [132, 44]);
+  // However the shares fall, the rounded hours add up exactly, and none is more than an hour off its share.
+  for (let n = 0; n < 400; n++) {
+    const parts = Array.from({ length: 1 + (n % 6) }, (_, k) => 1 + ((n * 7 + k * 13) % 23));
+    const sum = parts.reduce((s, x) => s + x, 0);
+    const pcts = parts.map((x) => (x / sum) * 100);
+    const total = 8 * (10 + (n % 13)) - (n % 9);
+    const out = SACALC.split(total, pcts);
+    assert.equal(out.reduce((s, x) => s + x, 0), total, `case ${n} adds up`);
+    out.forEach((h, i) => assert.ok(Math.abs(h - (total * pcts[i]) / 100) < 1, `case ${n} keeps each project within an hour`));
+  }
+  assert.equal(SACALC.split(160, [50, 22, 2.5, 5.5]).reduce((s, x) => s + x, 0), 128, "an allocation at 80% splits 80% of the hours");
+});
+
+test("salary_allocation: hours read as days, half days and hours; the month total as days and hours", () => {
+  assert.equal(SACALC.inDays(14), "1 day, 1 half day, 2 hours");
+  assert.equal(SACALC.inDays(16), "2 days");
+  assert.equal(SACALC.inDays(12), "1 day, 1 half day");
+  assert.equal(SACALC.inDays(3), "3 hours");
+  assert.equal(SACALC.inDays(1), "1 hour");
+  assert.equal(SACALC.inDays(0), "None");
+  assert.equal(SACALC.daysAndHours(176), "22 days");
+  assert.equal(SACALC.daysAndHours(172), "21 days 4 hours");
+  assert.equal(SACALC.daysAndHours(4), "4 hours");
+});
+
+test("salary_allocation: the page opens on last month through the 15th, and on this month after", () => {
+  assert.equal(SACALC.defaultMonth(new Date(2026, 9, 30)), "2026-10");
+  assert.equal(SACALC.defaultMonth(new Date(2026, 10, 15)), "2026-10");
+  assert.equal(SACALC.defaultMonth(new Date(2026, 10, 16)), "2026-11");
+  assert.equal(SACALC.defaultMonth(new Date(2027, 0, 3)), "2026-12", "into the year before");
+  assert.equal(SACALC.weekdays("2026-10").length, 22);
+});
+
+test("salary_allocation: the possible schedule records every hour once, fills each day, and uses half days", () => {
+  const days = SACALC.weekdays("2026-10").filter((d) => d !== 12 && d !== 23).map((d) => ({ day: d, worked: d === 30 ? 4 : 8 }));
+  const hours = SACALC.split(156, [64, 20, 7, 5, 4]);
+  const plan = SACALC.schedule(days, hours);
+  hours.forEach((h, i) => assert.equal(Object.values(plan).flat().filter((p) => p.i === i).reduce((s, p) => s + p.h, 0), h, `project ${i} gets all its hours`));
+  days.forEach((d) => assert.equal((plan[d.day] || []).reduce((s, p) => s + p.h, 0), d.worked, `day ${d.day} adds up to the hours worked`));
+  // Spread evenly: the biggest project is in the first week and the last.
+  assert.ok(plan[1].some((p) => p.i === 0) && plan[29].some((p) => p.i === 0));
+  // Half days first: DOE MEP's 11 hours are two half days and 3 hours, each on a different day.
+  const doe = Object.entries(plan).filter(([, ps]) => ps.some((p) => p.i === 2)).map(([, ps]) => ps.find((p) => p.i === 2).h);
+  assert.deepEqual(doe.slice().sort(), [3, 4, 4], "whole half days, and the odd hours on a day of their own");
+  // Short days only: no half day fits, and every hour is still placed.
+  const short = SACALC.schedule([1, 2, 3, 4, 5].map((d) => ({ day: d, worked: 3 })), [9, 6]);
+  assert.deepEqual([0, 1].map((i) => Object.values(short).flat().filter((p) => p.i === i).reduce((s, p) => s + p.h, 0)), [9, 6]);
+});
+
+test("salary_allocation: the U.S. federal holidays fall on the days observed, and a range counts its weekdays", () => {
+  const y26 = Object.fromEntries(SA_MOD.federalHolidays(2026).map((h) => [h.name, h.date]));
+  assert.deepEqual(y26, {
+    "New Year's Day": "2026-01-01", "Martin Luther King Jr. Day": "2026-01-19", "Washington's Birthday": "2026-02-16",
+    "Memorial Day": "2026-05-25", "Juneteenth": "2026-06-19", "Independence Day (observed)": "2026-07-03", "Labor Day": "2026-09-07",
+    "Columbus Day": "2026-10-12", "Veterans Day": "2026-11-11", "Thanksgiving Day": "2026-11-26", "Christmas Day": "2026-12-25",
+  });
+  const y27 = Object.fromEntries(SA_MOD.federalHolidays(2027).map((h) => [h.name, h.date]));
+  assert.equal(y27["Independence Day (observed)"], "2027-07-05", "a Sunday moves to Monday");
+  assert.equal(y27["Christmas Day (observed)"], "2027-12-24", "a Saturday moves to Friday");
+  assert.equal(y27["Juneteenth (observed)"], "2027-06-18");
+  assert.deepEqual(SA_MOD.holidaysInMonth([{ name: "Thanksgiving", start: "2026-11-26", end: "2026-11-29" }], "2026-11").map((h) => h.date),
+    ["2026-11-26", "2026-11-27"], "the weekend in the range is skipped");
+});
+
+test("salary_allocation: staff see only their own allocation, by the email they sign in with; the control panel is for its admins", async () => {
+  const t = await saEnv();
+  const mine = await me(t.env, t.jlee, "2026-10");
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.person.name, "Jillian Lee");
+  assert.deepEqual(mine.body.allocation.map((a) => [a.name, a.type, a.pct]), [["4170 CX LEI", "c6", 75], ["4100 UnRest.", "c3", 25]]);
+  assert.equal(JSON.stringify(mine.body).includes("Lambert"), false, "nothing about anyone else");
+  assert.deepEqual(mine.body.holidays, [{ date: "2026-10-12", name: "Columbus Day" }], "the month's holidays, loaded on first use");
+  assert.equal(mine.body.isAdmin, false);
+  const notListed = await me(t.env, t.stranger, "2026-10");
+  assert.equal(notListed.status, 403);
+  assert.match(notListed.body.error, /aren't on the Salary Allocation list/);
+  assert.equal((await sa("me", req("/api/salary-allocation/me"), t.env)).status, 401, "signed out");
+  for (const token of [t.jlee, t.stranger]) {
+    assert.equal((await sa("admin/data", saGet("admin/data", token), t.env)).status, 403, "staff never reach the control panel's data");
+    assert.equal((await t.post("admin/project", { name: "Sneaky", type: "c3" }, token)).status, 403);
+  }
+  assert.equal((await sa("admin/data", saGet("admin/data", t.admin), t.env)).status, 200);
+  assert.equal(fs.readFileSync(path.join(path.dirname(SRC), "src", "beta_auth.js"), "utf8").includes('"salary-allocation"]'), true, "an app admins can be given");
+});
+
+test("salary_allocation: a change applies from the month it is saved for, so earlier months keep their split", async () => {
+  const t = await saEnv();
+  const r = await t.post("admin/allocation", { personId: t.jill, from: "2026-12", lines: [{ projectId: t.unrest, pct: 100 }] });
+  assert.equal(r.status, 200);
+  assert.deepEqual((await me(t.env, t.jlee, "2026-11")).body.allocation.map((a) => a.pct), [75, 25], "November keeps the split it had");
+  assert.deepEqual((await me(t.env, t.jlee, "2026-12")).body.allocation.map((a) => [a.name, a.pct]), [["4100 UnRest.", 100]]);
+  assert.deepEqual((await me(t.env, t.jlee, "2027-03")).body.allocation.map((a) => a.pct), [100], "and every month after");
+  // Planning between two changes leaves the later one in place.
+  await t.post("admin/allocation", { personId: t.jill, from: "2026-11", lines: [{ projectId: t.lei, pct: 60 }, { projectId: t.unrest, pct: 40 }] });
+  assert.deepEqual((await me(t.env, t.jlee, "2026-11")).body.allocation.map((a) => a.pct), [60, 40]);
+  assert.deepEqual((await me(t.env, t.jlee, "2026-12")).body.allocation.map((a) => a.pct), [100]);
+  assert.equal((await t.post("admin/allocation", { personId: t.jill, from: "2026-13", lines: [] })).status, 400);
+  assert.equal((await t.post("admin/allocation", { personId: t.jill, from: "2026-11", lines: [{ projectId: t.lei, pct: 120 }] })).status, 400);
+});
+
+test("salary_allocation: a month is saved as entered, weekdays only and in whole hours", async () => {
+  const t = await saEnv();
+  const save = (body) => sa("month", saPost("month", body, t.jlee), t.env);
+  const r = await save({ month: "2026-10", days: { 1: [8, 0, 0], 23: [0, 8, 0], 30: [4, 4, 0], 3: [8, 0, 0] },
+    hours: { [t.lei]: 100, [t.unrest]: 56, nope: 3 } });
+  assert.equal(r.status, 200);
+  const saved = (await me(t.env, t.jlee, "2026-10")).body.saved;
+  assert.deepEqual(saved.days, { 1: [8, 0, 0], 23: [0, 8, 0], 30: [4, 4, 0] }, "Saturday the 3rd is not a workday");
+  assert.deepEqual(saved.hours, { [t.lei]: 100, [t.unrest]: 56 }, "only this month's projects");
+  assert.equal((await me(t.env, t.other, "2026-10")).body.saved, null, "each person's month is their own");
+  assert.equal((await save({ month: "2026-10", days: { 1: [8, 8, 9] } })).status, 400, "more than 24 hours in a day");
+  assert.equal((await save({ month: "2026-10", days: { 1: [4.5, 0, 0] } })).status, 400, "whole hours");
+  assert.equal((await save({ month: "Oct", days: {} })).status, 400);
+  // Keys from a request are never looked up on an object's prototype.
+  assert.equal((await save({ month: "2026-10", days: { constructor: [8, 0, 0], __proto__: { 2: [1, 1, 1] } }, hours: { constructor: 5 } })).status, 200);
+  assert.deepEqual((await me(t.env, t.jlee, "2026-10")).body.saved.days, {});
+  assert.equal((await sa("month", saPost("month", { month: "2026-10", days: {} }, t.stranger), t.env)).status, 403);
+});
+
+test("salary_allocation: the allocation spreadsheet imports people, positions, projects and splits, with emails guessed", async () => {
+  const t = await saEnv();
+  const csv = ["Position,First,Last,Project,Allocation,Funding Type",
+    "President & CEO,Jay,Wirts,4170 CX LEI,0.5,c6", "President & CEO,Jay,Wirts,4808 RMFF,0.1,c6", "President & CEO,Jay,Wirts,4100 UnRest.,0.4,c3",
+    "\"Director, Public Relations\",Kelsey,O'Shaughnessy,4170 CX LEI,0.75,c6", "\"Director, Public Relations\",Kelsey,O'Shaughnessy,4100 UnRest.,0.25,c3",
+    "\"Vice President, Industry Partnerships\",Open,,4170 CX LEI,0,c6", "\"Vice President, Industry Partnerships\",Open,,4100 UnRest.,1,c3"].join("\n");
+  const res = await sa("admin/import", req("/api/salary-allocation/admin/import?name=alloc.csv", { method: "POST", headers: { authorization: `Bearer ${t.admin}` }, body: csv }), t.env);
+  assert.equal(res.status, 200);
+  const { counts, data } = await res.json();
+  assert.deepEqual(counts, { people: 3, projects: 1, positions: 3, skipped: 0 });
+  const jay = data.people.find((p) => p.last === "Wirts");
+  assert.equal(jay.email, "jwirts@conexusindiana.com");
+  assert.equal(data.people.find((p) => p.last === "O'Shaughnessy").email, "koshaughnessy@conexusindiana.com");
+  const open = data.people.find((p) => !p.first && !p.last);
+  assert.ok(open && open.email === "", "an open position, with no one to sign in");
+  assert.deepEqual(open.allocations[0].lines.map((l) => l.pct), [100], "a 0% line is left out");
+  assert.equal(jay.allocations[0].from, "0000-01", "an import applies to every month");
+  assert.deepEqual(jay.allocations[0].lines.map((l) => [data.projects.find((p) => p.id === l.projectId).name, l.pct]), [["4170 CX LEI", 50], ["4808 RMFF", 10], ["4100 UnRest.", 40]]);
+  assert.equal(data.projects.find((p) => p.name === "4808 RMFF").type, "c6");
+  const bad = await sa("admin/import", req("/api/salary-allocation/admin/import?name=x.csv", { method: "POST", headers: { authorization: `Bearer ${t.admin}` }, body: "a,b\n1,2" }), t.env);
+  assert.equal(bad.status, 400);
+});
+
+test("salary_allocation: an inactive project or position stays where it is, and is not offered for anything new", async () => {
+  const t = await saEnv();
+  let d = (await t.post("admin/project", { id: t.unrest, name: "4100 UnRest.", type: "c3", active: false })).body.data;
+  assert.equal(d.projects.find((p) => p.id === t.unrest).active, false);
+  assert.equal((await t.post("admin/allocation", { personId: t.jill, from: "2026-11", lines: [{ projectId: t.lei, pct: 70 }, { projectId: t.unrest, pct: 30 }] })).status, 200,
+    "someone who already had it keeps it");
+  d = (await t.post("admin/person", { first: "New", last: "Hire", email: "nhire@conexusindiana.com", positionId: t.pos })).body.data;
+  const hire = d.people.find((p) => p.last === "Hire").id;
+  const r = await t.post("admin/allocation", { personId: hire, from: "2026-11", lines: [{ projectId: t.unrest, pct: 100 }] });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /inactive/);
+  d = (await t.post("admin/position", { id: t.pos, title: "Director, Operations", active: false })).body.data;
+  assert.equal((await t.post("admin/person", { first: "Another", last: "Hire", email: "ahire@conexusindiana.com", positionId: t.pos })).status, 400, "not for someone new");
+  assert.equal((await t.post("admin/person", { id: t.jill, first: "Jillian", last: "Lee", email: "jlee@conexusindiana.com", positionId: t.pos })).status, 200, "kept by who has it");
+  assert.equal((await t.post("admin/project/delete", { id: t.lei })).status, 409, "a project anyone has, now or before, is not removed");
+  assert.equal((await t.post("admin/position/delete", { id: t.pos })).status, 409, "nor a title someone holds");
+  assert.equal((await t.post("admin/project", { id: "constructor", name: "x", type: "c3" })).status, 404);
+});
+
+test("salary_allocation: holidays are kept by the control panel, with ranges, and a year's federal list adds once", async () => {
+  const t = await saEnv();
+  let r = await t.post("admin/holiday", { name: "Day after Thanksgiving", start: "2026-11-27", end: "" });
+  assert.equal(r.status, 200);
+  assert.deepEqual((await me(t.env, t.jlee, "2026-11")).body.holidays.map((h) => h.date), ["2026-11-11", "2026-11-26", "2026-11-27"]);
+  assert.equal((await t.post("admin/holiday", { name: "Backwards", start: "2026-12-24", end: "2026-12-20" })).status, 400);
+  assert.equal((await t.post("admin/holiday", { name: "Too long", start: "2026-06-01", end: "2026-08-01" })).status, 400);
+  const before = (await t.post("admin/holidays/load", { year: 2027 })).body;
+  assert.equal(before.added, 0, "this year and next are loaded on first use");
+  r = await t.post("admin/holidays/load", { year: 2028 });
+  assert.equal(r.body.added, 11);
+  assert.equal((await t.post("admin/holidays/load", { year: 2028 })).body.added, 0, "loading twice adds nothing");
 });
 
 let failed = 0;
