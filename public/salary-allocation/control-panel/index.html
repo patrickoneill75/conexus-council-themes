@@ -43,7 +43,7 @@
   if (!window.SA) return;
   var esc = SA.esc, $ = function (id) { return document.getElementById(id); };
   var D = null;                                   // the lists, as the server holds them
-  var S = { tab: "allocations", month: SA.thisMonth(), q: "", year: String(new Date().getFullYear()), peopleView: "table",
+  var S = { tab: "allocations", month: SA.thisMonth(), q: "", year: String(new Date().getFullYear()), peopleView: "table", draft: {}, draftMonth: "",
     sort: { allocations: { key: "last", dir: 1 }, people: { key: "last", dir: 1 }, positions: { key: "title", dir: 1 }, projects: { key: "type", dir: -1 },
       holidays: { key: "start", dir: 1 } } };
   var X = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
@@ -91,6 +91,7 @@
     $("view").innerHTML = ({ allocations: allocations, people: peopleTab, positions: positionsTab, projects: projectsTab, holidays: holidaysTab })[S.tab]();
     wrap = document.querySelector(".orgwrap");
     if (wrap) wrap.scrollLeft = keep;
+    updateBar();
     drawOrg();
   }
   window.addEventListener("hashchange", render);
@@ -141,18 +142,29 @@
     var getters = { first: function (p) { return p.first; }, last: function (p) { return p.last; }, total: totalOf };
     cols.forEach(function (c) { getters["p:" + c.id] = function (p) { return pctOf(p, c.id); }; });
     var list = sorted(D.people, "allocations", getters);
+    if (S.draftMonth !== month) { S.draft = {}; S.draftMonth = month; }
     var tot = { c6: 0, c3: 0 }, off = [];
     var rows = list.map(function (p) {
-      var sum = totalOf(p), links = personLinks(p);
-      var cells = cols.map(function (c) { var n = pctOf(p, c.id); tot[c.type] += n; return '<td class="pc' + (n ? "" : " zero") + '">' + (n ? SA.r2(n) + "%" : "") + "</td>"; }).join("");
+      var sum = totalOf(p), draft = S.draft[p.id] || {};
+      var cells = cols.map(function (c) {
+        var n = pctOf(p, c.id), has = Object.prototype.hasOwnProperty.call(draft, c.id);
+        tot[c.type] += n;
+        // An inactive project is offered only to someone who has had it.
+        var locked = c.active === false && !hadProject(p, c.id);
+        return '<td class="pc' + (has ? " edited" : "") + (has && !validPct(draft[c.id]) ? " bad" : "") + '"><span class="cw"><input class="cell" inputmode="decimal" autocomplete="off" placeholder=" "' +
+          ' data-cell="' + esc(p.id) + '" data-proj="' + esc(c.id) + '" value="' + esc(has ? draft[c.id] : n ? String(SA.r2(n)) : "") + '"' +
+          ' aria-label="' + esc(nameOf(p) + ", " + c.name + ", percent of salary") + '"' + (locked ? ' disabled title="Inactive project"' : "") + '><i aria-hidden="true">%</i></span></td>';
+      }).join("");
       var ok = Math.abs(sum - 100) < 0.001;
       if (!ok) off.push(nameOf(p) + " " + SA.r2(sum) + "%");
+      sum = draftTotal(p, month);
+      ok = Math.abs(sum - 100) < 0.001;
       return '<tr><td class="stick"><button type="button" class="linkish namelink" data-alloc="' + esc(p.id) + '">' + esc(nameOf(p)) + '</button><span class="pos">' + esc(titleOf(p)) + "</span></td>" + cells +
-        '<td class="r" style="white-space:nowrap"><span class="' + (ok ? "" : "pill-warn") + '" style="' + (ok ? "font-weight:700;color:var(--navy)" : "") + '">' + SA.r2(sum) + "%</span></td></tr>";
+        '<td class="r" style="white-space:nowrap" data-total="' + esc(p.id) + '">' + totalHtml(sum) + "</td></tr>";
     }).join("");
     var fte = cols.map(function (c) { return '<td class="pc">' + (D.people.reduce(function (s, p) { return s + pctOf(p, c.id); }, 0) / 100).toFixed(2) + "</td>"; }).join("");
     var all = tot.c6 + tot.c3, open = D.people.filter(function (p) { return !p.first && !p.last; }).length;
-    return '<div class="head"><div><h1>Allocations</h1><p class="lede">Click a name to change that person\'s allocation. A change applies from the month you save it in, so step ahead to plan, and earlier months keep their split.</p></div>' +
+    return '<div class="head"><div><h1>Allocations</h1><p class="lede">Type in any cell to change a split, or click a name for the full allocation. Save a change for this month only or for this month and every month after. Earlier months keep their split.</p></div>' +
       '<div class="acts">' + monthNav("report", month) + '<button type="button" class="btn" id="importBtn">Import spreadsheet</button><button type="button" class="btn" id="csvBtn">Download</button></div></div>' +
       '<div class="cards4">' +
       '<div class="stat"><p>Staff time on c6</p><p class="v">' + (tot.c6 / 100).toFixed(2) + ' FTE</p><p>' + (all ? Math.round(tot.c6 / all * 100) : 0) + "% of staff time</p></div>" +
@@ -166,9 +178,94 @@
         th("allocations", "total", "Total", 'scope="col" rowspan="2" class="r" style="vertical-align:bottom"') + "</tr><tr>" +
         cols.map(function (c) { return th("allocations", "p:" + c.id, c.name, 'scope="col" class="pj"'); }).join("") + "</tr></thead><tbody>" + rows +
         '<tr class="fte"><td class="stick" style="color:var(--navy)">Staff time (FTE)</td>' + fte + "<td></td></tr></tbody></table></div>" +
-        '<p class="note" style="margin-top:12px">A blank cell is 0%. Click a column heading to sort by it. To change anyone\'s split, click their name.</p>'
+        '<p class="note" style="margin-top:12px">Type in any cell to change a split; a blank cell is 0%. Enter or the arrow keys move up and down, Escape undoes a cell. Click a name for the full allocation, or a column heading to sort.</p>' +
+        '<div class="savebar" id="saveBar" role="region" aria-label="Unsaved changes" hidden></div>'
         : '<div class="card" style="margin-top:20px"><p style="margin:0">No one is on the list yet. Import the allocation spreadsheet (Position, First, Last, Project, Allocation, Funding Type), or add people on the People tab.</p></div>');
   }
+
+  /* ---- Typing in the Allocations report. Edits wait in S.draft ({ personId: { projectId: "text" } }) until
+   * saved for this month only or for this month and every month after. */
+  function hadProject(p, id) { return (p.allocations || []).some(function (a) { return a.lines.some(function (l) { return l.projectId === id; }); }); }
+  function validPct(v) { var t = String(v).trim(), n = Number(t); return t === "" || (isFinite(n) && n >= 0 && n <= 100); }
+  function draftLines(p, month) {
+    var draft = S.draft[p.id] || {}, out = {};
+    linesFor(p, month).forEach(function (l) { out[l.projectId] = l.pct; });
+    Object.keys(draft).forEach(function (id) { out[id] = Number(String(draft[id]).trim()) || 0; });
+    return Object.keys(out).filter(function (id) { return out[id] > 0; }).map(function (id) { return { projectId: id, pct: out[id] }; });
+  }
+  function draftTotal(p, month) { return draftLines(p, month).reduce(function (s, l) { return s + l.pct; }, 0); }
+  function totalHtml(sum) {
+    var ok = Math.abs(sum - 100) < 0.001;
+    return '<span class="' + (ok ? "" : "pill-warn") + '" style="' + (ok ? "font-weight:700;color:var(--navy)" : "") + '">' + SA.r2(sum) + "%</span>";
+  }
+  function draftCount() {
+    var cells = 0, people = Object.keys(S.draft);
+    people.forEach(function (id) { cells += Object.keys(S.draft[id]).length; });
+    return { cells: cells, people: people };
+  }
+  function updateBar() {
+    var bar = $("saveBar");
+    if (!bar) return;
+    var n = draftCount(), month = SA.monthOnly(S.month);
+    bar.hidden = !n.cells;
+    if (!n.cells) { bar.innerHTML = ""; return; }
+    var bad = document.querySelectorAll("td.pc.bad").length;
+    var planned = n.people.map(function (id) { return D.people.filter(function (p) { return p.id === id; })[0]; })
+      .filter(function (p) { return p && (p.allocations || []).some(function (a) { return a.from > S.month; }); });
+    bar.innerHTML = '<div class="sb-text"><b>' + count(n.cells, "change", "changes") + "</b> for " + count(n.people.length, "person", "people") +
+      (bad ? '<span class="sb-bad">Fix the ' + count(bad, "cell", "cells") + " marked in red: a percent from 0 to 100.</span>"
+        : planned.length ? '<span class="sb-note">"' + esc(month) + ' and after" replaces the changes already planned for ' + esc(planned.map(nameOf).join(", ")) + ".</span>" : "") + "</div>" +
+      '<div class="sb-acts"><button type="button" class="btn ghost" data-draft="discard">Discard</button>' +
+      '<button type="button" class="btn" data-draft="month"' + (bad ? " disabled" : "") + ">Save for " + esc(month) + " only</button>" +
+      '<button type="button" class="btn primary" data-draft="future"' + (bad ? " disabled" : "") + ">Save for " + esc(month) + " and after</button></div>";
+  }
+  function saveDraft(scope) {
+    var month = S.month, ids = Object.keys(S.draft), chain = Promise.resolve();
+    document.querySelectorAll("[data-draft]").forEach(function (b) { b.disabled = true; });
+    ids.forEach(function (pid) {
+      chain = chain.then(function () {
+        var p = D.people.filter(function (x) { return x.id === pid; })[0];
+        if (!p) { delete S.draft[pid]; return; }
+        return SA.post("admin/allocation", { personId: pid, from: month, lines: draftLines(p, month), scope: scope }).then(function (r) { D = r.data; delete S.draft[pid]; });
+      });
+    });
+    chain.then(render).catch(function (err) { render(); alert(err.message); });
+  }
+  $("view").addEventListener("input", function (e) {
+    var t = e.target;
+    if (!t.hasAttribute || !t.hasAttribute("data-cell")) return;
+    var pid = t.getAttribute("data-cell"), id = t.getAttribute("data-proj");
+    var p = D.people.filter(function (x) { return x.id === pid; })[0];
+    var saved = linesFor(p, S.month).filter(function (l) { return l.projectId === id; })[0];
+    var d = S.draft[pid] = S.draft[pid] || {};
+    // Back to what is saved is no change at all.
+    if ((Number(t.value.trim()) || 0) === (saved ? saved.pct : 0) && validPct(t.value)) delete d[id]; else d[id] = t.value;
+    if (!Object.keys(d).length) delete S.draft[pid];
+    var td = t.closest("td");
+    td.classList.toggle("edited", Object.prototype.hasOwnProperty.call(d, id));
+    td.classList.toggle("bad", !validPct(t.value));
+    var cell = document.querySelector('[data-total="' + pid + '"]'); if (cell) cell.innerHTML = totalHtml(draftTotal(p, S.month));
+    updateBar();
+  });
+  $("view").addEventListener("keydown", function (e) {
+    var t = e.target;
+    if (!t.hasAttribute || !t.hasAttribute("data-cell")) return;
+    if (e.key === "Escape") {
+      var p = D.people.filter(function (x) { return x.id === t.getAttribute("data-cell"); })[0];
+      var saved = linesFor(p, S.month).filter(function (l) { return l.projectId === t.getAttribute("data-proj"); })[0];
+      t.value = saved ? String(SA.r2(saved.pct)) : "";
+      t.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    var by = e.key === "Enter" || e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (!by) return;
+    e.preventDefault();
+    var col = Array.prototype.slice.call(document.querySelectorAll('input.cell[data-proj="' + t.getAttribute("data-proj") + '"]:not([disabled])'));
+    var next = col[col.indexOf(t) + by];
+    if (next) { next.focus(); next.select(); }
+  });
+  $("view").addEventListener("focusin", function (e) { if (e.target.hasAttribute && e.target.hasAttribute("data-cell")) e.target.select(); });
+  window.addEventListener("beforeunload", function (e) { if (draftCount().cells) { e.preventDefault(); e.returnValue = ""; } });
 
   /* ---- People: a table, the org chart, or the table grouped by team */
   function peopleTab() {
@@ -455,7 +552,15 @@
     if (node) { S.orgSel = node.getAttribute("data-node"); drawOrg(); }
     var b = e.target.closest("button");
     if (!b) return;
-    if (b.hasAttribute("data-mnav")) { S.month = addMonths(S.month, Number(b.getAttribute("data-by"))); render(); return; }
+    if (b.hasAttribute("data-mnav")) {
+      if (draftCount().cells && !confirm("Leave " + SA.monthName(S.month) + " without saving your changes?")) return;
+      S.month = addMonths(S.month, Number(b.getAttribute("data-by"))); render(); return;
+    }
+    if (b.hasAttribute("data-draft")) {
+      var how = b.getAttribute("data-draft");
+      if (how === "discard") { S.draft = {}; render(); } else saveDraft(how);
+      return;
+    }
     if (b.hasAttribute("data-sort")) {
       var parts = b.getAttribute("data-sort").split(":"), tab = parts.shift(), key = parts.join(":"), s = S.sort[tab];
       S.sort[tab] = { key: key, dir: s.key === key ? -s.dir : 1 };
@@ -541,7 +646,7 @@
   function openPerson(id, allocOnly) {
     var p = id ? D.people.filter(function (x) { return x.id === id; })[0] : null;
     var st = { month: S.month, first: p ? p.first : "", last: p ? p.last : "", email: p ? p.email : "", touched: p ? p.email !== guess(p.first, p.last) : false,
-      positionId: p ? p.positionId : "", teamId: p ? p.teamId || "" : "", managerId: p ? p.managerId || "" : "", lines: null, adding: false };
+      positionId: p ? p.positionId : "", teamId: p ? p.teamId || "" : "", managerId: p ? p.managerId || "" : "", lines: null, adding: false, scope: "future" };
     // Who they can report to: anyone but themselves and the people who report up to them.
     var below = function (pid) { var out = [], walk = function (m) { D.people.forEach(function (x) { if (x.managerId === m && out.indexOf(x.id) < 0) { out.push(x.id); walk(x.id); } }); }; walk(pid); return out; };
     var notManagers = p ? below(p.id).concat([p.id]) : [];
@@ -566,7 +671,14 @@
           : (choices.length ? '<button type="button" class="add" data-adding>+ Add allocation</button>' : "")) +
         '<div class="tot"><span>Total</span><span class="' + (ok ? "" : "pill-warn") + '">' + SA.r2(total) + "%</span></div>" +
         (ok || !st.lines.length ? "" : '<p class="warn" style="margin:8px 0 0;font-size:14px">' + (total < 100 ? SA.r2(100 - total) + "% of the salary has no project yet. Add an allocation or raise one to reach 100%." : "This adds up to " + SA.r2(total) + "%. Lower one to reach 100%.") + "</p>") +
-        '<p class="note" style="margin-top:10px">Saving applies from ' + esc(SA.monthName(st.month)) + " on" + (later ? ", until the change already planned for " + esc(SA.monthName(later)) : "") + ". " + esc(SA.monthName(addMonths(st.month, -1))) + " and earlier keep their split.</p>";
+        (JSON.stringify(st.lines) === st.saved ? "" :
+          '<fieldset class="scope"><legend class="field">Apply this change to</legend><div class="seg" role="group">' +
+          '<button type="button" data-scope="month" aria-pressed="' + (st.scope === "month") + '">' + esc(SA.monthOnly(st.month)) + " only</button>" +
+          '<button type="button" data-scope="future" aria-pressed="' + (st.scope === "future") + '">' + esc(SA.monthOnly(st.month)) + " and after</button></div></fieldset>") +
+        '<p class="note" style="margin-top:10px">' + (st.scope === "month"
+          ? "Only " + esc(SA.monthName(st.month)) + " changes. " + esc(SA.monthName(addMonths(st.month, 1))) + " keeps the split it has now."
+          : "Applies to " + esc(SA.monthName(st.month)) + " and every month after" + (later ? ", replacing the change already planned for " + esc(SA.monthName(later)) : "") + ".") +
+        " " + esc(SA.monthName(addMonths(st.month, -1))) + " and earlier keep their split.</p>";
     }
     function draw() {
       var positions = D.positions.filter(function (x) { return x.active !== false || x.id === st.positionId; }).sort(function (a, b) { return a.title.localeCompare(b.title); });
@@ -603,6 +715,7 @@
           if (JSON.stringify(st.lines) !== st.saved && !window.confirm("Leave " + SA.monthName(st.month) + " without saving its allocation?")) return;
           load(addMonths(st.month, Number(b.getAttribute("data-by")))); st.adding = false; redrawAlloc(); return;
         }
+        if (b.hasAttribute("data-scope")) { st.scope = b.getAttribute("data-scope"); redrawAlloc(); return; }
         if (b.hasAttribute("data-rm")) { st.lines.splice(Number(b.getAttribute("data-rm")), 1); redrawAlloc(); return; }
         if (b.hasAttribute("data-adding")) { st.adding = true; redrawAlloc(); var s = $("pick"); if (s) s.focus(); return; }
         if (b.hasAttribute("data-addpick")) { var v = $("pick").value; if (!v) return; st.lines.push({ projectId: v, pct: "" }); st.adding = false; redrawAlloc(); dlg.querySelector('[data-pct="' + (st.lines.length - 1) + '"]').focus(); return; }
@@ -619,7 +732,7 @@
           step.then(function (r) {
             D = r.data;
             var pid = p ? p.id : (D.people.filter(function (x) { return before.indexOf(x.id) < 0; })[0] || {}).id;
-            return allocChanged && pid ? SA.post("admin/allocation", { personId: pid, from: st.month, lines: lines }) : r;
+            return allocChanged && pid ? SA.post("admin/allocation", { personId: pid, from: st.month, lines: lines, scope: st.scope }) : r;
           }).then(done).catch(fail);
         }
       },

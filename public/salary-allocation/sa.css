@@ -137,6 +137,27 @@ body.sa { margin:0; background:var(--wash); color:var(--text); font:15px/1.5 Apt
 .sa table.grid th.pj { color:var(--navy); text-align:center; width:96px; padding:8px 6px; }
 .sa table.grid td.pc { text-align:center; padding:10px 6px; color:var(--navy); font-weight:600; }
 .sa table.grid td.pc.zero { color:var(--faint); font-weight:400; }
+.sa table.grid td.pc { padding:6px 4px; }
+.sa table.grid .cw { position:relative; display:inline-flex; align-items:center; }
+.sa table.grid input.cell { width:72px; height:34px; box-sizing:border-box; padding:0 20px 0 6px; border:1px solid transparent; border-radius:8px; background:transparent;
+  text-align:right; font:inherit; font-weight:600; color:var(--navy); }
+.sa table.grid input.cell:hover:not([disabled]) { border-color:var(--strong); background:#fff; }
+.sa table.grid input.cell:focus { outline:none; border-color:var(--blue); background:#fff; box-shadow:0 0 0 3px rgba(50,94,174,.18); }
+.sa table.grid input.cell[disabled] { cursor:not-allowed; }
+.sa table.grid .cw i { position:absolute; right:8px; font-style:normal; font-weight:600; color:var(--navy); pointer-events:none; }
+.sa table.grid input.cell:placeholder-shown + i { visibility:hidden; }
+.sa table.grid td.pc.edited input.cell { background:#fff4dc; border-color:var(--warn-line); }
+.sa table.grid td.pc.bad input.cell { background:#fdeae4; border-color:#c2462a; color:#8f2b12; }
+.sa .savebar { position:sticky; bottom:16px; z-index:5; margin-top:16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px 16px;
+  padding:12px 14px 12px 20px; border-radius:18px; background:#fff; border:1px solid var(--border); box-shadow:0 10px 30px rgba(7,33,78,.18); }
+.sa .savebar .sb-text { display:flex; flex-direction:column; gap:2px; color:var(--navy); }
+.sa .savebar .sb-note { font-size:13px; color:var(--muted); }
+.sa .savebar .sb-bad { font-size:13px; color:#8f2b12; font-weight:600; }
+.sa .savebar .sb-acts { display:flex; flex-wrap:wrap; gap:8px; }
+.sa .btn.ghost { border-color:transparent; background:transparent; }
+.sa .btn[disabled] { opacity:.5; cursor:not-allowed; }
+.sa-dlg .scope { border:0; margin:14px 0 0; padding:0; }
+.sa-dlg .scope legend { padding:0; margin-bottom:6px; }
 .sa table.grid tr.fte td { border-top:2px solid var(--strong); font-weight:600; color:var(--navy); }
 .sa table.grid .pos { display:block; font-size:12.5px; color:var(--muted); }
 .sa table.grid .stick { position:sticky; left:0; background:#fff; min-width:230px; }

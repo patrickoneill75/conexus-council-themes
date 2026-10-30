@@ -211,6 +211,29 @@ function setAllocation(person, from, lines) {
     .sort((a, b) => a.from.localeCompare(b.from));
 }
 
+/** "YYYY-MM" a month on. */
+const nextMonth = (month) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1)).toISOString().slice(0, 7);
+const sameLines = (a, b) => {
+  const key = (l) => (l || []).map((x) => x.projectId + ":" + x.pct).sort().join(",");
+  return key(a) === key(b);
+};
+
+/**
+ * A change to someone's allocation for a month. scope "month" changes that month alone: the month after keeps
+ * what it had. scope "future" changes that month and every month after, replacing changes planned later.
+ * No scope keeps the older rule: from that month until the next planned change.
+ */
+export function changeAllocation(person, from, lines, scope) {
+  if (scope === "month") {
+    const after = nextMonth(from), before = allocationFor(person, after);
+    if (!(person.allocations || []).some((a) => a.from === after)) setAllocation(person, after, before ? before.lines : []);
+  }
+  if (scope === "future") person.allocations = (person.allocations || []).filter((a) => a.from <= from);
+  setAllocation(person, from, lines);
+  // An entry that repeats the one before it changes nothing; neither does an empty first one.
+  person.allocations = person.allocations.filter((a, i, all) => (i ? !sameLines(a.lines, all[i - 1].lines) : a.lines.length > 0));
+}
+
 /* ---------------------------------------------------------------------------- import */
 
 const HEADERS = { position: ["position", "title"], first: ["first"], last: ["last"], project: ["project"],
@@ -463,7 +486,9 @@ export async function handleSalaryAllocationApi(route, request, env) {
     const had = new Set((person.allocations || []).flatMap((a) => a.lines.map((l) => l.projectId)));
     const cleaned = cleanLines(data, body.lines, had);
     if (cleaned.error) return json({ error: cleaned.error }, 400);
-    setAllocation(person, from, cleaned.lines);
+    const scope = text(body.scope);
+    if (scope && scope !== "month" && scope !== "future") return json({ error: "Choose this month only or this month and after." }, 400);
+    changeAllocation(person, from, cleaned.lines, scope);
     return done();
   }
   if (route === "admin/holiday") {
