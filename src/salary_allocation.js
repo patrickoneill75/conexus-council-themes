@@ -1,8 +1,8 @@
 /**
  * Salary Allocation, mounted under /api/salary-allocation/*.
  *
- * Operations keeps the lists: projects (each funded c3 or c6), positions, people (name, email, position)
- * and holidays. A project or position can be made inactive: it stays on anyone who has it, and is no
+ * Operations keeps the lists: projects (each funded c3 or c6), positions, teams, people (name, email,
+ * position, team, and who they report to, which draws the org chart) and holidays. A project or position can be made inactive: it stays on anyone who has it, and is no
  * longer offered for a new allocation or a new person. Each person's allocation says what percent of their salary each project pays, and when
  * it starts: a person has a list of { from: "YYYY-MM", lines }, and a month uses the latest entry that
  * starts on or before it. So an allocation can be planned for a future month, and a month already past
@@ -19,7 +19,7 @@
  * Settings (overall admins have it).
  *
  * Storage (BOX_KV):
- *   sa:data                     -> { projects, positions, people, holidays }. people[].allocations holds
+ *   sa:data                     -> { projects, positions, teams, people, holidays }. people[].allocations holds
  *                                  the dated entries. Small enough to read and write whole.
  *   sa:month:<personId>:<YYYY-MM> -> { days: { "<day>": [worked, pto, other] }, hours: { <projectId>: n } | null,
  *                                  savedAt }. Weekdays only; hours is null until the person edits the split.
@@ -82,6 +82,39 @@ export function federalHolidays(year) {
   ];
 }
 
+/**
+ * Last year's holidays carried into a year. A federal holiday moves by its rule (Thanksgiving is the fourth
+ * Thursday, a Saturday holiday is observed the Friday before). A day next to a federal holiday stays next
+ * to it, so the day after Thanksgiving is still a Friday. Any other keeps its month and day. A range keeps
+ * its length. A date that already has a holiday is left alone. Returns the holidays to add.
+ */
+export function copyHolidays(holidays, year) {
+  const DAY = 86400000;
+  const base = (name) => name.replace(/ \(observed\)$/, "");
+  const iso = (t) => new Date(t).toISOString().slice(0, 10);
+  const at = (date) => Date.parse(date + "T00:00:00Z");
+  const lastFed = new Map(federalHolidays(year - 1).map((h) => [h.date, base(h.name)]));
+  const nextFed = new Map(federalHolidays(year).map((h) => [base(h.name), h]));
+  const taken = new Set(holidays.map((h) => h.start));
+  const out = [];
+  for (const h of holidays.filter((x) => x.start.slice(0, 4) === String(year - 1))) {
+    let start, name = h.name;
+    const fed = lastFed.get(h.start) && nextFed.get(lastFed.get(h.start));
+    const off = [1, -1].find((d) => lastFed.has(iso(at(h.start) - d * DAY)) && nextFed.get(lastFed.get(iso(at(h.start) - d * DAY))));
+    if (fed) { start = fed.date; if (base(h.name) === base(fed.name)) name = fed.name; }
+    else if (off) start = iso(at(nextFed.get(lastFed.get(iso(at(h.start) - off * DAY))).date) + off * DAY);
+    else {
+      start = `${year}${h.start.slice(4)}`;
+      if (iso(at(start)).slice(5) !== h.start.slice(5)) continue; // February 29 in a year without one
+    }
+    if (taken.has(start)) continue;
+    const end = h.end ? iso(at(start) + (at(h.end) - at(h.start))) : "";
+    taken.add(start);
+    out.push({ name, start, end });
+  }
+  return out;
+}
+
 /** The weekday holidays falling in a month, one per date: [{ date: "YYYY-MM-DD", name }]. */
 export function holidaysInMonth(holidays, month) {
   const out = [], seen = new Set();
@@ -99,15 +132,36 @@ export function holidaysInMonth(holidays, month) {
 
 /* ---------------------------------------------------------------------------- the lists */
 
+export const STARTING_TEAMS = ["Talent", "Tech Adoption", "Thought Leadership", "Operations"];
+const startingTeams = () => STARTING_TEAMS.map((name) => ({ id: newId(), name }));
+
+/** Why someone can't report to managerId, or "" when they can. Nobody reports to themselves, or to someone
+ * who reports up to them. */
+function managerProblem(data, id, managerId) {
+  if (!managerId) return "";
+  if (!data.people.some((p) => p.id === managerId)) return "The person they report to is no longer on the list.";
+  for (let at = managerId, steps = 0; at && steps <= data.people.length; steps++) {
+    if (at === id) return "They can't report to themselves or to someone who reports to them.";
+    at = (data.people.find((p) => p.id === at) || {}).managerId;
+  }
+  return "";
+}
+
 async function loadData(env) {
   const raw = await env.BOX_KV.get(DATA_KEY);
   if (raw) {
-    try { return JSON.parse(raw); } catch { /* a damaged record is replaced below */ }
+    let data = null;
+    try { data = JSON.parse(raw); } catch { /* a damaged record is replaced below */ }
+    if (data) {
+      // Lists kept before teams existed get the starting teams.
+      if (!Array.isArray(data.teams)) { data.teams = startingTeams(); await saveData(env, data); }
+      return data;
+    }
   }
   // First use: the federal holidays for this year and next, so the calendar is right from the start.
   const year = new Date().getUTCFullYear();
   const holidays = [...federalHolidays(year), ...federalHolidays(year + 1)].map((h) => ({ id: newId(), name: h.name, start: h.date, end: "" }));
-  const data = { projects: [], positions: [], people: [], holidays };
+  const data = { projects: [], positions: [], teams: startingTeams(), people: [], holidays };
   await saveData(env, data);
   return data;
 }
@@ -331,6 +385,10 @@ export async function handleSalaryAllocationApi(route, request, env) {
   }
   if (route === "admin/person") {
     const first = text(body.first), last = text(body.last), positionId = text(body.positionId);
+    const teamId = text(body.teamId), managerId = text(body.managerId);
+    if (teamId && !data.teams.some((t) => t.id === teamId)) return json({ error: "That team is no longer on the list." }, 400);
+    const bad = managerProblem(data, id, managerId);
+    if (bad) return json({ error: bad }, 400);
     let email = normalizeEmail(body.email);
     if (first.length > 60 || last.length > 60) return json({ error: "That name is too long." }, 400);
     const pos = data.positions.find((p) => p.id === positionId);
@@ -342,12 +400,24 @@ export async function handleSalaryAllocationApi(route, request, env) {
     if (email && data.people.some((p) => p.id !== id && p.email === email)) return json({ error: "Someone else already has that email." }, 409);
     const p = id ? find(data.people) : null;
     if (id && !p) return json({ error: "That person is no longer on the list." }, 404);
-    if (p) Object.assign(p, { first, last, email, positionId });
-    else data.people.push({ id: newId(), first, last, email, positionId, allocations: [] });
+    if (p) Object.assign(p, { first, last, email, positionId, teamId, managerId });
+    else data.people.push({ id: newId(), first, last, email, positionId, teamId, managerId, allocations: [] });
+    return done();
+  }
+  if (route === "admin/reports-to") {
+    // Dragging a card on the org chart: only who they report to changes.
+    const p = id ? find(data.people) : null;
+    if (!p) return json({ error: "That person is no longer on the list." }, 404);
+    const managerId = text(body.managerId), bad = managerProblem(data, id, managerId);
+    if (bad) return json({ error: bad }, 400);
+    p.managerId = managerId;
     return done();
   }
   if (route === "admin/person/delete") {
+    const gone = data.people.find((p) => p.id === id);
     data.people = data.people.filter((p) => p.id !== id);
+    // Whoever reported to them now reports to their manager.
+    for (const p of data.people) if (p.managerId === id) p.managerId = gone ? gone.managerId || "" : "";
     return done();
   }
   if (route === "admin/allocation") {
@@ -377,17 +447,27 @@ export async function handleSalaryAllocationApi(route, request, env) {
     data.holidays = data.holidays.filter((h) => h.id !== id);
     return done();
   }
-  if (route === "admin/holidays/load") {
+  if (route === "admin/holidays/copy") {
     const year = Number(body.year);
-    if (!Number.isInteger(year) || year < 2000 || year > 2100) return json({ error: "Choose a year." }, 400);
-    let added = 0;
-    for (const h of federalHolidays(year)) {
-      if (data.holidays.some((x) => x.start === h.date)) continue;
-      data.holidays.push({ id: newId(), name: h.name, start: h.date, end: "" });
-      added++;
-    }
+    if (!Number.isInteger(year) || year < 2001 || year > 2100) return json({ error: "Choose a year." }, 400);
+    const add = copyHolidays(data.holidays, year);
+    data.holidays.push(...add.map((h) => ({ id: newId(), ...h })));
     await saveData(env, data);
-    return json({ ok: true, added, data });
+    return json({ ok: true, added: add.length, data });
+  }
+  if (route === "admin/team") {
+    const name = text(body.name);
+    if (!name || name.length > 80) return json({ error: "Give the team a name." }, 400);
+    if (data.teams.some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) return json({ error: "There is already a team with that name." }, 409);
+    const t = id ? find(data.teams) : null;
+    if (id && !t) return json({ error: "That team is no longer on the list." }, 404);
+    if (t) t.name = name; else data.teams.push({ id: newId(), name });
+    return done();
+  }
+  if (route === "admin/team/delete") {
+    if (data.people.some((p) => p.teamId === id)) return json({ error: "People are on this team. Move them to another team first." }, 409);
+    data.teams = data.teams.filter((t) => t.id !== id);
+    return done();
   }
   return json({ error: "Not found." }, 404);
 }

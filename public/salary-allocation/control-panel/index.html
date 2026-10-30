@@ -28,6 +28,7 @@
     <a href="#people" data-tab="people">People</a>
     <a href="#positions" data-tab="positions">Positions</a>
     <a href="#projects" data-tab="projects">Projects</a>
+    <a href="#teams" data-tab="teams">Teams</a>
     <a href="#holidays" data-tab="holidays">Holidays</a>
   </nav>
   <p class="warn" id="loadErr" role="alert" hidden style="margin-top:20px"></p>
@@ -43,7 +44,9 @@
   if (!window.SA) return;
   var esc = SA.esc, $ = function (id) { return document.getElementById(id); };
   var D = null;                                   // the lists, as the server holds them
-  var S = { tab: "allocations", month: SA.thisMonth(), q: "", year: String(new Date().getFullYear()) };
+  var S = { tab: "allocations", month: SA.thisMonth(), q: "", year: String(new Date().getFullYear()), peopleView: "table",
+    sort: { allocations: { key: "last", dir: 1 }, people: { key: "last", dir: 1 }, positions: { key: "title", dir: 1 }, projects: { key: "type", dir: -1 },
+      teams: { key: "name", dir: 1 }, holidays: { key: "start", dir: 1 } } };
   var X = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
   var LEFT = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>';
   var RIGHT = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
@@ -79,40 +82,70 @@
   }
   function render() {
     var tab = (location.hash || "#allocations").slice(1);
-    S.tab = ["allocations", "people", "positions", "projects", "holidays"].indexOf(tab) >= 0 ? tab : "allocations";
+    S.tab = ["allocations", "people", "positions", "projects", "teams", "holidays"].indexOf(tab) >= 0 ? tab : "allocations";
     Array.prototype.forEach.call(document.querySelectorAll("#tabs a"), function (a) {
       if (a.getAttribute("data-tab") === S.tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
     if (!D) return;
-    $("view").innerHTML = ({ allocations: allocations, people: peopleTab, positions: positionsTab, projects: projectsTab, holidays: holidaysTab })[S.tab]();
+    var wrap = document.querySelector(".orgwrap"), keep = wrap ? wrap.scrollLeft : 0;
+    $("view").innerHTML = ({ allocations: allocations, people: peopleTab, positions: positionsTab, projects: projectsTab, teams: teamsTab, holidays: holidaysTab })[S.tab]();
+    wrap = document.querySelector(".orgwrap");
+    if (wrap) wrap.scrollLeft = keep;
+    drawOrg();
   }
   window.addEventListener("hashchange", render);
 
+  /* ---- sorting: every column header is a button; a second click turns the order around */
+  function cmp(x, y) {
+    if (typeof x === "number" && typeof y === "number") return x - y;
+    var a = String(x), b = String(y);
+    if (!a !== !b) return a ? -1 : 1; // blanks last
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  }
+  function sorted(list, tab, getters) {
+    var s = S.sort[tab], get = getters[s.key] || getters[Object.keys(getters)[0]];
+    var blank = function (v) { return v === "" || v == null; };
+    return list.slice().sort(function (a, b) {
+      var x = get(a), y = get(b);
+      if (blank(x) !== blank(y)) return blank(x) ? 1 : -1; // blanks last, whichever way
+      return cmp(x, y) * s.dir || cmp(nameOf(a.person || a), nameOf(b.person || b));
+    });
+  }
+  function th(tab, key, label, attrs) {
+    var s = S.sort[tab], on = s.key === key;
+    return "<th " + (attrs || 'scope="col"') + ' aria-sort="' + (on ? (s.dir > 0 ? "ascending" : "descending") : "none") + '"><button type="button" class="sorter" data-sort="' + tab + ":" + esc(key) + '">' +
+      esc(label) + '<span aria-hidden="true" class="arrow">' + (on ? (s.dir > 0 ? "▲" : "▼") : "") + "</span></button></th>";
+  }
+  function team(id) { return D.teams.filter(function (t) { return t.id === id; })[0]; }
+  function teamOf(p) { var t = team(p.teamId); return t ? t.name : ""; }
+  function personLinks(p) {
+    return [p.first ? '<button type="button" class="linkish namelink" data-person="' + esc(p.id) + '">' + esc(p.first) + "</button>" : '<button type="button" class="linkish namelink" data-person="' + esc(p.id) + '">Open position</button>',
+      p.last ? '<button type="button" class="linkish namelink" data-person="' + esc(p.id) + '">' + esc(p.last) + "</button>" : ""];
+  }
+
   /* ---- Allocations: a report, one month at a time */
   function allocations() {
-    var month = S.month, list = people();
+    var month = S.month;
     var used = {};
-    list.forEach(function (p) { linesFor(p, month).forEach(function (l) { used[l.projectId] = true; }); });
+    D.people.forEach(function (p) { linesFor(p, month).forEach(function (l) { used[l.projectId] = true; }); });
     var cols = byFunding(D.projects.filter(function (p) { return p.active !== false || used[p.id]; }));
     var c6 = cols.filter(function (p) { return p.type === "c6"; }).length, c3 = cols.length - c6;
+    var pctOf = function (p, id) { var l = linesFor(p, month).filter(function (x) { return x.projectId === id; })[0]; return l ? l.pct : 0; };
+    var totalOf = function (p) { return linesFor(p, month).reduce(function (s, l) { return s + l.pct; }, 0); };
+    var getters = { first: function (p) { return p.first; }, last: function (p) { return p.last; }, position: titleOf, total: totalOf };
+    cols.forEach(function (c) { getters["p:" + c.id] = function (p) { return pctOf(p, c.id); }; });
+    var list = sorted(D.people, "allocations", getters);
     var tot = { c6: 0, c3: 0 }, off = [];
     var rows = list.map(function (p) {
-      var lines = linesFor(p, month), sum = 0;
-      var cells = cols.map(function (c) {
-        var l = lines.filter(function (x) { return x.projectId === c.id; })[0], n = l ? l.pct : 0;
-        sum += n; tot[c.type] += n;
-        return '<td class="pc' + (n ? "" : " zero") + '">' + (n ? SA.r2(n) + "%" : "") + "</td>";
-      }).join("");
+      var sum = totalOf(p), links = personLinks(p);
+      var cells = cols.map(function (c) { var n = pctOf(p, c.id); tot[c.type] += n; return '<td class="pc' + (n ? "" : " zero") + '">' + (n ? SA.r2(n) + "%" : "") + "</td>"; }).join("");
       var ok = Math.abs(sum - 100) < 0.001;
       if (!ok) off.push(nameOf(p) + " " + SA.r2(sum) + "%");
-      return '<tr><th scope="row" class="stick" style="text-align:left;font-weight:400;padding:10px 16px 10px 24px;border-top:1px solid var(--border)">' +
-        '<button type="button" class="linkish namelink" data-alloc="' + esc(p.id) + '">' + esc(nameOf(p)) + '</button><span class="pos">' + esc(titleOf(p)) + "</span></th>" + cells +
+      return "<tr><td>" + links[0].replace("data-person", "data-alloc") + "</td><td>" + links[1].replace("data-person", "data-alloc") + '</td><td class="muted" style="font-size:13.5px">' + esc(titleOf(p)) + "</td>" + cells +
         '<td class="r" style="white-space:nowrap"><span class="' + (ok ? "" : "pill-warn") + '" style="' + (ok ? "font-weight:700;color:var(--navy)" : "") + '">' + SA.r2(sum) + "%</span></td></tr>";
     }).join("");
-    var fte = cols.map(function (c) {
-      return '<td class="pc">' + (list.reduce(function (s, p) { var l = linesFor(p, month).filter(function (x) { return x.projectId === c.id; })[0]; return s + (l ? l.pct : 0); }, 0) / 100).toFixed(2) + "</td>";
-    }).join("");
-    var all = tot.c6 + tot.c3, open = list.filter(function (p) { return !p.first && !p.last; }).length;
+    var fte = cols.map(function (c) { return '<td class="pc">' + (D.people.reduce(function (s, p) { return s + pctOf(p, c.id); }, 0) / 100).toFixed(2) + "</td>"; }).join("");
+    var all = tot.c6 + tot.c3, open = D.people.filter(function (p) { return !p.first && !p.last; }).length;
     return '<div class="head"><div><h1>Allocations</h1><p class="lede">Click a name to change that person\'s allocation. A change applies from the month you save it in, so step ahead to plan, and earlier months keep their split.</p></div>' +
       '<div class="acts">' + monthNav("report", month) + '<button type="button" class="btn" id="importBtn">Import spreadsheet</button><button type="button" class="btn" id="csvBtn">Download</button></div></div>' +
       '<div class="cards4">' +
@@ -120,86 +153,311 @@
       '<div class="stat"><p>Staff time on c3</p><p class="v">' + (tot.c3 / 100).toFixed(2) + ' FTE</p><p>' + (all ? Math.round(tot.c3 / all * 100) : 0) + "% of staff time</p></div>" +
       '<div class="stat"><p>People</p><p class="v">' + list.length + "</p><p>" + (open ? "including " + count(open, "open position", "open positions") : "no open positions") + "</p></div>" +
       '<div class="stat' + (off.length ? " warn-card" : "") + '"><p>Not at 100%</p><p class="v">' + off.length + "</p><p>" + esc(off.join(", ") || "Everyone adds up") + "</p></div></div>" +
-      (list.length ? '<div class="tbl-box" style="margin-top:20px"><table class="tbl grid" style="min-width:' + (420 + cols.length * 100) + 'px"><thead><tr>' +
-        '<th rowspan="2" class="stick" style="vertical-align:bottom">Person</th>' +
+      (list.length ? '<div class="tbl-box" style="margin-top:20px"><table class="tbl grid" style="min-width:' + (560 + cols.length * 100) + 'px"><thead><tr>' +
+        th("allocations", "first", "First", 'scope="col" rowspan="2" style="vertical-align:bottom"') + th("allocations", "last", "Last", 'scope="col" rowspan="2" style="vertical-align:bottom"') +
+        th("allocations", "position", "Position", 'scope="col" rowspan="2" style="vertical-align:bottom"') +
         (c6 ? '<th colspan="' + c6 + '" class="grp c6" scope="colgroup">c6</th>' : "") + (c3 ? '<th colspan="' + c3 + '" class="grp c3" scope="colgroup">c3</th>' : "") +
-        '<th rowspan="2" class="r" style="vertical-align:bottom">Total</th></tr><tr>' +
-        cols.map(function (c) { return '<th class="pj" scope="col">' + esc(c.name) + "</th>"; }).join("") + "</tr></thead><tbody>" + rows +
-        '<tr class="fte"><th scope="row" class="stick" style="text-align:left;padding:12px 16px 12px 24px;border-top:2px solid var(--strong);color:var(--navy)">Staff time (FTE)</th>' + fte + "<td></td></tr></tbody></table></div>" +
-        '<p class="note" style="margin-top:12px">A blank cell is 0%. To change anyone\'s split, click their name.</p>'
+        th("allocations", "total", "Total", 'scope="col" rowspan="2" class="r" style="vertical-align:bottom"') + "</tr><tr>" +
+        cols.map(function (c) { return th("allocations", "p:" + c.id, c.name, 'scope="col" class="pj"'); }).join("") + "</tr></thead><tbody>" + rows +
+        '<tr class="fte"><td colspan="3" style="color:var(--navy)">Staff time (FTE)</td>' + fte + "<td></td></tr></tbody></table></div>" +
+        '<p class="note" style="margin-top:12px">A blank cell is 0%. Click a column heading to sort by it. To change anyone\'s split, click their name.</p>'
         : '<div class="card" style="margin-top:20px"><p style="margin:0">No one is on the list yet. Import the allocation spreadsheet (Position, First, Last, Project, Allocation, Funding Type), or add people on the People tab.</p></div>');
   }
 
-  /* ---- People */
+  /* ---- People: a table, or the org chart */
   function peopleTab() {
     var q = S.q.trim().toLowerCase();
-    var list = people().filter(function (p) { return !q || (nameOf(p) + " " + titleOf(p)).toLowerCase().indexOf(q) >= 0; });
-    return '<div class="head"><div><h1>People</h1><p class="lede">' + count(D.people.length, "person", "people") + ". Click a name to see or change their details and allocation. Each person signs in with their email and sees only their own split.</p></div>" +
-      '<div class="acts"><label class="sr" for="find">Find a person</label><input class="find" id="find" placeholder="Find a person" value="' + esc(S.q) + '">' +
-      '<button type="button" class="btn primary" data-person="">Add person</button></div></div>' +
-      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th style="width:36%">Name</th><th>Position</th></tr></thead><tbody>' +
-      (list.map(function (p) {
-        return '<tr><td><button type="button" class="linkish namelink" data-person="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button></td><td>" + esc(titleOf(p)) + "</td></tr>";
-      }).join("") || '<tr><td colspan="2" class="muted">No one matches.</td></tr>') + "</tbody></table></div>";
+    var seg = function (v, label) { return '<button type="button" data-view="' + v + '" aria-pressed="' + (S.peopleView === v) + '">' + label + "</button>"; };
+    var top = '<div class="head"><div><h1>People</h1><p class="lede">' + count(D.people.length, "person", "people") + ". Click a name to see or change their details, team, who they report to, and allocation. Each person signs in with their email and sees only their own split.</p></div>" +
+      '<div class="acts"><div class="seg" role="group" aria-label="View">' + seg("table", "Table") + seg("chart", "Org chart") + "</div>" +
+      (S.peopleView === "table" ? '<label class="sr" for="find">Find a person</label><input class="find" id="find" placeholder="Find a person" value="' + esc(S.q) + '">' : "") +
+      '<button type="button" class="btn primary" data-person="">Add person</button></div></div>';
+    if (S.peopleView === "chart") return top + orgChart();
+    var list = sorted(D.people.filter(function (p) { return !q || (nameOf(p) + " " + titleOf(p) + " " + teamOf(p)).toLowerCase().indexOf(q) >= 0; }), "people",
+      { first: function (p) { return p.first; }, last: function (p) { return p.last; }, position: titleOf, team: teamOf });
+    return top + '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr>' + th("people", "first", "First") + th("people", "last", "Last") + th("people", "position", "Position") + th("people", "team", "Team") + "</tr></thead><tbody>" +
+      (list.map(function (p) { var l = personLinks(p); return "<tr><td>" + l[0] + "</td><td>" + l[1] + "</td><td>" + esc(titleOf(p)) + "</td><td>" + esc(teamOf(p) || "") + "</td></tr>"; }).join("") ||
+        '<tr><td colspan="4" class="muted">No one matches.</td></tr>') + "</tbody></table></div>";
   }
+  /** Who reports to whom, from each person's Reports to: a tree from the top down, lines drawn by drawOrg.
+   * Anyone with no Reports to and no one reporting to them sits in a row underneath. */
+  function orgChart() {
+    var kids = {}, ids = {};
+    D.people.forEach(function (p) { ids[p.id] = true; });
+    D.people.forEach(function (p) { var m = p.managerId && ids[p.managerId] ? p.managerId : ""; (kids[m] = kids[m] || []).push(p); });
+    var order = function (list) { return sorted(list, "people", { last: function (p) { return p.last; } }); };
+    var below = function (id) { return (kids[id] || []).reduce(function (n, k) { return n + 1 + below(k.id); }, 0); };
+    var card = function (p) {
+      var direct = (kids[p.id] || []).length, all = below(p.id);
+      return '<div class="ocard" data-node="' + esc(p.id) + '"><button type="button" class="oname" data-person="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>" +
+        '<span class="otitle">' + esc(titleOf(p)) + "</span>" +
+        (p.email ? '<a class="omail" href="mailto:' + esc(p.email) + '">' + esc(p.email) + "</a>" : "") +
+        (direct || teamOf(p) ? '<span class="ofoot">' + (direct ? '<span class="ocount">' + count(direct, "direct report", "direct reports") + (all > direct ? ", " + all + " in all" : "") + "</span>" : "") +
+          (teamOf(p) ? '<span class="tm">' + esc(teamOf(p)) + "</span>" : "") + "</span>" : "") + "</div>";
+    };
+    var node = function (p) {
+      var k = kids[p.id] || [];
+      return '<div class="onode">' + card(p) + (k.length ? '<div class="okids">' + order(k).map(node).join("") + "</div>" : "") + "</div>";
+    };
+    var roots = order(kids[""] || []), trees = roots.filter(function (p) { return kids[p.id]; }), loose = roots.filter(function (p) { return !kids[p.id]; });
+    var z = S.orgZoom || 1;
+    return '<div class="obar"><p class="note">Drag a card onto someone to change who they report to. Drag the background to move around. Pinch, or hold Ctrl and scroll, to zoom.</p>' +
+      '<div class="ozoom" role="group" aria-label="Zoom"><button type="button" data-zoom="-1" aria-label="Zoom out">&minus;</button><output id="zoomPct">' + Math.round(z * 100) + "%</output>" +
+      '<button type="button" data-zoom="1" aria-label="Zoom in">+</button><button type="button" data-zoom="fit">Fit</button></div></div>' +
+      '<div class="card orgwrap"><div class="orgtree" id="orgtree" style="zoom:' + z + '"><svg class="orglines" aria-hidden="true"></svg><div class="oroots">' + trees.map(node).join("") + "</div>" +
+      '<h2 class="oloose">' + (trees.length ? "Not on the chart yet" : "Everyone") + '</h2><div class="orow" data-drop="">' +
+      (loose.map(card).join("") || '<p class="ohint">Drop a card here to take them off the chart.</p>') + "</div>" +
+      "</div></div>";
+  }
+  /** The chart's lines: an elbow from each manager down to each report. The chain from the top to the chosen
+   * person is drawn last, in blue, over the rest. */
+  function drawOrg() {
+    var tree = $("orgtree");
+    if (!tree) return;
+    var svg = tree.querySelector("svg"), box = tree.getBoundingClientRect(), z = S.orgZoom || 1, byId = {};
+    D.people.forEach(function (p) { byId[p.id] = p; });
+    var chain = {};
+    for (var at = S.orgSel, n = 0; at && byId[at] && n <= D.people.length; n++) { chain[at] = true; at = byId[at].managerId; }
+    Array.prototype.forEach.call(tree.querySelectorAll(".ocard"), function (c) { c.classList.toggle("on", c.getAttribute("data-node") === S.orgSel); });
+    var plain = "", lit = "";
+    Array.prototype.forEach.call(tree.querySelectorAll(".okids > .onode > .ocard"), function (c) {
+      var up = c.parentNode.parentNode.parentNode.querySelector(".ocard");
+      var a = up.getBoundingClientRect(), r = c.getBoundingClientRect();
+      // A zoomed tree reports its boxes zoomed; the lines are drawn inside it, so in its own units.
+      var x1 = (a.left + a.width / 2 - box.left) / z, y1 = (a.bottom - box.top) / z, x2 = (r.left + r.width / 2 - box.left) / z, y2 = (r.top - box.top) / z, ym = y2 - 22;
+      var d = '<path d="M' + x1 + " " + y1 + "V" + ym + "H" + x2 + "V" + y2 + '"/>';
+      if (chain[c.getAttribute("data-node")]) lit += d; else plain += d;
+    });
+    svg.innerHTML = '<g class="ln">' + plain + '</g><g class="ln lit">' + lit + "</g>";
+  }
+  window.addEventListener("resize", drawOrg);
 
-  /* ---- Positions */
+  /* ---- Org chart zoom: the buttons, Ctrl or Cmd with the wheel (a trackpad pinch arrives this way), and two
+   * fingers on a touch screen. The point under the pointer stays put. */
+  var ZMIN = 0.3, ZMAX = 1.6;
+  function setZoom(z, atX) {
+    var tree = $("orgtree");
+    if (!tree) return;
+    z = Math.max(ZMIN, Math.min(ZMAX, Math.floor(z * 100 + 1e-6) / 100));
+    var wrap = tree.parentNode, old = S.orgZoom || 1, w = wrap.getBoundingClientRect();
+    var px = atX == null ? w.width / 2 : atX - w.left, at = (wrap.scrollLeft + px) / old;
+    S.orgZoom = z;
+    tree.style.zoom = z;
+    wrap.scrollLeft = at * z - px;
+    $("zoomPct").textContent = Math.round(z * 100) + "%";
+    drawOrg();
+  }
+  function fitZoom() {
+    var tree = $("orgtree");
+    if (!tree) return;
+    // The trees' own extent: the row around them stretches to fill the chart at any zoom.
+    var z = S.orgZoom || 1, lo = Infinity, hi = -Infinity;
+    Array.prototype.forEach.call(tree.querySelectorAll(".oroots > .onode"), function (c) { var r = c.getBoundingClientRect(); lo = Math.min(lo, r.left); hi = Math.max(hi, r.right); });
+    if (hi > lo) setZoom(Math.min(1, tree.parentNode.clientWidth / ((hi - lo) / z + 48)));
+    tree.parentNode.scrollLeft = 0;
+  }
+  $("view").addEventListener("wheel", function (e) {
+    if (!(e.ctrlKey || e.metaKey) || !e.target.closest("#orgtree")) return;
+    e.preventDefault();
+    setZoom((S.orgZoom || 1) * Math.exp(-Math.max(-100, Math.min(100, e.deltaY)) / 600), e.clientX);
+  }, { passive: false });
+  var touches = {}, pinch = null;
+  function spread() { var p = Object.keys(touches).map(function (k) { return touches[k]; }); return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); }
+  $("view").addEventListener("pointerdown", function (e) {
+    if (!e.target.closest("#orgtree")) return;
+    touches[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (Object.keys(touches).length === 2) {
+      cancelDrag();
+      pinch = { d: spread(), z: S.orgZoom || 1 };
+    }
+  }, true);
+  window.addEventListener("pointermove", function (e) {
+    if (!touches[e.pointerId]) return;
+    touches[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (pinch && Object.keys(touches).length === 2) {
+      var p = Object.keys(touches).map(function (k) { return touches[k]; });
+      setZoom(pinch.z * spread() / pinch.d, (p[0].x + p[1].x) / 2);
+    }
+  }, true);
+  function lift(e) { delete touches[e.pointerId]; if (Object.keys(touches).length < 2) pinch = null; }
+  window.addEventListener("pointerup", lift, true);
+  window.addEventListener("pointercancel", lift, true);
+
+  /* ---- Org chart drag and drop. Pointer events, so it works with a mouse, a pen or a finger. A card dropped
+   * on another card reports to that person; dropped on the bottom row it reports to no one. Dragging the
+   * background pans. A press that hardly moves is still a click. */
+  var drag = null;
+  function reportsUpTo(id, boss) {
+    var byId = {}; D.people.forEach(function (p) { byId[p.id] = p; });
+    for (var at = id, n = 0; at && byId[at] && n <= D.people.length; n++) { if (at === boss) return true; at = byId[at].managerId; }
+    return false;
+  }
+  function dropAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    var c = el && el.closest(".ocard"), row = el && el.closest("[data-drop]");
+    if (c && c.getAttribute("data-node") !== drag.id) return { el: c, to: c.getAttribute("data-node"), ok: !reportsUpTo(c.getAttribute("data-node"), drag.id) };
+    if (row && !c) return { el: row, to: "", ok: true };
+    return null;
+  }
+  $("view").addEventListener("pointerdown", function (e) {
+    var tree = e.target.closest("#orgtree");
+    if (!tree || e.button > 0 || pinch) return;
+    var c = e.target.closest(".ocard"), wrap = tree.parentNode;
+    drag = { id: c ? c.getAttribute("data-node") : null, card: c, wrap: wrap, x: e.clientX, y: e.clientY, left: wrap.scrollLeft, top: window.scrollY, moved: false, over: null };
+  });
+  window.addEventListener("pointermove", function (e) {
+    if (!drag || pinch) return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 6) return;
+    drag.moved = true;
+    e.preventDefault();
+    if (!drag.card) { drag.wrap.scrollLeft = drag.left - dx; window.scrollTo(window.scrollX, drag.top - dy); return; }
+    if (!drag.ghost) {
+      var r = drag.card.getBoundingClientRect();
+      drag.ghost = drag.card.cloneNode(true);
+      drag.ghost.className = "ocard ghost";
+      var gz = S.orgZoom || 1;
+      drag.ghost.style.width = r.width / gz + "px";
+      drag.ghost.style.transformOrigin = "0 0";
+      drag.ghost.style.transform = "scale(" + gz + ") rotate(-1.5deg)";
+      drag.offX = drag.x - r.left; drag.offY = drag.y - r.top;
+      document.body.appendChild(drag.ghost);
+      drag.card.classList.add("dragging");
+    }
+    drag.ghost.style.left = (e.clientX - drag.offX) + "px";
+    drag.ghost.style.top = (e.clientY - drag.offY) + "px";
+    var w = drag.wrap.getBoundingClientRect();
+    if (e.clientX < w.left + 40) drag.wrap.scrollLeft -= 12; else if (e.clientX > w.right - 40) drag.wrap.scrollLeft += 12;
+    if (e.clientY < 60) window.scrollBy(0, -12); else if (e.clientY > window.innerHeight - 60) window.scrollBy(0, 12);
+    var t = dropAt(e.clientX, e.clientY);
+    if (drag.over && (!t || t.el !== drag.over)) drag.over.classList.remove("drop", "nodrop");
+    drag.over = t ? t.el : null; drag.target = t;
+    if (t) t.el.classList.add(t.ok ? "drop" : "nodrop");
+  }, { passive: false });
+  function endDrag() {
+    var d = drag; drag = null;
+    if (!d || !d.moved) return;
+    // The click that follows a drag is not a click.
+    var stop = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
+    window.addEventListener("click", stop, true);
+    setTimeout(function () { window.removeEventListener("click", stop, true); }, 0);
+    if (!d.card) return;
+    if (d.ghost) d.ghost.remove();
+    d.card.classList.remove("dragging");
+    if (d.over) d.over.classList.remove("drop", "nodrop");
+    var t = d.target, p = D.people.filter(function (x) { return x.id === d.id; })[0];
+    if (!t || !p) return;
+    if (!t.ok) { alert(nameOf(p) + " can't report to someone who reports to them."); return; }
+    if ((p.managerId || "") === t.to) return;
+    SA.post("admin/reports-to", { id: d.id, managerId: t.to }).then(function (r) { D = r.data; S.orgSel = d.id; render(); })
+      .catch(function (err) { alert(err.message); });
+  }
+  window.addEventListener("pointerup", endDrag);
+  function cancelDrag() {
+    if (drag && drag.ghost) { drag.ghost.remove(); drag.card.classList.remove("dragging"); }
+    if (drag && drag.over) drag.over.classList.remove("drop", "nodrop");
+    drag = null;
+  }
+  window.addEventListener("pointercancel", cancelDrag);
+
+
+  /* ---- Positions: one row for each person holding a title, and one for a title no one holds */
   function positionsTab() {
-    var list = D.positions.slice().sort(function (a, b) { return (a.active === false) - (b.active === false) || a.title.localeCompare(b.title); });
+    var rows = [];
+    D.positions.forEach(function (x) {
+      var held = D.people.filter(function (p) { return p.positionId === x.id; });
+      if (!held.length) rows.push({ x: x, person: null });
+      held.forEach(function (p) { rows.push({ x: x, person: p }); });
+    });
+    rows = sorted(rows.map(function (r) { r.first = r.person ? r.person.first || "Open position" : ""; r.last = r.person ? r.person.last : ""; return r; }), "positions",
+      { title: function (r) { return r.x.title; }, first: function (r) { return r.first; }, last: function (r) { return r.last; }, status: function (r) { return r.x.active === false ? "Inactive" : "Active"; } });
     return '<div class="head"><div><h1>Positions</h1><p class="lede">' + count(D.positions.length, "position", "positions") + ". Click a title to rename it, make it inactive, or remove it. Only active titles are offered for a person.</p></div>" +
       '<div class="acts"><button type="button" class="btn primary" data-position="">Add position</button></div></div>' +
-      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th style="width:44%">Title</th><th>Held by</th><th>Status</th></tr></thead><tbody>' +
-      (list.map(function (x) {
-        var held = D.people.filter(function (p) { return p.positionId === x.id; });
-        return '<tr><td><button type="button" class="linkish namelink" data-position="' + esc(x.id) + '">' + esc(x.title) + "</button></td><td>" +
-          (held.map(function (p) { return '<button type="button" class="linkish" data-person="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>"; }).join(", ") || '<span class="muted">No one</span>') +
-          "</td><td>" + (x.active === false ? '<span class="muted">Inactive</span>' : "Active") + "</td></tr>";
-      }).join("") || '<tr><td colspan="3" class="muted">No positions yet.</td></tr>') + "</tbody></table></div>";
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr>' + th("positions", "title", "Title") + th("positions", "first", "First") + th("positions", "last", "Last") + th("positions", "status", "Status") + "</tr></thead><tbody>" +
+      (rows.map(function (r) {
+        var l = r.person ? personLinks(r.person) : ['<span class="muted">No one</span>', ""];
+        return '<tr><td><button type="button" class="linkish namelink" data-position="' + esc(r.x.id) + '">' + esc(r.x.title) + "</button></td><td>" + l[0] + "</td><td>" + l[1] + "</td><td>" +
+          (r.x.active === false ? '<span class="muted">Inactive</span>' : "Active") + "</td></tr>";
+      }).join("") || '<tr><td colspan="4" class="muted">No positions yet.</td></tr>') + "</tbody></table></div>";
   }
 
   /* ---- Projects */
   function projectsTab() {
     var month = S.month;
+    var on = function (x) { return D.people.map(function (p) { return linesFor(p, month).filter(function (l) { return l.projectId === x.id; })[0]; }).filter(Boolean); };
+    var list = sorted(D.projects, "projects", { name: function (x) { return x.name; }, type: function (x) { return x.type; }, status: function (x) { return x.active === false ? "Inactive" : "Active"; },
+      people: function (x) { return on(x).length; }, fte: function (x) { return on(x).reduce(function (s, l) { return s + l.pct; }, 0); } });
     return '<div class="head"><div><h1>Projects</h1><p class="lede">' + count(D.projects.length, "project", "projects") + ". Click a project to rename it, change its funding, make it inactive, or remove it. Only active projects are offered for a new allocation.</p></div>" +
       '<div class="acts"><button type="button" class="btn primary" data-project="">Add project</button></div></div>' +
-      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th>Project</th><th>Funding</th><th>Status</th><th class="r">People in ' + esc(SA.monthOnly(month)) + '</th><th class="r">Staff time (FTE)</th></tr></thead><tbody>' +
-      (byFunding(D.projects).map(function (x) {
-        var on = D.people.map(function (p) { return linesFor(p, month).filter(function (l) { return l.projectId === x.id; })[0]; }).filter(Boolean);
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr>' + th("projects", "name", "Project") + th("projects", "type", "Funding") + th("projects", "status", "Status") +
+      th("projects", "people", "People in " + SA.monthOnly(month), 'scope="col" class="r"') + th("projects", "fte", "Staff time (FTE)", 'scope="col" class="r"') + "</tr></thead><tbody>" +
+      (list.map(function (x) {
+        var o = on(x);
         return '<tr><td><button type="button" class="linkish namelink" data-project="' + esc(x.id) + '">' + esc(x.name) + "</button></td><td>" + esc(x.type) + "</td><td>" +
-          (x.active === false ? '<span class="muted">Inactive</span>' : "Active") + '</td><td class="r">' + on.length + '</td><td class="r muted">' +
-          (on.reduce(function (s, l) { return s + l.pct; }, 0) / 100).toFixed(2) + "</td></tr>";
+          (x.active === false ? '<span class="muted">Inactive</span>' : "Active") + '</td><td class="r">' + o.length + '</td><td class="r muted">' + (o.reduce(function (s, l) { return s + l.pct; }, 0) / 100).toFixed(2) + "</td></tr>";
       }).join("") || '<tr><td colspan="5" class="muted">No projects yet.</td></tr>') + "</tbody></table></div>" +
       '<p class="note" style="margin-top:12px">People and staff time are for ' + esc(SA.monthName(month)) + ", the month shown on the Allocations tab.</p>";
+  }
+
+  /* ---- Teams */
+  function teamsTab() {
+    var members = function (t) { return D.people.filter(function (p) { return p.teamId === t.id; }); };
+    var list = sorted(D.teams, "teams", { name: function (t) { return t.name; }, people: function (t) { return members(t).length; } });
+    var none = D.people.filter(function (p) { return !team(p.teamId); }).length;
+    return '<div class="head"><div><h1>Teams</h1><p class="lede">' + count(D.teams.length, "team", "teams") + ". Click a team to rename or remove it. Put people on a team from the People tab.</p></div>" +
+      '<div class="acts"><button type="button" class="btn primary" data-team="">Add team</button></div></div>' +
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr>' + th("teams", "name", "Team") + th("teams", "people", "People", 'scope="col" class="r"') + "<th scope=\"col\">Members</th></tr></thead><tbody>" +
+      (list.map(function (t) {
+        var m = members(t).sort(function (a, b) { return cmp(a.last, b.last); });
+        return '<tr><td><button type="button" class="linkish namelink" data-team="' + esc(t.id) + '">' + esc(t.name) + '</button></td><td class="r">' + m.length + "</td><td>" +
+          (m.map(function (p) { return '<button type="button" class="linkish" data-person="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>"; }).join(", ") || '<span class="muted">No one yet</span>') + "</td></tr>";
+      }).join("") || '<tr><td colspan="3" class="muted">No teams yet.</td></tr>') + "</tbody></table></div>" +
+      (none ? '<p class="note" style="margin-top:12px">' + count(none, "person isn't", "people aren't") + " on a team yet.</p>" : "");
   }
 
   /* ---- Holidays */
   function holidaysTab() {
     var years = {};
     years[S.year] = 1; years[String(new Date().getFullYear() + 1)] = 1;
-    D.holidays.forEach(function (h) { years[h.start.slice(0, 4)] = 1; });
-    var list = D.holidays.filter(function (h) { return h.start.slice(0, 4) === S.year; }).sort(function (a, b) { return a.start.localeCompare(b.start); });
+    D.holidays.forEach(function (h) { years[h.start.slice(0, 4)] = 1; years[String(Number(h.start.slice(0, 4)) + 1)] = 1; });
     var workdays = function (h) {
       var n = 0, end = new Date((h.end || h.start) + "T00:00:00Z");
       for (var t = new Date(h.start + "T00:00:00Z"); t <= end; t = new Date(t.getTime() + 86400000)) { var w = t.getUTCDay(); if (w > 0 && w < 6) n++; }
       return n;
     };
+    var list = sorted(D.holidays.filter(function (h) { return h.start.slice(0, 4) === S.year; }), "holidays",
+      { start: function (h) { return h.start; }, name: function (h) { return h.name; }, days: workdays });
+    var prev = String(Number(S.year) - 1), hasPrev = D.holidays.some(function (h) { return h.start.slice(0, 4) === prev; });
     return '<div class="head"><div><h1>Holidays, ' + esc(S.year) + '</h1><p class="lede">These start as holidays on everyone\'s calendar and don\'t count toward anyone\'s split. Staff can still change a day they worked. A holiday can span several days.</p></div>' +
       '<div class="acts"><label class="sr" for="yr">Year</label><select class="find" style="width:auto" id="yr">' +
       Object.keys(years).sort().map(function (y) { return "<option" + (y === S.year ? " selected" : "") + ">" + y + "</option>"; }).join("") + "</select>" +
-      '<button type="button" class="btn" id="loadFed">Add the federal holidays for ' + esc(S.year) + '</button><button type="button" class="btn primary" data-holiday="">Add holiday</button></div></div>' +
-      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr><th>Holiday</th><th>Dates</th><th class="r">Workdays</th></tr></thead><tbody>' +
+      (hasPrev ? '<button type="button" class="btn" id="copyPrev">Copy ' + esc(prev) + "'s holidays to " + esc(S.year) + "</button>" : "") +
+      '<button type="button" class="btn primary" data-holiday="">Add holiday</button></div></div>' +
+      '<div class="tbl-box" style="margin-top:16px"><table class="tbl"><thead><tr>' + th("holidays", "name", "Holiday") + th("holidays", "start", "Dates") + th("holidays", "days", "Workdays", 'scope="col" class="r"') + "</tr></thead><tbody>" +
       (list.map(function (h) {
         return '<tr><td><button type="button" class="linkish namelink" data-holiday="' + esc(h.id) + '">' + esc(h.name) + "</button></td><td>" +
           esc(h.end ? SA.shortDate(h.start) + " to " + SA.shortDate(h.end) : SA.shortDate(h.start)) + '</td><td class="r muted">' + workdays(h) + "</td></tr>";
-      }).join("") || '<tr><td colspan="3" class="muted">No holidays for ' + esc(S.year) + " yet.</td></tr>") + "</tbody></table></div>" +
-      '<p class="note" style="margin-top:12px">The federal list is the days the government observes: a holiday on a Saturday falls on the Friday before, one on a Sunday on the Monday after.</p>';
+      }).join("") || '<tr><td colspan="3" class="muted">No holidays for ' + esc(S.year) + " yet." + (hasPrev ? " Copy " + esc(prev) + "'s to start." : "") + "</td></tr>") + "</tbody></table></div>" +
+      '<p class="note" style="margin-top:12px">Copying moves each holiday to its date this year: Thanksgiving stays the fourth Thursday, and a holiday on a weekend moves to the weekday it is observed. Any other day keeps its month and day. A date already on the list is skipped.</p>';
   }
 
   /* ---- clicks on the page */
   $("view").addEventListener("click", function (e) {
+    var node = e.target.closest("[data-node]");
+    if (node) { S.orgSel = node.getAttribute("data-node"); drawOrg(); }
     var b = e.target.closest("button");
     if (!b) return;
     if (b.hasAttribute("data-mnav")) { S.month = addMonths(S.month, Number(b.getAttribute("data-by"))); render(); return; }
+    if (b.hasAttribute("data-sort")) {
+      var parts = b.getAttribute("data-sort").split(":"), tab = parts.shift(), key = parts.join(":"), s = S.sort[tab];
+      S.sort[tab] = { key: key, dir: s.key === key ? -s.dir : 1 };
+      render();
+      var again = document.querySelector('[data-sort="' + tab + ":" + key + '"]'); if (again) again.focus();
+      return;
+    }
+    if (b.hasAttribute("data-zoom")) { var by = b.getAttribute("data-zoom"); if (by === "fit") fitZoom(); else setZoom((S.orgZoom || 1) + Number(by) * 0.1); return; }
+    if (b.hasAttribute("data-view")) { S.peopleView = b.getAttribute("data-view"); render(); return; }
+    if (b.hasAttribute("data-team")) { openTeam(b.getAttribute("data-team") || null); return; }
     if (b.hasAttribute("data-alloc")) { openPerson(b.getAttribute("data-alloc"), true); return; }
     if (b.hasAttribute("data-person")) { openPerson(b.getAttribute("data-person") || null, false); return; }
     if (b.hasAttribute("data-position")) { openPosition(b.getAttribute("data-position") || null); return; }
@@ -207,10 +465,12 @@
     if (b.hasAttribute("data-holiday")) { openHoliday(b.getAttribute("data-holiday") || null); return; }
     if (b.id === "importBtn") { $("importFile").value = ""; $("importFile").click(); return; }
     if (b.id === "csvBtn") { download(); return; }
-    if (b.id === "loadFed") {
+    if (b.id === "copyPrev") {
       b.disabled = true;
-      SA.post("admin/holidays/load", { year: Number(S.year) }).then(function (r) { D = r.data; render(); })
-        .catch(function (err) { b.disabled = false; window.alert(err.message); });
+      SA.post("admin/holidays/copy", { year: Number(S.year) }).then(function (r) {
+        D = r.data; render();
+        window.alert(r.added ? "Added " + count(r.added, "holiday", "holidays") + " to " + S.year + "." : "Every holiday from " + (Number(S.year) - 1) + " is already on " + S.year + "'s list.");
+      }).catch(function (err) { b.disabled = false; window.alert(err.message); });
     }
   });
   $("view").addEventListener("input", function (e) {
@@ -273,7 +533,10 @@
   function openPerson(id, allocOnly) {
     var p = id ? D.people.filter(function (x) { return x.id === id; })[0] : null;
     var st = { month: S.month, first: p ? p.first : "", last: p ? p.last : "", email: p ? p.email : "", touched: p ? p.email !== guess(p.first, p.last) : false,
-      positionId: p ? p.positionId : "", lines: null, adding: false };
+      positionId: p ? p.positionId : "", teamId: p ? p.teamId || "" : "", managerId: p ? p.managerId || "" : "", lines: null, adding: false };
+    // Who they can report to: anyone but themselves and the people who report up to them.
+    var below = function (pid) { var out = [], walk = function (m) { D.people.forEach(function (x) { if (x.managerId === m && out.indexOf(x.id) < 0) { out.push(x.id); walk(x.id); } }); }; walk(pid); return out; };
+    var notManagers = p ? below(p.id).concat([p.id]) : [];
     function load(month) { st.month = month; st.lines = (p ? linesFor(p, month) : []).map(function (l) { return { projectId: l.projectId, pct: String(l.pct) }; }); st.saved = JSON.stringify(st.lines); }
     load(S.month);
     function allocHtml() {
@@ -306,7 +569,11 @@
           '<div class="gap"><label class="field" for="dEmail">Email</label><input class="in-box" id="dEmail" type="email" value="' + esc(st.email) + '">' +
           '<p class="note">Their sign-in, the same as Partner Intelligence. Fills in as first initial and last name at conexusindiana.com. Leave the name blank for an open position.</p></div>' +
           '<div class="gap"><label class="field" for="dPos">Position</label><select class="in-box" id="dPos"><option value="">Choose a position</option>' +
-          positions.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === st.positionId ? " selected" : "") + ">" + esc(x.title) + (x.active === false ? " (inactive)" : "") + "</option>"; }).join("") + "</select></div>") +
+          positions.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === st.positionId ? " selected" : "") + ">" + esc(x.title) + (x.active === false ? " (inactive)" : "") + "</option>"; }).join("") + "</select></div>" +
+          '<div class="two"><div><label class="field" for="dTeam">Team</label><select class="in-box" id="dTeam"><option value="">No team</option>' +
+          D.teams.slice().sort(function (a, b) { return cmp(a.name, b.name); }).map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === st.teamId ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("") + "</select></div>" +
+          '<div><label class="field" for="dMgr">Reports to</label><select class="in-box" id="dMgr"><option value="">No one</option>' +
+          people().filter(function (x) { return notManagers.indexOf(x.id) < 0; }).map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === st.managerId ? " selected" : "") + ">" + esc(nameOf(x)) + "</option>"; }).join("") + "</select></div></div>") +
         '<div id="allocBox">' + allocHtml() + "</div>" + foot(p && !allocOnly ? "Remove this person" : ""));
     }
     function redrawAlloc() { $("allocBox").innerHTML = allocHtml(); }
@@ -322,7 +589,7 @@
           var n = dlg.querySelector('[data-pct="' + i + '"]'); n.focus(); n.setSelectionRange(at, at);
         }
       },
-      change: function (t) { if (t.id === "dPos") st.positionId = t.value; },
+      change: function (t) { if (t.id === "dPos") st.positionId = t.value; if (t.id === "dTeam") st.teamId = t.value; if (t.id === "dMgr") st.managerId = t.value; },
       click: function (b) {
         if (b.hasAttribute("data-mnav")) {
           if (JSON.stringify(st.lines) !== st.saved && !window.confirm("Leave " + SA.monthName(st.month) + " without saving its allocation?")) return;
@@ -340,7 +607,7 @@
           var allocChanged = JSON.stringify(st.lines) !== st.saved;
           var before = D.people.map(function (x) { return x.id; });
           var step = allocOnly ? Promise.resolve({ data: D })
-            : SA.post("admin/person", { id: p ? p.id : "", first: st.first, last: st.last, email: st.email, positionId: st.positionId });
+            : SA.post("admin/person", { id: p ? p.id : "", first: st.first, last: st.last, email: st.email, positionId: st.positionId, teamId: st.teamId, managerId: st.managerId });
           step.then(function (r) {
             D = r.data;
             var pid = p ? p.id : (D.people.filter(function (x) { return before.indexOf(x.id) < 0; })[0] || {}).id;
@@ -408,6 +675,23 @@
       click: function (b) {
         if (b.hasAttribute("data-remove")) { SA.post("admin/holiday/delete", { id: h.id }).then(done).catch(fail); return; }
         if (b.hasAttribute("data-save")) SA.post("admin/holiday", { id: h ? h.id : "", name: $("dName").value, start: $("dStart").value, end: $("dEnd").value }).then(done).catch(fail);
+      },
+    };
+  }
+
+  function openTeam(id) {
+    var t = id ? team(id) : null;
+    var members = t ? D.people.filter(function (p) { return p.teamId === t.id; }) : [];
+    show(head(t ? "Edit team" : "Add a team") +
+      '<div class="gap"><label class="field" for="dName">Team</label><input class="in-box" id="dName" value="' + esc(t ? t.name : "") + '"></div>' +
+      (t ? '<p style="margin:14px 0 0;color:var(--muted)">' + (members.length ? "On this team: " + members.map(function (p) { return '<button type="button" class="linkish" data-member="' + esc(p.id) + '">' + esc(nameOf(p)) + "</button>"; }).join(", ") +
+        ". To remove the team, move them to another team first." : "No one is on this team.") + "</p>" : "") +
+      foot(t && !members.length ? "Remove this team" : ""));
+    handlers = {
+      click: function (b) {
+        if (b.hasAttribute("data-member")) { close(); location.hash = "#people"; openPerson(b.getAttribute("data-member"), false); return; }
+        if (b.hasAttribute("data-remove")) { SA.post("admin/team/delete", { id: t.id }).then(done).catch(fail); return; }
+        if (b.hasAttribute("data-save")) SA.post("admin/team", { id: t ? t.id : "", name: $("dName").value }).then(done).catch(fail);
       },
     };
   }
