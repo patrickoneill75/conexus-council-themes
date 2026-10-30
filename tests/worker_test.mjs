@@ -6562,18 +6562,100 @@ test("salary_allocation: an inactive project or position stays where it is, and 
   assert.equal((await t.post("admin/project", { id: "constructor", name: "x", type: "c3" })).status, 404);
 });
 
-test("salary_allocation: holidays are kept by the control panel, with ranges, and a year's federal list adds once", async () => {
+test("salary_allocation: holidays are kept by the control panel, with ranges, and last year's copy into this year once", async () => {
   const t = await saEnv();
   let r = await t.post("admin/holiday", { name: "Day after Thanksgiving", start: "2026-11-27", end: "" });
   assert.equal(r.status, 200);
   assert.deepEqual((await me(t.env, t.jlee, "2026-11")).body.holidays.map((h) => h.date), ["2026-11-11", "2026-11-26", "2026-11-27"]);
   assert.equal((await t.post("admin/holiday", { name: "Backwards", start: "2026-12-24", end: "2026-12-20" })).status, 400);
   assert.equal((await t.post("admin/holiday", { name: "Too long", start: "2026-06-01", end: "2026-08-01" })).status, 400);
-  const before = (await t.post("admin/holidays/load", { year: 2027 })).body;
-  assert.equal(before.added, 0, "this year and next are loaded on first use");
-  r = await t.post("admin/holidays/load", { year: 2028 });
-  assert.equal(r.body.added, 11);
-  assert.equal((await t.post("admin/holidays/load", { year: 2028 })).body.added, 0, "loading twice adds nothing");
+  assert.equal((await t.post("admin/holidays/load", { year: 2028 })).status, 404, "the federal holidays button is gone");
+  // This year and next are loaded on first use, so copying into next year adds only what the panel added.
+  r = await t.post("admin/holidays/copy", { year: 2027 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.data.holidays.filter((h) => h.start.startsWith("2027-11")).map((h) => h.start).sort(), ["2027-11-11", "2027-11-25", "2027-11-26"]);
+  assert.equal(r.body.added, 1, "only the day after Thanksgiving was new");
+  assert.equal((await t.post("admin/holidays/copy", { year: 2027 })).body.added, 0, "copying twice adds nothing");
+  assert.equal((await t.post("admin/holidays/copy", { year: "next" })).status, 400);
+});
+
+test("salary_allocation: copying last year's holidays moves federal ones by rule and keeps the rest in place", () => {
+  const last = [
+    ...SA_MOD.federalHolidays(2026).map((h) => ({ name: h.name, start: h.date, end: "" })),
+    { name: "Day after Thanksgiving", start: "2026-11-27", end: "" },
+    { name: "Thanksgiving break", start: "2026-11-26", end: "2026-11-27" },
+    { name: "Founders Day", start: "2026-05-14", end: "" },
+    { name: "Winter break", start: "2026-12-28", end: "2026-12-31" },
+    { name: "Leap day", start: "2025-02-29", end: "" },
+  ];
+  const next = SA_MOD.copyHolidays(last, 2027);
+  const on = Object.fromEntries(next.map((h) => [h.start, h]));
+  assert.equal(on["2027-11-25"].name, "Thanksgiving Day", "the fourth Thursday, not November 26");
+  assert.equal(on["2027-11-26"].name, "Day after Thanksgiving", "still the Friday after");
+  assert.equal(on["2027-07-05"].name.startsWith("Independence Day"), true, "July 4 2027 is a Sunday, so observed Monday");
+  assert.equal(next.some((h) => h.start === "2027-07-03"), false, "not last year's observed Friday");
+  assert.equal(on["2027-05-14"].name, "Founders Day", "an organisation's own day keeps its month and day");
+  assert.equal(on["2027-12-28"].end, "2027-12-31", "a range keeps its length");
+  assert.equal(next.filter((h) => h.start === "2027-11-25").length, 1, "a date with a holiday already is left alone");
+  assert.equal(next.every((h) => h.start.startsWith("2027")), true, "only last year's are copied");
+  assert.equal(SA_MOD.copyHolidays([...last, ...next.map((h) => ({ ...h }))], 2027).length, 0);
+});
+
+test("salary_allocation: people have a team, from a list that starts with the four Conexus teams", async () => {
+  const t = await saEnv();
+  let d = (await sa("admin/data", saGet("admin/data", t.admin), t.env).then((r) => r.json())).data;
+  assert.deepEqual(d.teams.map((x) => x.name), ["Talent", "Tech Adoption", "Thought Leadership", "Operations"]);
+  const ops = d.teams.find((x) => x.name === "Operations").id;
+  d = (await t.post("admin/person", { id: t.jill, first: "Jillian", last: "Lee", email: "jlee@conexusindiana.com", positionId: t.pos, teamId: ops })).body.data;
+  assert.equal(d.people.find((p) => p.id === t.jill).teamId, ops);
+  assert.equal((await t.post("admin/person", { id: t.jill, first: "Jillian", last: "Lee", email: "jlee@conexusindiana.com", positionId: t.pos, teamId: "constructor" })).status, 400);
+  assert.equal((await t.post("admin/team", { name: "operations" })).status, 409, "no second team by the same name");
+  d = (await t.post("admin/team", { name: "Policy" })).body.data;
+  assert.equal(d.teams.length, 5);
+  assert.equal((await t.post("admin/team/delete", { id: ops })).status, 409, "a team with people on it stays");
+  d = (await t.post("admin/team/delete", { id: d.teams.find((x) => x.name === "Policy").id })).body.data;
+  assert.equal(d.teams.length, 4);
+});
+
+test("salary_allocation: lists saved before teams existed get the starting teams", async () => {
+  const t = await saEnv();
+  const key = "sa:data", raw = await t.env.BOX_KV.get(key);
+  assert.ok(raw, "the lists are stored");
+  const old = JSON.parse(raw); delete old.teams;
+  await t.env.BOX_KV.put(key, JSON.stringify(old));
+  const d = (await sa("admin/data", saGet("admin/data", t.admin), t.env).then((r) => r.json())).data;
+  assert.deepEqual(d.teams.map((x) => x.name), SA_MOD.STARTING_TEAMS);
+  assert.equal(d.people.length, 2, "nothing else changes");
+});
+
+test("salary_allocation: who reports to whom never loops, and removing a manager moves their reports up", async () => {
+  const t = await saEnv();
+  const save = (id, first, last, email, managerId) => t.post("admin/person", { id, first, last, email, positionId: t.pos, managerId });
+  let d = (await t.post("admin/person", { first: "Pat", last: "Boss", email: "pboss@conexusindiana.com", positionId: t.pos })).body.data;
+  const boss = d.people.find((p) => p.last === "Boss").id;
+  assert.equal((await save(t.jill, "Jillian", "Lee", "jlee@conexusindiana.com", boss)).status, 200);
+  assert.equal((await save(t.brooke, "Brooke", "Lambert", "bl@conexusindiana.com", t.jill)).status, 200);
+  let r = await save(boss, "Pat", "Boss", "pboss@conexusindiana.com", t.brooke);
+  assert.equal(r.status, 400, "Brooke reports up to Pat, so Pat cannot report to Brooke");
+  assert.equal((await save(t.jill, "Jillian", "Lee", "jlee@conexusindiana.com", t.jill)).status, 400, "nor to themself");
+  assert.equal((await save(t.jill, "Jillian", "Lee", "jlee@conexusindiana.com", "toString")).status, 400);
+  d = (await t.post("admin/person/delete", { id: t.jill })).body.data;
+  assert.equal(d.people.find((p) => p.id === t.brooke).managerId, boss, "Brooke now reports to Jillian's manager");
+});
+
+test("salary_allocation: dragging a card on the org chart changes only who that person reports to", async () => {
+  const t = await saEnv();
+  let r = await t.post("admin/reports-to", { id: t.brooke, managerId: t.jill });
+  assert.equal(r.status, 200);
+  const brooke = r.body.data.people.find((p) => p.id === t.brooke);
+  assert.equal(brooke.managerId, t.jill);
+  assert.equal(brooke.email, "bl@conexusindiana.com", "nothing else about them changes");
+  assert.equal((await t.post("admin/reports-to", { id: t.jill, managerId: t.brooke })).status, 400, "no loops");
+  assert.equal((await t.post("admin/reports-to", { id: t.jill, managerId: "nobody" })).status, 400);
+  assert.equal((await t.post("admin/reports-to", { id: "constructor", managerId: t.jill })).status, 404);
+  r = await t.post("admin/reports-to", { id: t.brooke, managerId: "" });
+  assert.equal(r.body.data.people.find((p) => p.id === t.brooke).managerId, "", "dropped in the bottom row, they report to no one");
+  assert.equal((await sa("admin/reports-to", saPost("admin/reports-to", { id: t.brooke, managerId: "" }, t.jlee), t.env)).status, 403, "admins only");
 });
 
 let failed = 0;

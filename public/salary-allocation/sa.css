@@ -124,6 +124,51 @@ body.sa { margin:0; background:var(--wash); color:var(--text); font:15px/1.5 Apt
 .sa table.grid .pos { display:block; font-size:12.5px; color:var(--muted); }
 .sa table.grid .stick { position:sticky; left:0; background:#fff; min-width:230px; }
 
+.sa table.tbl th .sorter { display:inline-flex; align-items:center; gap:4px; padding:0; border:0; background:none; font:inherit; color:inherit; cursor:pointer; }
+.sa table.tbl th .sorter:hover, .sa table.tbl th[aria-sort="ascending"] .sorter, .sa table.tbl th[aria-sort="descending"] .sorter { color:var(--navy); }
+.sa table.tbl th .arrow { font-size:10px; min-width:10px; }
+.sa table.tbl th.r .sorter, .sa table.grid th.pj .sorter { justify-content:center; }
+.sa .orgwrap { margin-top:16px; padding:0; overflow-x:auto; }
+.sa .orgtree { position:relative; width:max-content; min-width:100%; padding:28px 24px 32px; box-sizing:border-box; }
+.sa .orglines { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+.sa .obar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; margin-top:12px; }
+.sa .obar .note { margin:0; }
+.sa .ozoom { display:inline-flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#fff; border:1px solid var(--border); }
+.sa .ozoom button { min-width:40px; height:36px; padding:0 12px; border:0; border-radius:999px; background:transparent; color:var(--navy); font:inherit; font-size:17px; font-weight:600; cursor:pointer; }
+.sa .ozoom button[data-zoom="fit"] { font-size:14px; }
+.sa .ozoom button:hover { background:var(--wash); }
+.sa .ozoom output { min-width:52px; text-align:center; font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.sa .orglines .ln { fill:none; stroke:var(--strong); stroke-width:1.5; }
+.sa .orglines .ln.lit { stroke:var(--blue); stroke-width:3; }
+.sa .oroots { display:flex; justify-content:center; align-items:flex-start; gap:48px; }
+.sa .onode { display:flex; flex-direction:column; align-items:center; padding:0 8px; }
+.sa .okids { display:flex; align-items:flex-start; margin-top:44px; }
+.sa .ocard { position:relative; z-index:1; width:220px; box-sizing:border-box; display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  padding:12px 14px; border:1.5px solid #b9c6e0; border-radius:10px; background:#fff; cursor:pointer; text-align:left; font-size:13.5px; line-height:1.4; }
+.sa .ocard:hover { border-color:var(--blue); }
+.sa .ocard.on { border:2px solid var(--navy); padding:11.5px 13.5px; box-shadow:0 2px 8px rgba(7,33,78,.14); }
+.sa .ocard .oname { padding:0; border:0; background:none; font:inherit; font-size:14.5px; font-weight:700; color:var(--navy); cursor:pointer; text-align:left; }
+.sa .ocard .oname:hover { text-decoration:underline; }
+.sa .ocard .otitle { color:var(--text); }
+.sa .ocard .omail { color:var(--text); text-decoration:underline; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sa .ocard .ofoot { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin-top:6px; }
+.sa .ocard .ocount { font-size:12.5px; color:var(--blue); font-weight:600; }
+.sa .ocard .tm { font-size:12px; font-weight:600; color:var(--blue); background:var(--wash); border-radius:999px; padding:1px 9px; }
+.sa .orgtree { touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; }
+.sa .ocard { touch-action:none; cursor:grab; }
+.sa .ocard.dragging { opacity:.35; }
+.sa .ocard.drop, .sa .orow.drop { outline:3px solid var(--amber); outline-offset:2px; }
+.sa .ocard.nodrop { outline:3px dashed #c2462a; outline-offset:2px; }
+.ocard.ghost { position:fixed; z-index:50; pointer-events:none; margin:0; cursor:grabbing; display:flex; flex-direction:column; gap:2px; padding:12px 14px; box-sizing:border-box;
+  border:2px solid var(--navy); border-radius:10px; background:#fff; font:13.5px/1.4 Aptos, "Segoe UI", Arial, sans-serif; color:var(--text); box-shadow:0 10px 28px rgba(7,33,78,.25); transform:rotate(-1.5deg); }
+.ocard.ghost .oname { padding:0; border:0; background:none; font:inherit; font-size:14.5px; font-weight:700; color:var(--navy); text-align:left; }
+.ocard.ghost .omail { color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ocard.ghost .ofoot { display:none; }
+.sa .orow { min-height:72px; border-radius:12px; }
+.sa .ohint { margin:0; align-self:center; color:var(--muted); font-size:14px; padding:20px; border:1.5px dashed var(--strong); border-radius:12px; flex:1; text-align:center; }
+.sa .oloose { margin:36px 0 12px; font-size:15px; font-weight:600; color:var(--navy); }
+.sa .orow { display:flex; flex-wrap:wrap; gap:16px; }
+
 dialog.sa-dlg { width:min(600px, calc(100vw - 32px)); max-height:calc(100vh - 32px); border:0; border-radius:22px; padding:26px 28px 24px;
   box-shadow:0 24px 60px rgba(7,33,78,.25); color:var(--text); font:15px/1.5 Aptos, "Segoe UI", Arial, sans-serif; }
 dialog.sa-dlg::backdrop { background:rgba(7,33,78,.38); }
@@ -142,9 +187,9 @@ dialog.sa-dlg::backdrop { background:rgba(7,33,78,.38); }
 .sa-dlg .foot { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:22px; }
 .sa-dlg .foot .sp { flex:1 1 auto; }
 .sa-dlg .err { color:#9a2f12; font-size:14px; margin:10px 0 0; }
-.sa-dlg .seg { display:inline-flex; padding:3px; border-radius:999px; background:#eceef2; }
-.sa-dlg .seg button { min-width:64px; min-height:38px; padding:0 16px; border-radius:999px; border:0; background:transparent; color:var(--muted); font:inherit; cursor:pointer; }
-.sa-dlg .seg button[aria-pressed="true"] { background:var(--navy); color:#fff; font-weight:600; }
+.sa .seg, .sa-dlg .seg { display:inline-flex; padding:3px; border-radius:999px; background:#eceef2; }
+.sa .seg button, .sa-dlg .seg button { min-width:64px; min-height:38px; padding:0 16px; border-radius:999px; border:0; background:transparent; color:var(--muted); font:inherit; cursor:pointer; }
+.sa .seg button[aria-pressed="true"], .sa-dlg .seg button[aria-pressed="true"] { background:var(--navy); color:#fff; font-weight:600; }
 .sa-dlg .check { display:flex; align-items:center; gap:10px; margin-top:16px; }
 .sa-dlg .check input { width:20px; height:20px; }
 
