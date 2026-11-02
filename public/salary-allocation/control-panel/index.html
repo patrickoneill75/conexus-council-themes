@@ -324,7 +324,7 @@
         th("allocations", "total", "Total", 'scope="col" rowspan="2" class="r" style="vertical-align:bottom"') + "</tr><tr>" +
         cols.map(function (c) { return th("allocations", "p:" + c.id, c.name, 'scope="col" class="pj"'); }).join("") + "</tr></thead>" +
         bodyHtml("allocations", list, F, cols.length + 2, row, ["person", "people"], "No one matches these filters.", false) +
-        '<tbody><tr class="fte"><td class="stick" style="color:var(--navy)">Staff time (FTE), everyone</td>' + fte + "<td></td></tr></tbody></table></div>" +
+        '<tbody><tr class="fte"><td class="stick" style="color:var(--navy)">Staff time (FTE)' + (filtersOn("allocations") ? ", everyone" : "") + "</td>" + fte + "<td></td></tr></tbody></table></div>" +
         '<p class="note" style="margin-top:12px">Type in any cell to change a split; a blank cell is 0%. Enter or the arrow keys move up and down, Escape undoes a cell. Click a name for the full allocation, or a column heading to sort.</p>' +
         '<div class="savebar" id="saveBar" role="region" aria-label="Unsaved changes" hidden></div>'
         : '<div class="card" style="margin-top:20px"><p style="margin:0">No one is on the list yet. Import the allocation spreadsheet (Position, First, Last, Project, Allocation, Funding Type), or add people on the People tab.</p></div>');
