@@ -6682,6 +6682,49 @@ test("salary_allocation: a schedule arranged by dragging is saved with the month
   assert.equal((await me(t.env, t.jlee, "2026-10")).body.saved.plan, null, "going back to the possible schedule clears it");
 });
 
+test("salary_allocation: a position no one holds can be marked open, which puts an open position on the report", async () => {
+  const t = await saEnv();
+  let d = (await t.post("admin/position", { title: "VP, Industry Partnerships", open: true })).body.data;
+  const vp = d.positions.find((p) => p.title === "VP, Industry Partnerships").id;
+  const open = d.people.filter((p) => p.positionId === vp);
+  assert.equal(open.length, 1);
+  assert.deepEqual([open[0].first, open[0].last, open[0].email], ["", "", ""], "held by no one by name");
+  assert.equal((await t.post("admin/allocation", { personId: open[0].id, from: "2026-11", lines: [{ projectId: t.lei, pct: 100 }] })).status, 200, "and can be planned for");
+  d = (await t.post("admin/position", { id: vp, title: "VP, Industry Partnerships", open: true })).body.data;
+  assert.equal(d.people.filter((p) => p.positionId === vp).length, 1, "ticking it again adds no second one");
+  d = (await t.post("admin/position", { id: vp, title: "VP, Industry Partnerships", open: false })).body.data;
+  assert.equal(d.people.filter((p) => p.positionId === vp).length, 0, "closing it takes the open position away");
+  d = (await t.post("admin/position", { id: t.pos, title: "Director, Operations", open: false })).body.data;
+  assert.equal(d.people.filter((p) => p.positionId === t.pos).length, 2, "a role someone is in is left alone");
+  assert.equal((await t.post("admin/position", { title: "Analyst", active: false, open: true })).status, 400, "an inactive title can't be open");
+});
+
+test("salary_allocation: an allocation change can be for that month only, or for that month and every month after", async () => {
+  const t = await saEnv();
+  const pcts = async (month) => Object.fromEntries((await me(t.env, t.jlee, month)).body.allocation.map((a) => [a.projectId, a.pct]));
+  const set = (from, lei, unrest, scope) => t.post("admin/allocation", { personId: t.jill, from, lines: [{ projectId: t.lei, pct: lei }, { projectId: t.unrest, pct: unrest }], scope });
+  // Jillian is 75/25 from January 2026. A planned change: 60/40 from March 2027.
+  await set("2027-03", 60, 40);
+  let r = await set("2026-11", 50, 50, "month");
+  assert.equal(r.status, 200);
+  assert.deepEqual(await pcts("2026-11"), { [t.lei]: 50, [t.unrest]: 50 });
+  assert.deepEqual(await pcts("2026-12"), { [t.lei]: 75, [t.unrest]: 25 }, "December keeps what it had");
+  assert.deepEqual(await pcts("2026-10"), { [t.lei]: 75, [t.unrest]: 25 }, "October is untouched");
+  assert.deepEqual(await pcts("2027-03"), { [t.lei]: 60, [t.unrest]: 40 }, "the planned change still comes");
+  r = await set("2026-11", 75, 25, "month");
+  assert.deepEqual(r.body.data.people.find((p) => p.id === t.jill).allocations.map((a) => a.from), ["2026-01", "2027-03"], "undoing it leaves no extra entries behind");
+  r = await set("2027-01", 90, 10, "future");
+  assert.deepEqual(await pcts("2027-06"), { [t.lei]: 90, [t.unrest]: 10 }, "every month after, the planned March change replaced");
+  assert.deepEqual(await pcts("2026-12"), { [t.lei]: 75, [t.unrest]: 25 });
+  assert.deepEqual(r.body.data.people.find((p) => p.id === t.jill).allocations.map((a) => a.from), ["2026-01", "2027-01"]);
+  // Someone with no allocation yet, given one for a single month, has none again the month after.
+  let d = (await t.post("admin/person", { first: "New", last: "Hire", email: "nhire@conexusindiana.com", positionId: t.pos })).body.data;
+  const hire = d.people.find((p) => p.last === "Hire");
+  d = (await t.post("admin/allocation", { personId: hire.id, from: "2026-11", lines: [{ projectId: t.lei, pct: 100 }], scope: "month" })).body.data;
+  assert.deepEqual(d.people.find((p) => p.id === hire.id).allocations, [{ from: "2026-11", lines: [{ projectId: t.lei, pct: 100 }] }, { from: "2026-12", lines: [] }]);
+  assert.equal((await set("2026-11", 50, 50, "always")).status, 400);
+});
+
 test("salary_allocation: dragging a card on the org chart changes only who that person reports to", async () => {
   const t = await saEnv();
   let r = await t.post("admin/reports-to", { id: t.brooke, managerId: t.jill });
