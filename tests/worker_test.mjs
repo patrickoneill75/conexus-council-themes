@@ -6725,6 +6725,14 @@ test("salary_allocation: an allocation change can be for that month only, or for
   assert.equal((await set("2026-11", 50, 50, "always")).status, 400);
 });
 
+test("salary_allocation: the Not at 100% card leaves out open positions (bug: an open position with no allocation counted)", () => {
+  const file = path.join(path.dirname(SRC), "public", "salary-allocation", "control-panel", "index.html");
+  const lines = { a: [{ pct: 100 }], b: [{ pct: 80 }], open: [], openPlanned: [{ pct: 50 }] };
+  const notAtHundred = new Function("linesFor", `${sourceOf(file, "notAtHundred")}; return notAtHundred;`)((p) => lines[p.id]);
+  const list = [{ id: "a", first: "A", last: "One" }, { id: "b", first: "B", last: "Two" }, { id: "open", first: "", last: "" }, { id: "openPlanned", first: "", last: "" }];
+  assert.deepEqual(notAtHundred(list, "2026-11").map((p) => p.id), ["b"]);
+});
+
 test("salary_allocation: dragging a card on the org chart changes only who that person reports to", async () => {
   const t = await saEnv();
   let r = await t.post("admin/reports-to", { id: t.brooke, managerId: t.jill });
