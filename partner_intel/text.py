@@ -1,6 +1,7 @@
 """Box file bytes to plain text.
 
-Supported: docx, txt, md, vtt, srt, html, htm, and PDFs that carry a text layer. Scanned
+Supported: docx, txt, md, vtt, srt, html, htm, PDFs that carry a text layer, and survey results
+as csv, xlsx or xls (read as rows; survey.py makes one unit per response). Scanned
 PDFs raise NoTextLayer and are reported, never OCR'd. Legacy .doc is recognized and reported
 as needing conversion, because reading it correctly takes a library this repo does not carry.
 
@@ -18,7 +19,8 @@ import zipfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
-SUPPORTED_EXTENSIONS = ("docx", "txt", "md", "vtt", "srt", "pdf", "html", "htm")
+SUPPORTED_EXTENSIONS = ("docx", "txt", "md", "vtt", "srt", "pdf", "html", "htm", "csv", "xlsx", "xls")
+TABLE_EXTENSIONS = ("csv", "xlsx", "xls")
 # Text formats we recognize but cannot read. Reported with a clear instruction.
 CONVERT_FIRST = ("doc", "rtf", "odt", "pages")
 
@@ -39,6 +41,7 @@ class Document:
     kind: str
     speakers: list[str] = field(default_factory=list)
     duration_seconds: int = 0
+    rows: list[list[str]] = field(default_factory=list)  # a spreadsheet's cells, kind "table"
 
 
 def extension(name: str) -> str:
@@ -260,6 +263,25 @@ def _html_text(data: bytes) -> str:
     return "".join(stripper.parts)
 
 
+# ------------------------------------------------------------------------------ spreadsheets
+
+def _table(ext: str, data: bytes) -> Document:
+    from . import survey
+    try:
+        if ext == "csv":
+            rows = survey.rows_from_csv(decode_bytes(data))
+        elif ext == "xlsx":
+            rows = survey.rows_from_xlsx(data)
+        else:
+            rows = survey.rows_from_xls(data)
+    except ImportError:  # a missing library is the pipeline's fault, not the file's: retried next scan
+        raise
+    except Exception as e:  # a damaged or mislabeled file: say so, do not retry it every scan
+        raise UnreadableFile(f"This .{ext} file could not be opened as a spreadsheet ({str(e)[:120]}).") from e
+    rows = [[clean_text(c) for c in row] for row in rows]
+    return Document("\n".join("\t".join(row) for row in rows if any(row)), "table", rows=rows)
+
+
 # ------------------------------------------------------------------------------ entry point
 
 def to_document(name: str, data: bytes) -> Document:
@@ -268,6 +290,8 @@ def to_document(name: str, data: bytes) -> Document:
         raise UnreadableFile(f".{ext} files cannot be read. Save a copy as .docx and it will be picked up.")
     if ext not in SUPPORTED_EXTENSIONS:
         raise UnreadableFile(f".{ext or '(none)'} is not a supported notes format.")
+    if ext in TABLE_EXTENSIONS:
+        return _table(ext, data)
     if ext == "docx":
         return Document(clean_text(_docx_text(data)), "docx")
     if ext in ("vtt", "srt"):

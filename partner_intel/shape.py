@@ -10,6 +10,8 @@ the structure that makes them interpretable:
                   between a first name in the discussion and a company, so it travels with
                   the unit. Empty template text and ice-breaker themes are removed.
   transcript      VTT/SRT or "Speaker: words" text.
+  survey          Survey results saved as csv, xlsx or xls (survey.py). One unit per response,
+                  headed by the respondent's company and dated when it was submitted.
   generic         Anything else, including board minutes.
 
 Units are cut deterministically, in code, so that what reaches the model is small and a
@@ -66,6 +68,9 @@ class Unit:
     # The meeting a piece of a running document belongs to (meetings.py). Not part of the cache
     # key: it decides the date, not what Claude is asked.
     meeting_id: str = ""
+    # The day a survey response was submitted. Like meeting_id, it dates the unit and is not part of
+    # the cache key.
+    date: str = ""
 
 
 @dataclass
@@ -233,7 +238,22 @@ def _clean_template(text: str) -> tuple[str, int]:
 
 # ---------------------------------------------------------------- entry point
 
+def _survey(name: str, doc: Document) -> Shape:
+    from . import survey
+    found, reason = survey.responses(doc.rows)
+    title = survey.title(name)
+    units = []
+    for n, r in enumerate(found, 1):
+        units.extend(_units_from(
+            survey.render(r, title), label=r.company or r.person or f"Response {n}", default_company=r.company,
+            attendees=[(r.person, r.company)] if r.person else [], hint=survey.HINT, date=r.submitted))
+    return Shape("survey", "partner", "Survey", title, units, text_date_allowed=False,
+                 skipped_reason=reason or ("" if units else "no responses with answers"))
+
+
 def classify(name: str, path: str, doc: Document) -> Shape:
+    if doc.kind == "table":
+        return _survey(name, doc)
     text = doc.text
     event_type = event_type_for(path, name)
     scope = "internal" if event_type == "Board Meeting" else "partner"
