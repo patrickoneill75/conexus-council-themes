@@ -605,7 +605,7 @@ async function consensusBox(questions = [{ id: "q1", text: "Q one" }, { id: "q2"
   const answer = (text) => [{ questionId: "q1", questionText: "Q one", turns: [{ turn: 0, prompt: "Q one", answer: text }] }];
   const submit = (text, extra = {}) => handleConsensusApi("submit", jsonReq("/api/consensus/submit", "POST",
     { surveyId: survey.id, responses: answer(text), ...extra }), env);
-  return { env, survey, box, submit };
+  return { env, survey, box, submit, token };
 }
 const responseIds = (csv) => csv.trim().split("\n").slice(1).map((l) => l.split(",")[0]);
 
@@ -681,6 +681,81 @@ test("consensus: answers saved partway are there to finish later, and gone once 
 
   await withFetch(t.box.fetch, async () => { assert.equal((await t.submit("done", { token })).status, 200); });
   assert.equal((await load(token)).status, 404, "submitting removes the saved copy");
+});
+
+const CSV_HEAD = "Response ID,Submitted At,Question ID,Question Text,Turn,Prompt,Answer\n";
+const respond = (id, at, rows) => rows.map(([qid, turn, prompt, answer]) => `${id},${at},${qid},x,${turn},${prompt},${answer}`).join("\n") + "\n";
+
+test("consensus: the Responses page reads each response whole, and the count is the file's (bug: a response deleted in Box was still counted)", async () => {
+  const t = await consensusBox([{ id: "q1", text: "What is the name of your company?" }, { id: "q2", text: "Why referrals?" }]);
+  t.box.file = CSV_HEAD
+    + respond("r1", "2026-11-06T19:41:50Z", [["q2", 1, "How long do they stay?", "Longer"], ["q1", 0, "What is the name of your company?", "Zoeller"], ["q2", 0, "Why referrals?", "Vouched for"]])
+    + respond("r2", "2026-11-10T16:12:17Z", [["q1", 0, "What is the name of your company?", "Lucas Oil"], ["q2", 0, "Why referrals?", "Faster hiring"]]);
+  const s = JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`));
+  s.responseCount = 5; // three were deleted straight from Box
+  await t.env.BOX_KV.put(`consensus:survey:${t.survey.id}`, JSON.stringify(s));
+  const body = await withFetch(t.box.fetch, async () => (await handleConsensusApi(`surveys/${t.survey.id}/responses`,
+    req(`/api/consensus/surveys/${t.survey.id}/responses`, { headers: { authorization: `Bearer ${t.token}` } }), t.env)).json());
+  assert.equal(body.count, 2);
+  assert.deepEqual(body.responses.map((r) => [r.responseId, r.label]), [["r2", "Lucas Oil"], ["r1", "Zoeller"]], "newest first, named by company");
+  const r1 = body.responses[1];
+  assert.deepEqual(r1.questions.map((q) => q.questionText), ["What is the name of your company?", "Why referrals?"], "in survey order");
+  assert.deepEqual(r1.questions[1].turns.map((x) => [x.turn, x.answer]), [[0, "Vouched for"], [1, "Longer"]], "turns in order");
+  assert.equal(JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`)).responseCount, 2);
+});
+
+test("consensus: deleting a response takes out its rows only, and the results are flagged until Analyze runs again", async () => {
+  const t = await consensusBox();
+  t.box.file = CSV_HEAD + respond("r1", "2026-11-06T10:00:00Z", [["q1", 0, "Q one", '"a, quoted ""answer"""']])
+    + respond("r2", "2026-11-07T10:00:00Z", [["q1", 0, "Q one", "keep me"]]) + respond("r3", "2026-11-08T10:00:00Z", [["q1", 0, "Q one", "and me"]]);
+  const s = JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`));
+  Object.assign(s, { responseCount: 3, analyzedAt: "2026-11-09T00:00:00Z", analyzedResponseCount: 3 });
+  await t.env.BOX_KV.put(`consensus:survey:${t.survey.id}`, JSON.stringify(s));
+  const del = (ids, tok = t.token) => handleConsensusApi(`surveys/${t.survey.id}/responses/delete`,
+    jsonReq(`/api/consensus/surveys/${t.survey.id}/responses/delete`, "POST", { responseIds: ids }, tok), t.env);
+  await withFetch(t.box.fetch, async () => {
+    const r = await del(["r1", "nope"]);
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { ok: true, removed: 1, count: 2 });
+  });
+  assert.ok(t.box.file.startsWith(CSV_HEAD));
+  assert.deepEqual(responseIds(t.box.file), ["r2", "r3"]);
+  assert.ok(!t.box.file.includes("quoted"));
+  const saved = JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`));
+  assert.equal(saved.responseCount, 2);
+  assert.equal(saved.deletedSinceAnalysis, 1);
+  const list = await (await handleConsensusApi("surveys", req("/api/consensus/surveys", { headers: { authorization: `Bearer ${t.token}` } }), t.env)).json();
+  assert.equal(list.surveys[0].deletedSinceAnalysis, 1, "the survey list can say so");
+
+  t.env.BOX_RELAY_SECRET = "s3";
+  await handleConsensusApi(`relay/survey/${t.survey.id}/mark-analyzed`, new Request(`https://x.test/api/consensus/relay/survey/${t.survey.id}/mark-analyzed`,
+    { method: "POST", headers: { "x-pipeline-key": "s3", "content-type": "application/json" }, body: JSON.stringify({ analyzedResponseCount: 2 }) }), t.env);
+  assert.equal(JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`)).deletedSinceAnalysis, undefined, "a new analysis clears it");
+
+  assert.equal((await del(["r2"], "")).status, 401);
+  assert.equal((await del([])).status, 400);
+});
+
+test("consensus: a response submitted while another is being deleted is kept", async () => {
+  const t = await consensusBox();
+  t.box.file = CSV_HEAD + respond("r1", "2026-11-06T10:00:00Z", [["q1", 0, "Q one", "delete me"]]);
+  await withFetch(t.box.fetch, async () => {
+    const [d, s] = await Promise.all([
+      handleConsensusApi(`surveys/${t.survey.id}/responses/delete`,
+        jsonReq(`/api/consensus/surveys/${t.survey.id}/responses/delete`, "POST", { responseIds: ["r1"] }, t.token), t.env),
+      t.submit("arrived meanwhile")]);
+    assert.deepEqual([d.status, s.status], [200, 200]);
+  });
+  assert.ok(!t.box.file.includes("delete me"));
+  assert.ok(t.box.file.includes("arrived meanwhile"));
+  assert.equal(JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`)).responseCount, 1);
+});
+
+test("consensus: a submit counts the responses in the file, not one more than the stored count", async () => {
+  const t = await consensusBox();
+  t.box.file = CSV_HEAD + respond("r1", "2026-11-06T10:00:00Z", [["q1", 0, "Q one", "one"]]) + respond("r2", "2026-11-06T11:00:00Z", [["q1", 0, "Q one", "two"]]);
+  await withFetch(t.box.fetch, async () => { await t.submit("three"); });
+  assert.equal(JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`)).responseCount, 3);
 });
 
 test("consensus: the relay refuses a wrong shared secret", async () => {
@@ -5880,7 +5955,7 @@ test("access: every control panel page checks that app's admin, and the staff pa
   const panels = {
     "council-data/control-panel/index.html": "council-data", "mcm/control-panel/index.html": "mcm",
     "inm/control-panel/index.html": "pcn", "consensus/control-panel/index.html": "consensus",
-    "consensus/control-panel/results.html": "consensus", "stars/control-panel/index.html": "stars",
+    "consensus/control-panel/results.html": "consensus", "consensus/control-panel/responses.html": "consensus", "stars/control-panel/index.html": "stars",
     "artifacts/control-panel/index.html": "artifacts", "job-description/control-panel/index.html": "job-description",
     "apprenticeship/control-panel/index.html": "apprenticeship", "apprenticeship/control-panel/responses.html": "apprenticeship",
     "partner-intel/control-panel/index.html": "partner-intel",
