@@ -1,171 +1,163 @@
 {
-  "generatedAt": "2026-11-06T20:12:44+00:00",
+  "generatedAt": "2026-11-10T16:36:12+00:00",
   "questions": [
     {
       "consensus": [
-        "Referral hires tend to stay longer than other hires.",
-        "Referrals improve cultural fit.",
-        "Referrals ultimately reduce hiring costs."
+        "Referred hires are believed to stay longer and show stronger cultural fit than other hires.",
+        "All three see referrals as reducing hiring risk by leveraging a trusted personal connection.",
+        "None view referrals as purely transactional -- relationships and networks are central to the value."
       ],
       "id": "5af57390-0171-4d9c-8f02-d6f05ccc9902",
       "needsMoreInfo": [
-        "No specific cost figures or ROI calculations were given beyond Respondent 2's general statement.",
-        "Unclear how referral programs are structured or incentivized (e.g., bonuses for referring employees).",
-        "Only one hard retention metric (90%) was shared; unclear how it compares to non-referral retention rates.",
-        "No detail on how companies handle referrals who aren't an immediate fit (e.g., how the 'call back list' is managed)."
+        "Only one respondent (Respondent 2) has quantified retention data; others rely on impressions or anecdotes.",
+        "No respondent detailed concrete cost figures to quantify the ROI of referral hiring.",
+        "Unclear how companies structure or incentivize referral programs (bonuses, formal process, etc.).",
+        "Not addressed: how referrals affect diversity of candidate pools or risk of hiring too homogenously.",
+        "Unclear how 'call back lists' or informal networking pipelines are tracked or managed over time."
       ],
-      "responseCount": 2,
+      "responseCount": 3,
       "text": "Why do you prefer internal referrals as opposed to other hiring processes?",
       "themes": [
         {
-          "deepDive": "This theme centers on the qualitative trust transfer that happens when an existing employee vouches for someone. It shortcuts the usual discovery process in early-stage screening, since the referring employee effectively pre-screens for fit and competence. Respondent 1 frames this as fundamentally different from traditional candidate pools, where every applicant starts from zero credibility.",
+          "deepDive": "All three CEOs independently link the personal relationship behind a referral to longer tenure, even though only Respondent 2 has hard metrics (90% retention) to back it up. Respondent 1 and 3 speak more anecdotally ('gut feel', specific examples of long-tenured referral hires still at Medartis) rather than tracked data. This suggests the retention benefit is widely believed but not uniformly measured, leaving room to question how much is causation versus selection bias (referrers may simply recommend people likely to stay regardless).",
           "details": [
-            "Respondent 1 describes the referral relationship as 'richer' than vetting a stranger from square one.",
-            "The candidate arrives with a built-in endorsement rather than being an unknown quantity."
+            "Respondent 2 reports nearly 90% retention among referral hires.",
+            "Respondent 1 and 3 both say referred hires tend to stay longer and engage more deeply.",
+            "The shared connection to an existing employee seems to create accountability and belonging from day one."
           ],
-          "summary": "Referrals come pre-vetted with a trusted endorsement, making candidates easier to evaluate from the start."
+          "summary": "Referrals boost retention because referred candidates arrive pre-vetted for cultural fit."
         },
         {
-          "deepDive": "Both CEOs independently arrive at the same conclusion from different angles: one through hard retention data, the other through a qualitative sense of cultural alignment. This suggests the referral's value isn't just transactional speed-to-hire but a genuine filter for people who mesh with existing teams. The consistency across two different companies strengthens the case that this is a real, replicable effect rather than anecdotal luck.",
+          "deepDive": "The cost savings theme is tied closely to trust transfer: an endorsement from a current employee substitutes for part of the vetting process, reducing time-to-hire and screening burden. Respondent 2 is the only one to make the cost-retention link explicit, while Respondent 1 implies it through reduced vetting work. This suggests ROI is a real driver but is often discussed as a secondary benefit flowing from the trust/fit advantage rather than the primary motivator.",
           "details": [
-            "Respondent 2 cites a nearly 90% retention rate among referred hires.",
-            "Respondent 1 notes referred candidates generally 'fit the Cultural Fit discussion.'",
-            "Both respondents link referrals directly to longer tenure."
+            "Respondent 1 notes referred candidates aren't 'just another candidate to vet from square one' since they come endorsed.",
+            "Respondent 2 explicitly ties the high retention rate to lower hiring costs over time.",
+            "Less time and resources spent sourcing and screening translates into ROI."
           ],
-          "summary": "Referral hires show stronger retention and better cultural fit than other hiring channels."
+          "summary": "Referrals lower hiring costs and effort by skipping the cold vetting process."
         },
         {
-          "deepDive": "This points to a dual ROI: immediate cost savings from reduced turnover and re-hiring, plus a longer-term talent bench effect where referrals who aren't an immediate fit are retained as warm leads. This reframes referrals not just as a hiring tactic for one role but as an ongoing talent pipeline strategy.",
+          "deepDive": "Respondent 3 pushes back slightly on the premise that referrals are a deliberate 'preference,' instead describing them as one of many hiring channels that emerge from a dense professional network where people have worked together before. This nuance distinguishes a passive, relationship-driven sourcing approach from the more intentional strategy described by Respondents 1 and 2. It raises the question of whether referral success is really about the hiring mechanism itself or about the tight-knit, overlapping networks common in niche manufacturing hubs.",
           "details": [
-            "Respondent 2 explicitly ties high retention to lower hiring costs over time.",
-            "Respondent 1 notes referrals who don't fit the current role still become a 'call back list' for future openings."
+            "Respondent 1 says referrals who don't fit the current opening still get added to a 'call back list' for future roles.",
+            "Respondent 3 frames referrals as emerging naturally from networking within a tight-knit manufacturing community (Warsaw).",
+            "This view treats referrals less as a formal hiring strategy and more as a byproduct of industry relationships."
           ],
-          "summary": "Referrals reduce hiring costs and build a pipeline of future candidates beyond the immediate opening."
+          "summary": "Referrals double as an informal talent pipeline built through industry networking."
         }
       ]
     },
     {
       "consensus": [
-        "Both companies value referrals for bringing in higher-quality or better-fit candidates."
+        "Referral bonus amounts, when used, don't vary by role or difficulty-to-fill.",
+        "Payout (where offered) is contingent on the new hire reaching a tenure milestone, not immediate.",
+        "None of the respondents exclude broad employee groups -- eligibility is described as open (e.g., 'all staff')."
       ],
       "id": "c565e556-6f59-4504-8f2e-2e0733647497",
       "needsMoreInfo": [
-        "Whether bonus amounts ever vary by role difficulty (only one data point, and it's flat).",
-        "Whether managers, recruiters, or HR staff are excluded from referral eligibility (only one respondent addressed eligibility, and broadly included all staff).",
-        "How a one-year payout delay affects employee willingness to refer.",
-        "Whether non-monetary referral approaches scale for harder-to-fill or specialized manufacturing roles.",
-        "No data on milestone-based or staggered bonus payouts (e.g., 30/90/180 days)."
+        "Whether managers, recruiters, or HR specifically are excluded from earning referral bonuses was not directly addressed.",
+        "No respondent described a multi-milestone or split payout structure (e.g., partial at 30/90 days, rest later).",
+        "Unclear what happens to the bonus if the referred hire leaves before the payout milestone (forfeiture vs. partial payment).",
+        "Respondent 1's eligibility answer ('All HCS Staff') and bonus amount/currency were not fully specified.",
+        "No data on actual referral volume or percentage of hires coming through referrals to gauge program effectiveness."
       ],
-      "responseCount": 2,
+      "responseCount": 3,
       "text": "How is the referral bonus structured, and when does it pay out?",
       "themes": [
         {
-          "deepDive": "Respondent 1 uses a simple, uniform cash incentive tied to tenure, removing complexity around role difficulty. Respondent 2 has deliberately avoided a formal bonus, worried that cash incentives could shift the nature of who gets referred rather than just the volume. This is a genuine tension worth exploring further: does money attract more referrals but of lower culture-fit, versus organic referrals that self-select for quality? With only two respondents, it's unclear which approach is more common or effective across the broader manufacturing sector.",
+          "deepDive": "There's a shared philosophy that simplicity beats customization: both companies that pay bonuses keep the amount uniform rather than tiering it by job difficulty. Respondent 3 explicitly considered departmental adjustments but rejected the idea, preferring an across-the-board increase if anything changes. This suggests manufacturing CEOs may see tiered bonuses as administratively complex or potentially divisive among staff. It also implies that referral programs are viewed more as a culture/engagement tool than a targeted recruiting lever for hard-to-fill roles.",
           "details": [
-            "One company pays a flat bonus regardless of role after a full year of employment.",
-            "Another company offers no monetary referral bonus and instead relies on cultural pride and employee goodwill.",
-            "This suggests manufacturers take fundamentally different philosophies toward incentivizing referrals."
+            "Respondent 1 pays a flat bonus regardless of position.",
+            "Respondent 3 pays a fixed $500 across all roles, with only a discussed future increase being a global (across-the-board) raise, not role-specific.",
+            "Neither company adjusts pay for harder-to-fill positions, even though Respondent 3 notes entry-level roles are actually easier to fill via referral."
           ],
-          "summary": "Referral bonus structures vary widely from flat-rate cash payouts to no formal bonus at all."
+          "summary": "When referral bonuses are used, they're flat-rate and don't vary by role difficulty."
         },
         {
-          "deepDive": "The one-year waiting period is notably longer than the 30/90/180-day benchmarks suggested in the survey guidance, indicating this company prioritizes long-term retention over quick rewards. It's unclear whether this delay discourages employees from referring or whether it's well understood and accepted internally. More data from additional respondents would clarify whether a full-year wait is typical or an outlier among manufacturers.",
+          "deepDive": "The two companies with formal programs anchor payout timing to a single retention milestone rather than staggering payments (e.g., 30/90/180 days), suggesting a preference for simplicity over multi-stage incentive structures. The gap between 90 days and 1 year is wide, hinting that risk tolerance for 'bad referrals' varies by company. Respondent 3's process also builds in an upfront step -- the referring employee fills out a form before the candidate even applies -- creating a documented chain from referral to hire to payout. No respondent mentioned forfeiting or partial payouts if the hire leaves early, leaving that mechanic unclear.",
           "details": [
-            "Respondent 1 pays the bonus only after the new hire completes one full year of employment.",
-            "No milestone-based or staggered payout structure (e.g., 30/90/180 days) was mentioned.",
-            "This long time frame protects the employer from paying for a referral that doesn't retain."
+            "Respondent 1 pays out after 1 year of employment.",
+            "Respondent 3 pays $500 on payroll 90 days after the new hire's start date.",
+            "Both tie the bonus strictly to tenure rather than splitting it across multiple milestones."
           ],
-          "summary": "Where a bonus exists, payout is tied to a long retention milestone rather than paid immediately."
+          "summary": "Payouts are deliberately delayed until the new hire proves retention, ranging from 90 days to a full year."
         },
         {
-          "deepDive": "Respondent 2's approach suggests that for some manufacturers, a strong employer brand and clear internal communication can substitute for financial incentives. However, this raises a question about scalability: as the company grows or needs to fill harder-to-fill roles, will non-monetary methods be sufficient? The respondent acknowledges a bonus could increase volume, showing an awareness that this is a trade-off between quantity and quality not yet tested.",
+          "deepDive": "This stands in contrast to the other two respondents, highlighting a genuine divide in approach: cash-incentivized referral programs versus culture-driven, incentive-free referrals. Respondent 2 explicitly weighs the tradeoff, worrying that adding money could shift the nature of who refers and who gets referred, potentially diluting the self-selecting, culture-aligned quality they currently see. This suggests some CEOs view monetary bonuses as a volume lever but not necessarily a quality lever, and that non-monetary culture signals can be just as effective a filter for 'like-minded' candidates.",
           "details": [
-            "Respondent 2 broadcasts open roles via electronic monitors in facilities and encourages organic referrals.",
-            "They credit employee pride in the company culture as the main driver of quality referrals.",
-            "Referred candidates reportedly bring more relevant experience and stronger cultural fit."
+            "Respondent 2 has no bonus but relies on employee pride and culture to drive referrals.",
+            "They believe a bonus might boost volume but see current referral quality as solid, driven by experienced, currently-employed candidates who understand company success standards.",
+            "Referral promotion is done via simple internal signage rather than financial incentive."
           ],
-          "summary": "Companies without formal bonuses instead lean on culture, pride, and internal communication to drive referrals."
+          "summary": "A strong, protective company culture can substitute for a formal cash referral program."
         }
       ]
     },
     {
       "consensus": [
-        "Both companies route referrals to a specific person or channel (supervisor, HR) rather than leaving candidates to self-navigate.",
-        "Referred candidates typically still need to formally apply online in some fashion."
+        "placeholder"
       ],
       "id": "5f31e1a6-8857-407a-ac6b-866ccddc6d4d",
       "needsMoreInfo": [
-        "Whether referred candidates get a guaranteed interview or just improved visibility/first look.",
-        "Who owns ongoing follow-up with the referring employee to let them know the outcome.",
-        "What the actual submission mechanism looks like in detail (form, ATS field, verbal mention) beyond 'tell HR/supervisor'.",
-        "Whether there's a formal tracking system to ensure no referral falls through the cracks.",
-        "How 'preferred candidate' status functionally changes the evaluation timeline (e.g., skipped screening steps)."
+        "placeholder"
       ],
-      "responseCount": 2,
+      "responseCount": 3,
       "text": "What happens to a referral after an employee submits it?",
       "themes": [
         {
-          "deepDive": "Neither company described a dedicated referral form or formal ATS workflow; instead, the process relies on informal human routing (telling a supervisor or HR directly). This suggests referral handling at smaller manufacturers may be more relationship-driven than system-driven. It also means the integrity of the process depends on HR/supervisors consistently acting on verbal or informal referrals rather than them getting lost.",
+          "deepDive": "All three respondents describe a clear, known channel for referrals rather than an ad-hoc or invisible process. The mechanics differ: one is informal (tell a supervisor or HR), one is semi-digital (online application with a referral tag or direct outreach from HR), and one is more formal (an in-person referral letter with qualifying questions). This suggests companies agree referrals need a distinct intake path, even if they haven't standardized the format.', ''}], ",
           "details": [
-            "Respondent 1 has employees send referrals straight to Hiring Supervisors and/or HR.",
-            "Respondent 2 has HR text or email the referred candidate directly, or the candidate applies online citing the employee's name.",
-            "In both cases, a human (supervisor or HR) is the first touchpoint rather than an automated system alone."
+            "Employees are told to send referrals straight to Hiring Supervisors and/or HR.",
+            "One company has candidates apply online but tag the referring employee's name.",
+            "Another collects a referral letter in person, including why the employee vouches for the candidate."
           ],
-          "summary": "Referrals are routed directly to a person, not dropped into a generic applicant pile."
-        },
-        {
-          "deepDive": "Respondent 2 confirms a clear prioritization practice, but Respondent 1 never directly addressed whether referred candidates receive a faster track or guaranteed interview -- their answer focused only on the submission channel. This leaves a gap in understanding whether prioritization is universal across manufacturing CEOs or specific to certain company cultures. It raises the question of whether 'first look' equates to a real speed advantage or just earlier visibility in the pipeline.",
-          "details": [
-            "Respondent 2 explicitly labels referred candidates as 'preferred' and gives them 'first look' priority over others.",
-            "Respondent 1's answer implies referrals get a more direct channel (to supervisors/HR) versus a general application queue, though prioritization isn't explicitly confirmed.",
-            "The preferential treatment appears to be an informal norm rather than a codified guarantee like an automatic interview."
-          ],
-          "summary": "Referred candidates get a leg up in the hiring process rather than being treated like standard applicants."
+          "summary": "Referrals are routed directly to HR or hiring supervisors rather than entering a general applicant pool."
         }
       ]
     },
     {
       "consensus": [
-        "Both respondents have real, positive examples of referral hires who stayed long-term.",
-        "Both associate referral hires with strong retention and cultural fit."
+        "All three respondents have concrete, lasting examples of successful referral hires still employed today.",
+        "Referral hires are consistently described as more engaged and better culturally fit than average hires.",
+        "Existing employee relationships (vouching, reputation, social connections) are seen as the key ingredient in referral success."
       ],
       "id": "fb7a8fb4-8e9c-4936-8604-704b4e931cd9",
       "needsMoreInfo": [
-        "Respondent 1 couldn't articulate why the referral hire worked out so well -- no concrete success details.",
-        "No information on how referral hires are evaluated or onboarded differently (if at all).",
-        "Unclear how often referred hires go on to refer others at Respondent 1's company.",
-        "No metrics (retention rate, cost savings) tied to Respondent 1's specific story.",
-        "Missing a single, specific named anecdote from Respondent 2 despite follow-up request -- answer stayed general."
+        "No respondent gave a fully detailed narrative arc (specific moment, quote, or turning point) suitable for a polished anecdote.",
+        "Unclear what specific traits or actions made the referred hires succeed beyond general engagement/retention claims.",
+        "No mention of any referral hires who didn't work out, so it's unclear how representative these success stories are.",
+        "Limited detail on the actual conversation or pitch the referring employee made to the candidate.",
+        "No data on how referral success compares across different roles (e.g., technical vs. service vs. management positions)."
       ],
-      "responseCount": 2,
+      "responseCount": 3,
       "text": "If you have a success story related to an internal referral, could you please share it below?",
       "themes": [
         {
-          "deepDive": "Respondent 2 explicitly ties the success of referrals to social capital: telling a friend 'you should come work here' is a personal endorsement, not just a job tip. This mechanism explains why referral hires tend to perform well without needing a single standout anecdote -- the filtering happens informally before hire. Respondent 1's example is thinner on this mechanism but still implies the Service Coordinator vouched for the Technician in a way that unlocked access to a candidate the company otherwise wouldn't have found.",
+          "deepDive": "Respondent 2 described this most vividly, framing referrals as a form of personal endorsement that creates a self-reinforcing cycle: hires who embrace the culture often go on to refer others themselves, turning employees into 'stewards' of the culture. This suggests the value of referrals isn't just about sourcing candidates faster, but about leveraging peer trust as a built-in screening mechanism. Respondent 1's example (a Service Coordinator referring a Service Technician who is still employed) echoes this, though they admit uncertainty about exactly why it worked, hinting the mechanism may be felt more than explicitly understood by leadership.",
           "details": [
-            "Employees only refer people they genuinely believe will add to the culture, not just fill a job.",
-            "This creates self-selecting hires who are pre-vetted for fit before they even interview.",
-            "Respondent 2 frames this as employees being 'protective' of what they've built."
+            "An employee recommending a friend or family member signals genuine belief the person will fit and perform.",
+            "Because reputations are on the line, referrers tend to vouch only for people who will protect and add to the culture.",
+            "This dynamic turns referred hires into long-term, engaged team members rather than just filled positions."
           ],
-          "summary": "Referrals work because employees stake their own reputation on the person they bring in."
+          "summary": "Referrals succeed because the referring employee stakes their own reputation on the new hire, creating built-in accountability and faster cultural integration."
         },
         {
-          "deepDive": "This theme suggests referrals aren't just a hiring channel but a self-perpetuating culture mechanism -- each successful hire expands the pool of trusted referrers. Only Respondent 2 articulates this explicitly, describing it as the 'best illustration' of their culture. It raises a question of whether this cycle is intentionally cultivated or an emergent byproduct of hiring practices.",
+          "deepDive": "Respondent 3's answer centers on the practical mechanics of why referrals retain better: having an existing internal connection accelerates trust and belonging, which standard hires have to build from scratch. This is a more process-oriented explanation compared to Respondent 2's culture-protection framing, suggesting two complementary but distinct mechanisms (social scaffolding vs. reputational vetting) driving referral success across companies.",
           "details": [
-            "Respondent 2 highlights new hires who embrace values, perform well, then refer others.",
-            "This turns employees into 'advocates' and 'stewards' of culture, not just workers.",
-            "The cycle compounds over time rather than being a one-off hiring tactic."
+            "The referring employee helps the new hire connect with coworkers more quickly.",
+            "Respondent 3 noted referred hires show more positive attitudes and stronger team/company engagement.",
+            "Faster relationship-building appears to translate into longer tenure."
           ],
-          "summary": "Successful referral hires often become referrers themselves, creating a self-reinforcing culture cycle."
+          "summary": "Referred hires get a built-in social network that speeds up onboarding and deepens engagement."
         },
         {
-          "deepDive": "Respondent 1's example is more modest and specific than Respondent 2's broader philosophy, but it points to a distinct value of referrals: sourcing candidates outside normal recruiting channels. Respondent 1 admits uncertainty about *why* it worked, suggesting the benefit may be as much about access/connection as about cultural vetting. This is a narrower, more transactional view compared to Respondent 2's cultural-stewardship framing.",
+          "deepDive": "This theme reflects a gap between having good outcomes and having a clear causal story—CEOs can show durable, successful referral hires but often fall back on general statements ('hard to tell why,' 'more engaged') rather than detailed narrative. For an anecdote-focused writer, this means follow-up probing (e.g., asking for a specific moment or quote) would be needed to extract a richer story beyond 'they're still here.'",
           "details": [
-            "Respondent 1 believes the hire would never have happened without the internal referral.",
-            "The hired employee remains with the company long-term (still employed).",
-            "Access, not just quality, is cited as a key benefit of referrals."
+            "Respondent 1 hired a referred Service Technician who is still employed but couldn't pinpoint the exact success factor.",
+            "Respondent 3 cites a personal referral from 2021 still with the company, now a key team member.",
+            "Concrete anecdotes exist, but the 'why' is often attributed to belief/intuition rather than data."
           ],
-          "summary": "Referrals open doors to candidates companies would otherwise never have reached."
+          "summary": "Leaders can point to specific long-tenured referral hires, but few can articulate precisely why the match worked so well."
         }
       ]
     }
@@ -189,6 +181,12 @@
           "e0dc0fdb-e498-461c-87ee-af927e8173cd": "Barletta Boats"
         },
         "responseId": "88582497-a043-4c5a-bc56-4781452fba38"
+      },
+      {
+        "answers": {
+          "e0dc0fdb-e498-461c-87ee-af927e8173cd": "Medartis Inc."
+        },
+        "responseId": "faaccf8d-8c1c-4fc4-9f60-d4634c447124"
       }
     ]
   },
