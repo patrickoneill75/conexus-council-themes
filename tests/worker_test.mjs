@@ -571,6 +571,118 @@ test("consensus: respondent answers are CSV-escaped when written to Box", async 
   assert.equal(uploaded.trim().split("\n").length, 3);
 });
 
+/** A survey with a Box folder, a Box connection, and a fake Box that keeps one CSV with an etag. */
+async function consensusBox(questions = [{ id: "q1", text: "Q one" }, { id: "q2", text: "Q two" }]) {
+  const { env, token } = await signedInEnv();
+  const created = await (await handleConsensusApi("surveys", jsonReq("/api/consensus/surveys", "POST",
+    { name: "Box", questions }, token), env)).json();
+  const survey = created.survey;
+  survey.boxFolderId = "99";
+  await env.BOX_KV.put(`consensus:survey:${survey.id}`, JSON.stringify(survey));
+  await env.BOX_KV.put("box:tokens", JSON.stringify({
+    access_token: "t", refresh_token: "r", obtained_at: Math.floor(Date.now() / 1000), expires_in: 3600,
+  }));
+  // honorIfMatch false is Box as the old code treated it: every upload simply replaces the file.
+  const box = { file: null, etag: 0, honorIfMatch: true, uploads: 0 };
+  const tick = () => new Promise((r) => setTimeout(r, 1));
+  box.fetch = async (url, init = {}) => {
+    await tick(); // every call yields, as a real network call does, so two submits interleave
+    if (url.includes("/items?")) return okJson({ entries: box.file === null ? [] : [{ type: "file", id: "f1", name: survey.responsesFileName }] });
+    if (url.includes("/files/f1?fields=etag")) return okJson({ etag: String(box.etag) });
+    if (url.includes("/files/f1/content") && !init.method) return new Response(box.file);
+    if (url.includes("upload.box.com")) {
+      box.uploads++;
+      const body = await init.body.get("file").text();
+      const creating = url.endsWith("/files/content");
+      if (creating && box.file !== null) return new Response("{}", { status: 409 });
+      const ifMatch = init.headers && init.headers["if-match"];
+      if (!creating && box.honorIfMatch && ifMatch !== String(box.etag)) return new Response("{}", { status: 412 });
+      box.file = body; box.etag++;
+      return okJson({ entries: [{ id: "f1" }] });
+    }
+    return okJson({});
+  };
+  const answer = (text) => [{ questionId: "q1", questionText: "Q one", turns: [{ turn: 0, prompt: "Q one", answer: text }] }];
+  const submit = (text, extra = {}) => handleConsensusApi("submit", jsonReq("/api/consensus/submit", "POST",
+    { surveyId: survey.id, responses: answer(text), ...extra }), env);
+  return { env, survey, box, submit };
+}
+const responseIds = (csv) => csv.trim().split("\n").slice(1).map((l) => l.split(",")[0]);
+
+test("consensus: two respondents submitting at once both keep their answers (bug: the second upload replaced the first)", async () => {
+  const t = await consensusBox();
+  await withFetch(t.box.fetch, async () => {
+    assert.equal((await t.submit("first one in")).status, 200);
+    const both = await Promise.all([t.submit("answer from Ann"), t.submit("answer from Bob")]);
+    assert.deepEqual(both.map((r) => r.status), [200, 200]);
+  });
+  for (const text of ["first one in", "answer from Ann", "answer from Bob"]) assert.ok(t.box.file.includes(text), `${text} kept`);
+  assert.equal(new Set(responseIds(t.box.file)).size, 3);
+  assert.equal(JSON.parse(await t.env.BOX_KV.get(`consensus:survey:${t.survey.id}`)).responseCount, 3);
+
+  // The same race against a Box that ignores If-Match is the old behavior: one answer is lost.
+  // This is what the fix is measured against.
+  const old = await consensusBox();
+  old.box.honorIfMatch = false;
+  await withFetch(old.box.fetch, async () => {
+    await old.submit("first one in");
+    await Promise.all([old.submit("answer from Ann"), old.submit("answer from Bob")]);
+  });
+  assert.equal(["answer from Ann", "answer from Bob"].filter((x) => old.box.file.includes(x)).length, 1);
+});
+
+test("consensus: the first two responses creating the file at once are both kept", async () => {
+  const t = await consensusBox();
+  await withFetch(t.box.fetch, async () => {
+    const both = await Promise.all([t.submit("Ann creates"), t.submit("Bob creates")]);
+    assert.deepEqual(both.map((r) => r.status), [200, 200]);
+  });
+  assert.ok(t.box.file.includes("Ann creates") && t.box.file.includes("Bob creates"));
+  assert.equal(t.box.file.split("Response ID,").length - 1, 1, "one header");
+});
+
+test("consensus: a retried submit with a saved-progress token is written once", async () => {
+  const t = await consensusBox();
+  const token = "0a1b2c3d-1111-4222-8333-444455556666";
+  await withFetch(t.box.fetch, async () => {
+    await t.submit("only once", { token });
+    assert.equal((await t.submit("only once", { token })).status, 200);
+  });
+  assert.deepEqual(responseIds(t.box.file), [token]);
+});
+
+test("consensus: answers saved partway are there to finish later, and gone once submitted", async () => {
+  const t = await consensusBox();
+  const save = (body) => handleConsensusApi("progress", jsonReq("/api/consensus/progress", "POST", { surveyId: t.survey.id, ...body }), t.env);
+  const draft = {
+    completed: [{ questionId: "q1", questionText: "Q one", turns: [{ turn: 0, prompt: "Q one", answer: "a".repeat(20000) }] },
+                { questionId: "removed", questionText: "Gone", turns: [{ turn: 0, prompt: "Gone", answer: "x" }] }],
+    current: { questionId: "q2", displayedText: "Q two, about cranes", turns: [{ turn: 0, prompt: "Q two, about cranes", answer: "Cranes" }],
+               pendingPrompt: "Which cranes?", extra: "dropped" },
+  };
+  let r = await save({ draft });
+  assert.equal(r.status, 200);
+  const { token } = await r.json();
+  assert.match(token, /^[0-9a-f-]{36}$/);
+  const load = (tok) => handleConsensusApi(`progress/${t.survey.id}/${tok}`, req(`/api/consensus/progress/${t.survey.id}/${tok}`), t.env);
+  const saved = (await (await load(token)).json()).draft;
+  assert.deepEqual(saved.completed.map((c) => c.questionId), ["q1"], "a question the survey no longer has is dropped");
+  assert.equal(saved.completed[0].turns[0].answer.length, 10000, "an answer is kept to 10,000 characters");
+  assert.deepEqual(saved.current, { questionId: "q2", displayedText: "Q two, about cranes",
+    turns: [{ turn: 0, prompt: "Q two, about cranes", answer: "Cranes" }], pendingPrompt: "Which cranes?" });
+
+  // Saving again under the same token updates the same copy.
+  r = await save({ token, draft: { ...draft, current: { ...draft.current, pendingPrompt: "And how many?" } } });
+  assert.equal((await r.json()).token, token);
+  assert.equal((await (await load(token)).json()).draft.current.pendingPrompt, "And how many?");
+
+  assert.equal((await load("not-a-token")).status, 404);
+  assert.equal((await save({ surveyId: "nope", draft })).status, 404);
+
+  await withFetch(t.box.fetch, async () => { assert.equal((await t.submit("done", { token })).status, 200); });
+  assert.equal((await load(token)).status, 404, "submitting removes the saved copy");
+});
+
 test("consensus: the relay refuses a wrong shared secret", async () => {
   const env = makeEnv();
   const res = await handleConsensusApi("relay/survey/abc",

@@ -12,6 +12,10 @@
  *   consensus:survey:<id> -> the survey definition (JSON) -- see buildSurvey() below
  *     for the exact shape. Listed via BOX_KV's list({prefix}), not a separate index
  *     key, so there's nothing to keep in sync.
+ *   consensus:draft:<id>:<token> -> a respondent's unfinished answers, saved after every
+ *     question so they can stop and come back (see cleanDraft()). The token is a random
+ *     id the respond page keeps in the browser and in its "finish later" link. Kept for
+ *     DRAFT_TTL_DAYS, deleted when the survey is submitted.
  *
  * Where things live:
  *   - Survey definitions: Workers KV (BOX_KV, same namespace beta_auth.js and the Box
@@ -44,6 +48,10 @@ import { requireBetaAuth, canAdminApp, NO_SETTINGS_ACCESS } from "./beta_auth.js
 const SURVEY_PREFIX = "consensus:survey:";
 const PROGRESS_PREFIX = "consensus:progress:";
 const DISPATCH_PREFIX = "consensus:dispatch:";
+const DRAFT_PREFIX = "consensus:draft:";
+const DRAFT_TTL_DAYS = 60;
+const MAX_DRAFT_BYTES = 200_000;
+const TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_FOLLOW_UPS = 5; // guards against an admin fat-fingering a huge number and
                            // creating a runaway-length, runaway-cost chat.
 const FOLLOWUP_MODEL = "claude-haiku-4-5"; // cheapest current model -- generating one
@@ -186,7 +194,29 @@ async function boxAccessToken(env) {
   return fresh.access_token;
 }
 
-async function appendResponsesToBox(env, survey, csvChunk) {
+/**
+ * Adds one response's rows to the survey's CSV in Box.
+ *
+ * Two respondents submitting at once used to lose one response: each downloaded the file,
+ * added its rows and uploaded the result, and the second upload replaced the first. Now
+ * the upload carries the file's etag read BEFORE the download (If-Match), so Box refuses
+ * it with 412 when anyone wrote in between, and the append starts again from the newer
+ * file. Two first responses creating the file at once meet the same way: the second
+ * create is refused with 409 (the name is taken) and retried as an append.
+ *
+ * responseId makes the append idempotent: a response already in the file (a retried
+ * submit whose first try did reach Box) is not written twice.
+ */
+async function appendResponsesToBox(env, survey, csvChunk, responseId) {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    if (await tryAppend(env, survey, csvChunk, responseId)) return;
+    await new Promise((resolve) => setTimeout(resolve, 150 * 2 ** attempt + Math.random() * 150));
+  }
+  throw new Error("Many people are answering right now. Please try submitting again in a moment.");
+}
+
+/** One attempt. True when the rows are in the file; false when someone else wrote first. */
+async function tryAppend(env, survey, csvChunk, responseId) {
   const token = await boxAccessToken(env);
   if (!token) throw new Error("Box is not connected.");
   const headers = { authorization: `Bearer ${token}` };
@@ -201,10 +231,16 @@ async function appendResponsesToBox(env, survey, csvChunk) {
   );
 
   let text = CSV_HEADER;
+  let etag = null;
   if (existing) {
+    // The etag first: read after the download, it could name a newer file than the one read.
+    const infoRes = await fetch(`${BOX_API}/files/${existing.id}?fields=etag`, { headers });
+    if (!infoRes.ok) throw new Error(`Box API error (${infoRes.status})`);
+    etag = (await infoRes.json()).etag;
     const contentRes = await fetch(`${BOX_API}/files/${existing.id}/content`, { headers });
     if (!contentRes.ok) throw new Error(`Box download failed (${contentRes.status})`);
     text = await contentRes.text();
+    if (responseId && text.includes(`\n${responseId},`)) return true;
     if (text && !text.endsWith("\n")) text += "\n";
   }
   text += csvChunk;
@@ -219,9 +255,44 @@ async function appendResponsesToBox(env, survey, csvChunk) {
     }));
   }
   outgoing.append("file", new Blob([text], { type: "text/csv" }), survey.responsesFileName);
-  const uploadRes = await fetch(uploadUrl, { method: "POST", headers, body: outgoing });
+  const uploadHeaders = etag ? { ...headers, "if-match": etag } : headers;
+  const uploadRes = await fetch(uploadUrl, { method: "POST", headers: uploadHeaders, body: outgoing });
+  if (uploadRes.status === 412 || (!existing && uploadRes.status === 409)) return false;
   if (!uploadRes.ok) throw new Error(`Box upload failed (${uploadRes.status})`);
+  return true;
 }
+
+/* ---------- unfinished responses (finish later) ---------- */
+
+const clip = (v, n) => String(v == null ? "" : v).slice(0, n);
+
+function cleanTurns(raw) {
+  return (Array.isArray(raw) ? raw : []).slice(0, MAX_FOLLOW_UPS + 1).map((t, i) => ({
+    turn: i, prompt: clip(t && t.prompt, 2000), answer: clip(t && t.answer, 10000),
+  }));
+}
+
+/**
+ * A respondent's unfinished answers as saved: the questions they finished, and where they
+ * are in the current one (its wording as shown, its answered turns, and the question or
+ * follow-up waiting for an answer). Nothing from the client is kept beyond that shape.
+ */
+function cleanDraft(raw, survey) {
+  const known = new Set(survey.questions.map((q) => q.id));
+  const completed = (Array.isArray(raw && raw.completed) ? raw.completed : [])
+    .filter((c) => c && known.has(String(c.questionId)))
+    .slice(0, survey.questions.length)
+    .map((c) => ({ questionId: String(c.questionId), questionText: clip(c.questionText, 2000), turns: cleanTurns(c.turns) }))
+    .filter((c) => c.turns.length);
+  const cur = raw && raw.current;
+  const current = cur && known.has(String(cur.questionId)) ? {
+    questionId: String(cur.questionId), displayedText: clip(cur.displayedText, 2000),
+    turns: cleanTurns(cur.turns), pendingPrompt: clip(cur.pendingPrompt, 2000),
+  } : null;
+  return { completed, current };
+}
+
+const draftKey = (surveyId, token) => `${DRAFT_PREFIX}${surveyId}:${token}`;
 
 /* ---------- Claude (follow-up question generation) ---------- */
 
@@ -560,7 +631,31 @@ export async function handleConsensusApi(route, request, env) {
     }
   }
 
-  // POST submit { surveyId, responses: [{questionId, questionText, turns:[{turn,prompt,answer}]}] }
+  // POST progress { surveyId, token?, draft: {completed, current} } -> { token, savedAt }
+  // Saves a respondent's unfinished answers so they can stop and come back. A first save
+  // gets a new token; the page keeps it in the browser and in its "finish later" link.
+  if (route === "progress" && method === "POST") {
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
+    const survey = await getSurvey(env, body.surveyId);
+    if (!survey) return json({ error: "Survey not found" }, 404);
+    const token = TOKEN.test(String(body.token || "")) ? String(body.token) : crypto.randomUUID();
+    const draft = { ...cleanDraft(body.draft, survey), savedAt: new Date().toISOString() };
+    const text = JSON.stringify(draft);
+    if (text.length > MAX_DRAFT_BYTES) return json({ error: "These answers are too long to save." }, 413);
+    await env.BOX_KV.put(draftKey(survey.id, token), text, { expirationTtl: DRAFT_TTL_DAYS * 86400 });
+    return json({ token, savedAt: draft.savedAt, keptDays: DRAFT_TTL_DAYS });
+  }
+
+  // GET progress/<surveyId>/<token> -> the saved draft, or 404 once it is submitted or expired.
+  if (parts[0] === "progress" && parts.length === 3 && method === "GET") {
+    if (!TOKEN.test(parts[2])) return json({ error: "Not found" }, 404);
+    const raw = await env.BOX_KV.get(draftKey(parts[1], parts[2]));
+    if (!raw) return json({ error: "No saved progress for this link." }, 404);
+    return json({ draft: JSON.parse(raw), keptDays: DRAFT_TTL_DAYS });
+  }
+
+  // POST submit { surveyId, token?, responses: [{questionId, questionText, turns:[{turn,prompt,answer}]}] }
   if (route === "submit" && method === "POST") {
     let body = {};
     try { body = await request.json(); } catch (e) { return json({ error: "Bad request" }, 400); }
@@ -571,16 +666,22 @@ export async function handleConsensusApi(route, request, env) {
     }
     const responses = Array.isArray(body.responses) ? body.responses : [];
     if (!responses.length) return json({ error: "No answers were submitted." }, 400);
-    const responseId = crypto.randomUUID();
+    // A respondent who saved progress submits under that token, so a retried submit is the
+    // same response, never a second copy of it.
+    const draftToken = TOKEN.test(String(body.token || "")) ? String(body.token) : "";
+    const responseId = draftToken || crypto.randomUUID();
     const submittedAt = new Date().toISOString();
     const csvChunk = responsesToCsvRows(responseId, submittedAt, responses);
     try {
-      await appendResponsesToBox(env, survey, csvChunk);
+      await appendResponsesToBox(env, survey, csvChunk, responseId);
     } catch (e) {
       return json({ error: e.message || "Could not save your responses." }, 502);
     }
-    survey.responseCount = (survey.responseCount || 0) + 1;
-    await saveSurvey(env, survey);
+    // Counted from the survey as it is now: another submit may have saved it meanwhile.
+    const fresh = (await getSurvey(env, survey.id)) || survey;
+    fresh.responseCount = (fresh.responseCount || 0) + 1;
+    await saveSurvey(env, fresh);
+    if (draftToken) await env.BOX_KV.delete(draftKey(survey.id, draftToken));
     return json({ ok: true });
   }
 
