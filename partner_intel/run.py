@@ -55,7 +55,8 @@ def walk(api, root_id: str, root_name: str):
             if entry.get("type") == "folder":
                 stack.append((entry["id"], f"{path}/{name}"))
             elif entry.get("type") == "file":
-                if name.startswith("~$") or name.lower() in IGNORED_NAMES:
+                # The pipeline's own exports (partner_intel_insights.csv and the rest) are never notes.
+                if name.startswith("~$") or name.lower() in IGNORED_NAMES or name.lower().startswith("partner_intel_"):
                     continue
                 yield {**entry, "path": path}
 
@@ -465,6 +466,9 @@ def _scan(api, cfg, registry, cache, roster, caller, model, limit, force, stats,
             if unit.meeting_id in meeting_dates:
                 # A meeting in a running document: its own date, the admin's list, or none (meetings.py).
                 date, source = meeting_dates[unit.meeting_id][:2]
+            elif unit.date:
+                # A survey response: the day it was submitted, from the file's own column.
+                date, source = unit.date, "text"
             elif file_source != "box_upload":
                 # The text or the name dates the meeting, so every section takes that date, including
                 # sections read before the date in the file was corrected.

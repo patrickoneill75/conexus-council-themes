@@ -17,13 +17,14 @@ import re
 import sys
 import unittest
 import zipfile
+from datetime import datetime
 from types import SimpleNamespace
 from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from partner_intel import build, dates, extract, resolve, run, shape, text  # noqa: E402
+from partner_intel import build, dates, extract, resolve, run, shape, survey, text  # noqa: E402
 from partner_intel.roster import Roster  # noqa: E402
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -2413,6 +2414,134 @@ class DuplicateCheckTests(unittest.TestCase):
         self.assertIn("Zoeller - Clean.docx", api.box[check.CHECK_FILE])
         self.assertNotIn("Zoeller", out.getvalue())
         self.assertNotIn("Grangier", out.getvalue())
+
+
+
+# ------------------------------------------------------------------------------ surveys
+# The Consensus survey export: one row per answer. A follow-up's own question is in Prompt; Question
+# Text holds the last question of the thread, so it is the wrong text for every turn but the last.
+CONSENSUS_CSV = (
+    "Response ID,Submitted At,Question ID,Question Text,Turn,Prompt,Answer\n"
+    "r1,2026-11-06T19:41:50.200Z,q0,What is the name of your company?,0,What is the name of your company?,Zoeller\n"
+    "r1,2026-11-06T19:41:50.200Z,q1,How long do referred hires stay?,0,Why do you prefer internal referrals?,"
+    "Referred candidates arrive already vouched for by someone we trust on the floor.\n"
+    "r1,2026-11-06T19:41:50.200Z,q1,How long do referred hires stay?,1,How long do referred hires stay?,"
+    "\"Longer, my gut says. They fit the \"\"cultural fit\"\" discussion.\"\n"
+    "r2,2026-11-10T16:12:17.174Z,q0,What is the name of your company?,0,What is the name of your company?,Lucas Oil\n"
+    "r2,2026-11-10T16:12:17.174Z,q1,How long do referred hires stay?,0,Why do you prefer internal referrals?,"
+    "We pay a referral bonus after one year and it fills our blending crews fastest.\n")
+
+FORMS_CSV = (
+    "ID,Start time,Completion time,Email,Name,Company name,What is your biggest challenge?,Rate us 1-5\n"
+    "1,11/6/2026 2:30:00 PM,11/6/2026 2:41:50 PM,jg@zoeller.example,Jerry Grangier,Zoeller,"
+    "We cannot find maintenance technicians for the molding presses.,4\n"
+    "2,11/7/2026 9:00:00 AM,11/7/2026 9:12:00 AM,,Anonymous,,Steel prices make our quotes go stale within a week.,3\n")
+
+
+def make_xlsx(rows) -> bytes:
+    import openpyxl
+    book = openpyxl.Workbook()
+    ws = book.active
+    for r in rows:
+        ws.append(r)
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
+class SurveyTests(unittest.TestCase):
+    def units(self, name, data):
+        return shape.classify(name, "Notes/Surveys", text.to_document(name, data))
+
+    def test_consensus_export_is_one_unit_per_response_with_company_and_date(self):
+        s = self.units("hiring-with-internal-referrals-9873a1a2-responses.csv", CONSENSUS_CSV.encode())
+        self.assertEqual((s.shape, s.event_type, s.series), ("survey", "Survey", "Hiring with internal referrals"))
+        self.assertEqual([(u.default_company, u.date) for u in s.units], [("Zoeller", "2026-11-06"), ("Lucas Oil", "2026-11-10")])
+        first = s.units[0].text
+        self.assertIn("Company: Zoeller", first)
+        self.assertNotIn("What is the name of your company", first)  # the company question heads the unit instead
+        self.assertIn('A: Longer, my gut says. They fit the "cultural fit" discussion.', first)
+        self.assertEqual(s.units[0].hint, survey.HINT)
+        self.assertIn("Do not infer", survey.HINT)
+
+    def test_follow_up_answers_carry_the_question_actually_asked(self):
+        """Question Text repeats the thread's last question on every turn. Pairing each answer with
+        it put "How long do referred hires stay?" over the answer to "Why do you prefer referrals?"."""
+        first = self.units("referrals-responses.csv", CONSENSUS_CSV.encode()).units[0].text
+        self.assertIn("Q: Why do you prefer internal referrals?\nA: Referred candidates", first)
+        self.assertIn("Q: How long do referred hires stay?\nA: Longer", first)
+
+    def test_one_row_per_respondent_export_skips_ids_times_and_email(self):
+        s = self.units("Workforce pulse.csv", FORMS_CSV.encode())
+        self.assertEqual([(u.default_company, u.date) for u in s.units], [("Zoeller", "2026-11-06"), ("", "2026-11-07")])
+        self.assertEqual(s.units[0].attendees, [("Jerry Grangier", "Zoeller")])
+        self.assertNotIn("jg@zoeller.example", s.units[0].text)
+        self.assertNotIn("Completion time", s.units[0].text)
+        self.assertIn("Q: Rate us 1-5\nA: 4", s.units[0].text)
+
+    def test_surveymonkey_and_qualtrics_header_rows(self):
+        monkey = ("Respondent ID,End Date,What is your company name?,Biggest challenge,\n"
+                  ",,Open-Ended Response,Response,Other (please specify)\n"
+                  "1,11/06/2026 10:00:00 AM,Lucas Oil,Retirements in blending are taking our know-how away,\n")
+        s = self.units("monkey.csv", monkey.encode())
+        self.assertEqual([(u.default_company, u.date) for u in s.units], [("Lucas Oil", "2026-11-06")])
+        qualtrics = ("StartDate,EndDate,ResponseId,Q1,Q2\n"
+                     "Start Date,End Date,Response ID,Company name,What slows your hiring the most?\n"
+                     '{"ImportId":"startDate"},{"ImportId":"endDate"},{"ImportId":"_recordId"},{"ImportId":"QID1"},{"ImportId":"QID2"}\n'
+                     "2026-11-05 08:00:00,2026-11-05 08:10:00,R_1,Zoeller,Drug screens and background checks take three weeks here\n")
+        s = self.units("qualtrics.csv", qualtrics.encode())
+        self.assertEqual([(u.default_company, u.date) for u in s.units], [("Zoeller", "2026-11-05")])
+        self.assertIn("Q: What slows your hiring the most?", s.units[0].text)
+
+    def test_xlsx_and_xls_read_like_csv(self):
+        rows = [["Timestamp", "Company", "What is your biggest challenge?"],
+                [datetime(2026, 10, 2, 9, 30), "Zoeller", "We cannot find maintenance technicians for the presses."]]
+        s = self.units("pulse.xlsx", make_xlsx(rows))
+        self.assertEqual([(u.default_company, u.date) for u in s.units], [("Zoeller", "2026-10-02")])
+        xls = (Path(__file__).parent / "fixtures" / "survey_responses.xls").read_bytes()
+        s = self.units("pulse.xls", xls)
+        self.assertEqual([(u.default_company, u.date) for u in s.units], [("Zoeller", "2026-10-02"), ("Lucas Oil", "2026-10-03")])
+        self.assertIn("A: We cannot find maintenance technicians", s.units[0].text)
+
+    def test_a_spreadsheet_that_is_not_survey_answers_costs_nothing(self):
+        roster = "Name,Company,Title\nJerry Grangier,Zoeller,Plant Manager\nMegan Burakiewicz,Lucas Oil,HR Director\n"
+        s = self.units("attendees.csv", roster.encode())
+        self.assertEqual(s.units, [])
+        self.assertIn("no written answers", s.skipped_reason)
+
+    def test_a_damaged_spreadsheet_is_reported_not_retried_forever(self):
+        with self.assertRaises(text.UnreadableFile):
+            text.to_document("broken.xlsx", b"not a zip")
+
+
+class SurveyRunTests(unittest.TestCase):
+    def test_survey_in_the_notes_folder_is_read_one_response_at_a_time(self):
+        """Each response is its own unit, dated the day it was submitted; the pipeline's own exports
+        in the same folder are never read as notes."""
+        files = {"30": {"name": "referrals-9873a1a2-responses.csv", "folder": "Surveys", "data": CONSENSUS_CSV.encode(),
+                        "created_at": "2026-11-10T17:00:00Z", "modified_at": "2026-11-10T17:00:00Z"},
+                 "31": {"name": "partner_intel_insights.csv", "folder": "Surveys", "data": FORMS_CSV.encode()}}
+        api, claude = FakeApi(files), Counter()
+        report = run.run("scan", api=api, caller=claude, model="m")
+        self.assertEqual(sorted(claude.calls), ["Lucas Oil", "Zoeller"])
+        self.assertEqual(report["ignored"], {})
+        units = api.state["registry"]["30"]["units"]
+        self.assertEqual(sorted((u["default_company"], u["date"], u["date_source"]) for u in units),
+                         [("Lucas Oil", "2026-11-10", "text"), ("Zoeller", "2026-11-06", "text")])
+        self.assertNotIn("31", api.state["registry"])
+        self.assertEqual(api.state["registry"]["30"]["event"]["type"], "Survey")
+
+    def test_a_new_response_costs_one_call(self):
+        """An export grows as people answer. Saving it again must read only the new response."""
+        files = {"30": {"name": "referrals-responses.csv", "folder": "Surveys", "data": CONSENSUS_CSV.encode()}}
+        api = FakeApi(files)
+        run.run("scan", api=api, caller=Counter(), model="m")
+        files["30"]["data"] = (CONSENSUS_CSV + "r3,2026-11-11T10:00:00Z,q0,What is the name of your company?,0,"
+                               "What is the name of your company?,Mursix\nr3,2026-11-11T10:00:00Z,q1,x,0,"
+                               "Why do you prefer internal referrals?,Our welders refer friends who already know the trade well.\n").encode()
+        again = Counter()
+        run.run("scan", api=api, caller=again, model="m")
+        self.assertEqual(again.calls, ["Mursix"])
 
 
 if __name__ == "__main__":
