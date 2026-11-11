@@ -84,6 +84,84 @@ async function saveSurvey(env, survey) {
   await env.BOX_KV.put(surveyKey(survey.id), JSON.stringify(survey));
 }
 
+/* ---------- rich question text ---------- */
+
+// A question may carry formatting: bold, italic, underline, bullets and highlight. The
+// editor sends HTML; only these tags survive, with no attributes, so nothing an admin
+// pastes can run script on a respondent's page. Everything else reads the plain text
+// (rich text's words, bullets as "- " lines): Claude's prompts, the CSV, the results.
+const MAX_QUESTION_HTML = 20_000;
+const RICH_TAG = Object.assign(Object.create(null), {
+  b: "b", strong: "b", i: "i", em: "i", u: "u", ul: "ul", ol: "ul", li: "li",
+  mark: "mark", br: "br", div: "div", p: "div",
+});
+const BLOCK = new Set(["div", "ul", "li"]);
+const ENTITY = Object.assign(Object.create(null), { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " });
+
+function decodeEntities(text) {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === "#") {
+      const code = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return code > 0 && code < 0x110000 ? String.fromCodePoint(code) : "";
+    }
+    return ENTITY[e.toLowerCase()] ?? m;
+  });
+}
+const escapeText = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// The editor highlights with <span style="background-color: ...">; a saved highlight is <mark>.
+const HIGHLIGHT = /background(?:-color)?\s*:\s*(?!\s*(?:transparent|initial|inherit|unset|none|rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\))\s*[;"'])[^;"']*[^\s;"']/i;
+
+export function richText(input) {
+  const src = String(input || "").slice(0, MAX_QUESTION_HTML)
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(/<(script|style|template|iframe|object|embed|head|title|svg|math|noscript|textarea|select)\b[\s\S]*?(?:<\/\1\s*>|$)/gi, "");
+  const out = [];
+  const open = []; // [{ key, tag }] -- tag is what was written, or "" for a span that is not a highlight
+  const close = (i) => { while (open.length > i) { const t = open.pop().tag; if (t) out.push(`</${t}>`); } };
+  const token = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b((?:[^>"']|"[^"]*"|'[^']*')*)>|([^<]+)|</g;
+  for (const m of src.matchAll(token)) {
+    if (m[4] !== undefined) { out.push(escapeText(decodeEntities(m[4]))); continue; }
+    if (!m[2]) { out.push("&lt;"); continue; }
+    const name = m[2].toLowerCase();
+    const key = name === "span" ? "span" : RICH_TAG[name];
+    if (!key) continue;
+    if (m[1]) {
+      for (let i = open.length - 1; i >= 0; i--) if (open[i].key === key) { close(i); break; }
+      continue;
+    }
+    if (key === "br") { out.push("<br>"); continue; }
+    const tag = key === "span" ? (HIGHLIGHT.test(m[3]) ? "mark" : "") : key;
+    if (tag) out.push(`<${tag}>`);
+    open.push({ key, tag });
+  }
+  close(0);
+  let html = out.join("");
+  // Formatting with nothing inside it, and blank lines at the end, are noise.
+  for (let before = ""; before !== html;) {
+    before = html;
+    html = html.replace(/<(b|i|u|mark|li|ul)><\/\1>/g, "").replace(/(?:<br>|<div>(?:<br>)?<\/div>|\s)+$/, "");
+  }
+  return plainText(html) ? html : "";
+}
+
+export function plainText(html) {
+  const lines = [];
+  let line = "";
+  const end = () => { if (line.trim()) lines.push(line.replace(/\s+$/, "")); else if (lines.length && lines[lines.length - 1] !== "") lines.push(""); line = ""; };
+  for (const m of String(html || "").matchAll(/<(\/?)([a-z]+)[^>]*>|([^<]+)/gi)) {
+    if (m[3] !== undefined) { line += decodeEntities(m[3]).replace(/\u00a0/g, " "); continue; }
+    const name = m[2].toLowerCase();
+    if (name === "br") { if (line.trim()) end(); else lines.push(""); continue; }
+    if (!BLOCK.has(name) && name !== "p" && name !== "ol") continue;
+    if (line.trim()) end();
+    else line = "";
+    if (name === "li" && !m[1]) line = "- ";
+  }
+  if (line.trim() && line.trim() !== "-") lines.push(line.replace(/\s+$/, ""));
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /* ---------- request body helpers ---------- */
 
 function cleanQuestions(raw) {
@@ -93,9 +171,12 @@ function cleanQuestions(raw) {
     const rawPersonalize = q && q.personalizeFrom;
     const personalizeList = Array.isArray(rawPersonalize) ? rawPersonalize
       : (rawPersonalize ? [rawPersonalize] : []);
+    // With formatting, the HTML decides the words, so the two can never disagree.
+    const html = richText(q && q.html);
     return {
       id: (q && q.id) || `q${i + 1}-${crypto.randomUUID().slice(0, 8)}`,
-      text: String((q && q.text) || "").trim(),
+      text: html ? plainText(html) : String((q && q.text) || "").trim(),
+      html,
       followUps: Math.max(0, Math.min(MAX_FOLLOW_UPS, Number((q && q.followUps) || 0) | 0)),
       context: String((q && q.context) || "").trim(),
       personalizeFrom: [...new Set(personalizeList.map(String).filter(Boolean))],
@@ -662,7 +743,7 @@ export async function handleConsensusApi(route, request, env) {
     if (!survey) return json({ error: "Survey not found" }, 404);
     return json({
       id: survey.id, name: survey.name,
-      questions: survey.questions.map((q) => ({ id: q.id, text: q.text })),
+      questions: survey.questions.map((q) => ({ id: q.id, text: q.text, html: q.html || "" })),
     });
   }
 

@@ -527,6 +527,54 @@ test("consensus: follow-up counts are clamped and forward references are dropped
   assert.deepEqual(questions[1].personalizeFrom, ["q1"], "only strictly-earlier ids survive");
 });
 
+test("consensus: question formatting keeps bold, italic, underline, bullets and highlight, and nothing that can run", async () => {
+  const { richText, plainText } = await mod("consensus.js");
+  assert.equal(richText('What <strong>slows</strong> <em>hiring</em>?<ul><li><u>Pay</u></li><li>Shifts</li></ul>'),
+    "What <b>slows</b> <i>hiring</i>?<ul><li><u>Pay</u></li><li>Shifts</li></ul>");
+  assert.equal(richText('<span style="background-color: rgb(253, 226, 179);">hot</span> <span style="font-size:30px">big</span> <span style="background-color: transparent;">off</span>'),
+    "<mark>hot</mark> big off", "a highlight is kept; a size and a cleared highlight are not");
+  const attack = richText('Hi<script>alert(1)</script><img src=x onerror=alert(1)><b onclick="x()" title="a>b">bold</b>' +
+    '<a href="javascript:alert(1)">link</a><style>b{}</style><iframe src="//x"></iframe><!-- <b>c</b> -->&lt;i&gt;');
+  assert.equal(attack, "Hi<b>bold</b>link&lt;i&gt;");
+  assert.equal(richText("<constructor>a</constructor><toString>b</toString>"), "ab", "an Object.prototype name is not a tag");
+  assert.equal(richText("<b>open <i>both"), "<b>open <i>both</i></b>", "unclosed tags are closed");
+  assert.equal(richText("</b>stray"), "stray");
+  assert.equal(richText("<div><br></div>"), "", "an editor left blank is no question");
+  assert.equal(plainText(richText("Line one<div>Line two</div><div><br></div><div>Then:</div><ul><li>Pay</li><li>Shifts</li></ul>")),
+    "Line one\nLine two\n\nThen:\n- Pay\n- Shifts");
+});
+
+test("consensus: a formatted question is saved with its plain words for Claude, the CSV and the results", async () => {
+  const { env, token } = await signedInEnv();
+  const created = await (await handleConsensusApi("surveys", jsonReq("/api/consensus/surveys", "POST", {
+    name: "Rich",
+    questions: [
+      { text: "client's guess, ignored", html: "Which <b>two</b> matter most?<ul><li>Pay</li><li><mark>Shifts</mark></li></ul><script>x</script>" },
+      { text: "Plain question" },
+      { text: "", html: "<div><br></div>" },
+    ],
+  }, token), env)).json();
+  const qs = created.survey.questions;
+  assert.equal(qs.length, 2, "an empty editor is a blank question and is dropped");
+  assert.equal(qs[0].html, "Which <b>two</b> matter most?<ul><li>Pay</li><li><mark>Shifts</mark></li></ul>");
+  assert.equal(qs[0].text, "Which two matter most?\n- Pay\n- Shifts", "the words come from the formatted text");
+  assert.deepEqual([qs[1].text, qs[1].html], ["Plain question", ""]);
+  const pub = await (await handleConsensusApi(`public/${created.survey.id}`, req(`/api/consensus/public/${created.survey.id}`), env)).json();
+  assert.deepEqual(pub.questions.map((q) => q.html), [qs[0].html, ""]);
+  // A survey saved before formatting existed has no html at all.
+  const old = JSON.parse(await env.BOX_KV.get(`consensus:survey:${created.survey.id}`));
+  old.questions.forEach((q) => delete q.html);
+  await env.BOX_KV.put(`consensus:survey:${created.survey.id}`, JSON.stringify(old));
+  const oldPub = await (await handleConsensusApi(`public/${created.survey.id}`, req(`/api/consensus/public/${created.survey.id}`), env)).json();
+  assert.deepEqual(oldPub.questions.map((q) => q.html), ["", ""]);
+});
+
+test("consensus: the respond page copies only formatting tags into the chat, never attributes", () => {
+  const html = fs.readFileSync(path.join(path.dirname(SRC), "public", "consensus", "respond.html"), "utf8");
+  assert.match(html, /var RICH_TAGS = \{ B: "b", I: "i", U: "u", UL: "ul", LI: "li", MARK: "mark", BR: "br", DIV: "div" \};/);
+  assert.doesNotMatch(html, /\.innerHTML\s*=\s*(html|richByText)/, "question HTML is never written straight into the page");
+});
+
 test("consensus: a survey needs a name and at least one question", async () => {
   const { env, token } = await signedInEnv();
   for (const body of [{ name: "", questions: [{ text: "q" }] }, { name: "x", questions: [] }]) {

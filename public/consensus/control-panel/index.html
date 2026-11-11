@@ -70,6 +70,23 @@
   .question-card .row.top { justify-content:space-between; margin-bottom:6px; }
   .question-card .qnum { font-size:11px; font-weight:700; color:var(--text-muted);
                           letter-spacing:.04em; text-transform:uppercase; }
+  /* Question text: bold, italic, underline, bullets and highlight. */
+  .rt { border:1px solid var(--border); border-radius:8px; background:var(--page); }
+  .rt:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(42,120,214,.15); }
+  .rt-bar { display:flex; align-items:center; gap:2px; padding:4px 6px; border-bottom:1px solid var(--border); }
+  .rt-bar button { width:30px; height:28px; padding:0; border:0; border-radius:6px; background:transparent;
+                   color:var(--text-secondary); display:inline-flex; align-items:center; justify-content:center;
+                   font-size:14px; line-height:1; }
+  .rt-bar button:hover { background:var(--wash); color:var(--text-primary); }
+  .rt-bar button[aria-pressed="true"] { background:rgba(42,120,214,.14); color:var(--accent); }
+  .rt-bar button svg { width:16px; height:16px; }
+  .rt-bar .rt-sep { width:1px; height:18px; background:var(--border); margin:0 4px; }
+  .rt-bar .rt-hl { width:14px; height:14px; border-radius:3px; background:#fbae40; opacity:.75;
+                   box-shadow:inset 0 0 0 1px rgba(0,0,0,.15); }
+  .rt-body { min-height:52px; padding:9px 11px; outline:none; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .rt-body:empty::before { content:attr(data-placeholder); color:var(--text-muted); }
+  .rt-body ul { margin:4px 0; padding-left:22px; }
+  .rt-body span[style*="background"], .rt-body mark { border-radius:3px; color:inherit; }
   .followup-field { display:flex; align-items:center; gap:8px; }
   .followup-field input { width:70px; }
   .check-row { display:flex; align-items:center; gap:8px; padding:8px 10px; font-size:13px;
@@ -453,7 +470,7 @@
       (i === total - 1 ? " disabled" : "") + ' title="Move down" aria-label="Move question down">&darr;</button>' +
       '<button type="button" class="small ghost remove-q-btn" data-index="' + i + '">Remove</button>' +
       "</div></div>" +
-      '<label>Question text</label><textarea class="q-text"></textarea>' +
+      '<label>Question text</label>' + richEditorHtml() +
       '<label>Follow-up questions</label>' +
       '<div class="followup-field"><input type="number" class="q-followups" min="0" max="5" value="0">' +
       '<span class="msg muted">how many Claude should generate, 0-5</span></div>' +
@@ -471,11 +488,97 @@
       "</div>";
   }
 
+  // ---- Question text editor. The browser's own editing commands do bold, italic,
+  // underline and bullets; a highlight is a background colour on the selection. The Worker
+  // keeps only those, so what is saved is what a respondent sees.
+  var HIGHLIGHT = "#fde2b3";
+  var RT_ICON = {
+    bullets: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="7" r="1.6" fill="currentColor"/><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="5" cy="17" r="1.6" fill="currentColor"/><path d="M10 7h10M10 12h10M10 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  };
+  function richEditorHtml() {
+    return '<div class="rt">' +
+      '<div class="rt-bar" role="toolbar" aria-label="Question formatting">' +
+      '<button type="button" data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold" aria-pressed="false"><b>B</b></button>' +
+      '<button type="button" data-cmd="italic" title="Italic (Ctrl+I)" aria-label="Italic" aria-pressed="false"><i style="font-family:Georgia,serif">I</i></button>' +
+      '<button type="button" data-cmd="underline" title="Underline (Ctrl+U)" aria-label="Underline" aria-pressed="false"><u>U</u></button>' +
+      '<span class="rt-sep"></span>' +
+      '<button type="button" data-cmd="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list" aria-pressed="false">' + RT_ICON.bullets + '</button>' +
+      '<button type="button" data-cmd="highlight" title="Highlight" aria-label="Highlight" aria-pressed="false"><span class="rt-hl"></span></button>' +
+      '</div>' +
+      '<div class="rt-body q-text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Question text" data-placeholder="Type the question"></div>' +
+      '</div>';
+  }
+  function setRich(body, q) {
+    body.innerHTML = q.html || esc(q.text || "").replace(/\n/g, "<br>");
+    // Saved highlights are <mark>; in the editor they are the same background colour the
+    // highlight button applies, so the button can take them off again.
+    Array.prototype.forEach.call(body.querySelectorAll("mark"), function (m) {
+      var span = document.createElement("span");
+      span.style.backgroundColor = HIGHLIGHT;
+      while (m.firstChild) span.appendChild(m.firstChild);
+      m.parentNode.replaceChild(span, m);
+    });
+  }
+  // Whether the selection starts inside highlighted text. Read from the text itself: the
+  // browser's own query reports the page's background colour for unhighlighted text.
+  function isHighlighted() {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    var node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === 3 && sel.getRangeAt(0).startOffset === node.nodeValue.length && node.nextSibling) node = node.nextSibling;
+    for (var n = node.nodeType === 1 ? node : node.parentElement; n && !n.classList.contains("rt-body"); n = n.parentElement) {
+      var bg = (n.style && n.style.backgroundColor || "").replace(/\s/g, "");
+      if (bg && bg !== "transparent" && bg !== "rgba(0,0,0,0)" && bg !== "initial" && bg !== "inherit") return true;
+    }
+    return false;
+  }
+  function refreshToolbar(bar) {
+    Array.prototype.forEach.call(bar.querySelectorAll("button[data-cmd]"), function (b) {
+      var on = b.dataset.cmd === "highlight" ? isHighlighted() : document.queryCommandState(b.dataset.cmd);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  function activeEditor() {
+    var sel = window.getSelection();
+    var node = sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
+    var elNode = node && (node.nodeType === 1 ? node : node.parentElement);
+    return elNode && elNode.closest ? elNode.closest(".rt-body") : null;
+  }
+  document.addEventListener("selectionchange", function () {
+    var body = activeEditor();
+    if (body) refreshToolbar(body.parentNode.querySelector(".rt-bar"));
+  });
+  document.addEventListener("mousedown", function (e) {
+    // Keep the selection in the question while a toolbar button is pressed.
+    if (e.target.closest && e.target.closest(".rt-bar button")) e.preventDefault();
+  });
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest(".rt-bar button[data-cmd]");
+    if (!btn) return;
+    var body = btn.closest(".rt").querySelector(".rt-body");
+    if (activeEditor() !== body) body.focus();
+    document.execCommand("styleWithCSS", false, btn.dataset.cmd === "highlight");
+    if (btn.dataset.cmd === "highlight") {
+      document.execCommand("hiliteColor", false, isHighlighted() ? "transparent" : HIGHLIGHT);
+    } else {
+      document.execCommand(btn.dataset.cmd, false, null);
+    }
+    document.execCommand("styleWithCSS", false, false);
+    refreshToolbar(btn.parentNode);
+  });
+  // Pasted text arrives as plain text: a copied web page or Word document brings fonts and
+  // sizes the survey does not use. Format it here instead.
+  document.addEventListener("paste", function (e) {
+    if (!e.target.closest || !e.target.closest(".rt-body")) return;
+    e.preventDefault();
+    document.execCommand("insertText", false, (e.clipboardData || window.clipboardData).getData("text/plain"));
+  });
+
   function renderQuestions() {
     el("questionsList").innerHTML = questions.map(function (q, i) { return questionRowHtml(i, questions); }).join("");
     var cards = el("questionsList").querySelectorAll(".question-card");
     cards.forEach(function (card, i) {
-      card.querySelector(".q-text").value = questions[i].text;
+      setRich(card.querySelector(".q-text"), questions[i]);
       card.querySelector(".q-followups").value = questions[i].followUps;
       card.querySelector(".q-context").value = questions[i].context;
       card.querySelector(".q-claude-analyze").value = questions[i].claudeAnalyze === false ? "no" : "yes";
@@ -555,7 +658,8 @@
     cards.forEach(function (card, i) {
       synced.push({
         id: questions[i] ? questions[i].id : undefined,
-        text: card.querySelector(".q-text").value,
+        text: card.querySelector(".q-text").innerText,
+        html: card.querySelector(".q-text").innerHTML,
         followUps: Number(card.querySelector(".q-followups").value) || 0,
         context: card.querySelector(".q-context").value,
         personalizeFrom: checkedPersonalizeFrom(card),
@@ -582,7 +686,8 @@
     cards.forEach(function (card, i) {
       out.push({
         id: questions[i] ? questions[i].id : undefined,
-        text: card.querySelector(".q-text").value.trim(),
+        text: card.querySelector(".q-text").innerText.trim(),
+        html: card.querySelector(".q-text").innerHTML,
         followUps: Number(card.querySelector(".q-followups").value) || 0,
         context: card.querySelector(".q-context").value.trim(),
         personalizeFrom: checkedPersonalizeFrom(card),
@@ -630,7 +735,7 @@
         // multi-select -- normalize either shape to an array here.
         var personalizeFrom = Array.isArray(q.personalizeFrom) ? q.personalizeFrom
           : (q.personalizeFrom ? [q.personalizeFrom] : []);
-        return { id: q.id, text: q.text, followUps: q.followUps, context: q.context,
+        return { id: q.id, text: q.text, html: q.html || "", followUps: q.followUps, context: q.context,
                  personalizeFrom: personalizeFrom, claudeAnalyze: q.claudeAnalyze !== false };
       });
       chosenFolder = { id: survey.boxFolderId, name: survey.boxFolderName };
