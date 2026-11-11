@@ -149,6 +149,8 @@
     return '<div class="item">' +
       // Only Issue, Solution and Win get a label, and not where the page already says which it is.
       (opts.kind !== false && KIND_TONE[i.kind] ? '<span class="kindl ' + KIND_TONE[i.kind] + '">' + PI.esc(PI.kindLabel[i.kind]) + "</span>" : "") +
+      // The topic the note is about, where the page does not already head it with one (a meeting's notes).
+      (opts.topic ? '<span class="ktopic">' + PI.esc(opts.topic) + "</span>" : "") +
       '<div class="title">' + PI.esc(i.title) + "</div>" +
       (by.length ? '<div class="by">' + by.join("") + "</div>" : "") +
       '<div class="detail">' + PI.esc(i.detail) + "</div>" +

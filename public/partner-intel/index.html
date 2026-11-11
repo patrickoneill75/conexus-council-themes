@@ -813,8 +813,8 @@
   var isIssue = function (i) { return i.kind === "problem" || i.kind === "ask"; };
   /** A row as a note; an issue carries Find solution at the end of its date and source line. */
   /** A note on the company page. kind is false where the column or tab already says issue, solution or win. */
-  function rowCard(i, companyId, kind) {
-    return PI.insightCard(i, { company: false, kind: kind, action: isIssue(i) ? findButton(i, companyId) : "" });
+  function rowCard(i, companyId, kind, topic) {
+    return PI.insightCard(i, { company: false, kind: kind, topic: topic, action: isIssue(i) ? findButton(i, companyId) : "" });
   }
 
   function company(id, tab) {
@@ -995,26 +995,76 @@
       topicList(r.byTopic, tab, companyId, false, TOPICS_SHOWN);
   }
 
-  /** Meetings: every meeting this company appears in, newest first. Each opens to the files it came from
-   * and its notes, grouped by topic. */
+  /** Meetings: every meeting this company appears in, newest first, as a table like All companies:
+   * its program and its date. A row opens to the files it came from and what came out of it, as the
+   * Overview does: issues, solutions and wins side by side, each note headed by its topic. */
   var MEETINGS_SHOWN = 10;
+  /** What a meeting row says: its program (or programs, or the event type when it has none) and, under
+   * that, its own name or its event type when either adds something. A site visit is filed under the
+   * company's own name; the page already says that, so the name is left out. */
+  function meetingNames(m, companyName) {
+    var program = (m.programs || []).join(", ") || m.eventType || "Meeting";
+    var sub = [];
+    if (m.label && m.label !== companyName && m.label !== program) sub.push(m.label);
+    // The event type adds nothing when the meeting's own name already says it ("ITA Meeting 10.28.26").
+    var named = (m.label || "").toLowerCase();
+    if (m.eventType && m.eventType !== program && named.indexOf(m.eventType.toLowerCase()) < 0) sub.push(m.eventType);
+    return { program: program, sub: sub.join(" \u00b7 ") };
+  }
+  var CHEV_RIGHT = '<svg class="mchev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function meetingDetail(m, companyId) {
+    var notes = [];
+    m.topics.forEach(function (t) { t.items.forEach(function (i) { notes.push({ i: i, topic: t.label }); }); });
+    var cols = [["Issues", "issues", "k-issue"], ["Solutions", "solutions", "k-solution"], ["Wins", "wins", "k-win"]].map(function (col) {
+      var rows = notes.filter(function (n) { return PI.categoryOf(n.i.kind) === col[1]; });
+      var cards = rows.map(function (n) { return rowCard(n.i, companyId, false, n.topic); });
+      return '<section><h4 class="colh ' + col[2] + '">' + col[0] + "</h4>" +
+        (rows.length ? cards.slice(0, COLUMN_SHOWN).join("") +
+          (rows.length > COLUMN_SHOWN ? '<div hidden data-rest>' + cards.slice(COLUMN_SHOWN).join("") + "</div>" +
+            '<p class="colmore"><button class="find" data-show-rest>View all ' + col[1] + ARROW + "</button></p>" : "")
+        : '<p class="muted small" style="margin:12px 0 0">None from this meeting.</p>') + "</section>";
+    }).join("");
+    // A note that is none of the three (a general note) is listed under them, never dropped.
+    var other = notes.filter(function (n) { return PI.categoryOf(n.i.kind) === "other"; });
+    return '<div class="mband">' + (m.files.length ? '<p class="mfrom">From ' + PI.fileLinks(m.files) + "</p>" : "") +
+      '<div class="cols3">' + cols + "</div>" +
+      (other.length ? '<section class="mother"><h4 class="colh">Other notes</h4>' +
+        other.map(function (n) { return rowCard(n.i, companyId, true, n.topic); }).join("") + "</section>" : "") + "</div>";
+  }
   function meetingsTab(body, c, mine) {
     body.innerHTML = '<p class="small muted" style="margin-top:14px"><span class="spinner"></span>Loading…</p>';
     return tabData(c.id, meetingsPath(c.id)).then(function (r) {
       if (mine !== seq) return;
       if (!r.meetings.length) { body.innerHTML = '<div class="empty">No meetings recorded yet.</div>'; return; }
-      body.innerHTML = '<div class="tlist">' + r.meetings.map(function (m, n) {
-        // A site visit is filed under the company's own name; the page already says that, so it goes by its type.
-        var own = !m.label || m.label === c.name, title = own ? m.eventType || "Meeting" : m.label;
-        var meta = [PI.fmtDate(m.date) + (m.estimated ? " (estimated date)" : ""), own ? "" : m.eventType, m.programs.join(", ")].filter(Boolean).join(" \u00b7 ");
-        var inner = '<div class="band">' + (m.files.length ? '<p class="mfrom">From ' + PI.fileLinks(m.files) + "</p>" : "") +
-          m.topics.map(function (t) {
-            return '<section class="mtopic"><h4>' + esc(t.label) + "</h4>" + t.items.map(function (i) { return rowCard(i, c.id); }).join("") + "</section>";
-          }).join("") + "</div>";
-        return topicRow(n + 1, title, esc(meta), inner, false, { hidden: n >= MEETINGS_SHOWN });
-      }).join("") + "</div>" + moreRows(r.meetings.length - MEETINGS_SHOWN, "meetings");
+      var rows = r.meetings.map(function (m, n) {
+        var names = meetingNames(m, c.name), id = "mt" + n, hide = n >= MEETINGS_SHOWN ? " hidden data-later" : "";
+        return '<tr class="mtrow click"' + hide + '><td class="cn"><button type="button" class="mopen" aria-expanded="false" aria-controls="' + id + '">' + CHEV_RIGHT +
+          '<span><span class="mprog">' + esc(names.program) + "</span>" + (names.sub ? '<span class="msub">' + esc(names.sub) + "</span>" : "") + "</span></button></td>" +
+          '<td class="mdate">' + esc(PI.fmtDate(m.date)) + (m.estimated ? " " + PI.pill("est", "estimated date") : "") + "</td></tr>" +
+          '<tr class="mdetail" id="' + id + '" hidden><td colspan="2">' + meetingDetail(m, c.id) + "</td></tr>";
+      }).join("");
+      var later = r.meetings.length - MEETINGS_SHOWN;
+      body.innerHTML = '<p class="msum">' + esc(plural(r.meetings.length, "meeting", "meetings")) + ", newest first. Click a meeting to see what came out of it.</p>" +
+        '<table class="tbl mtbl"><thead><tr><th scope="col">Program</th><th scope="col" class="mdate" aria-sort="descending">Date</th></tr></thead><tbody>' + rows + "</tbody></table>" +
+        (later > 0 ? '<p class="colmore"><button class="more" data-more-meetings>Show ' + later + " more meetings</button></p>" : "");
     }).catch(function (err) { if (mine === seq) body.innerHTML = emptyState(err); });
   }
+  // A meeting row opens and closes; the button in it carries the state for a screen reader.
+  document.addEventListener("click", function (e) {
+    var row = e.target.closest && e.target.closest("tr.mtrow");
+    if (row) {
+      var btn = row.querySelector(".mopen"), open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", String(open));
+      row.classList.toggle("open", open);
+      el(btn.getAttribute("aria-controls")).hidden = !open;
+      return;
+    }
+    var more = e.target.closest && e.target.closest("button[data-more-meetings]");
+    if (!more) return;
+    var table = more.parentNode.previousElementSibling;
+    Array.prototype.forEach.call(table.querySelectorAll("tr.mtrow[data-later]"), function (tr) { tr.hidden = false; tr.removeAttribute("data-later"); });
+    more.parentNode.remove();
+  });
 
   function latestSource(box, r, tab, companyId) {
     var opts = r.latest.map(function (s, k) {

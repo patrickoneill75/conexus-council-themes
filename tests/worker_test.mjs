@@ -6341,8 +6341,8 @@ test("partner_intel: company tabs are pills in a gray track, and the navy pill s
   assert.doesNotMatch(html, /ICONS\[t\.id\]/, "the tabs are text only");
   assert.match(html, /var from = lastTab && lastTab\.id === c\.id \? lastTab\.at : at;/, "it slides only between tabs of the same company");
   assert.match(html, /tabs\.style\.setProperty\("--at", at\);/);
-  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*background:var\(--navy\);[^}]*transform:translateX\(calc\(var\(--at, 0\) \* 100%\)\);/);
-  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*transition:transform \.6s cubic-bezier\(\.22,1,\.36,1\), scale \.45s cubic-bezier\(\.22,1,\.36,1\); \}/, "it eases in without overshooting, stretching on the way as the time window's lens does");
+  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*background:var\(--navy\);[^}]*translate:calc\(var\(--at, 0\) \* 100%\) 0;/);
+  assert.match(css, /\.pi-app \.ctabs \.ctlens \{[^}]*transition:translate \.6s cubic-bezier\(\.22,1,\.36,1\), scale \.45s cubic-bezier\(\.22,1,\.36,1\); \}/, "it eases in without overshooting, stretching on the way as the time window's lens does");
   assert.match(css, /@media \(prefers-reduced-motion:reduce\) \{ \.pi-app \.ctabs \.ctlens, \.pi-app #tabBody, \.pi-app \.fades \{ transition:none; \} \}/);
   assert.doesNotMatch(css, /\.pi-app \.tabpanel\.first/, "the panel no longer joins a tab");
 });
@@ -6918,6 +6918,38 @@ test("salary_allocation: the Not at 100% card leaves out open positions (bug: an
   const notAtHundred = new Function("linesFor", `${sourceOf(file, "notAtHundred")}; return notAtHundred;`)((p) => lines[p.id]);
   const list = [{ id: "a", first: "A", last: "One" }, { id: "b", first: "B", last: "Two" }, { id: "open", first: "", last: "" }, { id: "openPlanned", first: "", last: "" }];
   assert.deepEqual(notAtHundred(list, "2026-11").map((p) => p.id), ["b"]);
+});
+
+test("partner_intel: the company tab pill stretches about its own middle (bug: it flew most of a tab past Contacts)", () => {
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  const rule = css.match(/\.pi-app \.ctabs \.ctlens \{([^}]*)\}/)[1];
+  // CSS applies the scale property before transform, so a pill moved with transform and stretched with
+  // scale has its whole distance from the first tab stretched too. translate is applied first.
+  assert.match(rule, /translate:calc\(var\(--at, 0\) \* 100%\) 0/);
+  assert.doesNotMatch(rule, /transform:/);
+  assert.match(rule, /transition:translate /);
+});
+
+test("partner_intel: a meeting row names its program, then its own name or event type when they add something", () => {
+  const meetingNames = new Function(`${sourceOf(path.join(PUB_PI, "index.html"), "meetingNames")}; return meetingNames;`)();
+  assert.deepEqual(meetingNames({ programs: ["Field Demo Visits"], label: "Zoeller", eventType: "Site Visit" }, "Zoeller"),
+    { program: "Field Demo Visits", sub: "Site Visit" }, "a visit filed under the company's own name is not named again");
+  assert.deepEqual(meetingNames({ programs: ["President and CEO Network"], label: "Cohort 2", eventType: "President and CEO Network Call" }, "Zoeller"),
+    { program: "President and CEO Network", sub: "Cohort 2 \u00b7 President and CEO Network Call" });
+  assert.deepEqual(meetingNames({ programs: [], label: "", eventType: "ITA Meeting" }, "Zoeller"), { program: "ITA Meeting", sub: "" });
+  assert.deepEqual(meetingNames({ programs: ["CIAIC", "Onboarding"], label: "", eventType: "" }, "Zoeller"), { program: "CIAIC, Onboarding", sub: "" });
+  assert.deepEqual(meetingNames({ programs: ["ITA"], label: "ITA Meeting 10.28.26", eventType: "ITA Meeting" }, "Zoeller"),
+    { program: "ITA", sub: "ITA Meeting 10.28.26" }, "the event type is not repeated when the meeting's name already says it");
+});
+
+test("partner_intel: a company's meeting rows lay out as table rows (bug: they took the Programs page's grid and squeezed the table)", () => {
+  const html = fs.readFileSync(path.join(PUB_PI, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(PUB_PI, "pi.css"), "utf8");
+  const row = html.match(/'<tr class="([^"]+)"[^']*'[^\n]*class="mopen"/);
+  assert.ok(row, "the meetings table builds its rows with a class");
+  for (const cls of row[1].split(/\s+/)) {
+    assert.doesNotMatch(css, new RegExp("\\." + cls + "\\s*\\{[^}]*display:\\s*grid"), `.${cls} is not a grid layout meant for something else`);
+  }
 });
 
 test("salary_allocation: dragging a card on the org chart changes only who that person reports to", async () => {
