@@ -900,6 +900,107 @@
       }
     ]
   },
+  "2026-Q3 South": {
+    "current": [
+      {
+        "category": "Agenda & Time Management",
+        "count": 5,
+        "example": "Too much time spent on intros and the panel was cut short.",
+        "subcategory": "Session length and pacing",
+        "summary": "Give panels more time and cut long intros/bios"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 3,
+        "example": "The panel answers were pretty predictable.",
+        "subcategory": "Content depth",
+        "summary": "Panel content felt predictable; panelists need clearer prep and expectations"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 2,
+        "example": "Continue AI. It would be helpful to show live use cases.",
+        "subcategory": "Topic requests",
+        "summary": "Keep AI on the agenda with live use cases, and tailor content to small/midsized manufacturers"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 2,
+        "example": "Have wifi access posted.",
+        "subcategory": "Venue and connectivity",
+        "summary": "Wifi access needs to be available and posted"
+      },
+      {
+        "category": "Site Tours",
+        "count": 1,
+        "example": "Companies giving the tour should help highlight new technologies, not just a general manufacturing tour.",
+        "subcategory": "Tour content focus",
+        "summary": "Tours should spotlight new technology rather than general plant walkthroughs"
+      }
+    ],
+    "generated": "2026-11-11T16:02:04+00:00",
+    "qoq": [
+      {
+        "category": "Speakers & Panelists",
+        "count": 1,
+        "example": "Have keynote speakers elaborate more on their own programs.",
+        "subcategory": "Content depth",
+        "summary": "Panel and keynote content lacks depth; speakers need clearer preparation"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 4,
+        "example": "Cover tariff, foreign trade, and economic development topics in future sessions.",
+        "subcategory": "Topic requests",
+        "summary": "Ongoing requests for specific future session topics"
+      },
+      {
+        "category": "Site Tours",
+        "count": 1,
+        "example": "Reduce the morning tour to one stop instead of two to ease the schedule.",
+        "subcategory": "Tour structure",
+        "summary": "Site tour design and focus need rethinking"
+      }
+    ],
+    "sourceFile": "2026-Q3 South (Post-Meeting Survey.csv)",
+    "yoy": [
+      {
+        "category": "Content Relevance & Depth",
+        "count": 6,
+        "example": "Include more real-world case studies of successful tech implementations.",
+        "subcategory": "Topic requests",
+        "summary": "Repeated requests for AI/tech topics grounded in real-world, applicable use cases"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 3,
+        "example": "Make the AI presentation more dynamic, since some speakers struggled to hold attention.",
+        "subcategory": "Delivery and engagement",
+        "summary": "Speaker and panel delivery falls flat without better preparation"
+      },
+      {
+        "category": "Agenda & Time Management",
+        "count": 2,
+        "example": "Give tours more time so all areas can be adequately covered.",
+        "subcategory": "Session length and pacing",
+        "summary": "Agenda pacing squeezes the highest-value content"
+      },
+      {
+        "category": "Site Tours",
+        "count": 2,
+        "example": "Reduce the morning tour to one stop instead of two to ease the schedule.",
+        "subcategory": "Tour content focus",
+        "summary": "Tour structure and coverage repeatedly flagged"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 2,
+        "example": "Provide microphones for audience Q&A.",
+        "subcategory": "Venue and connectivity",
+        "summary": "Basic on-site logistics and AV gaps (audio, slides, connectivity)"
+      }
+    ]
+  },
   "2026-Q3 Southern": {
     "current": [
       {
@@ -998,6 +1099,121 @@
         "example": "Provide microphones for audience Q&A.",
         "subcategory": "Venue & Audio/Visual",
         "summary": "Basic AV and venue logistics gaps (sound, slides, connectivity)"
+      }
+    ]
+  },
+  "2026-Q4 Central": {
+    "current": [
+      {
+        "category": "Content",
+        "count": 15,
+        "example": "Topic request for Q1 Council meeting: Cybersecurity solutions in relation to AI usage and compliance.",
+        "subcategory": "Future Topic Requests",
+        "summary": "Heavy demand for future AI-focused topics (agentic/vision AI, robotics, ROI, cybersecurity) plus economic and workforce updates"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 8,
+        "example": "AI on the Factory Floor - I would have preferred to hear more about real successes and applications of AI on the Factory Floor.",
+        "subcategory": "Real-world case studies",
+        "summary": "Members want concrete case studies and specific applications instead of surface-level generalities"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 4,
+        "example": "Fireside Chat - Spoke in a lot of generalities. Would have loved to hear more specific applications, outcomes, and suggestions.",
+        "subcategory": "Content depth",
+        "summary": "Speakers spoke in generalities; members want practitioner implementers, clearer learning objectives, and better preparation"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 3,
+        "example": "Echo in the room during presentations made it very hard to understand the presenters.",
+        "subcategory": "Audio and sound",
+        "summary": "Room audio and slide legibility problems — echo, tight space, hard to hear, busy slides"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 3,
+        "example": "AI on Factory Floor content didn't seem as practical for smaller companies starting in AI.",
+        "subcategory": "Role and sector relevance",
+        "summary": "Content didn't fit all audiences — too factory-specific for some, not practical for smaller companies starting in AI"
+      }
+    ],
+    "generated": "2026-11-11T16:02:43+00:00",
+    "qoq": [
+      {
+        "category": "Content",
+        "count": 8,
+        "example": "Continue AI. It would be helpful to show live use cases. You may want to partner with John Munsell, author of Ingrain AI.",
+        "subcategory": "Future Topic Requests",
+        "summary": "Ongoing requests for more AI topics with live/real use cases, plus supply chain and workforce angles"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 3,
+        "example": "Visual aid on AI actual. Deployment example to drive further brainstorms",
+        "subcategory": "Real-world case studies",
+        "summary": "Repeat ask for concrete deployment examples rather than generic discussion"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 3,
+        "example": "The panel answers were pretty predictable. Prep panelists and presenters with clear expectations.",
+        "subcategory": "Content depth",
+        "summary": "Panelists gave predictable, shallow answers and need clearer prep expectations"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 4,
+        "example": "Hard to hear people at times, some were perfect and some were way too low/quiet. Text on slides too small",
+        "subcategory": "Venue and connectivity",
+        "summary": "Recurring audio, slide legibility, and wifi access issues at the venue"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 2,
+        "example": "Possibly focus more time on the small and midsized manufacturers.",
+        "subcategory": "Small and midsized manufacturer applicability",
+        "summary": "Content skews to large companies; small and midsized manufacturers want material sized for them"
+      }
+    ],
+    "sourceFile": "2026-Q4 Central (Post-Meeting Survey.csv)",
+    "yoy": [
+      {
+        "category": "Content",
+        "count": 12,
+        "example": "Cover tariff, foreign trade, and economic development topics in future sessions.",
+        "subcategory": "Future Topic Requests",
+        "summary": "Year-long stream of topic requests centered on AI applications, economic/trade updates, and workforce development"
+      },
+      {
+        "category": "Content Relevance & Depth",
+        "count": 4,
+        "example": "Include more real-world case studies of successful tech implementations.",
+        "subcategory": "Real-world case studies",
+        "summary": "Persistent demand for real-world implementation case studies and outcomes"
+      },
+      {
+        "category": "Speakers & Panelists",
+        "count": 4,
+        "example": "Have keynote speakers elaborate more on their own programs.",
+        "subcategory": "Content depth",
+        "summary": "Speakers and panelists stay too high-level and need better preparation and depth"
+      },
+      {
+        "category": "Meeting Logistics & AV",
+        "count": 5,
+        "example": "Provide microphones for audience Q&A.",
+        "subcategory": "Audio and sound",
+        "summary": "Audio, microphone, slide legibility, and wifi problems have recurred all year"
+      },
+      {
+        "category": "Networking",
+        "count": 4,
+        "example": "Add a way for attendees to share company info or connect with peers they want to meet.",
+        "subcategory": "Attendee Connections",
+        "summary": "Members consistently want more time and better tools to connect with peers"
       }
     ]
   }

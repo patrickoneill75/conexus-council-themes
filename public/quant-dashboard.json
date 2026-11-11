@@ -171,13 +171,25 @@
   "2026-Q3 Central": {
     "avgAttendees": 99,
     "byCategory": {
-      "Meeting logistics": 4.67,
-      "Overall value": 4.41,
-      "Panel": 4.44
+      "Meeting logistics": 4.41,
+      "Overall value": 4.67,
+      "Presentation": 4.44
     },
-    "generated": "2026-09-16T19:11:40+00:00",
+    "generated": "2026-11-11T16:02:46+00:00",
     "responseRate": 0.2727272727272727,
     "responses": 27,
+    "sourceFile": "Post-Meeting Survey.csv"
+  },
+  "2026-Q3 South": {
+    "avgAttendees": 65,
+    "byCategory": {
+      "Meeting logistics": 4.53,
+      "Overall value": 4.67,
+      "Presentation": 4.38
+    },
+    "generated": "2026-11-11T16:02:46+00:00",
+    "responseRate": 0.23076923076923078,
+    "responses": 15,
     "sourceFile": "Post-Meeting Survey.csv"
   },
   "2026-Q3 Southern": {
@@ -190,6 +202,19 @@
     "generated": "2026-09-16T19:11:40+00:00",
     "responseRate": 0.23076923076923078,
     "responses": 15,
+    "sourceFile": "Post-Meeting Survey.csv"
+  },
+  "2026-Q4 Central": {
+    "avgAttendees": 129,
+    "byCategory": {
+      "Meeting logistics": 4.6,
+      "Overall value": 4.14,
+      "Panel": 4.14,
+      "Presentation": 3.83
+    },
+    "generated": "2026-11-11T16:02:46+00:00",
+    "responseRate": 0.40310077519379844,
+    "responses": 52,
     "sourceFile": "Post-Meeting Survey.csv"
   }
 }
