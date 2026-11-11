@@ -543,9 +543,12 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 .pi-app .ctabs a:hover { background:rgba(7,33,78,.05); color:var(--navy); text-decoration:none; }
 .pi-app .ctabs a.on, .pi-app .ctabs a.on:hover { background:none; color:#fff; font-weight:600; }
 /* Each tab is as wide as the widest, so the pill is one tab wide and moves a whole tab per step. */
+/* Moved with translate, not transform: CSS applies scale before transform, so with transform the stretch
+ * below also scaled the distance travelled and the pill flew past the far tabs (most of a tab past Contacts).
+ * translate comes first, so the pill stretches about its own middle wherever it is. */
 .pi-app .ctabs .ctlens { position:absolute; z-index:0; top:6px; bottom:6px; left:6px; width:calc((100% - 12px) / var(--n, 6)); border-radius:999px;
-  background:var(--navy); box-shadow:0 2px 6px rgba(7,33,78,.18); transform:translateX(calc(var(--at, 0) * 100%));
-  transition:transform .6s cubic-bezier(.22,1,.36,1), scale .45s cubic-bezier(.22,1,.36,1); }
+  background:var(--navy); box-shadow:0 2px 6px rgba(7,33,78,.18); translate:calc(var(--at, 0) * 100%) 0;
+  transition:translate .6s cubic-bezier(.22,1,.36,1), scale .45s cubic-bezier(.22,1,.36,1); }
 /* Moving between tabs: the pill stretches as it slides, as the time window's lens does, and the tab's
  * content fades out and the new content fades in (index.html, switchTab). */
 .pi-app .ctabs .ctlens.moving { scale:1.18 .88; }
@@ -568,6 +571,27 @@ html.lg-refract .pi-app .seg .lens { backdrop-filter:url(#pi-lens-glass) saturat
 .pi-app .cols3 .item .detail { font-size:17px; }
 .pi-app .cols3 .item .srcm, .pi-app .cols3 .item details.src { font-size:15px; }
 .pi-app .band.notes { padding:6px 28px 30px 54px; }
+/* The Meetings tab: a table like All companies. A row opens to the meeting's notes, set off by a navy rule. */
+.pi-app .msum { margin:4px 0 6px; font-size:15px; color:var(--text-secondary); }
+.pi-app table.mtbl th.mdate, .pi-app table.mtbl td.mdate { width:220px; white-space:nowrap; }
+.pi-app table.mtbl th:first-child { padding-left:34px; }
+.pi-app table.mtbl td { vertical-align:top; }
+.pi-app .mopen { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:start; width:100%; padding:0; border:0; background:none;
+  font:inherit; color:inherit; text-align:left; cursor:pointer; }
+.pi-app .mopen:hover { background:none; }
+.pi-app .mopen .mchev { width:14px; height:14px; margin-top:6px; color:var(--navy); transition:transform .25s ease; }
+.pi-app .mopen[aria-expanded="true"] .mchev { transform:rotate(90deg); }
+.pi-app .mprog { display:block; font-weight:700; color:var(--navy); }
+.pi-app .msub { display:block; margin-top:2px; font-size:14.5px; font-weight:400; color:var(--text-secondary); }
+.pi-app table.mtbl tr.mtrow.open td { background:var(--band); }
+.pi-app table.mtbl tr.mdetail td { padding:0; }
+.pi-app .mband { position:relative; margin:4px 0 24px 20px; padding:6px 4px 4px 32px; }
+.pi-app .mband::before { content:""; position:absolute; left:-1.5px; top:0; bottom:0; width:3px; border-radius:2px; background:var(--navy); }
+.pi-app .mband .mfrom { margin:0 0 10px; }
+.pi-app .mother { margin-top:18px; padding-top:12px; border-top:1px solid #edf0f5; }
+.pi-app .mother .item { border-top:1px solid #edf0f5; padding:14px 0; }
+.pi-app .item .ktopic { display:block; margin-bottom:2px; font-size:12.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-muted); }
+@media (prefers-reduced-motion:reduce) { .pi-app .mopen .mchev { transition:none; } }
 .pi-app .band.notes > .item { border-top-color:#edf0f5; }
 .pi-app .colmore { margin:14px 0 0; }
 .pi-app .allres { margin-left:10px; font-size:13px; font-weight:700; color:#0b6a92; }
