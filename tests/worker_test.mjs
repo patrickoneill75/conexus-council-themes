@@ -575,6 +575,20 @@ test("consensus: the respond page copies only formatting tags into the chat, nev
   assert.doesNotMatch(html, /\.innerHTML\s*=\s*(html|richByText)/, "question HTML is never written straight into the page");
 });
 
+test("consensus: a message taller than the chat is shown from its top (bug: it opened at its bottom)", () => {
+  const file = path.join(path.dirname(SRC), "public", "consensus", "respond.html");
+  const scroll = new Function("el", `${sourceOf(file, "scrollToLatest")}; return scrollToLatest;`);
+  // The chat shows 500px of 2000px; the newest bubble starts 800px down.
+  const box = (bubbleTop) => ({ scrollHeight: 2000, clientHeight: 500, scrollTop: 0,
+    getBoundingClientRect: () => ({ top: 100 }), lastElementChild: { getBoundingClientRect: () => ({ top: 100 + bubbleTop }) } });
+  const long = box(800);
+  scroll(() => long)();
+  assert.equal(long.scrollTop, 784, "the long message's first line sits just inside the top of the chat");
+  const short = box(1800);
+  scroll(() => short)();
+  assert.equal(short.scrollTop, 1500, "a message that fits is shown at the bottom, as before");
+});
+
 test("consensus: a survey needs a name and at least one question", async () => {
   const { env, token } = await signedInEnv();
   for (const body of [{ name: "", questions: [{ text: "q" }] }, { name: "x", questions: [] }]) {
