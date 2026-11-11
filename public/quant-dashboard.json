@@ -180,18 +180,6 @@
     "responses": 27,
     "sourceFile": "Post-Meeting Survey.csv"
   },
-  "2026-Q3 South": {
-    "avgAttendees": 65,
-    "byCategory": {
-      "Meeting logistics": 4.53,
-      "Overall value": 4.67,
-      "Presentation": 4.38
-    },
-    "generated": "2026-11-11T16:02:46+00:00",
-    "responseRate": 0.23076923076923078,
-    "responses": 15,
-    "sourceFile": "Post-Meeting Survey.csv"
-  },
   "2026-Q3 Southern": {
     "avgAttendees": 65,
     "byCategory": {
