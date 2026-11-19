@@ -87,6 +87,17 @@
   .rt-body:empty::before { content:attr(data-placeholder); color:var(--text-muted); }
   .rt-body ul { margin:4px 0; padding-left:22px; }
   .rt-body span[style*="background"], .rt-body mark { border-radius:3px; color:inherit; }
+  /* Conditional follow-ups: "If the respondent ..., then ask ..." */
+  .rules { display:flex; flex-direction:column; gap:8px; }
+  .rule-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:start;
+              padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--page); }
+  .rule-line { display:grid; grid-template-columns:118px minmax(0,1fr); gap:8px; align-items:center; }
+  .rule-line + .rule-line { margin-top:6px; }
+  .rule-kw { font-size:12.5px; font-weight:600; color:var(--text-secondary); }
+  .rule-row input { padding:7px 9px; }
+  .add-rule-btn { margin-top:8px; }
+  .rules-hint { display:block; }
+  @media (max-width:560px) { .rule-line { grid-template-columns:1fr; gap:3px; } }
   .followup-field { display:flex; align-items:center; gap:8px; }
   .followup-field input { width:70px; }
   .check-row { display:flex; align-items:center; gap:8px; padding:8px 10px; font-size:13px;
@@ -471,11 +482,17 @@
       '<button type="button" class="small ghost remove-q-btn" data-index="' + i + '">Remove</button>' +
       "</div></div>" +
       '<label>Question text</label>' + richEditorHtml() +
-      '<label>Follow-up questions</label>' +
+      '<label>Follow-ups when an answer is unclear</label>' +
       '<div class="followup-field"><input type="number" class="q-followups" min="0" max="5" value="0">' +
-      '<span class="msg muted">how many Claude should generate, 0-5</span></div>' +
+      '<span class="msg muted">the most Claude may ask, 0-5. It asks only when an answer leaves out something specific.</span></div>' +
       '<label>Context for follow-ups</label>' +
       '<textarea class="q-context" placeholder="Guidance for the follow-up question(s) -- optional"></textarea>' +
+      '<label>Conditional follow-ups</label>' +
+      '<div class="rules">' + (allQuestions[i].followUpRules || []).map(ruleRowHtml).join("") + '</div>' +
+      ((allQuestions[i].followUpRules || []).length < MAX_RULES
+        ? '<button type="button" class="small ghost add-rule-btn" data-index="' + i + '">+ Add a condition</button>' : "") +
+      '<span class="msg muted rules-hint">Asked only when the condition is met, at most once each, on top of the number above. ' +
+      'For example: if the respondent says yes but not what they would add, then ask what they would add or remove.</span>' +
       '<label>Claude Analyze</label>' +
       '<select class="q-claude-analyze">' +
       '<option value="yes">Yes -- synthesize themes for this question</option>' +
@@ -574,13 +591,48 @@
     document.execCommand("insertText", false, (e.clipboardData || window.clipboardData).getData("text/plain"));
   });
 
+  // ---- Conditional follow-ups. Each rule: when the respondent's answer meets "when", Claude asks
+  // the follow-up "ask" describes, once. Ids are made here so a rule keeps its id across saves.
+  var MAX_RULES = 3;
+  function ruleRowHtml(r) {
+    return '<div class="rule-row" data-rule="' + esc(r.id) + '"><div>' +
+      '<div class="rule-line"><span class="rule-kw">If the respondent</span>' +
+      '<input type="text" class="r-when" maxlength="400" aria-label="If the respondent" value="' + esc(r.when) + '" ' +
+      'placeholder="says yes but doesn\'t say what they would add or remove"></div>' +
+      '<div class="rule-line"><span class="rule-kw">then ask</span>' +
+      '<input type="text" class="r-ask" maxlength="400" aria-label="Then ask" value="' + esc(r.ask) + '" ' +
+      'placeholder="what they would add or remove, and why"></div>' +
+      '</div><button type="button" class="small ghost r-remove" aria-label="Remove this condition">Remove</button></div>';
+  }
+  function readRules(card) {
+    return Array.prototype.map.call(card.querySelectorAll(".rule-row"), function (row) {
+      return { id: row.dataset.rule, when: row.querySelector(".r-when").value, ask: row.querySelector(".r-ask").value };
+    });
+  }
+  el("questionsList").addEventListener("click", function (e) {
+    var add = e.target.closest(".add-rule-btn");
+    var remove = e.target.closest(".r-remove");
+    if (!add && !remove) return;
+    var card = e.target.closest(".question-card");
+    var index = Number(card.dataset.index);
+    questions = syncFromDom();
+    var rules = questions[index].followUpRules;
+    if (add && rules.length < MAX_RULES) rules.push({ id: "r-" + crypto.randomUUID().slice(0, 8), when: "", ask: "" });
+    if (remove) rules.splice(Array.prototype.indexOf.call(card.querySelectorAll(".rule-row"), remove.closest(".rule-row")), 1);
+    renderQuestions();
+    if (add) {
+      var rows = el("questionsList").querySelectorAll('.question-card[data-index="' + index + '"] .rule-row');
+      rows[rows.length - 1].querySelector(".r-when").focus();
+    }
+  });
+
   function renderQuestions() {
     el("questionsList").innerHTML = questions.map(function (q, i) { return questionRowHtml(i, questions); }).join("");
     var cards = el("questionsList").querySelectorAll(".question-card");
     cards.forEach(function (card, i) {
       setRich(card.querySelector(".q-text"), questions[i]);
       card.querySelector(".q-followups").value = questions[i].followUps;
-      card.querySelector(".q-context").value = questions[i].context;
+      card.querySelector(".q-context").value = questions[i].context || "";
       card.querySelector(".q-claude-analyze").value = questions[i].claudeAnalyze === false ? "no" : "yes";
       var checked = questions[i].personalizeFrom || [];
       Array.prototype.forEach.call(card.querySelectorAll(".q-personalize-from"), function (box) {
@@ -662,6 +714,7 @@
         html: card.querySelector(".q-text").innerHTML,
         followUps: Number(card.querySelector(".q-followups").value) || 0,
         context: card.querySelector(".q-context").value,
+        followUpRules: readRules(card),
         personalizeFrom: checkedPersonalizeFrom(card),
         claudeAnalyze: card.querySelector(".q-claude-analyze").value !== "no",
       });
@@ -690,6 +743,8 @@
         html: card.querySelector(".q-text").innerHTML,
         followUps: Number(card.querySelector(".q-followups").value) || 0,
         context: card.querySelector(".q-context").value.trim(),
+        followUpRules: readRules(card).map(function (r) { return { id: r.id, when: r.when.trim(), ask: r.ask.trim() }; })
+          .filter(function (r) { return r.when || r.ask; }),
         personalizeFrom: checkedPersonalizeFrom(card),
         claudeAnalyze: card.querySelector(".q-claude-analyze").value !== "no",
       });
@@ -699,13 +754,13 @@
 
   el("addQuestionBtn").addEventListener("click", function () {
     questions = collectQuestions();
-    questions.push({ id: crypto.randomUUID(), text: "", followUps: 0, context: "", personalizeFrom: [], claudeAnalyze: true });
+    questions.push({ id: crypto.randomUUID(), text: "", followUps: 0, context: "", followUpRules: [], personalizeFrom: [], claudeAnalyze: true });
     renderQuestions();
   });
 
   function resetBuilder() {
     editingId = null;
-    questions = [{ id: crypto.randomUUID(), text: "", followUps: 0, context: "", personalizeFrom: [], claudeAnalyze: true }];
+    questions = [{ id: crypto.randomUUID(), text: "", followUps: 0, context: "", followUpRules: [], personalizeFrom: [], claudeAnalyze: true }];
     chosenFolder = { id: null, name: null };
     el("surveyName").value = "";
     el("surveyObjective").value = "";
@@ -736,6 +791,7 @@
         var personalizeFrom = Array.isArray(q.personalizeFrom) ? q.personalizeFrom
           : (q.personalizeFrom ? [q.personalizeFrom] : []);
         return { id: q.id, text: q.text, html: q.html || "", followUps: q.followUps, context: q.context,
+                 followUpRules: q.followUpRules || [],
                  personalizeFrom: personalizeFrom, claudeAnalyze: q.claudeAnalyze !== false };
       });
       chosenFolder = { id: survey.boxFolderId, name: survey.boxFolderName };
@@ -775,6 +831,14 @@
     };
     if (!body.name) { el("saveMsg").className = "msg err"; el("saveMsg").textContent = "Give the survey a name."; return; }
     if (!body.questions.length) { el("saveMsg").className = "msg err"; el("saveMsg").textContent = "Add at least one question."; return; }
+    // A condition with only one half filled in would be dropped on save, so say so instead.
+    var halfRule = -1;
+    body.questions.forEach(function (q, n) { if (halfRule < 0 && q.followUpRules.some(function (r) { return !r.when || !r.ask; })) halfRule = n; });
+    if (halfRule >= 0) {
+      el("saveMsg").className = "msg err";
+      el("saveMsg").textContent = "Question " + (halfRule + 1) + " has a condition missing its \"If\" or its \"then ask\". Finish it or remove it.";
+      return;
+    }
     el("saveBtn").disabled = true;
     el("saveMsg").className = "msg muted";
     el("saveMsg").textContent = "Saving…";
