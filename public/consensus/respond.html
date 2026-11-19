@@ -186,7 +186,8 @@
   var currentQuestion = null;
   var currentQuestionDisplayedText = ""; // what was actually shown for the current
     // question -- its static text, or a personalized rewrite of it (see startQuestion())
-  var currentTurns = []; // this question's [{turn, prompt, answer}] so far
+  var currentTurns = []; // this question's [{turn, prompt, answer, rule}] so far; rule = the author's
+    // conditional follow-up that asked this prompt, if one did, so it is never asked twice
   var allResponses = []; // completed questions' {questionId, questionText, turns}
 
   // ---- Finish later. Answers are saved on the server after every question and follow-up
@@ -206,7 +207,8 @@
   function saveProgress(pendingPrompt) {
     var draft = { completed: allResponses, current: currentQuestion ? {
       questionId: currentQuestion.id, displayedText: currentQuestionDisplayedText, pendingPrompt: pendingPrompt,
-      turns: currentTurns.map(function (t) { return { turn: t.turn, prompt: t.prompt, answer: t.answer }; }),
+      pendingRule: currentTurns.length ? currentTurns[currentTurns.length - 1].nextRule || "" : "",
+      turns: currentTurns.map(function (t) { return { turn: t.turn, prompt: t.prompt, answer: t.answer, rule: t.rule || "" }; }),
     } : null };
     el("saveStatus").textContent = "Saving…";
     saving = fetch("/api/consensus/progress", {
@@ -344,8 +346,9 @@
       currentQuestion = survey.questions[qIndex];
       currentQuestionDisplayedText = cur.displayedText;
       currentTurns = (cur.turns || []).map(function (t, i, all) {
-        return { turn: i, prompt: t.prompt, answer: t.answer,
-                 nextPrompt: i + 1 < all.length ? all[i + 1].prompt : cur.pendingPrompt };
+        return { turn: i, prompt: t.prompt, answer: t.answer, rule: t.rule || "",
+                 nextPrompt: i + 1 < all.length ? all[i + 1].prompt : cur.pendingPrompt,
+                 nextRule: i + 1 < all.length ? all[i + 1].rule || "" : cur.pendingRule || "" };
       });
       updateProgressUI(qIndex);
       currentTurns.forEach(function (t) { addBubble("bot", t.prompt); addBubble("user", t.answer); });
@@ -361,15 +364,16 @@
     if (!answer) return;
     addBubble("user", answer);
     el("composer").hidden = true;
-    var prompt = currentTurns.length ? currentTurns[currentTurns.length - 1].nextPrompt : currentQuestionDisplayedText;
-    currentTurns.push({ turn: currentTurns.length, prompt: prompt, answer: answer });
+    var last = currentTurns[currentTurns.length - 1];
+    var prompt = last ? last.nextPrompt : currentQuestionDisplayedText;
+    currentTurns.push({ turn: currentTurns.length, prompt: prompt, answer: answer, rule: last ? last.nextRule || "" : "" });
 
     var typing = addTyping();
     fetch("/api/consensus/followup", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
         surveyId: surveyId, questionId: currentQuestion.id,
-        priorAnswers: currentTurns.map(function (t) { return { prompt: t.prompt, answer: t.answer }; }),
+        priorAnswers: currentTurns.map(function (t) { return { prompt: t.prompt, answer: t.answer, rule: t.rule || "" }; }),
         completed: allResponses,
       }),
     }).then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error); return b; }); })
@@ -384,6 +388,7 @@
           return;
         }
         currentTurns[currentTurns.length - 1].nextPrompt = data.followUp;
+        currentTurns[currentTurns.length - 1].nextRule = data.rule || "";
         askCurrentPrompt(data.followUp, true);
       })
       .catch(function (e) {

@@ -589,6 +589,90 @@ test("consensus: a message taller than the chat is shown from its top (bug: it o
   assert.equal(short.scrollTop, 1500, "a message that fits is shown at the bottom, as before");
 });
 
+/* Conditional follow-ups ("if the respondent ..., then ask ...") and the judgement follow-up. */
+async function rulesSurvey(question) {
+  const { env, token } = await signedInEnv();
+  env.consensus_claude_api = "k";
+  const created = await (await handleConsensusApi("surveys", jsonReq("/api/consensus/surveys", "POST", {
+    name: "INDOT", objective: "Hear what members think of INDOT's plan", questions: [question],
+  }, token), env)).json();
+  return { env, survey: created.survey, q: created.survey.questions[0] };
+}
+const INDOT_Q = "INDOT wants to reduce congestion by improving freight bottlenecks, adding capacity, upgrading intersections and exploring managed lanes. Anything you would add or remove?";
+const YES_RULE = { id: "r-yes", when: "says yes but not what they would add or remove", ask: "what they would add or remove" };
+// Claude's decision, as the follow-up route receives it.
+const decide = (input, sent) => (url, init) => {
+  sent.push(JSON.parse(init.body));
+  return okJson({ content: [{ type: "tool_use", name: "ask_follow_up", input }] });
+};
+const followUp = (env, survey, q, priorAnswers) => handleConsensusApi("followup",
+  jsonReq("/api/consensus/followup", "POST", { surveyId: survey.id, questionId: q.id, priorAnswers, completed: [] }), env)
+  .then((r) => r.json());
+
+test("consensus: conditional follow-ups are saved whole, at most three, and never shown to respondents", async () => {
+  const { env, survey, q } = await rulesSurvey({ text: INDOT_Q, followUps: 0, followUpRules: [
+    YES_RULE, { when: "half a rule" }, { id: "r-yes", when: "a duplicate id", ask: "x" },
+    { when: "b", ask: "b" }, { when: "c", ask: "c" }, { when: "d", ask: "d" }] });
+  assert.equal(q.followUpRules.length, 3, "three rules at most; one missing its ask and one repeating an id are dropped");
+  assert.deepEqual(q.followUpRules[0], YES_RULE);
+  assert.match(q.followUpRules[1].id, /^r-[0-9a-f]{8}$/, "a rule without an id gets one");
+  const pub = JSON.stringify(await (await handleConsensusApi(`public/${survey.id}`, req(`/api/consensus/public/${survey.id}`), env)).json());
+  assert.ok(!pub.includes("what they would add or remove"), "a rule is the author's private guidance");
+});
+
+test("consensus: a rule asks its follow-up when its condition is met, even with no follow-ups set", async () => {
+  const { env, survey, q } = await rulesSurvey({ text: INDOT_Q, followUps: 0, followUpRules: [YES_RULE] });
+  const sent = [];
+  const out = await withFetch(decide({ rule: "r-yes", gap: "what they would change", needsFollowUp: true,
+    followUpQuestion: "What would you add or remove?" }, sent), () => followUp(env, survey, q, [{ prompt: INDOT_Q, answer: "Yes" }]));
+  assert.deepEqual(out, { followUp: "What would you add or remove?", rule: "r-yes", turn: 1 });
+  const tool = sent[0].tools[0];
+  assert.equal(tool.strict, true);
+  assert.deepEqual(tool.input_schema.properties.rule.enum, ["r-yes", "none"]);
+  assert.match(sent[0].messages[0].content, /id r-yes: if the respondent says yes but not what they would add or remove, ask: what they would add or remove/);
+  assert.match(sent[0].system, /Your own judgement: not allowed now/, "with 0 follow-ups set, only a rule can ask");
+});
+
+test("consensus: with no follow-ups set, a judgement follow-up is refused even if Claude asks one", async () => {
+  const { env, survey, q } = await rulesSurvey({ text: INDOT_Q, followUps: 0, followUpRules: [YES_RULE] });
+  const out = await withFetch(decide({ rule: "none", gap: "which intersections", needsFollowUp: true,
+    followUpQuestion: "Which intersections?" }, []), () => followUp(env, survey, q, [{ prompt: INDOT_Q, answer: "I'd remove upgrading intersections" }]));
+  assert.deepEqual(out, { done: true });
+});
+
+test("consensus: a rule is asked once, and nothing is left to ask after it", async () => {
+  const { env, survey, q } = await rulesSurvey({ text: INDOT_Q, followUps: 0, followUpRules: [YES_RULE] });
+  let calls = 0;
+  const out = await withFetch(() => { calls++; return okJson({}); }, () => followUp(env, survey, q, [
+    { prompt: INDOT_Q, answer: "Yes" }, { prompt: "What would you add or remove?", answer: "Add transit", rule: "r-yes" }]));
+  assert.deepEqual(out, { done: true });
+  assert.equal(calls, 0, "no Claude call when no rule and no judgement follow-up is left");
+});
+
+test("consensus: a judgement follow-up must name what is missing (bug: with 1 allowed, Claude asked one after an answer that said everything)", async () => {
+  const { env, survey, q } = await rulesSurvey({ text: INDOT_Q, followUps: 1 });
+  const sent = [];
+  const out = await withFetch(decide({ rule: "none", gap: "", needsFollowUp: true,
+    followUpQuestion: "Could you tell me more about that?" }, sent), () => followUp(env, survey, q, [{ prompt: INDOT_Q, answer: "No" }]));
+  assert.deepEqual(out, { done: true }, "a follow-up with no gap named is not asked");
+  assert.match(sent[0].system, /Being allowed a follow-up is never a reason to ask one/);
+  assert.match(sent[0].system, /a bare \"yes\" to \"anything you would add or remove\?\"/, "a yes that does not say what is a gap");
+  assert.match(sent[0].system, /I'd remove upgrading intersections/, "a brief answer that says what is not");
+  const asked = await withFetch(decide({ rule: "none", gap: "what they would add", needsFollowUp: true,
+    followUpQuestion: "What would you add?" }, []), () => followUp(env, survey, q, [{ prompt: INDOT_Q, answer: "Yes" }]));
+  assert.deepEqual(asked, { followUp: "What would you add?", rule: "", turn: 1 });
+});
+
+test("consensus: saved progress keeps which rule asked each follow-up, so a rule is not asked twice after resuming", async () => {
+  const { env, survey, q } = await rulesSurvey({ text: INDOT_Q, followUps: 1, followUpRules: [YES_RULE] });
+  const saved = await (await handleConsensusApi("progress", jsonReq("/api/consensus/progress", "POST", { surveyId: survey.id, draft: {
+    completed: [], current: { questionId: q.id, displayedText: INDOT_Q, pendingPrompt: "And why?", pendingRule: "r-yes",
+      turns: [{ turn: 0, prompt: INDOT_Q, answer: "Yes", rule: "" }, { turn: 1, prompt: "What would you add?", answer: "Transit", rule: "r-yes" }] } } }), env)).json();
+  const back = await (await handleConsensusApi(`progress/${survey.id}/${saved.token}`, req(`/api/consensus/progress/${survey.id}/${saved.token}`), env)).json();
+  assert.equal(back.draft.current.pendingRule, "r-yes");
+  assert.deepEqual(back.draft.current.turns.map((t) => t.rule || ""), ["", "r-yes"]);
+});
+
 test("consensus: a survey needs a name and at least one question", async () => {
   const { env, token } = await signedInEnv();
   for (const body of [{ name: "", questions: [{ text: "q" }] }, { name: "x", questions: [] }]) {
