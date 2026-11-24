@@ -1,430 +1,739 @@
 {
-  "generatedAt": "2026-11-12T19:29:12+00:00",
+  "generatedAt": "2026-11-24T15:07:36+00:00",
   "questions": [
     {
-      "consensus": [],
+      "consensus": [
+        "All respondents completed this required step by submitting a valid email address."
+      ],
       "id": "269606ae-8036-438d-becb-e21c9765c6d3",
       "needsMoreInfo": [
-        "Only one respondent provided an email address; no substantive feedback on freight strategies was collected in this question to analyze for themes."
+        "No actual feedback on freight strategies was captured in this question; substantive input is needed from later questions."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "INDOT is drafting its 2027 State Freight Plan and wants input from industry. This survey walks you through the draft freight strategies and asks for your feedback.\n\nTo get started, please enter your email address.",
-      "themes": []
+      "themes": [
+        {
+          "deepDive": "Since this question only served as a gateway to capture identity/contact info before the actual survey content, there is no thematic content to analyze in terms of opinions or priorities. The diversity of email domains suggests a good cross-section of the intended Freight Advisory Committee audience (manufacturers, railroads, regional planning organizations, consultants) participated. Any real thematic analysis of freight priorities will need to come from subsequent questions in the survey.",
+          "details": [
+            "All six respondents simply provided a valid work email address.",
+            "No opinions, ratings, or comments on INDOT's freight strategies were given at this stage.",
+            "Responses came from a mix of logistics, manufacturing, and planning-related organizations (e.g. Toyota, Anacostia, Corradino, OKI)."
+          ],
+          "summary": "This was an email-collection step, not substantive feedback."
+        }
+      ]
     },
     {
       "consensus": [
-        "The single respondent agrees with INDOT's proposed congestion-reduction strategies as listed."
+        "Majority are satisfied with the proposed mobility/reliability strategies and see no need to remove anything.",
+        "No respondent opposed any of the four listed strategies."
       ],
       "id": "a2d7eb31-486d-4e6a-97e5-b4d0417c7fde",
       "needsMoreInfo": [
-        "Only one response was received, so broader committee sentiment is unknown.",
-        "No detail was given on which specific elements (bottlenecks, capacity, intersections, managed lanes/TSMO) matter most to stakeholders.",
-        "Unclear if silence on additions/removals reflects full satisfaction or lack of engagement with the question."
+        "Unclear how INDOT would operationalize suggesting rail/multimodal options to companies (e.g., incentives, funding conditions).",
+        "Not clear whether the HOV/express lane suggestion is meant as a replacement for or addition to the existing 'managed lanes' strategy.",
+        "No detail on which specific corridors or bottlenecks respondents consider highest priority."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "On the topic of mobility and reliability:\n\nINDOT wants to reduce congestion by\n- Improving freight bottlenecks\n- Adding capacity in targeted corridors\n- Upgrading intersections\n- Exploring managed lanes and TSMO/ITS strategies.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent providing a short affirmative answer ('Looks good'), there is no substantive feedback to analyze for nuance or tension. More responses would be needed to identify specific priorities, concerns, or suggested changes to the proposed strategies.",
+          "deepDive": "The lack of pushback suggests the core framework is well-aligned with industry expectations and doesn't need major rethinking. The additions that did come up (rail, multimodal suggestions, HOV/express lanes) were supplemental rather than corrective, indicating respondents see these as enhancements rather than fixes to flaws.",
           "details": [
-            "No additions or removals were suggested.",
-            "Response was brief and did not raise concerns."
+            "Four of six respondents gave a simple 'no' with nothing to add or remove.",
+            "No one objected to any of the listed strategies (bottlenecks, capacity, intersections, managed lanes/TSMO/ITS)."
           ],
-          "summary": "The sole respondent expressed general agreement with INDOT's proposed mobility and reliability strategies."
+          "summary": "Most respondents support INDOT's proposed mobility and reliability strategies as-is."
+        },
+        {
+          "deepDive": "This theme points to a gap in the original proposal, which is entirely road-focused (bottlenecks, corridors, intersections, managed lanes). Two separate respondents independently raised multimodal/rail considerations, suggesting a shared view that congestion relief shouldn't rely solely on highway infrastructure. There's an implicit suggestion that INDOT could use its influence (e.g., funding requests tied to new developments) as leverage to shift some freight to rail, which would reduce truck volume and ease congestion indirectly.",
+          "details": [
+            "One respondent suggests INDOT nudge companies toward non-truck freight modes when funding or development opportunities arise.",
+            "Another explicitly calls for rail to be considered given available capacity and industry willingness."
+          ],
+          "summary": "Multiple respondents want INDOT to actively promote rail and multimodal freight movement, not just highway fixes."
+        },
+        {
+          "deepDive": "While INDOT's draft already mentions 'exploring managed lanes,' this respondent's call-out of HOV/express lanes specifically suggests they'd like more concrete commitment rather than just exploratory language. This is a single data point and may overlap conceptually with the existing managed lanes strategy, but it signals an appetite for more specificity in that part of the plan.",
+          "details": [
+            "This is a distinct, concrete suggestion rather than a modification of the 'managed lanes' concept already listed.",
+            "Only one respondent raised this specific idea."
+          ],
+          "summary": "One respondent recommends adding dedicated HOV or express lanes as a specific congestion-reduction tool."
         }
       ]
     },
     {
       "consensus": [
-        "The single respondent did not object to any of the four proposed reliability measures."
+        "No one called for removing any of the four proposed reliability measures.",
+        "Half of respondents offered no changes, indicating general acceptance of the current approach."
       ],
       "id": "59417dc7-f908-439f-ab5d-023bcd724cfe",
       "needsMoreInfo": [
-        "No substantive feedback yet on whether work-zone coordination, truck detour planning, real-time alerts, and freight performance monitoring are sufficient or need refinement.",
-        "Only one respondent has answered; broader committee input is needed to identify themes or disagreements.",
-        "Unclear if silence on content signals agreement or simply incomplete review."
+        "Unclear whether the 'no' responses reflect strong endorsement or simply low engagement with the question.",
+        "No detail on how a cross-agency coordination board would be funded, staffed, or governed.",
+        "No specifics on what form 'new communication opportunities' with private freight operators should take (app, alert system, etc.).",
+        "No elaboration on what rail investments or policies INDOT could directly influence given it's a road-focused agency."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Staying on the topic of mobility and reliability:\n\nINDOT also wants to improve reliability through\n- Better work-zone coordination\n- Truck detour planning\n- Teal-time restriction alerts\n- Freight performance monitoring.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one response and it being a proofreading note, there's no actual feedback yet on the substance of INDOT's four proposed reliability measures (work-zone coordination, truck detour planning, real-time restriction alerts, freight performance monitoring). This suggests either strong implicit agreement with the list as-is, or simply that this respondent didn't have time/input to engage deeply. More responses are needed to validate whether the committee broadly supports these four initiatives.",
+          "deepDive": "This majority silence suggests the four proposed measures (work-zone coordination, truck detour planning, real-time alerts, freight performance monitoring) are broadly seen as sufficient or uncontroversial. However, the lack of detailed feedback from this group makes it hard to confirm enthusiasm versus simple lack of engagement with the question.",
           "details": [
-            "Respondent flagged 'Teal-time' should read 'real-time' restriction alerts.",
-            "No other content changes, additions, or deletions were proposed."
+            "Half of the six respondents (3 of 6) simply answered 'no' with no additions or removals.",
+            "No one suggested removing any of the four listed initiatives."
           ],
-          "summary": "The only feedback received was a typo correction, with no substantive additions or removals suggested."
+          "summary": "Most respondents are satisfied with the proposed reliability measures as-is."
+        },
+        {
+          "deepDive": "This response pushes the concept of 'work-zone coordination' further than INDOT's internal scope, implying that reliability problems often stem from a lack of alignment between different levels of government rather than within INDOT itself. It suggests that without formal cross-agency structures, well-intentioned coordination efforts may still fail at jurisdictional boundaries.",
+          "details": [
+            "One respondent proposed a joint commission or board spanning city, county, state, and federal DOTs.",
+            "The goal is to stop multiple simultaneous projects from compounding traffic disruption.",
+            "This extends the 'work-zone coordination' idea beyond INDOT alone to a multi-agency governance structure."
+          ],
+          "summary": "A few respondents want better cross-agency and cross-jurisdiction coordination to prevent overlapping or conflicting projects."
+        },
+        {
+          "deepDive": "These are two distinct but complementary suggestions: one is tactical (better emergency communication channels to private carriers), the other more strategic (shifting freight modal mix toward rail to reduce reliability burdens on roads). The rail suggestion echoes a broader theme likely raised elsewhere in the survey about modal diversification, not just operational fixes.",
+          "details": [
+            "One respondent wants new channels for INDOT to share real-time emergency info (weather, crashes) directly with private freight operators.",
+            "Another argues increased rail use should be emphasized to reduce road congestion, wear, and taxpayer-funded road costs.",
+            "Both represent additions to the existing list rather than changes to current items."
+          ],
+          "summary": "Respondents want INDOT to expand communication and consider rail as part of the reliability strategy."
         }
       ]
     },
     {
       "consensus": [
-        "Only one response was provided, so no cross-respondent consensus can be established."
+        "The majority have no objections to INDOT's four listed intermodal priorities.",
+        "No respondent suggested removing any of the proposed items.",
+        "Rail connectivity and partnerships are viewed positively where commented on."
       ],
       "id": "6544b531-4c64-4cbe-9a52-84e6aefe2636",
       "needsMoreInfo": [
-        "What specific capabilities or investments would make Indiana competitive with the Port of Chicago?",
-        "Does the respondent want to add this as a new priority or reframe existing bullet points?",
-        "No other respondents weighed in, so broader committee sentiment on this list is unknown."
+        "Unclear how INDOT would implement or fund brownfield redevelopment support, since that's a new idea from one respondent.",
+        "No detail on which specific ports, airports, or rail yards are priority connection points.",
+        "Limited elaboration overall, since most respondents gave single-word answers without reasoning."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "And finally on the topic of mobility and reliability:\n\nINDOT also wants to make moving goods between modes more efficient by '\n- Improving access to intermodal terminals\n- Strengthening rail yard connectivity\n- Improving links to ports and airports\n- Building freight transfer partnerships.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one response, this is a directional comment rather than a detailed proposal. It implies that improving access to ports and intermodal terminals shouldn't just be about internal efficiency gains, but about capturing freight volume that might otherwise flow through Chicago. More detail would be needed on what specific advantages (cost, speed, capacity) would make Indiana competitive.",
+          "deepDive": "The strong majority response was a flat 'no' or 'nothing to add,' suggesting the proposed list of intermodal, rail yard, port/airport, and partnership priorities already captures the committee's key concerns. This near-unanimous non-response makes it hard to identify additional nuance, but it does signal the current framing is broadly acceptable to this group.",
           "details": [
-            "The single respondent framed multimodal improvements through a competitive lens rather than just internal efficiency.",
-            "Suggests benchmarking INDOT's intermodal and port strategy against a major regional rival."
+            "Four of six respondents simply answered no or had nothing to add/remove.",
+            "No one suggested removing any of the four listed priorities."
           ],
-          "summary": "Indiana should position its freight infrastructure to compete with the Port of Chicago."
+          "summary": "Most committee members support INDOT's multimodal priorities as written, with no changes requested."
+        },
+        {
+          "deepDive": "This response reinforces the 'strengthening rail yard connectivity' and 'freight transfer partnerships' bullets already in INDOT's plan, rather than introducing a new idea, but it elevates rail as the most impactful mode to prioritize within the broader list. The environmental angle is a distinct justification not mentioned by other respondents, suggesting sustainability could be a secondary selling point for rail investment.",
+          "details": [
+            "One respondent explicitly endorsed rail partnerships as reducing traffic and construction costs.",
+            "Environmental benefits were cited as an added reason to prioritize rail connectivity."
+          ],
+          "summary": "Rail partnerships are seen as a high-value lever for cost, congestion, and environmental benefits."
+        },
+        {
+          "deepDive": "This is a distinct, concrete addition not echoed by other respondents, pointing to a potential gap in INDOT's current framing: the plan focuses on connectivity improvements but doesn't address land reuse policy. Tying brownfield redevelopment incentives to existing freight assets could reduce the need for new infrastructure investment while reactivating underused industrial land. It's unclear how this would integrate with INDOT's own authority versus economic development agencies, which may need clarification.",
+          "details": [
+            "Suggests prioritizing reuse of sites with existing river/lake, rail, pipeline, NHS, or airport access.",
+            "Framed as a way to leverage existing infrastructure rather than build new."
+          ],
+          "summary": "One respondent wants INDOT to support brownfield redevelopment of former industrial sites that already have freight infrastructure in place."
         }
       ]
     },
     {
-      "consensus": [],
+      "consensus": [
+        "No one objected to any of the four listed priorities (rural-to-urban corridors, industrial access, last-mile truck routes, truck-ready intersections)."
+      ],
       "id": "3397c24b-2b9d-4f22-a18c-596fe0de1bda",
       "needsMoreInfo": [
-        "Only one response was received, so it's unclear if broadband in RoW is a shared priority among committee members.",
-        "Unclear how broadband in INDOT RoW connects to freight-specific goals versus general economic/digital infrastructure development.",
-        "No feedback was given on the four original proposed strategies (rural-to-urban corridors, industrial site access, last-mile routes, truck-ready intersections) -- agreement or disagreement with these is unknown."
+        "Unclear whether 'rail/multimodal facilities' suggestion is about freight rail, passenger rail, or both.",
+        "No detail on where specifically rail or light-rail investment would have the most impact.",
+        "Majority gave no rationale for their satisfaction with the plan as presented, making it hard to gauge depth of review."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Now moving on to the topic of accessibility and connectivity:\n\nINDOT wants to better connect urban centers to each other and to rural areas by\n- Upgrading rural-to-urban corridors\n- Improving access to industrial sites\n- Establishing last-mile truck routes\n- Making intersections truck-ready.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent, this is a single data point rather than a trend, but it raises an interesting idea: INDOT's right-of-way could serve a dual purpose for physical freight connectivity and digital infrastructure. It's unclear whether this is meant to support freight operations (e.g., telematics, smart intersections) or is a broader economic development suggestion unrelated to freight movement. More input from other committee members would clarify whether this is a shared priority or an outlier idea.",
+          "deepDive": "The lack of pushback suggests the proposed framework (rural-to-urban corridors, industrial site access, last-mile truck routes, truck-ready intersections) aligns well with committee members' priorities as currently stated. This could mean the plan is comprehensive, or it could mean respondents didn't have specific expertise or strong opinions to contribute additional detail here.",
           "details": [
-            "Respondent suggested leveraging INDOT right-of-way (RoW) for broadband deployment.",
-            "This goes beyond the four listed freight/road priorities into digital connectivity."
+            "Four of six respondents gave a simple no/none with no additions or changes.",
+            "No concerns or objections were raised about the four listed priorities."
           ],
-          "summary": "Expand the scope beyond roads to include broadband infrastructure in INDOT right-of-way."
+          "summary": "Most respondents are satisfied with INDOT's proposed accessibility and connectivity plan as-is."
+        },
+        {
+          "deepDive": "These two suggestions point in a similar direction: expanding beyond a truck-and-road-centric plan to include rail and transit infrastructure. One frames it around freight efficiency (rail/multimodal facilities aiding last-mile delivery), while the other frames it more broadly around inter-urban passenger/transportation systems like light-rail. Together they hint at an appetite for a more diversified, multimodal connectivity strategy rather than one focused solely on trucking corridors and intersections.",
+          "details": [
+            "One respondent suggested strategically located rail/multimodal facilities to support last-mile options.",
+            "Another suggested revisiting light-rail and other inter-urban transportation systems."
+          ],
+          "summary": "A couple of respondents want multimodal options -- rail and light-rail -- added to the connectivity mix, not just truck/highway solutions."
         }
       ]
     },
     {
       "consensus": [
-        "The single respondent agrees with INDOT's proposed list of improvements as sufficient."
+        "No one proposed removing any of the four listed priorities.",
+        "Half of respondents are fully satisfied with the plan as written."
       ],
       "id": "27433fd7-9c96-4fbc-9301-8cfab1d0fc8a",
       "needsMoreInfo": [
-        "Only one response was received, so broader committee sentiment is unknown.",
-        "No detail on which specific element (intermodal connectors, airport cargo, port/rail, oversize load routing) matters most.",
-        "Unclear if silence on additions means full agreement or just no immediate concerns."
+        "Whether other committee members share the interest in emerging vehicle technologies (EV, autonomous, AAM) or regional air cargo expansion.",
+        "Whether port/rail access should formally be elevated as the top priority among the four, or if that was an isolated opinion.",
+        "No specifics given on which intermodal connectors or oversize load routing issues, if any, need attention."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Staying on the topic of accessibility and connectivity:\n\nINDOT also wants to improve access to trade markets and intermodal facilities by\n- Upgrading intermodal connectors\n- Improving airport cargo access\n- Improving port and rail access\n- Coordinating routes for oversize loads.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent and a brief affirmative answer, there isn't enough detail to identify nuance, tension, or specific priority ranking within the proposed list. More respondents would be needed to confirm whether this reflects broader committee consensus.",
+          "deepDive": "The baseline reaction to this question was broad acceptance rather than pushback, suggesting the four stated priorities (intermodal connectors, airport cargo, port/rail access, oversize load routing) already cover the key concerns of most committee members. This is in contrast to other questions in the survey where respondents offered more additions, indicating this particular freight access framework is seen as fairly complete.",
           "details": [
-            "No additions or removals were suggested.",
-            "Feedback was a simple affirmation ('Looks good')."
+            "Three of six respondents simply answered 'No' with no changes suggested.",
+            "A fourth respondent explicitly agreed with the plan as stated.",
+            "No respondent proposed removing any of the four listed priorities."
           ],
-          "summary": "The respondent fully supports INDOT's proposed intermodal and trade access priorities as-is."
+          "summary": "Most respondents are satisfied with INDOT's proposed list as-is."
+        },
+        {
+          "deepDive": "These two respondents diverge from the 'no changes' consensus by pointing to forward-looking investments rather than upgrades to existing infrastructure. One focuses on vehicle technology readiness (EVs, autonomous trucks, AAM) that could require new charging, routing, or regulatory infrastructure. The other focuses on expanding air cargo capacity through smaller regional airports and private carrier incentives, which is a more specific infrastructure play than the plan's general 'airport cargo access' bullet. Together they suggest INDOT's plan may be too narrowly focused on upgrading known infrastructure rather than anticipating future freight modes.",
+          "details": [
+            "One respondent urged INDOT to prepare for electric and alternatively fueled freight vehicles, advanced air mobility (AAM), and driverless trucks.",
+            "Another separately suggested encouraging private-sector short-haul air cargo routes by investing in regional and remote airports.",
+            "Both responses push beyond traditional road/rail/port infrastructure toward newer or less conventional freight modes."
+          ],
+          "summary": "A few respondents want INDOT to future-proof freight infrastructure for emerging vehicle and transport technologies."
+        },
+        {
+          "deepDive": "This was the only direct prioritization offered among the four listed categories, so it's a single data point rather than a broad trend. The respondent's reasoning ties port/rail investment to downstream community and customer benefits, framing it as a higher-leverage investment than the other three categories. No other respondent contradicted or competed with this prioritization, but none corroborated it either.",
+          "details": [
+            "One respondent specifically flagged port and rail access as the area INDOT should prioritize.",
+            "They noted that proper supporting infrastructure here benefits not just ports and railroads but also customers and surrounding communities."
+          ],
+          "summary": "Among those offering a priority, port and rail access stands out as especially high-value."
         }
       ]
     },
     {
       "consensus": [
-        "Only one response was received, so no cross-respondent consensus can be established."
+        "No one proposed removing any of the four listed initiatives.",
+        "There is general support for INDOT's multistate freight coordination approach."
       ],
       "id": "c5fdbd37-8339-4c9d-ae65-d3c415487993",
       "needsMoreInfo": [
-        "Only one respondent answered this question, limiting confidence in how widely shared this view is.",
-        "No detail on which specific aspects of OSOW permitting are problematic (speed, cost, consistency across states, etc.).",
-        "No feedback was given on the other three listed priorities (interstate corridor coordination, cross-border freight planning, regional corridor studies) -- unclear if respondent agrees, is neutral, or has concerns."
+        "Unclear how truck parking coordination would be structured or prioritized across states.",
+        "No detail on which 'technological advancements' should be supported on multistate NHS networks.",
+        "Not clear which additional transportation modes the 'all modes' comment refers to (rail, air, water) or how they'd be integrated into interstate coordination."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "And finally on the topic of accessibility and connectivity:\n\nINDOT also wants to strengthen freight connections with other states through\n- Interstate corridor coordination\n- Cross-border freight planning\n- Regional corridor studies\n- Multistate permit coordination.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one response received, this is the single concrete suggestion offered rather than a broadly validated theme. The respondent didn't elaborate on specific pain points (e.g., timing, cost, inconsistency across states), so it's unclear exactly what 'streamlined' should mean in practice. Given the audience of manufacturing and logistics CEOs, OSOW permitting delays likely reflect real operational friction, but more input is needed to confirm how widespread this concern is.",
+          "deepDive": "The strong majority response suggests the four listed strategies (interstate corridor coordination, cross-border freight planning, regional corridor studies, multistate permit coordination) are seen as comprehensive and well-targeted by most committee members. This may reflect genuine alignment or simply less engagement with this particular topic compared to others in the survey.",
           "details": [
-            "The sole respondent called out OSOW permitting specifically as needing to be simplified.",
-            "This was framed as an addition to INDOT's existing multistate permit coordination efforts."
+            "Four of six respondents gave a simple 'no' or 'nothing to add' response.",
+            "No one suggested removing any of the listed initiatives."
           ],
-          "summary": "Streamline oversize/overweight (OSOW) permitting as part of multistate coordination."
+          "summary": "Most respondents are satisfied with INDOT's proposed multistate freight connectivity strategy as-is."
+        },
+        {
+          "deepDive": "These suggestions point to gaps respondents see beyond highway corridor and permitting coordination -- specifically physical infrastructure needs (truck parking) and future-readiness (technology) that cross state lines. The call to consider 'all modes' suggests some concern that the current framing is too highway/trucking-centric and should explicitly incorporate rail, air, or intermodal connections in multistate planning.",
+          "details": [
+            "One respondent suggested coordinating truck parking efforts across neighboring states.",
+            "The same respondent called for equipping multistate NHS networks for technological advancements.",
+            "Another respondent emphasized ensuring all modes of transportation are considered in interstate coordination."
+          ],
+          "summary": "A couple of respondents want the scope broadened to include truck parking, technology readiness, and all transportation modes."
         }
       ]
     },
     {
       "consensus": [
-        "The one respondent agrees with INDOT's proposed safety priorities as-is."
+        "No respondent objected to any of the four listed INDOT safety priorities.",
+        "A majority (4 of 6) had no changes to suggest, indicating general comfort with the proposed approach."
       ],
       "id": "aa09bbdf-916a-4bb5-8625-01ef8d38a364",
       "needsMoreInfo": [
-        "Only one response was collected, so broader committee sentiment is unknown.",
-        "No detail on which specific priority (intersections, truck-pedestrian conflicts, freight routes, crash data) resonates most or least.",
-        "Unclear if 'looks good' reflects strong enthusiasm or passive approval."
+        "Unclear whether INDOT has jurisdiction over CMV licensing/training, which one respondent raised but wasn't sure about.",
+        "No detail on which 'other modes of transportation' should be encouraged to pull traffic off public roads.",
+        "The I-70 truck restriction idea needs more specifics on scope, timing, and impact on freight efficiency.",
+        "Little direct engagement with crash data improvement or high-crash intersection upgrades specifically -- most feedback addressed broader themes instead."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Now moving on to the topic of safety:\n\nINDOT wants to reduce fatalities and severe injury crashes by\n- Upgrading high-crash intersections\n- Reducing conflicts between trucks and pedestrians\n- Designing safer freight routes\n- Improving crash data.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With just a single respondent simply affirming the plan ('Looks good'), there isn't enough feedback yet to identify nuanced themes or tensions. More responses from other Freight Advisory Committee members would be needed to see if this agreement holds broadly or if others have additions or concerns.",
+          "deepDive": "This broad acceptance suggests the four priorities (high-crash intersections, truck-pedestrian conflicts, safer freight routes, crash data) are seen as a reasonable, non-controversial baseline. However, the lack of elaboration also means there's little validation of which priority matters most to this audience -- the silence could reflect genuine satisfaction or simply low engagement with the question.",
           "details": [
-            "Only one response was received for this question.",
-            "No new ideas, concerns, or removals were suggested."
+            "4 of 6 respondents simply answered \"no\" or \"No\" when asked for changes.",
+            "No one pushed back or objected to any of the four listed priorities."
           ],
-          "summary": "The respondent supports INDOT's proposed safety priorities as presented, with no additions or changes."
+          "summary": "Most respondents support INDOT's proposed safety priorities as-is, with no additions or removals."
+        },
+        {
+          "deepDive": "This theme extends beyond INDOT's listed approach (which focuses on road/intersection design) to a more structural fix: reducing truck volume on certain corridors by diverting freight to rail or dedicated routes. The I-70 suggestion is notably specific and actionable, naming a segment through Indianapolis as a candidate for truck restrictions. This could create tension with freight efficiency goals if truck routes are restricted without adequate alternatives, a tradeoff not addressed by the respondents.",
+          "details": [
+            "One respondent suggests some traffic doesn't need to be on roads and should move to other modes to cut congestion.",
+            "Another specifically proposes dedicated truck routes and using rail, and floats restricting truck traffic on I-70 between I-465 East and West.",
+            "Both frame mode-shift and route restriction as a way to reduce roadway risk rather than just redesign intersections."
+          ],
+          "summary": "Several respondents want to shift freight off congested roads entirely, via dedicated truck routes and greater rail use."
+        },
+        {
+          "deepDive": "This respondent flags uncertainty about INDOT's actual role in CMV licensing, signaling a possible knowledge gap about agency jurisdiction rather than a firm policy ask. The idea pairs workforce development (training future truck drivers) with public behavior change (educating motorists and pedestrians), treating safety as a shared responsibility rather than purely an infrastructure problem.",
+          "details": [
+            "Suggests state involvement in ensuring CMV drivers are well-prepared before licensing, possibly via college/university partnerships.",
+            "Proposes public communication campaigns teaching the public to be \"good traveling companions\" around trucks and at rail grade crossings."
+          ],
+          "summary": "One respondent wants INDOT to invest in the human side of safety -- driver training/licensing and public education campaigns."
         }
       ]
     },
     {
       "consensus": [
-        "The one response treats the rail crossing safety approach as sensible and intuitive."
+        "No respondent objected to any of INDOT's four proposed strategies.",
+        "Among those who gave substantive feedback, there's agreement that eliminating unnecessary/redundant crossings is a valuable safety strategy."
       ],
       "id": "a1b8a89f-3c09-4f0d-8e01-11b9b85d4210",
       "needsMoreInfo": [
-        "Only one respondent answered, so it's unclear how representative this feedback is of the full committee.",
-        "Unclear whether the trucker roadside-sleeping concern should be addressed within this initiative or as a separate truck parking/rest area priority.",
-        "No specific detail on which rail crossings or corridors should be prioritized for safety investment."
+        "What specific incentive structures (funding, grants, etc.) would actually motivate communities to agree to crossing closures?",
+        "How would INDOT identify which crossings are 'redundant' or 'not needed' in practice?",
+        "No feedback was given on prioritization criteria for safety investment, despite it being one of the four listed strategies."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Staying on the topic of safety:\n\nINDOT also wants to make at-grade railroad crossings safer by\n- Upgrading rail crossings\n- Building targeted grade separations\n- Improving warning devices\n- Prioritizing crossings for safety investment.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent, this reflects a single data point rather than broad committee consensus. The lack of pushback suggests the plan is at least not controversial on its face, but more feedback would be needed to confirm wider support.",
+          "deepDive": "The majority view reflects general confidence in INDOT's proposed approach to rail crossing safety. These respondents offered no pushback or refinement, suggesting the plan as presented already covers their priorities or concerns. This leaves the more detailed, substantive feedback concentrated among a minority of respondents who raised the crossing-elimination idea.",
           "details": [
-            "Described the four proposed strategies as 'intuitive.'",
-            "No additions or removals were suggested for the rail crossing items themselves."
+            "4 of 6 respondents simply answered 'no' or 'nothing to add.'",
+            "No one objected to any of the four listed strategies."
           ],
-          "summary": "The sole respondent found INDOT's rail crossing safety plan reasonable and raised no objections to it."
+          "summary": "Most respondents support the plan as-is, with no additions or removals."
         },
         {
-          "deepDive": "This points to a possible gap in INDOT's freight safety priorities around truck parking availability, which can force drivers to stop in unsafe locations. It's unclear if this is meant as an addition to the rail crossing initiative or a separate safety priority altogether. Further clarification would help determine whether this should be folded into freight safety planning more broadly.",
+          "deepDive": "This theme introduces a strategy not explicitly listed in INDOT's original plan: proactive closure of redundant crossings rather than just upgrading or separating them. Both respondents who raised it see it as a cost-effective, high-impact safety measure. The tension is less between respondents and more about implementation: how to overcome the next theme's barrier (community resistance) to actually achieve these closures.",
           "details": [
-            "Raised the issue of truckers sleeping on the sides of roads as a safety hazard.",
-            "This concern falls outside the scope of rail crossing safety, suggesting a broader freight safety topic (truck parking/rest areas)."
+            "One respondent argues removing unneeded crossings is safer even if it adds a few blocks to a driver's route.",
+            "Another frames it bluntly: 'the safest crossing is one that does not exist.'",
+            "This suggests adding crossing elimination/consolidation as an explicit strategy alongside upgrades and separations."
           ],
-          "summary": "The respondent pivoted to a related but distinct safety concern: truck driver safety and roadside sleeping."
+          "summary": "A notable minority want INDOT to actively eliminate redundant or unnecessary crossings, not just upgrade them."
+        },
+        {
+          "deepDive": "This respondent's comment builds directly on the crossing-elimination idea, identifying why it hasn't happened more already: local political and convenience resistance outweighs the safety case. They imply INDOT may need funding mechanisms, grants, or other incentives to make closure more attractive to municipalities than keeping redundant crossings open. This is a specific, actionable gap not addressed in the original four-point plan.",
+          "details": [
+            "One respondent notes communities are 'very hesitant' to close crossings even when several redundant ones exist nearby.",
+            "They call for a 'stronger incentive' (with emphasis on cost/funding) to motivate local closure decisions."
+          ],
+          "summary": "Local community resistance is a real barrier to closing redundant crossings, and stronger incentives are needed."
         }
       ]
     },
     {
       "consensus": [
-        "The single response indicates support for the truck parking plan as proposed."
+        "Broad agreement that the four listed strategies (capacity, rest area modernization, availability info, private partnerships) are sufficient.",
+        "No respondent proposed removing any element of the plan."
       ],
       "id": "4aaaaffa-867c-4967-b39b-678db7cd61eb",
       "needsMoreInfo": [
-        "Only one response was received, so broader committee sentiment is unknown.",
-        "No detail on which of the four strategies (capacity, modernization, info sharing, partnerships) matters most.",
-        "No specific locations, corridors, or pain points were identified for truck parking shortages."
+        "Unclear how INDOT would structure revenue-sharing or incentives with local communities as suggested by Respondent 2.",
+        "Not clear whether the lack of added suggestions reflects full satisfaction or limited engagement with the topic."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "And finally on the topic of safety:\n\nINDOT also wants to improve access to truck parking by\n- Adding truck parking capacity\n- Modernizing rest areas\n- Sharing parking availability information\n- Partnering with private parking providers.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent providing minimal feedback, there's no substantive critique or enhancement to the proposed truck parking strategy (capacity, rest area modernization, availability info sharing, private partnerships). This suggests either satisfaction with the plan as presented or simply a lack of engagement with the specifics. More responses would be needed to validate whether this sentiment holds broadly across the Freight Advisory Committee.",
+          "deepDive": "The strong majority response suggests the plan already covers the key priorities as far as this group is concerned. This leaves limited material for refinement unless INDOT seeks more targeted input from a broader or different set of stakeholders.",
           "details": [
-            "Response was brief and affirmative ('Good deal!').",
-            "No specific additions or removals were proposed."
+            "Four of six respondents gave a simple 'no' or 'nothing to add.'",
+            "No one suggested removing any of the four proposed strategies."
           ],
-          "summary": "The sole respondent expressed general approval of INDOT's truck parking plan without suggesting changes."
+          "summary": "Most committee members fully support INDOT's truck parking plan as-is."
+        },
+        {
+          "deepDive": "This respondent reframes truck parking from a purely infrastructure problem to a community relations and incentive-alignment issue. The idea is to make local communities active stakeholders by linking private parking expansion to tangible local benefits (tax revenue, safety), which could reduce resistance to truck volume growth. This is a distinct addition not mentioned by any other respondent.",
+          "details": [
+            "Suggests highlighting that many drivers live locally but still lack parking options.",
+            "Proposes sharing tax revenue or other benefits with communities to offset the burden of increased truck traffic.",
+            "Frames private parking partnerships as a shared win for safety and local economic benefit."
+          ],
+          "summary": "One respondent wants INDOT to engage local communities as partners, not just as hosts of truck volume."
         }
       ]
     },
     {
       "consensus": [
-        "The one respondent agreed the listed priorities are sufficient as-is."
+        "Majority (4 of 6) have no changes to INDOT's four listed infrastructure priorities.",
+        "No respondent proposed removing any of the four existing priorities."
       ],
       "id": "3de892ab-34c9-4cff-8b52-ce4c142e36de",
       "needsMoreInfo": [
-        "Only one response was received, so broader committee sentiment is unknown.",
-        "No detail on which of the four priorities (bridges, pavement, load restrictions, port/rail) matters most to this respondent.",
-        "No insight into whether other asset types or infrastructure concerns should be considered."
+        "Unclear how widely shared the overweight-truck-permit concern is among the rest of the committee.",
+        "No detail on what \"very limited basis\" would mean in practice for overweight permits.",
+        "Unclear scope or funding level implied by adding general aviation airports to the freight system.",
+        "No information on whether rural airport inclusion is a priority relative to the four existing pillars."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Moving on to the topic of infrastructure:\n\nINDOT wants to keep the state's multimodal freight system in a state of good repair by\n- Rehabilitating freight bridges\n- Preserving pavement on truck routes\n- Mitigating load restrictions\n- Maintaining port and rail assets.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent and a brief affirmative answer, there isn't enough detail to identify nuanced sub-themes or tensions. The response suggests the proposed priorities (bridges, pavement, load restrictions, port/rail assets) align with this stakeholder's expectations, but doesn't provide insight into which priority matters most to them or why.",
+          "deepDive": "The strong majority response suggests the four pillars (bridges, pavement, load restrictions, port/rail assets) already capture what this committee sees as the core infrastructure maintenance needs. This near-unanimous sign-off provides a solid mandate for INDOT to proceed with these priorities without major rework, though it leaves open whether respondents felt the list was already exhaustive or simply didn't have strong opinions to add.",
           "details": [
-            "Response simply affirmed the list looks good.",
-            "No additions, removals, or edits were suggested."
+            "4 of 6 respondents said \"no\" or \"none\" when asked for additions or removals.",
+            "No one suggested removing any of the four listed priorities."
           ],
-          "summary": "The sole respondent endorsed INDOT's state-of-good-repair priorities as presented, with no changes."
+          "summary": "Most respondents fully support INDOT's proposed state-of-good-repair priorities as written."
+        },
+        {
+          "deepDive": "This response connects directly to the \"mitigating load restrictions\" bullet already in INDOT's plan, but pushes in the opposite direction -- rather than easing load restrictions, this respondent wants tighter enforcement and fewer overweight exceptions. This could represent a tension between freight efficiency (more permits, heavier loads) and infrastructure preservation/safety (fewer permits), worth reconciling with other committee members who didn't raise this concern.",
+          "details": [
+            "Overweight trucks are flagged as causing increased, disproportionate damage to roads.",
+            "The respondent also raises overall safety concerns tied to overweight loads.",
+            "They recommend permits for overweight trucks be issued on a very limited basis."
+          ],
+          "summary": "One respondent wants stricter limits on overweight truck permits to curb road damage and safety risks."
+        },
+        {
+          "deepDive": "This is a scope-expansion suggestion rather than a tweak to existing priorities -- air cargo infrastructure isn't mentioned in INDOT's original four bullets. It's a single data point, so it's unclear how significant air freight is to the broader committee or whether this reflects a specific regional/company need tied to the respondent's operations.",
+          "details": [
+            "Suggests expanding scope beyond bridges, pavement, and rail/port to include small and rural airports.",
+            "Frames this as part of the broader multimodal freight system."
+          ],
+          "summary": "One respondent wants general aviation and rural airports added as a freight asset class deserving dedicated funding."
         }
       ]
     },
     {
       "consensus": [
-        "The single respondent did not propose any changes to the listed priorities."
+        "Broad agreement that the four listed priorities (roundtables, air cargo cold-chain, rail intermodal, emerging markets access) are appropriate and need no removals.",
+        "No respondent opposed or questioned any of the four infrastructure focus areas."
       ],
       "id": "23880e62-ed66-482d-9f3f-c9624618d932",
       "needsMoreInfo": [
-        "Only one response was collected, so broader committee sentiment is unknown.",
-        "No detail was given on which specific priorities (roundtables, air cargo, rail intermodal, emerging markets) matter most or least."
+        "Most respondents gave minimal answers ('no'/'Good idea') without elaborating on why they support the list, so underlying reasoning is unclear.",
+        "It's unknown whether the Aviation Indiana engagement suggestion resonates with other committee members, since no one else addressed it.",
+        "No detail was gathered on what 'emerging markets' specifically means to respondents or which markets are priorities.",
+        "No specifics were offered on how rail intermodal opportunities should be pursued or where."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Staying on the topic of infrastructure:\n\nINDOT also wants to keep working with the logistics industry and modal partners to expand freight infrastructure for new modes and markets through\n- Industry infrastructure roundtables\n- Air cargo cold-chain facilities\n- Rail intermodal opportunities\n- Access to emerging markets\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With just a single respondent and a one-word 'Nope' answer, there isn't enough detail to identify specific nuances or tensions. This suggests either genuine agreement with the listed priorities (roundtables, air cargo cold-chain, rail intermodal, emerging markets) or a lack of strong opinions to share at this time. More responses would be needed to confirm whether this reflects broader committee sentiment.",
+          "deepDive": "The near-unanimous response suggests the list (roundtables, air cargo cold-chain, rail intermodal, emerging markets) already captures the committee's priorities well, or that respondents didn't have strong alternative views to surface. This could reflect genuine alignment, but the brevity of most answers ('no', 'No', 'Good idea') also suggests limited critical engagement with the specifics of each item.",
           "details": [
-            "No additions or removals suggested.",
-            "Only one response was received for this question."
+            "Five of six respondents gave a simple 'no' or affirmative endorsement with no changes requested.",
+            "One respondent explicitly emphasized full support with enthusiasm ('YES! I support fully!').",
+            "No respondent suggested removing any of the four listed priorities."
           ],
-          "summary": "The respondent is satisfied with INDOT's proposed freight infrastructure priorities as presented."
+          "summary": "The committee overwhelmingly endorses INDOT's proposed freight infrastructure priorities as-is."
+        },
+        {
+          "deepDive": "This suggestion stands out as the sole substantive addition in an otherwise consensus-affirming set of responses. It implies that while the air cargo cold-chain priority is supported, execution may benefit from formal engagement with aviation industry advocacy structures rather than ad hoc outreach. No other respondent commented on this specific point, so it's unclear whether it reflects a shared gap or a single respondent's niche interest.",
+          "details": [
+            "This was the only concrete addition offered across all respondents.",
+            "The suggestion ties directly to the air cargo cold-chain facilities bullet already in the list.",
+            "It points to a specific stakeholder/advocacy channel not currently named in INDOT's framing."
+          ],
+          "summary": "One respondent wants INDOT to formally engage state airports and their lobbying group, Aviation Indiana."
         }
       ]
     },
     {
       "consensus": [
-        "The single response expressed no objections or additions to INDOT's proposed economic vitality priorities."
+        "Broad support for all four listed economic vitality priorities with no requests to remove any.",
+        "No respondent raised concerns or objections to the proposed approach."
       ],
       "id": "fb096c77-49fb-45cd-a281-b105e0051c83",
       "needsMoreInfo": [
-        "Only one respondent answered this question, so broader committee sentiment is unknown.",
-        "No detail was given on whether specific corridors, industrial parks, or logistics hubs should be prioritized.",
-        "Unclear if silence indicates genuine full agreement or simply lack of engagement with the question."
+        "Unclear how INDOT would operationalize 'industry diversification' given it's largely a land-use/economic development lever outside INDOT's direct control.",
+        "No detail on which specific rail-highway parallel corridors should be prioritized for combined hub development.",
+        "Majority gave minimal responses, so it's unclear if silence reflects true satisfaction or low engagement with this topic."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Moving on to the topic of economic vitality:\n\nINDOT wants to support economic development and competitiveness by\n- Investing in priority freight corridors\n- Improving access to industrial parks\n- Connecting logistics hubs\n- Encouraging freight-compatible land-use planning.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent and a simple 'Nope' answer, there's no elaboration on why the priorities are seen as sufficient. This suggests either strong alignment with INDOT's current thinking or a lack of strong opinion on the topic. More respondents would be needed to determine if this reflects broader committee sentiment.",
+          "deepDive": "This broad, low-friction agreement suggests the four priorities (priority corridors, industrial park access, logistics hub connectivity, freight-compatible land-use planning) are seen as a solid, non-controversial foundation. The lack of pushback may also indicate limited engagement or that respondents feel the framework is already comprehensive enough at a high level.",
           "details": [
-            "No additions or removals were suggested.",
-            "Response indicates agreement with the existing list of priorities."
+            "4 of 6 respondents simply answered 'no' or 'nothing to add.'",
+            "No one suggested removing any of the four listed priorities."
           ],
-          "summary": "The sole respondent fully endorsed INDOT's proposed economic vitality priorities as-is."
+          "summary": "Most committee members fully endorse INDOT's economic vitality priorities as listed, with no changes needed."
+        },
+        {
+          "deepDive": "This comment pushes beyond physical infrastructure into economic strategy and local governance capacity-building. The respondent frames diversification as a shared responsibility ('it takes a village'), implying INDOT alone can't drive this -- it requires coordinated outreach to local decision-makers who control zoning and land-use decisions. This is a distinct, more nuanced addition compared to the other respondents' simple affirmations.",
+          "details": [
+            "One respondent flagged that many communities are 'monopolized' by distribution centers (DCs).",
+            "Recommends diversifying the types of freight industries present locally.",
+            "Calls for educating local planners, economic development staff, and elected officials on the value of diverse, freight-compatible land use."
+          ],
+          "summary": "Encourage diversification of freight-dependent industries so communities aren't overly reliant on distribution centers alone."
+        },
+        {
+          "deepDive": "This is a specific, actionable infrastructure idea rather than a broad policy stance, distinguishing it from the general consensus. It implies an opportunity for INDOT to identify and prioritize these parallel rail-highway corridors in its freight corridor investment planning, potentially improving efficiency and reducing trucking costs through better multimodal integration.",
+          "details": [
+            "One respondent specifically pointed to corridors where rail parallels highways as ideal hub locations.",
+            "Suggests this as a concrete opportunity for intermodal infrastructure investment."
+          ],
+          "summary": "Co-locate rail and trucking hubs where railroads run parallel to major highways to enable multimodal synergy."
         }
       ]
     },
     {
-      "consensus": [],
+      "consensus": [
+        "Full agreement that the proposed priorities (reliable industrial deliveries, air cargo cold-chain access, supply chain coordination, workforce development partnerships) are sufficient as stated."
+      ],
       "id": "11f6d322-947d-48e4-a700-a470dcbfdd97",
       "needsMoreInfo": [
-        "Only one response was received, so it's unclear if AV leadership reflects broader committee sentiment.",
-        "No detail on what 'emerging freight tech' or 'AV' leadership would concretely involve (infrastructure, policy, pilots, funding).",
-        "No feedback yet on the four original priorities (reliability, cold-chain, supply chain coordination, workforce development) -- whether respondents agree, want changes, or see gaps."
+        "No insight into why respondents feel these priorities are complete -- lack of elaboration limits understanding of underlying reasoning.",
+        "Unclear whether silence indicates strong support or low engagement with this specific question.",
+        "No feedback on relative prioritization among the four listed items."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Staying on the topic of economic vitality:\n\nINDOT also wants to raise productivity for industries that create high-value jobs by\n- Making industrial deliveries more reliable\n- Improving access to air cargo cold-chain facilities\n- Coordinating supply chains\n- Partnering on workforce development.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one response, it's unclear whether AV leadership should be an additional fifth priority or integrated into existing ones like supply chain coordination or reliable deliveries. The respondent did not elaborate on specific AV technologies (e.g., autonomous trucking, drone delivery) or what 'leading' would look like in practice -- infrastructure investment, pilot programs, or regulatory frameworks. More input from other committee members would help determine if this is a widely shared priority or a single stakeholder's interest.",
+          "deepDive": "The uniform brevity of responses suggests either strong confidence in the proposed list or a lack of strong opinions/engagement on this particular topic compared to others. Since no respondent elaborated, it's unclear whether this reflects genuine enthusiasm or simply satisfaction that nothing major is missing. No pushback or nuance was offered by any CEO/VP, which is notable given the diversity of industries represented on the committee.",
           "details": [
-            "Suggests adding AV leadership as a priority alongside the existing focus areas.",
-            "Frames this as a forward-looking addition rather than a replacement for current priorities."
+            "All six respondents answered 'no' or an equivalent with no suggested additions or removals.",
+            "No one raised concerns, caveats, or alternative priorities."
           ],
-          "summary": "The sole respondent wants Indiana to lead in emerging freight technology, specifically autonomous vehicles (AV)."
+          "summary": "The committee unanimously endorses INDOT's proposed productivity priorities as-is."
         }
       ]
     },
     {
       "consensus": [
-        "The sole respondent was satisfied with INDOT's proposed freight cost-reduction priorities as-is, with no additions or removals suggested."
+        "No one objected to the four core strategies (bottleneck reduction, rail interchanges, truck routing, information sharing) as a starting point.",
+        "Half the respondents had no changes to suggest at all."
       ],
       "id": "7373eb0c-1c42-4074-83f3-a386059e82c5",
       "needsMoreInfo": [
-        "Only one response was received, so it's unclear whether other committee members would agree or have additional suggestions."
+        "Unclear what specific types of freight information respondents consider too sensitive to share, and what safeguards would address this.",
+        "No detail on how alternative fuel support would be implemented or funded by INDOT.",
+        "Construction coordination concern was raised generally but without specifics on current gaps or desired mechanisms.",
+        "Not clear whether respondents who said 'no' truly see the four strategies as complete, or simply had nothing more to add at that point in the survey."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "And finally on the topic of economic vitality:\n\nINDOT also wants to lower the cost of moving freight by\n• Reducing bottleneck delays\n• Improving rail interchanges\n• Routing trucks more efficiently\n• Sharing freight information.\n\nDo you have anything you would add or remove from this?",
-      "themes": []
+      "themes": [
+        {
+          "deepDive": "The lack of pushback could reflect genuine satisfaction with the list, or simply that respondents had already given detailed input on earlier questions in the survey and had little left to add here. Without further probing, it's hard to tell whether silence means endorsement or fatigue.",
+          "details": [
+            "Three of six respondents simply answered 'no' with no further comment.",
+            "This suggests the four listed strategies (bottleneck reduction, rail interchanges, truck routing, information sharing) are broadly seen as sufficient or non-controversial."
+          ],
+          "summary": "Most committee members accept INDOT's proposed freight cost-reduction strategies as-is, with no additions or removals."
+        },
+        {
+          "deepDive": "This response introduces nuance not captured elsewhere: rather than opposing information sharing outright, it raises the need for careful scoping of what information is shared and with whom, especially given competitive sensitivities for private logistics companies. It also implicitly ties back to routing efficiency, suggesting that any shared data or routing guidance must account for mode-specific economics rather than generic assumptions.",
+          "details": [
+            "One respondent noted that sharing freight information could be sensitive depending on what data is requested.",
+            "They also pointed out that mode viability depends heavily on origin/destination pairs and distance, implying a one-size-fits-all data-sharing approach may not work."
+          ],
+          "summary": "A couple of respondents flagged concerns about the practical and sensitive nature of freight information sharing."
+        },
+        {
+          "deepDive": "These two additions come from different angles -- one is about reducing operating costs through fuel/energy policy, the other about minimizing disruption from INDOT's own construction activity. Both represent distinct, standalone suggestions rather than a shared theme, but are grouped here as the 'additions' respondents offered beyond the core list.",
+          "details": [
+            "One respondent emphasized supporting alternative fuels, citing staff and fuel as the largest transport cost drivers.",
+            "Another reiterated (echoing an earlier answer in the survey) the need to coordinate infrastructure projects to minimize construction impacts."
+          ],
+          "summary": "Two respondents suggested additional priorities beyond the original four: alternative fuels and construction coordination."
+        }
+      ]
     },
     {
       "consensus": [
-        "Only one response was received, and it expressed no changes to INDOT's proposed environmental priorities."
+        "Most respondents (4 of 6) had no objections to INDOT's proposed environmental priorities as listed.",
+        "No respondent suggested removing any of the four listed priorities."
       ],
       "id": "3e5667cb-28b6-41fa-8af7-815c2521cdbb",
       "needsMoreInfo": [
-        "Only one respondent answered this question, so broader committee sentiment is unknown.",
-        "No detail was given on whether specific items (e.g., idling, emissions monitoring) are seen as higher or lower priority.",
-        "Unclear if silence/approval reflects genuine agreement or lack of engagement with the question."
+        "Unclear how much weight to give the 'no' responses -- passive agreement or lack of strong opinion?",
+        "Not clear how INDOT should operationalize 'land use planning' input within its freight project scope versus local/regional authorities.",
+        "No detail on what specific rail investments or incentives the committee would want INDOT to pursue.",
+        "Unclear how construction-delay minimization and signal synchronization would be prioritized against the original four environmental goals."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Now moving on to the topic of environment and health:\n\nINDOT wants to reduce freight's impact on the environment by\n- Cutting truck idling\n- Supporting cleaner freight technologies\n- Monitoring freight emissions\n- Designing projects that protect wildlife habitat.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent and a brief 'No' answer, there isn't enough data to identify distinct themes or areas of concern. The response can be read as tacit agreement with INDOT's existing framework, but it offers no specific endorsement or critique of individual elements like idling reduction or wildlife habitat protection. More respondents would be needed to see if this view is broadly shared or if other stakeholders have additions to suggest.",
+          "deepDive": "While the majority gave a flat 'no,' this doesn't necessarily mean deep engagement with the topic -- it may reflect lower priority or satisfaction with INDOT's framing rather than active endorsement. The remaining two respondents who did add ideas pushed in quite different directions (land use/community impact vs. rail and traffic flow), suggesting the 'no' responses shouldn't be read as unanimous agreement that nothing else matters.",
           "details": [
-            "The respondent simply answered 'No' with no elaboration.",
-            "This suggests the proposed list (idling, cleaner tech, emissions monitoring, wildlife habitat) was seen as sufficient."
+            "Four of six respondents simply answered 'no' with no additions or removals.",
+            "This suggests the current list already covers the main concerns for the majority of the committee."
           ],
-          "summary": "The sole respondent had no additions or changes to propose to INDOT's environmental and health priorities."
+          "summary": "Most respondents are satisfied with INDOT's proposed environmental priorities as-is."
+        },
+        {
+          "deepDive": "These two suggestions represent a shift from the incremental, operational items INDOT listed (idling, emissions monitoring, wildlife habitat) toward bigger-picture structural interventions. The land-use comment reflects concern about freight infrastructure's broader environmental footprint on communities, not just vehicle emissions. The rail comment implicitly critiques the list's truck-centric framing, suggesting INDOT could do more to incentivize modal shift as an environmental strategy rather than only cleaning up truck operations.",
+          "details": [
+            "One respondent urged INDOT to factor land use planning into freight decisions, citing flooding and impermeable surface expansion, and framed freight as needing to be a 'good neighbor' to communities.",
+            "Another respondent argued rail is inherently more environmentally friendly than truck transport and should be emphasized more strongly."
+          ],
+          "summary": "A couple of respondents want broader systemic fixes -- land use planning and modal shift to rail -- rather than just truck-focused tweaks."
+        },
+        {
+          "deepDive": "This response connects an operational/traffic-engineering lens to the environmental question, implying that smoother traffic flow is itself an emissions-reduction strategy, complementary to the idling-reduction goal already on INDOT's list. It stands somewhat apart from the other added themes (land use, rail) since it's focused on day-to-day operational efficiency rather than structural or modal change.",
+          "details": [
+            "Recommended minimizing construction-related delays.",
+            "Recommended better synchronization of stop lights to reduce idling/emissions indirectly."
+          ],
+          "summary": "One respondent linked environmental impact to traffic flow efficiency, suggesting construction delays and signal timing contribute to unnecessary emissions."
         }
       ]
     },
     {
       "consensus": [
-        "The sole respondent had no additions or changes to propose, indicating agreement with INDOT's resilience priorities as stated."
+        "Most respondents are satisfied with the resilience plan as presented.",
+        "No one raised objections to any of the four listed strategies."
       ],
       "id": "2adeb6b9-1d9f-47a5-b406-04049c4bbf45",
       "needsMoreInfo": [
-        "Only one response was received, so it's unclear whether other committee members share this agreement or have additional concerns.",
-        "No detail was given on which of the four listed resilience measures matter most to this respondent."
+        "Unclear how land-use/site-location planning would be operationalized within INDOT's freight resilience efforts.",
+        "No detail on which specific flood-prone routes or bridges respondents consider highest priority.",
+        "No feedback on how supply-chain disruption preparedness should be defined or measured."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "Staying on the topic of environment and health:\n\nINDOT also wants to make the freight system more resilient to severe weather, natural disasters and flooding by\n- Improving flood-prone routes\n- Strengthening bridges and drainage\n- Planning emergency freight detours\n- Preparing for supply-chain disruptions\n\nDo you have anything you would add or remove from this?",
-      "themes": []
+      "themes": [
+        {
+          "deepDive": "The near-unanimous 'no changes' response suggests the proposed resilience measures -- flood-prone route improvements, bridge/drainage strengthening, emergency detour planning, and supply-chain disruption prep -- already cover the committee's priorities well. There's little pushback or critique, indicating this topic may not need further iteration before moving forward.",
+          "details": [
+            "5 of 6 respondents said no or had nothing to add/remove.",
+            "One respondent explicitly affirmed agreement with the full list when asked for specifics."
+          ],
+          "summary": "Broad support for INDOT's resilience plan as proposed, with no changes requested."
+        },
+        {
+          "deepDive": "This is a lone but recurring voice pushing INDOT to think upstream of infrastructure fixes -- i.e., preventing exposure to flood risk in the first place through smarter land-use and site design decisions, rather than only reinforcing routes and bridges after the fact. It signals a potential gap between reactive/structural resilience measures and proactive planning controls, which INDOT may not have authority over but could coordinate on with local land-use bodies.",
+          "details": [
+            "Framed as a repeat of a point raised earlier in the survey.",
+            "Emphasizes that where facilities and routes are sited matters as much as hardening existing infrastructure."
+          ],
+          "summary": "One respondent wants land-use and site-location planning folded into resilience strategy."
+        }
+      ]
     },
     {
       "consensus": [
-        "The single respondent agrees with INDOT's proposed community-impact measures as presented."
+        "No one opposed any of the four proposed measures.",
+        "Half the respondents (3 of 6) had no additions or changes to suggest."
       ],
       "id": "1bccd519-2534-400f-b5fc-996461ae5268",
       "needsMoreInfo": [
-        "Only one response was received, so broader committee sentiment is unknown.",
-        "No detail on which specific measures (routing, pedestrian safety, screening, engagement) matter most.",
-        "No feedback on potential gaps or implementation challenges."
+        "Unclear whether rail and airport noise/safety concerns should fall under INDOT's jurisdiction or a separate agency's.",
+        "No detail on how 'dedicated routes' and smaller last-mile vehicles would be implemented or incentivized.",
+        "Not clear which 'other modes' respondent 4 has in mind or how INDOT could practically leverage them to reduce truck impact."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "And finally on the topic of environment and health:\n\nINDOT also wants to minimize freight's impact on underserved and overburdened communities through\n- Neighborhood truck routing\n- Measures that keep pedestrians safe around trucks\n- Community impact screening\n- Local stakeholder engagement.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent and a brief affirmative reply ('Looks good'), there's no additional detail on which specific elements resonated most or why. This limits the ability to draw broader conclusions about committee sentiment on this topic.",
+          "deepDive": "This majority view suggests the core package -- neighborhood truck routing, pedestrian safety, community impact screening, and stakeholder engagement -- is seen as sufficient and well-rounded by half the committee. These respondents offered no critique or elaboration, so it's unclear whether their satisfaction reflects genuine confidence in the plan or simply limited engagement with this particular question.",
           "details": [
-            "No additions or removals were suggested.",
-            "Indicates the listed measures already cover the key concerns."
+            "Three of six respondents simply answered 'no' with no changes suggested.",
+            "No objections were raised to any of the four listed measures."
           ],
-          "summary": "The respondent fully supports INDOT's proposed approach as-is."
-        }
-      ]
-    },
-    {
-      "consensus": [],
-      "id": "6aa709cc-6fd7-499f-94a1-291fa265074a",
-      "needsMoreInfo": [
-        "No actual opinion was given on the four proposed technology initiatives (truck automation, TSMO, virtual signage/alerts, big data).",
-        "Unclear whether clarifying what TSMO means would change the respondent's view.",
-        "Only one response was collected, so no sense of broader committee sentiment on this topic."
-      ],
-      "responseCount": 1,
-      "text": "Now moving on to the topic of innovation and technology:\n\nINDOT wants to use advanced technology to strengthen its freight planning by\n- Piloting truck automation\n- Promoting TSMO strategies and applications\n- Deploying virtual signage, safety alerts and driver coaching\n- Analyzing freight big data.\n\nDo you have anything you would add or remove from this?",
-      "themes": [
+          "summary": "Most respondents are satisfied with INDOT's proposed approach as-is."
+        },
         {
-          "deepDive": "With only one respondent, the main takeaway isn't about the content of INDOT's tech priorities but about communication clarity. The acronym TSMO (Transportation Systems Management and Operations) was used without explanation, which blocked the respondent from engaging with that part of the proposal. This suggests future surveys or materials aimed at industry stakeholders should spell out technical/agency jargon to get more substantive input.",
+          "deepDive": "The rail and air noise/safety concerns point to a gap in the current framing, which is entirely truck-centric. One respondent frames other modes as additional sources of community burden to mitigate (rail crossing noise, jet noise), while another frames other modes as a potential solution (shifting freight off trucks to reduce community impact). These are two related but distinct angles -- modes as a problem to screen for, and modes as a tool to reduce truck burden -- that together argue for broadening the initiative's scope.",
           "details": [
-            "The respondent flagged that they did not know what \"TSMO\" stands for.",
-            "No substantive feedback on additions or removals was given as a result."
+            "One respondent specifically called out rail (crossing horn noise, pedestrian/bike safety at crossings) and airport/jet noise as additional impacts to address.",
+            "Another respondent more generally noted that other modes of transportation could help alleviate truck-related community impacts.",
+            "This suggests a desire for a multimodal lens rather than a truck-only focus."
           ],
-          "summary": "The single respondent couldn't evaluate the proposal because of unclear terminology."
+          "summary": "Several respondents want the scope expanded beyond trucks to other freight modes."
+        },
+        {
+          "deepDive": "This is a single but specific and actionable suggestion that goes beyond the general routing concept already proposed, adding a vehicle-size/regulatory lever not mentioned in INDOT's original list.",
+          "details": [
+            "Dedicated routes to physically separate freight traffic from sensitive areas.",
+            "Requiring smaller vehicles for last-mile delivery to reduce neighborhood impact."
+          ],
+          "summary": "One respondent suggested concrete operational tools: dedicated truck routes and mandated smaller last-mile delivery vehicles."
         }
       ]
     },
     {
       "consensus": [
-        "Only one response was received, and it expressed agreement with the proposed list as-is."
+        "No one proposed removing TSMO, virtual signage/safety alerts/driver coaching, or freight big data analysis.",
+        "Majority (4 of 6) are comfortable with the technology list as presented."
+      ],
+      "id": "6aa709cc-6fd7-499f-94a1-291fa265074a",
+      "needsMoreInfo": [
+        "Unclear how widespread the truck automation safety/fairness concern is beyond one respondent.",
+        "No detail on what 'unfair competition' with other modes specifically means or which modes/regulations are referenced.",
+        "Not clear how INDOT should prioritize or scope new suggestions like drone delivery or alternative fuels against the original four priorities."
+      ],
+      "responseCount": 6,
+      "text": "Now moving on to the topic of innovation and technology:\n\nINDOT wants to use advanced technology to strengthen its freight planning by\n- Piloting truck automation\n- Promoting TSMO strategies and applications\n- Deploying virtual signage, safety alerts and driver coaching\n- Analyzing freight big data.\n\nDo you have anything you would add or remove from this?",
+      "themes": [
+        {
+          "deepDive": "The majority view is that the four listed priorities (truck automation piloting, TSMO strategies, virtual signage/safety alerts/driver coaching, and freight big data analysis) are sufficient and well-rounded as presented. No one in this group suggested removing any of the four items. This suggests the core technology agenda is not controversial among most committee members.",
+          "details": [
+            "Three respondents gave a simple 'no' with no changes requested.",
+            "One respondent explicitly said they support all of it."
+          ],
+          "summary": "Most respondents broadly support INDOT's proposed technology priorities as-is."
+        },
+        {
+          "deepDive": "This is the one clear point of friction in an otherwise agreeable response set. The respondent's framing ties truck automation to a broader regulatory equity issue -- other modes (e.g., rail) that could pursue similar automation aren't permitted to by government agencies, creating a perceived uneven playing field. This suggests INDOT may want to address both safety validation and cross-modal regulatory fairness if it proceeds with automation piloting.",
+          "details": [
+            "Concern centers on safety risks of autonomous/driverless trucks.",
+            "Also flagged as unfair competition versus other transportation modes that have similar infrastructure but face regulatory restrictions.",
+            "Respondent did not explicitly say to remove the item but raised it as a 'grave concern.'"
+          ],
+          "summary": "Truck automation raises safety and fairness concerns for at least one respondent."
+        },
+        {
+          "deepDive": "These additions point to emerging technologies not captured in INDOT's current framing -- alternative fuels, vehicle tech, routing optimization, and aerial delivery systems. While only two respondents raised these, they represent forward-looking additions rather than objections to the existing list, suggesting an appetite for a broader, more future-oriented technology roadmap.",
+          "details": [
+            "Suggestions include tech improvements to freight vehicles, fuels, and delivery methods/routes.",
+            "One respondent proposed considering Urban Air Mobility and drone delivery to reduce congestion and speed deliveries."
+          ],
+          "summary": "Several respondents want the technology scope widened beyond the four listed items."
+        }
+      ]
+    },
+    {
+      "consensus": [
+        "No one proposed removing any of the four listed initiatives.",
+        "General support for INDOT pursuing OEM partnerships and data-sharing mechanisms."
       ],
       "id": "e239512f-d803-4fdd-976c-4c4f26b1f5b1",
       "needsMoreInfo": [
-        "Only one respondent answered this question, limiting the ability to draw broader conclusions.",
-        "No detail was given on which specific elements (OEM data-sharing, pilots, safety exchanges, tech coordination) matter most or need refinement.",
-        "Unclear whether other committee members have additions, concerns, or priorities not captured here."
+        "Unclear what specific confidentiality or data-security mechanisms would satisfy OEMs enough to share data.",
+        "No detail on which truck manufacturers INDOT should prioritize engaging first.",
+        "No feedback on timelines, funding, or governance for pilot programs."
       ],
-      "responseCount": 1,
+      "responseCount": 6,
       "text": "And finally on the topic of innovation and technology:\n\nINDOT also wants to work with truck manufacturers to share information through\n- OEM data-sharing partnerships\n- Connected-truck pilot programs\n- Truck safety information exchanges\n- Coordination on vehicle technology.\n\nDo you have anything you would add or remove from this?",
       "themes": [
         {
-          "deepDive": "With only one respondent and a minimal, non-substantive answer, there isn't enough detail to identify distinct themes or areas of concern. The feedback simply signals support for the existing list of initiatives as presented.",
+          "deepDive": "The lack of pushback suggests the proposed list (OEM data-sharing, connected-truck pilots, safety information exchanges, vehicle tech coordination) already covers the committee's priorities well. This near-unanimous sign-off indicates low controversy on this topic compared to others in the survey.",
           "details": [
-            "Response was a brief affirmation (\"Sounds goods\") without elaboration.",
-            "No specific concerns, risks, or gaps were raised."
+            "4 of 6 respondents simply answered 'no' or 'nothing to add.'",
+            "No one suggested removing any of the four listed mechanisms."
           ],
-          "summary": "The lone respondent expressed general agreement with INDOT's proposed approach, with no additions or removals suggested."
+          "summary": "Most committee members support the proposed approach as-is, with no additions or changes."
+        },
+        {
+          "deepDive": "This respondent was enthusiastic about the concept ('that'd all be great') but tempered it with a practical concern about execution, not design. The suggestion implies INDOT's success will hinge on building trust and confidentiality safeguards rather than on adding new program elements. This is a single respondent's input, so it's more of an implementation caution than a broad committee demand.",
+          "details": [
+            "One respondent flagged that getting private companies to share proprietary information is 'always a challenge.'",
+            "They suggested INDOT establish a safe and confidential mechanism for data exchange to make participation worthwhile for OEMs."
+          ],
+          "summary": "The real risk isn't the plan itself but whether private truck manufacturers will actually agree to share their data."
         }
       ]
     }
